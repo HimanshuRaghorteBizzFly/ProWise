@@ -1,0 +1,326 @@
+[
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/dashboard/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/organization/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/workspaces/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/members/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/teams/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/invitations/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/roles-permissions/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/projects/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/subscriptions/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/billing/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/integrations/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/reports/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/audit-logs/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/settings/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/dashboard/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/members/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/teams/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/invitations/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/roles-permissions/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/projects/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/repositories/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/integrations/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/activity/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/reports/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/settings/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/dashboard/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/project-planning/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/work-items/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/team-assignments/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/dependencies/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/reviews/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/delivery/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/settings/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/dashboard/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/my-team/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/assignments/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/sprint-planning/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/progress/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/reviews/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/workload/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/activity/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/reports/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/dashboard/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/tasks/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/check-ins/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/progress/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/repositories/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/evidence/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/blockers/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/comments/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/notifications/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/settings/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/check-ins/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/new-check-in/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/progress-history/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/deadlines/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/evidence/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/delivery-status/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/my-tasks/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/tasks/[taskId]/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/submit-review/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/review-feedback/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/evidence/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/blockers/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/dependencies/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/progress/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/dashboard/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/review-queue/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/assigned-reviews/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/work-items/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/test-checklists/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/approvals/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/rejected-work/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/review-history/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/settings/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/viewer/dashboard/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/viewer/delivery-status/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/viewer/notifications/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/viewer/settings/page.tsx",
+    "isDir": false
+  }
+]

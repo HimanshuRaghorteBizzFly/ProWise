@@ -1,0 +1,970 @@
+[
+  {
+    "path": "public",
+    "isDir": true
+  },
+  {
+    "path": "public/images",
+    "isDir": true
+  },
+  {
+    "path": "public/icons",
+    "isDir": true
+  },
+  {
+    "path": "public/illustrations",
+    "isDir": true
+  },
+  {
+    "path": "public/logos",
+    "isDir": true
+  },
+  {
+    "path": "src/app/loading.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/error.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/not-found.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(auth)/reset-password",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(auth)/verify-email",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(auth)/callback",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(auth)/select-workspace",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(auth)/create-organization",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/layout.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(platform)/super-admin/dashboard",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/roles-permissions",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/payments",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/email-settings",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/email-templates",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/announcements",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/integrations",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/github-integrations",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/webhooks",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/api-monitoring",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/access-approvals",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/reports",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/configuration",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/super-admin/support",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/layout.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/dashboard",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/organization-status",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/incidents",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/support-tickets",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/access-requests",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/integration-health",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/github-monitoring",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/webhook-logs",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/failed-events",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/sync-jobs",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/api-errors",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/email-delivery",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/email-drafts",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/announcement-drafts",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/subscription-status",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/payment-failures",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/invoice-delivery",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/backups",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/maintenance",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/alerts",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/activity-logs",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(platform)/platform-operator/settings",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/layout.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/layout.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/dashboard",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/organization",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/workspaces",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/members",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/teams",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/invitations",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/roles-permissions",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/projects",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/subscriptions",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/billing",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/integrations",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/reports",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/audit-logs",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/owner/settings",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/layout.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/dashboard",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/members",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/teams",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/invitations",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/roles-permissions",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/projects",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/repositories",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/integrations",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/activity",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/reports",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/admin/settings",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/layout.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/dashboard",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/project-planning",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/work-items",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/team-assignments",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/dependencies",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/reviews",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/delivery",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/manager/settings",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/layout.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/dashboard",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/my-team",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/assignments",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/sprint-planning",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/progress",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/reviews",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/workload",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/activity",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/lead/reports",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/layout.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/dashboard",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/tasks",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/check-ins",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/progress",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/repositories",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/evidence",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/blockers",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/comments",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/notifications",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/settings",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/page.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/check-ins",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/new-check-in",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/progress-history",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/deadlines",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/evidence",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/delivery-status",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/my-tasks",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/tasks",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/submit-review",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/review-feedback",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/evidence",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/blockers",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/dependencies",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/progress",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/layout.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/dashboard",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/review-queue",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/assigned-reviews",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/work-items",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/test-checklists",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/approvals",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/rejected-work",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/review-history",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/reviewer/settings",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/viewer/layout.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/viewer/dashboard",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/viewer/delivery-status",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/viewer/notifications",
+    "isDir": true
+  },
+  {
+    "path": "src/app/(workspace)/org/[orgId]/viewer/settings",
+    "isDir": true
+  },
+  {
+    "path": "src/app/unauthorized",
+    "isDir": true
+  },
+  {
+    "path": "src/components/ui/Select.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/ui/Modal.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/ui/DataTable.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/ui/Tabs.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/ui/Pagination.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/ui/ConfirmDialog.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/ui/LoadingSkeleton.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/layouts/AppShell.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/layouts/DashboardHeader.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/layouts/SuperAdminSidebar.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/layouts/OperatorSidebar.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/layouts/OwnerSidebar.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/layouts/AdminSidebar.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/layouts/ManagerSidebar.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/layouts/LeadSidebar.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/layouts/DeveloperSidebar.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/layouts/ReviewerSidebar.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/layouts/ViewerSidebar.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/navigation/GlobalSearch.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/navigation/Breadcrumbs.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/navigation/WorkspaceSwitcher.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/navigation/RoleSwitcher.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/navigation/NotificationMenu.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/charts",
+    "isDir": true
+  },
+  {
+    "path": "src/components/charts/ProgressChart.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/charts/TaskStatusChart.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/charts/ActivityChart.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/charts/WorkloadChart.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/charts/RevenueChart.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/developer",
+    "isDir": true
+  },
+  {
+    "path": "src/components/developer/IndividualProjectView.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/developer/StructuredProjectView.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/developer/CheckInForm.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/developer/TaskBoard.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/developer/ProgressHistory.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/feedback",
+    "isDir": true
+  },
+  {
+    "path": "src/components/feedback/EmptyState.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/feedback/ErrorState.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/components/feedback/PermissionDenied.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/features",
+    "isDir": true
+  },
+  {
+    "path": "src/features/auth",
+    "isDir": true
+  },
+  {
+    "path": "src/features/users",
+    "isDir": true
+  },
+  {
+    "path": "src/features/organizations",
+    "isDir": true
+  },
+  {
+    "path": "src/features/memberships",
+    "isDir": true
+  },
+  {
+    "path": "src/features/teams",
+    "isDir": true
+  },
+  {
+    "path": "src/features/invitations",
+    "isDir": true
+  },
+  {
+    "path": "src/features/workspaces",
+    "isDir": true
+  },
+  {
+    "path": "src/features/permissions",
+    "isDir": true
+  },
+  {
+    "path": "src/features/platform",
+    "isDir": true
+  },
+  {
+    "path": "src/features/billing",
+    "isDir": true
+  },
+  {
+    "path": "src/features/communication",
+    "isDir": true
+  },
+  {
+    "path": "src/features/projects",
+    "isDir": true
+  },
+  {
+    "path": "src/features/delivery",
+    "isDir": true
+  },
+  {
+    "path": "src/features/delivery/individual",
+    "isDir": true
+  },
+  {
+    "path": "src/features/delivery/structured",
+    "isDir": true
+  },
+  {
+    "path": "src/features/delivery/reviews",
+    "isDir": true
+  },
+  {
+    "path": "src/features/delivery/evidence",
+    "isDir": true
+  },
+  {
+    "path": "src/features/delivery/acceptance",
+    "isDir": true
+  },
+  {
+    "path": "src/features/delivery/progress",
+    "isDir": true
+  },
+  {
+    "path": "src/features/integrations",
+    "isDir": true
+  },
+  {
+    "path": "src/features/repositories",
+    "isDir": true
+  },
+  {
+    "path": "src/features/notifications",
+    "isDir": true
+  },
+  {
+    "path": "src/features/reports",
+    "isDir": true
+  },
+  {
+    "path": "src/features/analytics",
+    "isDir": true
+  },
+  {
+    "path": "src/features/support",
+    "isDir": true
+  },
+  {
+    "path": "src/features/incidents",
+    "isDir": true
+  },
+  {
+    "path": "src/features/security",
+    "isDir": true
+  },
+  {
+    "path": "src/features/audit",
+    "isDir": true
+  },
+  {
+    "path": "src/features/settings",
+    "isDir": true
+  },
+  {
+    "path": "src/config",
+    "isDir": true
+  },
+  {
+    "path": "src/config/navigation.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/config/permissions.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/config/routes.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/config/theme.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/lib/api-client.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/lib/mock-api.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/lib/validators.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/hooks",
+    "isDir": true
+  },
+  {
+    "path": "src/hooks/useAuth.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/hooks/usePermissions.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/hooks/useOrganization.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/hooks/useProjects.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/hooks/useTheme.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/hooks/useDebounce.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/providers",
+    "isDir": true
+  },
+  {
+    "path": "src/providers/AuthProvider.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/providers/QueryProvider.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/providers/ThemeProvider.tsx",
+    "isDir": false
+  },
+  {
+    "path": "src/store/notification-store.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/store/workspace-store.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/styles/themes.css",
+    "isDir": false
+  },
+  {
+    "path": "src/styles/auth.module.css",
+    "isDir": false
+  },
+  {
+    "path": "src/styles/dashboard.module.css",
+    "isDir": false
+  },
+  {
+    "path": "src/styles/landing.module.css",
+    "isDir": false
+  },
+  {
+    "path": "src/types/auth.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/types/organization.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/types/project.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/types/delivery.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/types/work-item.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/types/permission.ts",
+    "isDir": false
+  },
+  {
+    "path": "src/types/api.ts",
+    "isDir": false
+  },
+  {
+    "path": "eslint.config.mjs",
+    "isDir": false
+  }
+]

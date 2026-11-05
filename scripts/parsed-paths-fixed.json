@@ -1,0 +1,1958 @@
+[
+  {
+    "path": "ProWise_Frontend/public",
+    "isDir": true,
+    "rest": "public/",
+    "depth": 1
+  },
+  {
+    "path": "ProWise_Frontend/public/images",
+    "isDir": true,
+    "rest": "images/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/public/icons",
+    "isDir": true,
+    "rest": "icons/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/public/illustrations",
+    "isDir": true,
+    "rest": "illustrations/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/public/logos",
+    "isDir": true,
+    "rest": "logos/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/scripts",
+    "isDir": true,
+    "rest": "scripts/",
+    "depth": 1
+  },
+  {
+    "path": "ProWise_Frontend/src",
+    "isDir": true,
+    "rest": "src/",
+    "depth": 1
+  },
+  {
+    "path": "ProWise_Frontend/src/app",
+    "isDir": true,
+    "rest": "app/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/src/app/layout.tsx",
+    "isDir": false,
+    "rest": "layout.tsx",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/app/page.tsx",
+    "isDir": false,
+    "rest": "page.tsx",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/app/loading.tsx",
+    "isDir": false,
+    "rest": "loading.tsx",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/app/error.tsx",
+    "isDir": false,
+    "rest": "error.tsx",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/app/not-found.tsx",
+    "isDir": false,
+    "rest": "not-found.tsx",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(auth)",
+    "isDir": true,
+    "rest": "(auth)/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(auth)/login/page.tsx",
+    "isDir": false,
+    "rest": "login/page.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(auth)/signup/page.tsx",
+    "isDir": false,
+    "rest": "signup/page.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(auth)/forgot-password/page.tsx",
+    "isDir": false,
+    "rest": "forgot-password/page.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(auth)/reset-password/page.tsx",
+    "isDir": false,
+    "rest": "reset-password/page.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(auth)/verify-email/page.tsx",
+    "isDir": false,
+    "rest": "verify-email/page.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(auth)/callback/page.tsx",
+    "isDir": false,
+    "rest": "callback/page.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(auth)/select-workspace/page.tsx",
+    "isDir": false,
+    "rest": "select-workspace/page.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(auth)/create-organization/page.tsx",
+    "isDir": false,
+    "rest": "create-organization/page.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)",
+    "isDir": true,
+    "rest": "(platform)/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin",
+    "isDir": true,
+    "rest": "super-admin/",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/layout.tsx",
+    "isDir": false,
+    "rest": "layout.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/dashboard/page.tsx",
+    "isDir": false,
+    "rest": "dashboard/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/organizations/page.tsx",
+    "isDir": false,
+    "rest": "organizations/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/operators/page.tsx",
+    "isDir": false,
+    "rest": "operators/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/roles-permissions/page.tsx",
+    "isDir": false,
+    "rest": "roles-permissions/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/plans/page.tsx",
+    "isDir": false,
+    "rest": "plans/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/subscriptions/page.tsx",
+    "isDir": false,
+    "rest": "subscriptions/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/payments/page.tsx",
+    "isDir": false,
+    "rest": "payments/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/invoices/page.tsx",
+    "isDir": false,
+    "rest": "invoices/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/email-settings/page.tsx",
+    "isDir": false,
+    "rest": "email-settings/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/email-templates/page.tsx",
+    "isDir": false,
+    "rest": "email-templates/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/announcements/page.tsx",
+    "isDir": false,
+    "rest": "announcements/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/integrations/page.tsx",
+    "isDir": false,
+    "rest": "integrations/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/github-integrations/page.tsx",
+    "isDir": false,
+    "rest": "github-integrations/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/webhooks/page.tsx",
+    "isDir": false,
+    "rest": "webhooks/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/api-monitoring/page.tsx",
+    "isDir": false,
+    "rest": "api-monitoring/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/security/page.tsx",
+    "isDir": false,
+    "rest": "security/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/access-approvals/page.tsx",
+    "isDir": false,
+    "rest": "access-approvals/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/incidents/page.tsx",
+    "isDir": false,
+    "rest": "incidents/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/audit/page.tsx",
+    "isDir": false,
+    "rest": "audit/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/reports/page.tsx",
+    "isDir": false,
+    "rest": "reports/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/configuration/page.tsx",
+    "isDir": false,
+    "rest": "configuration/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/super-admin/support/page.tsx",
+    "isDir": false,
+    "rest": "support/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator",
+    "isDir": true,
+    "rest": "platform-operator/",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/layout.tsx",
+    "isDir": false,
+    "rest": "layout.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/dashboard/page.tsx",
+    "isDir": false,
+    "rest": "dashboard/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/organization-status/page.tsx",
+    "isDir": false,
+    "rest": "organization-status/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/monitoring/page.tsx",
+    "isDir": false,
+    "rest": "monitoring/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/incidents/page.tsx",
+    "isDir": false,
+    "rest": "incidents/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/support-tickets/page.tsx",
+    "isDir": false,
+    "rest": "support-tickets/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/access-requests/page.tsx",
+    "isDir": false,
+    "rest": "access-requests/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/integration-health/page.tsx",
+    "isDir": false,
+    "rest": "integration-health/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/github-monitoring/page.tsx",
+    "isDir": false,
+    "rest": "github-monitoring/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/webhook-logs/page.tsx",
+    "isDir": false,
+    "rest": "webhook-logs/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/failed-events/page.tsx",
+    "isDir": false,
+    "rest": "failed-events/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/sync-jobs/page.tsx",
+    "isDir": false,
+    "rest": "sync-jobs/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/api-errors/page.tsx",
+    "isDir": false,
+    "rest": "api-errors/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/email-delivery/page.tsx",
+    "isDir": false,
+    "rest": "email-delivery/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/email-drafts/page.tsx",
+    "isDir": false,
+    "rest": "email-drafts/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/announcement-drafts/page.tsx",
+    "isDir": false,
+    "rest": "announcement-drafts/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/subscription-status/page.tsx",
+    "isDir": false,
+    "rest": "subscription-status/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/payment-failures/page.tsx",
+    "isDir": false,
+    "rest": "payment-failures/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/invoice-delivery/page.tsx",
+    "isDir": false,
+    "rest": "invoice-delivery/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/backups/page.tsx",
+    "isDir": false,
+    "rest": "backups/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/maintenance/page.tsx",
+    "isDir": false,
+    "rest": "maintenance/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/alerts/page.tsx",
+    "isDir": false,
+    "rest": "alerts/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/activity-logs/page.tsx",
+    "isDir": false,
+    "rest": "activity-logs/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(platform)/platform-operator/settings/page.tsx",
+    "isDir": false,
+    "rest": "settings/page.tsx",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)",
+    "isDir": true,
+    "rest": "(workspace)/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org",
+    "isDir": true,
+    "rest": "org/",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]",
+    "isDir": true,
+    "rest": "[orgId]/",
+    "depth": 5
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/layout.tsx",
+    "isDir": false,
+    "rest": "layout.tsx",
+    "depth": 6
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner",
+    "isDir": true,
+    "rest": "owner/",
+    "depth": 6
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/layout.tsx",
+    "isDir": false,
+    "rest": "layout.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/dashboard/page.tsx",
+    "isDir": false,
+    "rest": "dashboard/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/organization/page.tsx",
+    "isDir": false,
+    "rest": "organization/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/workspaces/page.tsx",
+    "isDir": false,
+    "rest": "workspaces/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/members/page.tsx",
+    "isDir": false,
+    "rest": "members/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/teams/page.tsx",
+    "isDir": false,
+    "rest": "teams/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/invitations/page.tsx",
+    "isDir": false,
+    "rest": "invitations/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/roles-permissions/page.tsx",
+    "isDir": false,
+    "rest": "roles-permissions/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/projects/page.tsx",
+    "isDir": false,
+    "rest": "projects/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/subscriptions/page.tsx",
+    "isDir": false,
+    "rest": "subscriptions/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/billing/page.tsx",
+    "isDir": false,
+    "rest": "billing/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/integrations/page.tsx",
+    "isDir": false,
+    "rest": "integrations/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/reports/page.tsx",
+    "isDir": false,
+    "rest": "reports/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/audit-logs/page.tsx",
+    "isDir": false,
+    "rest": "audit-logs/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/owner/settings/page.tsx",
+    "isDir": false,
+    "rest": "settings/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin",
+    "isDir": true,
+    "rest": "admin/",
+    "depth": 6
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin/layout.tsx",
+    "isDir": false,
+    "rest": "layout.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin/dashboard/page.tsx",
+    "isDir": false,
+    "rest": "dashboard/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin/members/page.tsx",
+    "isDir": false,
+    "rest": "members/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin/teams/page.tsx",
+    "isDir": false,
+    "rest": "teams/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin/invitations/page.tsx",
+    "isDir": false,
+    "rest": "invitations/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin/roles-permissions/page.tsx",
+    "isDir": false,
+    "rest": "roles-permissions/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin/projects/page.tsx",
+    "isDir": false,
+    "rest": "projects/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin/repositories/page.tsx",
+    "isDir": false,
+    "rest": "repositories/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin/integrations/page.tsx",
+    "isDir": false,
+    "rest": "integrations/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin/activity/page.tsx",
+    "isDir": false,
+    "rest": "activity/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin/reports/page.tsx",
+    "isDir": false,
+    "rest": "reports/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/admin/settings/page.tsx",
+    "isDir": false,
+    "rest": "settings/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager",
+    "isDir": true,
+    "rest": "manager/",
+    "depth": 6
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/layout.tsx",
+    "isDir": false,
+    "rest": "layout.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/dashboard/page.tsx",
+    "isDir": false,
+    "rest": "dashboard/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/projects/page.tsx",
+    "isDir": false,
+    "rest": "projects/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/create-project/page.tsx",
+    "isDir": false,
+    "rest": "create-project/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/project-planning/page.tsx",
+    "isDir": false,
+    "rest": "project-planning/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/work-items/page.tsx",
+    "isDir": false,
+    "rest": "work-items/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/team-assignments/page.tsx",
+    "isDir": false,
+    "rest": "team-assignments/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/progress/page.tsx",
+    "isDir": false,
+    "rest": "progress/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/deadlines/page.tsx",
+    "isDir": false,
+    "rest": "deadlines/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/dependencies/page.tsx",
+    "isDir": false,
+    "rest": "dependencies/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/reviews/page.tsx",
+    "isDir": false,
+    "rest": "reviews/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/delivery/page.tsx",
+    "isDir": false,
+    "rest": "delivery/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/reports/page.tsx",
+    "isDir": false,
+    "rest": "reports/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/manager/settings/page.tsx",
+    "isDir": false,
+    "rest": "settings/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead",
+    "isDir": true,
+    "rest": "lead/",
+    "depth": 6
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/layout.tsx",
+    "isDir": false,
+    "rest": "layout.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/dashboard/page.tsx",
+    "isDir": false,
+    "rest": "dashboard/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/my-team/page.tsx",
+    "isDir": false,
+    "rest": "my-team/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/projects/page.tsx",
+    "isDir": false,
+    "rest": "projects/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/work-items/page.tsx",
+    "isDir": false,
+    "rest": "work-items/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/assignments/page.tsx",
+    "isDir": false,
+    "rest": "assignments/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/sprint-planning/page.tsx",
+    "isDir": false,
+    "rest": "sprint-planning/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/progress/page.tsx",
+    "isDir": false,
+    "rest": "progress/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/blockers/page.tsx",
+    "isDir": false,
+    "rest": "blockers/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/reviews/page.tsx",
+    "isDir": false,
+    "rest": "reviews/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/workload/page.tsx",
+    "isDir": false,
+    "rest": "workload/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/activity/page.tsx",
+    "isDir": false,
+    "rest": "activity/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/lead/reports/page.tsx",
+    "isDir": false,
+    "rest": "reports/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer",
+    "isDir": true,
+    "rest": "developer/",
+    "depth": 6
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/layout.tsx",
+    "isDir": false,
+    "rest": "layout.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/dashboard/page.tsx",
+    "isDir": false,
+    "rest": "dashboard/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/my-work/page.tsx",
+    "isDir": false,
+    "rest": "my-work/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/page.tsx",
+    "isDir": false,
+    "rest": "projects/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/tasks/page.tsx",
+    "isDir": false,
+    "rest": "tasks/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/check-ins/page.tsx",
+    "isDir": false,
+    "rest": "check-ins/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/progress/page.tsx",
+    "isDir": false,
+    "rest": "progress/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/repositories/page.tsx",
+    "isDir": false,
+    "rest": "repositories/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/evidence/page.tsx",
+    "isDir": false,
+    "rest": "evidence/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/blockers/page.tsx",
+    "isDir": false,
+    "rest": "blockers/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/comments/page.tsx",
+    "isDir": false,
+    "rest": "comments/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/notifications/page.tsx",
+    "isDir": false,
+    "rest": "notifications/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/settings/page.tsx",
+    "isDir": false,
+    "rest": "settings/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects",
+    "isDir": true,
+    "rest": "projects/",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]",
+    "isDir": true,
+    "rest": "[projectId]/",
+    "depth": 8
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/page.tsx",
+    "isDir": false,
+    "rest": "page.tsx",
+    "depth": 9
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual",
+    "isDir": true,
+    "rest": "individual/",
+    "depth": 9
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/page.tsx",
+    "isDir": false,
+    "rest": "page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/check-ins/page.tsx",
+    "isDir": false,
+    "rest": "check-ins/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/new-check-in/page.tsx",
+    "isDir": false,
+    "rest": "new-check-in/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/progress-history/page.tsx",
+    "isDir": false,
+    "rest": "progress-history/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/deadlines/page.tsx",
+    "isDir": false,
+    "rest": "deadlines/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/evidence/page.tsx",
+    "isDir": false,
+    "rest": "evidence/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/individual/delivery-status/page.tsx",
+    "isDir": false,
+    "rest": "delivery-status/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured",
+    "isDir": true,
+    "rest": "structured/",
+    "depth": 9
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/page.tsx",
+    "isDir": false,
+    "rest": "page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/my-tasks/page.tsx",
+    "isDir": false,
+    "rest": "my-tasks/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/tasks/[taskId]/page.tsx",
+    "isDir": false,
+    "rest": "tasks/[taskId]/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/submit-review/page.tsx",
+    "isDir": false,
+    "rest": "submit-review/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/review-feedback/page.tsx",
+    "isDir": false,
+    "rest": "review-feedback/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/evidence/page.tsx",
+    "isDir": false,
+    "rest": "evidence/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/blockers/page.tsx",
+    "isDir": false,
+    "rest": "blockers/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/dependencies/page.tsx",
+    "isDir": false,
+    "rest": "dependencies/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/developer/projects/[projectId]/structured/progress/page.tsx",
+    "isDir": false,
+    "rest": "progress/page.tsx",
+    "depth": 10
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer",
+    "isDir": true,
+    "rest": "reviewer/",
+    "depth": 6
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer/layout.tsx",
+    "isDir": false,
+    "rest": "layout.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer/dashboard/page.tsx",
+    "isDir": false,
+    "rest": "dashboard/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer/review-queue/page.tsx",
+    "isDir": false,
+    "rest": "review-queue/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer/assigned-reviews/page.tsx",
+    "isDir": false,
+    "rest": "assigned-reviews/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer/work-items/page.tsx",
+    "isDir": false,
+    "rest": "work-items/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer/test-checklists/page.tsx",
+    "isDir": false,
+    "rest": "test-checklists/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer/evidence/page.tsx",
+    "isDir": false,
+    "rest": "evidence/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer/approvals/page.tsx",
+    "isDir": false,
+    "rest": "approvals/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer/rejected-work/page.tsx",
+    "isDir": false,
+    "rest": "rejected-work/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer/review-history/page.tsx",
+    "isDir": false,
+    "rest": "review-history/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer/reports/page.tsx",
+    "isDir": false,
+    "rest": "reports/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/reviewer/settings/page.tsx",
+    "isDir": false,
+    "rest": "settings/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/viewer",
+    "isDir": true,
+    "rest": "viewer/",
+    "depth": 6
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/viewer/layout.tsx",
+    "isDir": false,
+    "rest": "layout.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/viewer/dashboard/page.tsx",
+    "isDir": false,
+    "rest": "dashboard/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/viewer/projects/page.tsx",
+    "isDir": false,
+    "rest": "projects/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/viewer/progress/page.tsx",
+    "isDir": false,
+    "rest": "progress/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/viewer/milestones/page.tsx",
+    "isDir": false,
+    "rest": "milestones/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/viewer/delivery-status/page.tsx",
+    "isDir": false,
+    "rest": "delivery-status/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/viewer/reports/page.tsx",
+    "isDir": false,
+    "rest": "reports/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/viewer/activity/page.tsx",
+    "isDir": false,
+    "rest": "activity/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/viewer/notifications/page.tsx",
+    "isDir": false,
+    "rest": "notifications/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/(workspace)/org/[orgId]/viewer/settings/page.tsx",
+    "isDir": false,
+    "rest": "settings/page.tsx",
+    "depth": 7
+  },
+  {
+    "path": "ProWise_Frontend/src/app/unauthorized/page.tsx",
+    "isDir": false,
+    "rest": "unauthorized/page.tsx",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/components",
+    "isDir": true,
+    "rest": "components/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/src/components/ui",
+    "isDir": true,
+    "rest": "ui/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/components/ui/Button.tsx",
+    "isDir": false,
+    "rest": "Button.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/ui/Input.tsx",
+    "isDir": false,
+    "rest": "Input.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/ui/Select.tsx",
+    "isDir": false,
+    "rest": "Select.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/ui/Card.tsx",
+    "isDir": false,
+    "rest": "Card.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/ui/Badge.tsx",
+    "isDir": false,
+    "rest": "Badge.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/ui/Modal.tsx",
+    "isDir": false,
+    "rest": "Modal.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/ui/DataTable.tsx",
+    "isDir": false,
+    "rest": "DataTable.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/ui/Tabs.tsx",
+    "isDir": false,
+    "rest": "Tabs.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/ui/Pagination.tsx",
+    "isDir": false,
+    "rest": "Pagination.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/ui/ConfirmDialog.tsx",
+    "isDir": false,
+    "rest": "ConfirmDialog.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/ui/LoadingSkeleton.tsx",
+    "isDir": false,
+    "rest": "LoadingSkeleton.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/layouts",
+    "isDir": true,
+    "rest": "layouts/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/components/layouts/AppShell.tsx",
+    "isDir": false,
+    "rest": "AppShell.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/layouts/DashboardHeader.tsx",
+    "isDir": false,
+    "rest": "DashboardHeader.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/layouts/SuperAdminSidebar.tsx",
+    "isDir": false,
+    "rest": "SuperAdminSidebar.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/layouts/OperatorSidebar.tsx",
+    "isDir": false,
+    "rest": "OperatorSidebar.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/layouts/OwnerSidebar.tsx",
+    "isDir": false,
+    "rest": "OwnerSidebar.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/layouts/AdminSidebar.tsx",
+    "isDir": false,
+    "rest": "AdminSidebar.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/layouts/ManagerSidebar.tsx",
+    "isDir": false,
+    "rest": "ManagerSidebar.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/layouts/LeadSidebar.tsx",
+    "isDir": false,
+    "rest": "LeadSidebar.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/layouts/DeveloperSidebar.tsx",
+    "isDir": false,
+    "rest": "DeveloperSidebar.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/layouts/ReviewerSidebar.tsx",
+    "isDir": false,
+    "rest": "ReviewerSidebar.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/layouts/ViewerSidebar.tsx",
+    "isDir": false,
+    "rest": "ViewerSidebar.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/navigation",
+    "isDir": true,
+    "rest": "navigation/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/components/navigation/GlobalSearch.tsx",
+    "isDir": false,
+    "rest": "GlobalSearch.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/navigation/Breadcrumbs.tsx",
+    "isDir": false,
+    "rest": "Breadcrumbs.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/navigation/WorkspaceSwitcher.tsx",
+    "isDir": false,
+    "rest": "WorkspaceSwitcher.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/navigation/RoleSwitcher.tsx",
+    "isDir": false,
+    "rest": "RoleSwitcher.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/navigation/NotificationMenu.tsx",
+    "isDir": false,
+    "rest": "NotificationMenu.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/charts",
+    "isDir": true,
+    "rest": "charts/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/components/charts/ProgressChart.tsx",
+    "isDir": false,
+    "rest": "ProgressChart.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/charts/TaskStatusChart.tsx",
+    "isDir": false,
+    "rest": "TaskStatusChart.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/charts/ActivityChart.tsx",
+    "isDir": false,
+    "rest": "ActivityChart.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/charts/WorkloadChart.tsx",
+    "isDir": false,
+    "rest": "WorkloadChart.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/charts/RevenueChart.tsx",
+    "isDir": false,
+    "rest": "RevenueChart.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/developer",
+    "isDir": true,
+    "rest": "developer/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/components/developer/IndividualProjectView.tsx",
+    "isDir": false,
+    "rest": "IndividualProjectView.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/developer/StructuredProjectView.tsx",
+    "isDir": false,
+    "rest": "StructuredProjectView.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/developer/CheckInForm.tsx",
+    "isDir": false,
+    "rest": "CheckInForm.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/developer/TaskBoard.tsx",
+    "isDir": false,
+    "rest": "TaskBoard.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/developer/ProgressHistory.tsx",
+    "isDir": false,
+    "rest": "ProgressHistory.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/feedback",
+    "isDir": true,
+    "rest": "feedback/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/components/feedback/EmptyState.tsx",
+    "isDir": false,
+    "rest": "EmptyState.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/feedback/ErrorState.tsx",
+    "isDir": false,
+    "rest": "ErrorState.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/components/feedback/PermissionDenied.tsx",
+    "isDir": false,
+    "rest": "PermissionDenied.tsx",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/features",
+    "isDir": true,
+    "rest": "features/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/src/features/auth",
+    "isDir": true,
+    "rest": "auth/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/users",
+    "isDir": true,
+    "rest": "users/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/organizations",
+    "isDir": true,
+    "rest": "organizations/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/memberships",
+    "isDir": true,
+    "rest": "memberships/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/teams",
+    "isDir": true,
+    "rest": "teams/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/invitations",
+    "isDir": true,
+    "rest": "invitations/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/workspaces",
+    "isDir": true,
+    "rest": "workspaces/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/permissions",
+    "isDir": true,
+    "rest": "permissions/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/platform",
+    "isDir": true,
+    "rest": "platform/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/billing",
+    "isDir": true,
+    "rest": "billing/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/communication",
+    "isDir": true,
+    "rest": "communication/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/projects",
+    "isDir": true,
+    "rest": "projects/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/delivery",
+    "isDir": true,
+    "rest": "delivery/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/delivery/individual",
+    "isDir": true,
+    "rest": "individual/",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/features/delivery/structured",
+    "isDir": true,
+    "rest": "structured/",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/features/delivery/reviews",
+    "isDir": true,
+    "rest": "reviews/",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/features/delivery/evidence",
+    "isDir": true,
+    "rest": "evidence/",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/features/delivery/acceptance",
+    "isDir": true,
+    "rest": "acceptance/",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/features/delivery/progress",
+    "isDir": true,
+    "rest": "progress/",
+    "depth": 4
+  },
+  {
+    "path": "ProWise_Frontend/src/features/integrations",
+    "isDir": true,
+    "rest": "integrations/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/repositories",
+    "isDir": true,
+    "rest": "repositories/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/notifications",
+    "isDir": true,
+    "rest": "notifications/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/reports",
+    "isDir": true,
+    "rest": "reports/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/analytics",
+    "isDir": true,
+    "rest": "analytics/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/support",
+    "isDir": true,
+    "rest": "support/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/incidents",
+    "isDir": true,
+    "rest": "incidents/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/security",
+    "isDir": true,
+    "rest": "security/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/audit",
+    "isDir": true,
+    "rest": "audit/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/features/settings",
+    "isDir": true,
+    "rest": "settings/",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/config",
+    "isDir": true,
+    "rest": "config/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/src/config/navigation.ts",
+    "isDir": false,
+    "rest": "navigation.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/config/permissions.ts",
+    "isDir": false,
+    "rest": "permissions.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/config/routes.ts",
+    "isDir": false,
+    "rest": "routes.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/config/theme.ts",
+    "isDir": false,
+    "rest": "theme.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/lib",
+    "isDir": true,
+    "rest": "lib/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/src/lib/csv.ts",
+    "isDir": false,
+    "rest": "csv.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/lib/health.ts",
+    "isDir": false,
+    "rest": "health.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/lib/mock-data.ts",
+    "isDir": false,
+    "rest": "mock-data.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/lib/progress.ts",
+    "isDir": false,
+    "rest": "progress.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/lib/utils.ts",
+    "isDir": false,
+    "rest": "utils.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/lib/api-client.ts",
+    "isDir": false,
+    "rest": "api-client.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/lib/mock-api.ts",
+    "isDir": false,
+    "rest": "mock-api.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/lib/validators.ts",
+    "isDir": false,
+    "rest": "validators.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/hooks",
+    "isDir": true,
+    "rest": "hooks/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/src/hooks/useAuth.ts",
+    "isDir": false,
+    "rest": "useAuth.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/hooks/usePermissions.ts",
+    "isDir": false,
+    "rest": "usePermissions.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/hooks/useOrganization.ts",
+    "isDir": false,
+    "rest": "useOrganization.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/hooks/useProjects.ts",
+    "isDir": false,
+    "rest": "useProjects.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/hooks/useTheme.ts",
+    "isDir": false,
+    "rest": "useTheme.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/hooks/useDebounce.ts",
+    "isDir": false,
+    "rest": "useDebounce.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/providers",
+    "isDir": true,
+    "rest": "providers/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/src/providers/AuthProvider.tsx",
+    "isDir": false,
+    "rest": "AuthProvider.tsx",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/providers/QueryProvider.tsx",
+    "isDir": false,
+    "rest": "QueryProvider.tsx",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/providers/ThemeProvider.tsx",
+    "isDir": false,
+    "rest": "ThemeProvider.tsx",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/store",
+    "isDir": true,
+    "rest": "store/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/src/store/auth-store.ts",
+    "isDir": false,
+    "rest": "auth-store.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/store/project-store.ts",
+    "isDir": false,
+    "rest": "project-store.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/store/theme-store.ts",
+    "isDir": false,
+    "rest": "theme-store.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/store/notification-store.ts",
+    "isDir": false,
+    "rest": "notification-store.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/store/workspace-store.ts",
+    "isDir": false,
+    "rest": "workspace-store.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/styles",
+    "isDir": true,
+    "rest": "styles/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/src/styles/globals.css",
+    "isDir": false,
+    "rest": "globals.css",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/styles/themes.css",
+    "isDir": false,
+    "rest": "themes.css",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/styles/auth.module.css",
+    "isDir": false,
+    "rest": "auth.module.css",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/styles/dashboard.module.css",
+    "isDir": false,
+    "rest": "dashboard.module.css",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/styles/landing.module.css",
+    "isDir": false,
+    "rest": "landing.module.css",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/types",
+    "isDir": true,
+    "rest": "types/",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/src/types/index.ts",
+    "isDir": false,
+    "rest": "index.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/types/auth.ts",
+    "isDir": false,
+    "rest": "auth.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/types/organization.ts",
+    "isDir": false,
+    "rest": "organization.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/types/project.ts",
+    "isDir": false,
+    "rest": "project.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/types/delivery.ts",
+    "isDir": false,
+    "rest": "delivery.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/types/work-item.ts",
+    "isDir": false,
+    "rest": "work-item.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/types/permission.ts",
+    "isDir": false,
+    "rest": "permission.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/types/api.ts",
+    "isDir": false,
+    "rest": "api.ts",
+    "depth": 3
+  },
+  {
+    "path": "ProWise_Frontend/src/proxy.ts",
+    "isDir": false,
+    "rest": "proxy.ts",
+    "depth": 2
+  },
+  {
+    "path": "ProWise_Frontend/next.config.mjs",
+    "isDir": false,
+    "rest": "next.config.mjs",
+    "depth": 1
+  },
+  {
+    "path": "ProWise_Frontend/package.json",
+    "isDir": false,
+    "rest": "package.json",
+    "depth": 1
+  },
+  {
+    "path": "ProWise_Frontend/package-lock.json",
+    "isDir": false,
+    "rest": "package-lock.json",
+    "depth": 1
+  },
+  {
+    "path": "ProWise_Frontend/postcss.config.mjs",
+    "isDir": false,
+    "rest": "postcss.config.mjs",
+    "depth": 1
+  },
+  {
+    "path": "ProWise_Frontend/tailwind.config.ts",
+    "isDir": false,
+    "rest": "tailwind.config.ts",
+    "depth": 1
+  },
+  {
+    "path": "ProWise_Frontend/tsconfig.json",
+    "isDir": false,
+    "rest": "tsconfig.json",
+    "depth": 1
+  },
+  {
+    "path": "ProWise_Frontend/eslint.config.mjs",
+    "isDir": false,
+    "rest": "eslint.config.mjs",
+    "depth": 1
+  },
+  {
+    "path": "ProWise_Frontend/README.md",
+    "isDir": false,
+    "rest": "README.md",
+    "depth": 1
+  }
+]
