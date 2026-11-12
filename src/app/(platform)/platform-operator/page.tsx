@@ -1,482 +1,525 @@
 "use client";
 
-import React, { useState } from "react";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Dialog } from "@/components/ui/dialog";
-import { Input, Textarea } from "@/components/ui/input";
-import {
-  Server,
-  LifeBuoy,
-  AlertTriangle,
-  RotateCw,
-  Activity,
-  ShieldAlert,
-  Clock,
-  CheckCircle2,
-  Filter,
-  Plus,
-  KeyRound,
-} from "lucide-react";
-import { useProjectStore } from "@/store/project-store";
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { SupportTicket } from "@/types";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  Building2,
+  CheckCircle2,
+  CreditCard,
+  KeyRound,
+  LifeBuoy,
+  MailWarning,
+  RefreshCw,
+  RotateCcw,
+  Server,
+} from "lucide-react";
+import { usePlatformOperatorStore } from "./_store/usePlatformOperatorStore";
+import { formatDateTime } from "./_services/operator-service";
+import {
+  DemoDataBanner,
+  KpiCard,
+  OpButton,
+  PageHeader,
+  StatusBadge,
+  SurfaceCard,
+  getStatusTone,
+} from "./_components/OperatorPrimitives";
+import { QueueBarChart, TelemetryAreaChart } from "./_components/OperatorCharts";
 
-export default function PlatformOperatorDashboard() {
-  const { supportTickets, incidents, webhookLogs, updateTicketStatus, retryWebhookDelivery, createSupportTicket } =
-    useProjectStore();
+export default function PlatformOperatorDashboardPage() {
+  const orgHealth = usePlatformOperatorStore((s) => s.orgHealth);
+  const systemMetrics = usePlatformOperatorStore((s) => s.systemMetrics);
+  const incidents = usePlatformOperatorStore((s) => s.incidents);
+  const tickets = usePlatformOperatorStore((s) => s.tickets);
+  const webhooks = usePlatformOperatorStore((s) => s.webhooks);
+  const syncJobs = usePlatformOperatorStore((s) => s.syncJobs);
+  const apiEndpoints = usePlatformOperatorStore((s) => s.apiEndpoints);
+  const alerts = usePlatformOperatorStore((s) => s.alerts);
+  const accessRequests = usePlatformOperatorStore((s) => s.accessRequests);
+  const paymentFailures = usePlatformOperatorStore((s) => s.paymentFailures);
+  const invoiceDeliveries = usePlatformOperatorStore((s) => s.invoiceDeliveries);
+  const emailDrafts = usePlatformOperatorStore((s) => s.emailDrafts);
+  const activityLogs = usePlatformOperatorStore((s) => s.activityLogs);
+  const accountSettings = usePlatformOperatorStore((s) => s.accountSettings);
+  const lastTelemetryTickAt = usePlatformOperatorStore((s) => s.lastTelemetryTickAt);
+  const tickLiveDemoMetrics = usePlatformOperatorStore((s) => s.tickLiveDemoMetrics);
+  const acknowledgeAlert = usePlatformOperatorStore((s) => s.acknowledgeAlert);
+  const createIncidentFromAlert = usePlatformOperatorStore((s) => s.createIncidentFromAlert);
 
-  const [activeTab, setActiveTab] = useState<"tickets" | "webhooks" | "monitoring" | "access">("tickets");
-  const [webhookFilter, setWebhookFilter] = useState<string>("ALL");
+  const [autoPulseEnabled, setAutoPulseEnabled] = useState(true);
 
-  // New Ticket Dialog state
-  const [isTicketDialogOpen, setIsTicketDialogOpen] = useState(false);
-  const [ticketTitle, setTicketTitle] = useState("");
-  const [ticketDesc, setTicketDesc] = useState("");
-  const [ticketOrg, setTicketOrg] = useState("Acme Health Technologies");
-  const [ticketSeverity, setTicketSeverity] = useState<"LOW" | "MEDIUM" | "HIGH" | "CRITICAL">("MEDIUM");
+  useEffect(() => {
+    if (!autoPulseEnabled || accountSettings.autoRefreshSeconds === 0) return;
+    const ms = Math.max(5000, accountSettings.autoRefreshSeconds * 1000);
+    const id = setInterval(() => {
+      tickLiveDemoMetrics();
+    }, ms);
+    return () => clearInterval(id);
+  }, [autoPulseEnabled, accountSettings.autoRefreshSeconds, tickLiveDemoMetrics]);
 
-  // Support Access Elevation Dialog state
-  const [isAccessDialogOpen, setIsAccessDialogOpen] = useState(false);
-  const [accessReason, setAccessReason] = useState("");
-  const [accessScope, setAccessScope] = useState("Diagnostic logs & telemetry only");
-  const [accessDurationHours, setAccessDurationHours] = useState(2);
-
-  const handleCreateTicket = (e: React.FormEvent) => {
-    e.preventDefault();
-    createSupportTicket({
-      orgId: "org-acme",
-      orgName: ticketOrg,
-      title: ticketTitle,
-      description: ticketDesc,
-      severity: ticketSeverity,
-      status: "OPEN",
-      creatorEmail: "operator@prowise.io",
-    });
-    setIsTicketDialogOpen(false);
-    setTicketTitle("");
-    setTicketDesc("");
-    toast.success("Support ticket opened and routed to engineering triage.");
-  };
-
-  const handleElevationRequest = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsAccessDialogOpen(false);
-    toast.success(
-      `Support access elevation granted for ${accessDurationHours}h. Scope: ${accessScope}. Audit entry recorded.`
+  const operationalOrgs = useMemo(
+    () => orgHealth.filter((o) => o.status === "Operational").length,
+    [orgHealth]
+  );
+  const openIncidents = useMemo(
+    () => incidents.filter((i) => i.status !== "Resolved"),
+    [incidents]
+  );
+  const openTickets = useMemo(
+    () => tickets.filter((t) => t.status !== "Resolved"),
+    [tickets]
+  );
+  const totalQueueDepth = useMemo(
+    () => systemMetrics.reduce((sum, m) => sum + m.queueDepth, 0),
+    [systemMetrics]
+  );
+  const avgApiLatency = useMemo(() => {
+    if (apiEndpoints.length === 0) return 0;
+    return Math.round(
+      apiEndpoints.reduce((sum, e) => sum + e.avgLatencyMs, 0) / apiEndpoints.length
     );
-  };
+  }, [apiEndpoints]);
 
-  const handleMockRetry = (deliveryId: string) => {
-    retryWebhookDelivery(deliveryId);
-    toast.info(`Mock retry requested for delivery ID ${deliveryId}. (Simulation: No live third-party network packet dispatched).`);
-  };
+  const failedWebhooksCount = useMemo(
+    () => webhooks.filter((w) => w.status === "Failed" || w.status === "Retrying").length,
+    [webhooks]
+  );
+  const unresolvedPaymentsCount = useMemo(
+    () =>
+      paymentFailures.filter(
+        (p) => p.retryStatus === "Scheduled" || p.retryStatus === "Retried — Failed"
+      ).length,
+    [paymentFailures]
+  );
+  const pendingAccessCount = useMemo(
+    () => accessRequests.filter((r) => r.status === "Pending Approval").length,
+    [accessRequests]
+  );
+  const bouncedInvoicesCount = useMemo(
+    () => invoiceDeliveries.filter((i) => i.deliveryStatus !== "Delivered").length,
+    [invoiceDeliveries]
+  );
+  const pendingDraftsCount = useMemo(
+    () => emailDrafts.filter((d) => d.status === "Submitted for Approval").length,
+    [emailDrafts]
+  );
 
-  const filteredWebhooks = webhookLogs.filter((w) => {
-    if (webhookFilter === "ALL") return true;
-    return w.status === webhookFilter;
-  });
+  const apiTrendSeries = useMemo(() => {
+    const baseLatency = Math.max(40, avgApiLatency);
+    const baseRpm = apiEndpoints.reduce((sum, e) => sum + e.requestsPerMin, 0);
+    return [
+      { time: "-50m", latency: Math.max(25, baseLatency - 12), rpm: Math.round(baseRpm * 0.84) },
+      { time: "-40m", latency: Math.max(25, baseLatency - 6), rpm: Math.round(baseRpm * 0.89) },
+      { time: "-30m", latency: Math.max(25, baseLatency + 9), rpm: Math.round(baseRpm * 0.96) },
+      { time: "-20m", latency: Math.max(25, baseLatency + 3), rpm: Math.round(baseRpm * 0.92) },
+      { time: "-10m", latency: Math.max(25, baseLatency - 2), rpm: Math.round(baseRpm * 0.98) },
+      { time: "Now", latency: baseLatency, rpm: baseRpm },
+    ];
+  }, [avgApiLatency, apiEndpoints]);
+
+  const queueBarSeries = useMemo(() => {
+    return syncJobs.slice(0, 6).map((j) => ({
+      label: j.jobCode,
+      processed: j.processedCount,
+      retries: j.retries,
+    }));
+  }, [syncJobs]);
+
+  const activeAlerts = useMemo(
+    () => alerts.filter((a) => a.status !== "Resolved"),
+    [alerts]
+  );
 
   return (
-    <PanelLayout
-      title="Platform Operations &amp; Reliability"
-      breadcrumb={[{ label: "Platform Operator", href: "/platform-operator" }, { label: "Operations" }]}
-    >
-      <div className="space-y-6">
-        {/* Operator Assurance Banner */}
-        <div className="p-4 rounded-xl bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-md">
-          <div className="flex items-center gap-2.5">
-            <Server className="w-5 h-5 text-emerald-400 shrink-0" />
-            <div>
-              <div className="font-bold">Operator Observability &amp; Tenant Boundary Protocol:</div>
-              <p className="text-slate-300 text-[11px] mt-0.5">
-                Support access to customer environments requires time-limited elevation, recorded reason, and approval audit.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
+    <div className="space-y-6">
+      <PageHeader
+        title="Operations Dashboard"
+        badge={autoPulseEnabled ? "Auto-Refresh On" : "Manual Refresh"}
+        demoLabel="Demo Data (Simulated Telemetry)"
+        description="Live operational overview of customer availability, incidents, support SLAs, webhook retries, billing triage, and core infrastructure."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <OpButton
               variant="outline"
-              className="bg-slate-800 border-slate-700 text-white hover:bg-slate-700"
-              onClick={() => setIsAccessDialogOpen(true)}
-            >
-              <KeyRound className="w-3.5 h-3.5 mr-1 text-amber-400" /> Request Elevation
-            </Button>
-            <Button
               size="sm"
-              onClick={() => setIsTicketDialogOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700"
+              onClick={() => setAutoPulseEnabled((v) => !v)}
             >
-              <Plus className="w-3.5 h-3.5 mr-1" /> New Support Ticket
-            </Button>
+              <Activity className="w-3.5 h-3.5" />
+              {autoPulseEnabled ? "Pause Auto-Refresh" : "Resume Auto-Refresh"}
+            </OpButton>
+            <OpButton
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                tickLiveDemoMetrics();
+                toast.success("Refreshed simulated platform telemetry.");
+              }}
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Refresh Now
+            </OpButton>
           </div>
-        </div>
+        }
+      />
 
-        {/* Reliability KPIs */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Card className="p-4">
-            <div className="flex items-center justify-between text-app-text-muted text-xs">
-              <span>Open Tickets</span>
-              <LifeBuoy className="w-4 h-4 text-blue-600" />
-            </div>
-            <div className="text-2xl font-bold text-app-text-primary mt-1.5">
-              {supportTickets.filter((t) => t.status !== "RESOLVED").length}
-            </div>
-            <div className="text-[10px] text-blue-600 font-medium mt-0.5">1 Critical</div>
-          </Card>
+      <DemoDataBanner
+        title="Live Simulated Telemetry & Delegated Scope"
+        description={`Metrics auto-refresh every ${Math.max(
+          5,
+          accountSettings.autoRefreshSeconds || 10
+        )}s from persistent simulated telemetry (last tick: ${formatDateTime(
+          lastTelemetryTickAt
+        )}). Connect Spring Boot Actuator, gateway, and queue endpoints for production metrics.`}
+      />
 
-          <Card className="p-4">
-            <div className="flex items-center justify-between text-app-text-muted text-xs">
-              <span>Webhook Delivery</span>
-              <Activity className="w-4 h-4 text-emerald-600" />
-            </div>
-            <div className="text-2xl font-bold text-app-text-primary mt-1.5">99.8%</div>
-            <div className="text-[10px] text-green-600 font-medium mt-0.5">p95: 140ms</div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="flex items-center justify-between text-app-text-muted text-xs">
-              <span>Sync Job Failures</span>
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
-            </div>
-            <div className="text-2xl font-bold text-app-text-primary mt-1.5">
-              {webhookLogs.filter((w) => w.status === "FAILED").length}
-            </div>
-            <div className="text-[10px] text-amber-600 font-medium mt-0.5">Retry queued</div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="flex items-center justify-between text-app-text-muted text-xs">
-              <span>Backup Status</span>
-              <CheckCircle2 className="w-4 h-4 text-green-600" />
-            </div>
-            <div className="text-2xl font-bold text-app-text-primary mt-1.5">Healthy</div>
-            <div className="text-[10px] text-app-text-muted mt-0.5">PITR verified 2h ago</div>
-          </Card>
-        </div>
-
-        {/* Tab Buttons */}
-        <div className="flex border-b border-app-border space-x-4">
-          <button
-            onClick={() => setActiveTab("tickets")}
-            className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === "tickets"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-app-text-muted hover:text-app-text-primary"
-            }`}
-          >
-            Support Tickets ({supportTickets.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("webhooks")}
-            className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === "webhooks"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-app-text-muted hover:text-app-text-primary"
-            }`}
-          >
-            Webhook Logs &amp; Replays ({webhookLogs.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("monitoring")}
-            className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === "monitoring"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-app-text-muted hover:text-app-text-primary"
-            }`}
-          >
-            System Monitoring &amp; Queues
-          </button>
-        </div>
-
-        {/* Tab 1: Support Tickets */}
-        {activeTab === "tickets" && (
-          <Card className="p-0 overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Ticket ID</TableHead>
-                  <TableHead>Organization</TableHead>
-                  <TableHead>Issue Summary</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Reported At</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {supportTickets.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="font-mono text-xs font-bold">{t.id}</TableCell>
-                    <TableCell className="text-xs font-semibold">{t.orgName}</TableCell>
-                    <TableCell>
-                      <div className="font-medium text-xs text-app-text-primary">{t.title}</div>
-                      <div className="text-[11px] text-app-text-secondary truncate max-w-sm">
-                        {t.description}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          t.severity === "CRITICAL"
-                            ? "danger"
-                            : t.severity === "HIGH"
-                            ? "warning"
-                            : "secondary"
-                        }
-                      >
-                        {t.severity}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={t.status === "RESOLVED" ? "success" : "info"}>
-                        {t.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-app-text-muted">
-                      {new Date(t.createdAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {t.status !== "RESOLVED" ? (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => {
-                            updateTicketStatus(t.id, "RESOLVED");
-                            toast.success(`Ticket ${t.id} resolved.`);
-                          }}
-                        >
-                          Mark Resolved
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-green-600 font-semibold">Resolved</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-        )}
-
-        {/* Tab 2: Webhooks & Event Replays */}
-        {activeTab === "webhooks" && (
-          <Card className="p-0 overflow-hidden">
-            <div className="p-4 border-b border-app-border flex items-center justify-between">
-              <div>
-                <CardTitle>Inbound Webhook Deliveries</CardTitle>
-                <CardDescription>
-                  Deduplicated by X-GitHub-Delivery receipt ID. Redeliveries do not duplicate work items.
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Filter className="w-3.5 h-3.5 text-app-text-muted" />
-                <select
-                  value={webhookFilter}
-                  onChange={(e) => setWebhookFilter(e.target.value)}
-                  className="text-xs bg-app-surface border border-app-border rounded-lg px-2 py-1 text-app-text-primary"
-                >
-                  <option value="ALL">All Statuses</option>
-                  <option value="DELIVERED">Delivered</option>
-                  <option value="FAILED">Failed</option>
-                </select>
-              </div>
-            </div>
-
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Delivery ID</TableHead>
-                  <TableHead>Source Provider</TableHead>
-                  <TableHead>Event Type</TableHead>
-                  <TableHead>Payload Summary</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Attempts</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredWebhooks.map((w) => (
-                  <TableRow key={w.id}>
-                    <TableCell className="font-mono text-xs">{w.deliveryId}</TableCell>
-                    <TableCell className="font-semibold text-xs">{w.source}</TableCell>
-                    <TableCell className="font-mono text-xs">{w.event}</TableCell>
-                    <TableCell className="text-xs text-app-text-secondary truncate max-w-xs">
-                      {w.payloadSummary}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={w.status === "DELIVERED" ? "success" : "danger"}>
-                        {w.statusCode} {w.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-app-text-muted">{w.attemptCount}</TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleMockRetry(w.deliveryId)}
-                        title="Simulate mock retry request"
-                      >
-                        <RotateCw className="w-3 h-3 mr-1" /> Retry
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-        )}
-
-        {/* Tab 3: System Monitoring */}
-        {activeTab === "monitoring" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className="p-5 space-y-4">
-              <CardTitle className="text-sm">Job Queue Consumer Metrics</CardTitle>
-              <div className="space-y-3 text-xs">
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">BullMQ Redis Worker Status:</span>
-                  <Badge variant="success">Active (12 workers)</Badge>
-                </div>
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">Webhook Ingestion Backlog:</span>
-                  <span className="font-mono font-bold">0 pending</span>
-                </div>
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">Email Notification Outbox:</span>
-                  <span className="font-mono font-bold">2 in queue</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-app-text-secondary">PostgreSQL Connection Pool:</span>
-                  <span className="font-mono font-bold">14 / 50 active</span>
-                </div>
-              </div>
-            </Card>
-
-            <Card className="p-5 space-y-4">
-              <CardTitle className="text-sm">Backup &amp; Disaster Recovery Ledger</CardTitle>
-              <div className="space-y-3 text-xs">
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">Latest PITR Snapshot:</span>
-                  <span className="font-mono">2026-11-05 08:00 UTC (100% OK)</span>
-                </div>
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">Target RPO / RTO:</span>
-                  <span className="font-semibold">&le; 1 hour / 4 hours</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-app-text-secondary">Storage Vault Encryption:</span>
-                  <Badge variant="success">AES-256 GCM Active</Badge>
-                </div>
-              </div>
-            </Card>
-          </div>
-        )}
+      {/* Primary KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <KpiCard
+          label="Organizations Healthy"
+          value={`${operationalOrgs} / ${orgHealth.length}`}
+          sublabel="Workspaces operating within SLA latency"
+          icon={Building2}
+          tone={operationalOrgs === orgHealth.length ? "emerald" : "amber"}
+        />
+        <KpiCard
+          label="Open Incidents & Tickets"
+          value={`${openIncidents.length} / ${openTickets.length}`}
+          sublabel={`${
+            tickets.filter((t) => t.slaState !== "On Track" && t.status !== "Resolved").length
+          } SLA ticket(s) need attention`}
+          icon={AlertTriangle}
+          tone={openIncidents.length > 0 ? "amber" : "emerald"}
+        />
+        <KpiCard
+          label="Sync Queue & Retries"
+          value={totalQueueDepth}
+          sublabel={`${failedWebhooksCount} webhook event(s) awaiting retry`}
+          icon={RotateCcw}
+          tone={failedWebhooksCount > 0 ? "amber" : "teal"}
+        />
+        <KpiCard
+          label="Average API Response"
+          value={`${avgApiLatency} ms`}
+          sublabel="Across monitored customer endpoints"
+          icon={Server}
+          tone="blue"
+        />
       </div>
 
-      {/* New Support Ticket Dialog */}
-      <Dialog
-        isOpen={isTicketDialogOpen}
-        onClose={() => setIsTicketDialogOpen(false)}
-        title="Open Support Ticket"
-        description="Route operational or customer bug reports into the support triage queue."
-      >
-        <form onSubmit={handleCreateTicket} className="space-y-4 pt-2">
-          <Input
-            label="Tenant Organization"
-            value={ticketOrg}
-            onChange={(e) => setTicketOrg(e.target.value)}
-            required
-          />
+      {/* Connected Queue Attention Strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          {
+            label: "Payment Failures",
+            count: unresolvedPaymentsCount,
+            href: "/platform-operator/payment-failures",
+            tone: unresolvedPaymentsCount > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400",
+            icon: CreditCard,
+          },
+          {
+            label: "Bounced Invoices",
+            count: bouncedInvoicesCount,
+            href: "/platform-operator/invoice-delivery",
+            tone: bouncedInvoicesCount > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400",
+            icon: MailWarning,
+          },
+          {
+            label: "Pending Access Approvals",
+            count: pendingAccessCount,
+            href: "/platform-operator/access-requests",
+            tone: pendingAccessCount > 0 ? "text-blue-600 dark:text-blue-400" : "text-emerald-600 dark:text-emerald-400",
+            icon: KeyRound,
+          },
+          {
+            label: "Drafts Awaiting Review",
+            count: pendingDraftsCount,
+            href: "/platform-operator/email-drafts",
+            tone: "text-teal-600 dark:text-teal-400",
+            icon: LifeBuoy,
+          },
+        ].map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link key={item.href} href={item.href}>
+              <SurfaceCard className="p-3.5 hover:border-teal-500/45 transition-colors flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium text-[var(--color-text-muted)] truncate">
+                    {item.label}
+                  </p>
+                  <p className={`text-lg font-bold tabular-nums ${item.tone}`}>{item.count}</p>
+                </div>
+                <Icon className="w-4 h-4 text-[var(--color-text-muted)] shrink-0" />
+              </SurfaceCard>
+            </Link>
+          );
+        })}
+      </div>
 
-          <Input
-            label="Issue Summary"
-            value={ticketTitle}
-            onChange={(e) => setTicketTitle(e.target.value)}
-            placeholder="e.g. GitHub webhook HMAC failure on push event"
-            required
+      {/* Live Charts */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <SurfaceCard className="p-4 sm:p-5 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                API Response Time Trend (Simulated Live)
+              </h3>
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                Tracks average response latency in milliseconds over the last hour.
+              </p>
+            </div>
+            <Link href="/platform-operator/api-errors">
+              <OpButton variant="ghost" size="xs">
+                Details <ArrowRight className="w-3 h-3" />
+              </OpButton>
+            </Link>
+          </div>
+          <TelemetryAreaChart
+            data={apiTrendSeries}
+            primaryKey="latency"
+            primaryLabel="Avg Latency"
+            unit=" ms"
+            height={230}
           />
+        </SurfaceCard>
 
-          <Textarea
-            label="Detailed Diagnostic Notes"
-            value={ticketDesc}
-            onChange={(e) => setTicketDesc(e.target.value)}
-            placeholder="Provide observed error code, affected user/repo, and reproduction steps..."
-            required
+        <SurfaceCard className="p-4 sm:p-5 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                Background Queue Throughput & Retries
+              </h3>
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                Processed items vs. retry counts across active sync jobs.
+              </p>
+            </div>
+            <Link href="/platform-operator/sync-jobs">
+              <OpButton variant="ghost" size="xs">
+                View Queues <ArrowRight className="w-3 h-3" />
+              </OpButton>
+            </Link>
+          </div>
+          <QueueBarChart
+            data={queueBarSeries}
+            primaryKey="processed"
+            primaryLabel="Items Processed"
+            secondaryKey="retries"
+            secondaryLabel="Retries"
+            height={230}
           />
+        </SurfaceCard>
+      </div>
 
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-app-text-secondary">Severity</label>
-            <select
-              value={ticketSeverity}
-              onChange={(e) => setTicketSeverity(e.target.value as any)}
-              className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-            >
-              <option value="LOW">Low</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="HIGH">High</option>
-              <option value="CRITICAL">Critical</option>
-            </select>
+      {/* Active Alerts & Service Health */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <SurfaceCard className="p-4 sm:p-5 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                Active Operational Alerts ({activeAlerts.length})
+              </h3>
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                Acknowledge warnings or escalate directly into tracked incidents.
+              </p>
+            </div>
+            <Link href="/platform-operator/alerts">
+              <OpButton variant="outline" size="xs">
+                All Alerts
+              </OpButton>
+            </Link>
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-app-border">
-            <Button type="button" variant="outline" onClick={() => setIsTicketDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">Submit Ticket</Button>
+          {activeAlerts.length === 0 ? (
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-6 text-center text-xs text-[var(--color-text-secondary)]">
+              <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-2" />
+              All platform alerts are acknowledged or resolved.
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {activeAlerts.map((alert) => (
+                <div
+                  key={alert.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge label={alert.severity} tone={getStatusTone(alert.severity)} />
+                      <StatusBadge label={alert.status} tone={getStatusTone(alert.status)} dot />
+                    </div>
+                    <p className="text-xs sm:text-sm font-semibold text-[var(--color-text-primary)]">
+                      {alert.title}
+                    </p>
+                    <p className="text-[11px] text-[var(--color-text-muted)]">
+                      {alert.affectedTarget} · {formatDateTime(alert.triggeredAt)}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                    {alert.status === "Active" && (
+                      <OpButton
+                        variant="outline"
+                        size="xs"
+                        onClick={() => {
+                          acknowledgeAlert(alert.id);
+                          toast.success("Alert acknowledged.");
+                        }}
+                      >
+                        Acknowledge
+                      </OpButton>
+                    )}
+                    {!alert.linkedIncidentId && (
+                      <OpButton
+                        variant="subtle"
+                        size="xs"
+                        onClick={() => {
+                          const inc = createIncidentFromAlert(alert.id);
+                          if (inc) toast.success(`Opened ${inc.code} from alert.`);
+                        }}
+                      >
+                        Open Incident
+                      </OpButton>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </SurfaceCard>
+
+        {/* System Health Snapshot */}
+        <SurfaceCard className="p-4 sm:p-5 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                Core Infrastructure Snapshot
+              </h3>
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                Live CPU, memory, and queue pacing across monitored services.
+              </p>
+            </div>
+            <Link href="/platform-operator/monitoring">
+              <OpButton variant="outline" size="xs">
+                System Monitor
+              </OpButton>
+            </Link>
           </div>
-        </form>
-      </Dialog>
 
-      {/* Support Access Elevation Dialog */}
-      <Dialog
-        isOpen={isAccessDialogOpen}
-        onClose={() => setIsAccessDialogOpen(false)}
-        title="Request Elevated Support Access"
-        description="Blueprint V1.1 Rule: Tenant support access requires explicit purpose, actor, time limit, and immutable audit entry."
-      >
-        <form onSubmit={handleElevationRequest} className="space-y-4 pt-2">
-          <Input
-            label="Mandatory Elevation Purpose &amp; Ticket Reference"
-            value={accessReason}
-            onChange={(e) => setAccessReason(e.target.value)}
-            placeholder="e.g. Resolving ticket TKT-001 webhook latency"
-            required
-          />
-
-          <Input
-            label="Restricted Elevation Scope"
-            value={accessScope}
-            onChange={(e) => setAccessScope(e.target.value)}
-            required
-          />
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-app-text-secondary">
-              Duration (Hours)
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={8}
-              value={accessDurationHours}
-              onChange={(e) => setAccessDurationHours(parseInt(e.target.value) || 2)}
-              className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-            />
+          <div className="space-y-2.5">
+            {systemMetrics.slice(0, 4).map((svc) => (
+              <div
+                key={svc.id}
+                className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-[var(--color-text-primary)] truncate">
+                    {svc.serviceName}
+                  </span>
+                  <StatusBadge label={svc.status} tone={getStatusTone(svc.status)} dot />
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-[11px] text-[var(--color-text-secondary)]">
+                  <span>CPU: {svc.cpuPct}%</span>
+                  <span>Memory: {svc.memoryPct}%</span>
+                  <span>Latency: {svc.latencyMs}ms</span>
+                </div>
+              </div>
+            ))}
           </div>
+        </SurfaceCard>
+      </div>
 
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-app-border">
-            <Button type="button" variant="outline" onClick={() => setIsAccessDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">Authorize Time-Limited Access</Button>
+      {/* Quick Workflows & Recent Operational Activity */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <SurfaceCard className="p-4 sm:p-5 space-y-3">
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+            Connected Operator Workflows
+          </h3>
+          <div className="space-y-2">
+            {[
+              {
+                label: "Retry Failed Webhook Deliveries",
+                desc: `${failedWebhooksCount} event(s) waiting`,
+                href: "/platform-operator/failed-events",
+                icon: RotateCcw,
+              },
+              {
+                label: "Triage Customer Support Tickets",
+                desc: `${openTickets.length} active ticket(s)`,
+                href: "/platform-operator/support-tickets",
+                icon: LifeBuoy,
+              },
+              {
+                label: "Follow Up Payment Failures",
+                desc: `${unresolvedPaymentsCount} charge(s) need attention`,
+                href: "/platform-operator/payment-failures",
+                icon: CreditCard,
+              },
+              {
+                label: "Request Scoped Workspace Access",
+                desc: `${pendingAccessCount} awaiting Super Admin review`,
+                href: "/platform-operator/access-requests",
+                icon: KeyRound,
+              },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3 hover:border-teal-500/40 transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Icon className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-[var(--color-text-primary)] truncate">
+                        {item.label}
+                      </p>
+                      <p className="text-[11px] text-[var(--color-text-muted)]">{item.desc}</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-3.5 h-3.5 text-[var(--color-text-muted)] shrink-0" />
+                </Link>
+              );
+            })}
           </div>
-        </form>
-      </Dialog>
-    </PanelLayout>
+        </SurfaceCard>
+
+        <SurfaceCard className="p-4 sm:p-5 space-y-3 xl:col-span-2">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+              Recent Operational Activity
+            </h3>
+            <Link href="/platform-operator/activity-logs">
+              <OpButton variant="ghost" size="xs">
+                Full Log <ArrowRight className="w-3 h-3" />
+              </OpButton>
+            </Link>
+          </div>
+          <div className="divide-y divide-[var(--color-border)]">
+            {activityLogs.slice(0, 6).map((log) => (
+              <div
+                key={log.id}
+                className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge label={log.category} tone="neutral" />
+                    <span className="font-semibold text-[var(--color-text-primary)]">
+                      {log.action}
+                    </span>
+                  </div>
+                  <p className="text-[var(--color-text-secondary)] mt-0.5">{log.summary}</p>
+                </div>
+                <span className="text-[11px] text-[var(--color-text-muted)] shrink-0">
+                  {log.actorName} · {formatDateTime(log.timestamp)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </SurfaceCard>
+      </div>
+    </div>
   );
 }
-
