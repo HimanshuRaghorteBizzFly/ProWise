@@ -15,6 +15,7 @@ import { useAdminPermissions, useSuperAdminStore } from "../_store/useSuperAdmin
 import { exportRowsToCsv, formatDateTime } from "../_services/super-admin-service";
 import {
   AdminButton,
+  AdminModal,
   BulkSelectionBar,
   EmptyStateView,
   FilterBar,
@@ -22,7 +23,6 @@ import {
   PageHeader,
   PaginationBar,
   SimulationNotice,
-  SlideOverDrawer,
   StatusBadge,
   SurfaceCard,
   getOrgInitials,
@@ -377,11 +377,13 @@ export default function SuperAdminWebhooksPage() {
         />
       </SurfaceCard>
 
-      <SlideOverDrawer
+      {/* Webhook Event Detail Modal (Centered) */}
+      <AdminModal
         isOpen={Boolean(selectedEvent)}
         onClose={() => setSelectedEvent(null)}
-        title={selectedEvent ? `${selectedEvent.eventTitle} (${selectedEvent.eventRef})` : ""}
-        subtitle={selectedEvent ? `${selectedEvent.source} • ${selectedEvent.orgName}` : undefined}
+        title={selectedEvent ? `${selectedEvent.eventTitle} (${selectedEvent.eventRef})` : "Webhook Event"}
+        description={selectedEvent ? `${selectedEvent.source} • ${selectedEvent.orgName}` : undefined}
+        maxWidth="lg"
       >
         {selectedEvent && (
           <div className="space-y-4 text-xs">
@@ -392,22 +394,45 @@ export default function SuperAdminWebhooksPage() {
                   tone={selectedEvent.status === "Delivered" ? "success" : "danger"}
                   dot
                 />
-                <span className="text-[var(--color-text-muted)]">
-                  Response Code: <strong className="text-[var(--color-text-primary)]">{selectedEvent.httpCode}</strong>
+                <span className="text-[var(--color-text-muted)] text-xs">
+                  Response Code:{" "}
+                  <strong
+                    className={
+                      selectedEvent.httpCode >= 200 && selectedEvent.httpCode < 300
+                        ? "text-emerald-600 dark:text-emerald-400 font-bold"
+                        : "text-rose-600 dark:text-rose-400 font-bold"
+                    }
+                  >
+                    {selectedEvent.httpCode}
+                  </strong>
                 </span>
               </div>
-              <p className="text-[var(--color-text-primary)] leading-relaxed">{selectedEvent.summary}</p>
-              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[var(--color-border)]">
+
+              <p className="text-[var(--color-text-primary)] text-sm font-medium leading-relaxed">
+                {selectedEvent.summary}
+              </p>
+
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-[var(--color-border)]">
                 <div>
-                  <span className="text-[10px] uppercase text-[var(--color-text-muted)]">Delivery Attempts</span>
-                  <p className="font-semibold text-[var(--color-text-primary)] mt-0.5">{selectedEvent.attempts}</p>
+                  <span className="text-[10px] uppercase font-semibold text-[var(--color-text-muted)] tracking-wider">
+                    Delivery Attempts
+                  </span>
+                  <p className="font-semibold text-[var(--color-text-primary)] mt-0.5">
+                    {selectedEvent.attempts}
+                  </p>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase text-[var(--color-text-muted)]">Processing Time</span>
-                  <p className="font-semibold text-[var(--color-text-primary)] mt-0.5">{selectedEvent.latencyMs} ms</p>
+                  <span className="text-[10px] uppercase font-semibold text-[var(--color-text-muted)] tracking-wider">
+                    Processing Time
+                  </span>
+                  <p className="font-semibold text-[var(--color-text-primary)] mt-0.5">
+                    {selectedEvent.latencyMs} ms
+                  </p>
                 </div>
                 <div className="col-span-2">
-                  <span className="text-[10px] uppercase text-[var(--color-text-muted)]">Received At</span>
+                  <span className="text-[10px] uppercase font-semibold text-[var(--color-text-muted)] tracking-wider">
+                    Received At
+                  </span>
                   <p className="font-semibold text-[var(--color-text-primary)] mt-0.5">
                     {formatDateTime(selectedEvent.receivedAt)}
                   </p>
@@ -415,25 +440,36 @@ export default function SuperAdminWebhooksPage() {
               </div>
             </div>
 
-            {selectedEvent.status === "Failed" && (
+            <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
               <AdminButton
-                variant="primary"
+                variant="ghost"
                 size="sm"
-                className="w-full"
-                permissionLocked={!canManage}
-                onClick={() => {
-                  retryWebhookEvent(selectedEvent.id);
-                  setSelectedEvent(null);
-                  toast.success(`Retried ${selectedEvent.eventRef} successfully`);
-                }}
+                onClick={() => setSelectedEvent(null)}
+                className="w-full sm:w-auto"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Retry Event Delivery (Simulated)
+                Close
               </AdminButton>
-            )}
+
+              {selectedEvent.status === "Failed" && (
+                <AdminButton
+                  variant="primary"
+                  size="sm"
+                  className="w-full sm:w-auto gap-1.5"
+                  permissionLocked={!canManage}
+                  onClick={() => {
+                    retryWebhookEvent(selectedEvent.id);
+                    setSelectedEvent(null);
+                    toast.success(`Retried ${selectedEvent.eventRef} successfully`);
+                  }}
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry Event Delivery</span>
+                </AdminButton>
+              )}
+            </div>
           </div>
         )}
-      </SlideOverDrawer>
+      </AdminModal>
     </div>
   );
 }

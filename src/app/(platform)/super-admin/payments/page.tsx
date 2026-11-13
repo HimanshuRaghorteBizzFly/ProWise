@@ -10,6 +10,7 @@ import {
   Download,
   Edit3,
   Eye,
+  FileText,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -37,7 +38,6 @@ import {
   PageHeader,
   PaginationBar,
   SimulationNotice,
-  SlideOverDrawer,
   StatusBadge,
   SurfaceCard,
   getOrgInitials,
@@ -1009,53 +1009,74 @@ export default function SuperAdminPaymentsPage() {
         )}
       </AdminModal>
 
-      {/* Receipt Drawer */}
-      <SlideOverDrawer
+      {/* Transaction Details Modal (Centered) */}
+      <AdminModal
         isOpen={Boolean(inspectPayment)}
         onClose={() => setInspectPayment(null)}
-        title={inspectPayment?.transactionRef || ""}
-        subtitle={inspectPayment?.gatewayLabel}
+        title={inspectPayment?.transactionRef || "Transaction Receipt"}
+        description={inspectPayment?.gatewayLabel || "Stripe (Simulated)"}
+        maxWidth="lg"
       >
         {inspectPayment && (
           <div className="space-y-4 text-xs">
             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                  {formatCurrencyExact(inspectPayment.amount)}
-                </span>
+                <div>
+                  <span className="text-[10px] uppercase font-semibold text-[var(--color-text-muted)] tracking-wider">
+                    Total Amount
+                  </span>
+                  <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                    {formatCurrencyExact(inspectPayment.amount)}
+                  </div>
+                </div>
                 <StatusBadge
-                  label={inspectPayment.status}
+                  label={inspectPayment.status.replace("_", " ")}
                   tone={getStatusTone(inspectPayment.status)}
                   dot
                 />
               </div>
-              <p className="text-[var(--color-text-secondary)]">{inspectPayment.description}</p>
-              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[var(--color-border)]">
+
+              {inspectPayment.description && (
+                <p className="text-xs text-[var(--color-text-secondary)] font-medium">
+                  {inspectPayment.description}
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-[var(--color-border)]">
                 <div>
-                  <span className="text-[10px] uppercase text-[var(--color-text-muted)]">Organization</span>
-                  <p className="font-semibold text-[var(--color-text-primary)] mt-0.5">
-                    {organizations.find((o) => o.id === inspectPayment.orgId)?.name}
+                  <span className="text-[10px] uppercase font-semibold text-[var(--color-text-muted)] tracking-wider">
+                    Organization
+                  </span>
+                  <p className="font-semibold text-[var(--color-text-primary)] mt-0.5 truncate">
+                    {organizations.find((o) => o.id === inspectPayment.orgId)?.name || inspectPayment.orgId}
                   </p>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase text-[var(--color-text-muted)]">Method</span>
+                  <span className="text-[10px] uppercase font-semibold text-[var(--color-text-muted)] tracking-wider">
+                    Payment Method
+                  </span>
                   <p className="font-semibold text-[var(--color-text-primary)] mt-0.5">
                     {inspectPayment.method} •••• {inspectPayment.methodLast4}
                   </p>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase text-[var(--color-text-muted)]">Refunded</span>
-                  <p className="font-semibold text-[var(--color-text-primary)] mt-0.5">
+                  <span className="text-[10px] uppercase font-semibold text-[var(--color-text-muted)] tracking-wider">
+                    Refunded
+                  </span>
+                  <p className="font-semibold text-[var(--color-text-primary)] mt-0.5 tabular-nums">
                     {formatCurrencyExact(inspectPayment.refundedAmount)}
                   </p>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase text-[var(--color-text-muted)]">Timestamp</span>
+                  <span className="text-[10px] uppercase font-semibold text-[var(--color-text-muted)] tracking-wider">
+                    Timestamp
+                  </span>
                   <p className="font-semibold text-[var(--color-text-primary)] mt-0.5">
                     {formatDateTime(inspectPayment.createdAt)}
                   </p>
                 </div>
               </div>
+
               {inspectPayment.failureReason && (
                 <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-rose-700 dark:text-rose-300">
                   <strong>Failure Reason: </strong>
@@ -1070,35 +1091,44 @@ export default function SuperAdminPaymentsPage() {
               )}
             </div>
 
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
               <AdminButton
-                variant="primary"
+                variant="ghost"
                 size="sm"
-                className="w-full"
-                permissionLocked={!canRefund}
-                onClick={() => openEditModal(inspectPayment)}
+                onClick={() => setInspectPayment(null)}
+                className="w-full sm:w-auto"
               >
-                <Edit3 className="w-3.5 h-3.5" />
-                Edit Transaction Details
+                Close
               </AdminButton>
               {inspectPayment.invoiceId && (
                 <AdminButton
                   variant="outline"
                   size="sm"
-                  className="w-full"
+                  className="w-full sm:w-auto gap-1.5"
                   onClick={() => {
                     const invId = inspectPayment.invoiceId!;
                     setInspectPayment(null);
                     setSelectedInvoiceId(invId);
                   }}
                 >
-                  View Linked Invoice
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>View Linked Invoice</span>
                 </AdminButton>
               )}
+              <AdminButton
+                variant="primary"
+                size="sm"
+                className="w-full sm:w-auto gap-1.5"
+                permissionLocked={!canRefund}
+                onClick={() => openEditModal(inspectPayment)}
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Edit Transaction Details</span>
+              </AdminButton>
             </div>
           </div>
         )}
-      </SlideOverDrawer>
+      </AdminModal>
 
       {/* Single & Bulk Delete Confirmation */}
       <ConfirmActionModal

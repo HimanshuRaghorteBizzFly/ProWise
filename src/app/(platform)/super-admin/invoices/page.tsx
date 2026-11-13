@@ -586,7 +586,7 @@ export default function SuperAdminInvoicesPage() {
                     </button>
                   </th>
                   <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-3 text-right whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
@@ -683,24 +683,33 @@ export default function SuperAdminInvoicesPage() {
                       <td className="px-4 py-3">
                         <StatusBadge label={inv.status} tone={getStatusTone(inv.status)} dot />
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="inline-flex items-center justify-end gap-1">
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center justify-end gap-1 whitespace-nowrap">
+                          {/* 1. Inspect Invoice Details */}
                           <AdminButton
                             variant="ghost"
                             size="xs"
                             onClick={() => openInvoiceModal(inv.id, "details")}
-                            title="Inspect invoice"
+                            title="Inspect invoice details"
+                            aria-label="Inspect invoice"
+                            className="h-7 w-7 p-0 text-[var(--color-text-muted)] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10"
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </AdminButton>
+
+                          {/* 2. Preview PDF */}
                           <AdminButton
                             variant="ghost"
                             size="xs"
                             onClick={() => openInvoiceModal(inv.id, "preview")}
                             title="Preview PDF"
+                            aria-label="Preview PDF"
+                            className="h-7 w-7 p-0 text-[var(--color-text-muted)] hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/10"
                           >
                             <FileSearch className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                           </AdminButton>
+
+                          {/* 3. Print Invoice */}
                           <AdminButton
                             variant="ghost"
                             size="xs"
@@ -709,18 +718,26 @@ export default function SuperAdminInvoicesPage() {
                               toast.info(`Opened Print / Save as PDF for ${inv.invoiceNumber}`);
                             }}
                             title="Print in PDF"
+                            aria-label="Print invoice"
+                            className="h-7 w-7 p-0 text-[var(--color-text-muted)] hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-500/10"
                           >
                             <Printer className="w-3.5 h-3.5" />
                           </AdminButton>
+
+                          {/* 4. Edit Invoice */}
                           <AdminButton
                             variant="ghost"
                             size="xs"
                             permissionLocked={!canManage}
                             onClick={() => openEditModal(inv)}
-                            title="Edit invoice"
+                            title={canManage ? "Edit invoice" : "Permission required to edit"}
+                            aria-label="Edit invoice"
+                            className="h-7 w-7 p-0 text-[var(--color-text-muted)] hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-500/10"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </AdminButton>
+
+                          {/* 5. Download PDF */}
                           <AdminButton
                             variant="outline"
                             size="xs"
@@ -729,48 +746,81 @@ export default function SuperAdminInvoicesPage() {
                               toast.success(`Downloaded ${inv.invoiceNumber}.pdf`);
                             }}
                             title="Download PDF"
+                            aria-label="Download PDF"
+                            className="h-7 px-2 font-medium border-[var(--color-border)] hover:border-emerald-500/40 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/5 transition-colors gap-1 text-[11px]"
                           >
-                            <Download className="w-3 h-3" />
-                            PDF
+                            <Download className="w-3 h-3 text-[var(--color-text-muted)]" />
+                            <span>PDF</span>
                           </AdminButton>
-                          {(inv.status === "OPEN" || inv.status === "OVERDUE") && (
-                            <>
-                              <AdminButton
-                                variant="ghost"
-                                size="xs"
-                                permissionLocked={!canManage}
-                                onClick={() => {
-                                  const res = sendInvoiceReminder(inv.id);
-                                  if (res.ok) toast.success(`Sent simulated reminder to ${org?.ownerEmail}`);
-                                  else toast.error(res.error);
-                                }}
-                                title="Send reminder email"
-                              >
-                                <Mail className="w-3.5 h-3.5" />
-                              </AdminButton>
-                              <AdminButton
-                                variant="subtle"
-                                size="xs"
-                                permissionLocked={!canManage}
-                                onClick={() => {
-                                  markInvoicePaid(inv.id, "CARD");
-                                  toast.success(`Marked ${inv.invoiceNumber} as PAID`);
-                                }}
-                              >
-                                Mark Paid
-                              </AdminButton>
-                            </>
+
+                          {/* 6. Send Reminder Email (Active when OPEN/OVERDUE, muted placeholder when PAID) */}
+                          {inv.status === "OPEN" || inv.status === "OVERDUE" ? (
+                            <AdminButton
+                              variant="ghost"
+                              size="xs"
+                              permissionLocked={!canManage}
+                              onClick={() => {
+                                const res = sendInvoiceReminder(inv.id);
+                                if (res.ok) toast.success(`Sent simulated reminder to ${org?.ownerEmail}`);
+                                else toast.error(res.error);
+                              }}
+                              title="Send reminder email"
+                              aria-label="Send reminder email"
+                              className="h-7 w-7 p-0 text-[var(--color-text-muted)] hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-500/10"
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                            </AdminButton>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              title="Invoice already paid — reminder disabled"
+                              aria-label="Reminder disabled (paid)"
+                              className="h-7 w-7 p-0 inline-flex items-center justify-center rounded-md text-[var(--color-text-muted)]/30 cursor-not-allowed select-none"
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                            </button>
                           )}
+
+                          {/* 7. Mark Paid / Status Badge (Exact same w-[84px] width across all rows to prevent shifting) */}
+                          {inv.status === "OPEN" || inv.status === "OVERDUE" ? (
+                            <AdminButton
+                              variant="subtle"
+                              size="xs"
+                              permissionLocked={!canManage}
+                              onClick={() => {
+                                markInvoicePaid(inv.id, "CARD");
+                                toast.success(`Marked ${inv.invoiceNumber} as PAID`);
+                              }}
+                              title="Mark invoice as paid"
+                              aria-label="Mark invoice as paid"
+                              className="h-7 w-[84px] px-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 justify-center transition-colors"
+                            >
+                              <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-600 dark:text-emerald-400" />
+                              <span>Mark Paid</span>
+                            </AdminButton>
+                          ) : (
+                            <span
+                              title={inv.status === "PAID" ? "Invoice already settled" : `Status: ${inv.status}`}
+                              className="inline-flex items-center justify-center h-7 w-[84px] px-2 text-[11px] font-semibold text-emerald-600/80 dark:text-emerald-400/80 bg-emerald-500/10 border border-emerald-500/20 rounded-md select-none"
+                            >
+                              <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-500" />
+                              <span>Paid</span>
+                            </span>
+                          )}
+
+                          {/* 8. Delete Invoice */}
                           <AdminButton
                             variant="ghost"
                             size="xs"
                             permissionLocked={!canManage}
-                            className="text-rose-600 dark:text-rose-400 hover:bg-rose-500/10"
+                            className="h-7 w-7 p-0 text-rose-600/80 dark:text-rose-400/80 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
                             onClick={() => {
                               closeAllModals();
                               setDeleteTarget(inv);
                             }}
-                            title="Delete invoice"
+                            title={canManage ? "Delete invoice" : "Permission required to delete"}
+                            aria-label="Delete invoice"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </AdminButton>

@@ -53,6 +53,7 @@ import { SystemRole } from "@/types";
 import { PermissionKey } from "../_types";
 import { PERMISSION_CATALOG } from "../_data/seed";
 import { useAdminPermissions, useSuperAdminStore } from "../_store/useSuperAdminStore";
+import { useMaintenanceStore } from "@/store/maintenance-store";
 import { formatDateTime } from "../_services/super-admin-service";
 
 interface SidebarNavItem {
@@ -95,22 +96,52 @@ const ROUTE_TITLES: Record<string, { section: string; label: string }> = {
   "/super-admin/email-templates": { section: "Communication", label: "Email Templates" },
   "/super-admin/announcements": { section: "Communication", label: "Announcements" },
   "/super-admin/configuration": { section: "Platform Management", label: "Platform Configuration" },
+  "/super-admin/configuration/maintenance": { section: "Platform Management", label: "Maintenance Mode" },
   "/super-admin/reports": { section: "Platform Management", label: "Reports & Analytics" },
   "/super-admin/settings": { section: "Platform Management", label: "Settings" },
   "/super-admin/support": { section: "Platform Management", label: "Support Oversight" },
   "/super-admin/account": { section: "Super Admin Settings", label: "Account & Security" },
 };
 
-const PANEL_ROLES: { role: SystemRole; label: string }[] = [
-  { role: "SUPER_ADMIN", label: "Super Admin" },
-  { role: "PLATFORM_OPERATOR", label: "Platform Operator" },
-  { role: "ORGANIZATION_OWNER", label: "Organization Owner" },
-  { role: "ORGANIZATION_ADMIN", label: "Organization Admin" },
-  { role: "PROJECT_MANAGER", label: "Project Manager" },
-  { role: "TEAM_LEAD", label: "Team Lead" },
-  { role: "DEVELOPER", label: "Developer" },
-  { role: "QA_REVIEWER", label: "QA / Reviewer" },
-  { role: "VIEWER", label: "Viewer" },
+interface SuperAdminFeatureItem {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  badge?: string;
+}
+
+const SUPER_ADMIN_FEATURES: SuperAdminFeatureItem[] = [
+  {
+    label: "Account & Security Settings",
+    href: "/super-admin/account",
+    icon: UserCog,
+  },
+  {
+    label: "Roles & Permissions Governance",
+    href: "/super-admin/roles-permissions",
+    icon: ShieldCheck,
+    badge: "9 Roles",
+  },
+  {
+    label: "Organizations & Subscriptions",
+    href: "/super-admin/organizations",
+    icon: Building2,
+  },
+  {
+    label: "Security Policies & Alerts",
+    href: "/super-admin/security",
+    icon: ShieldAlert,
+  },
+  {
+    label: "Audit Logs & Oversight",
+    href: "/super-admin/audit",
+    icon: FileText,
+  },
+  {
+    label: "Platform Configuration",
+    href: "/super-admin/configuration",
+    icon: Settings,
+  },
 ];
 
 export function SuperAdminShell({ children }: { children: React.ReactNode }) {
@@ -195,6 +226,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
   const openIncidentsCount = incidents.filter((i) => i.status !== "Resolved").length;
   const escalatedSupportCount = supportTickets.filter((t) => t.status === "Escalated").length;
   const publishedAnnouncementsCount = announcements.filter((a) => a.status === "PUBLISHED").length;
+  const pendingMaintenanceCount = useMaintenanceStore((s) => s.maintenanceWindows.filter((m) => m.status === "PENDING_APPROVAL").length);
 
   const sections: SidebarSectionConfig[] = useMemo(
     () => [
@@ -365,6 +397,14 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
             href: "/super-admin/configuration",
             icon: Sliders,
             requiredAny: ["config.manage"],
+          },
+          {
+            title: "Maintenance Mode",
+            href: "/super-admin/configuration?tab=maintenance",
+            matchPaths: ["/super-admin/configuration/maintenance"],
+            icon: Wrench,
+            requiredAny: ["config.manage"],
+            badgeCount: pendingMaintenanceCount > 0 ? pendingMaintenanceCount : undefined,
           },
           {
             title: "Reports & Analytics",
@@ -826,55 +866,84 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
               </button>
 
               {profileMenuOpen && (
-                <div className="absolute right-0 mt-2 w-64 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-2xl z-50">
-                  <div className="px-2.5 py-2 border-b border-[var(--color-border)]">
-                    <p className="text-xs font-semibold text-[var(--color-text-primary)] truncate">
-                      {accountProfile.name}
-                    </p>
-                    <p className="text-[11px] text-[var(--color-text-muted)] truncate">
+                <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150">
+                  {/* User Profile Header */}
+                  <div className="px-3 py-2.5 border-b border-[var(--color-border)]">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <p className="text-xs font-bold text-[var(--color-text-primary)] truncate">
+                        {accountProfile.name}
+                      </p>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/25 shrink-0">
+                        Super Admin
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[var(--color-text-muted)] truncate mt-0.5 font-mono">
                       {accountProfile.email}
                     </p>
                   </div>
 
-                  <div className="py-1 border-b border-[var(--color-border)]">
-                    <Link
-                      href="/super-admin/account"
-                      onClick={() => setProfileMenuOpen(false)}
-                      className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-hover)] transition-colors font-medium"
-                    >
-                      <UserCog className="w-3.5 h-3.5 text-blue-500" />
-                      Super Admin Account &amp; Security
-                    </Link>
-                  </div>
-
-                  <div className="py-1.5 border-b border-[var(--color-border)]">
-                    <p className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-                      Switch ProWise Panel
+                  {/* Active Platform Console */}
+                  <div className="py-2 px-1 border-b border-[var(--color-border)]">
+                    <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                      Platform Authority
                     </p>
-                    <div className="max-h-44 overflow-y-auto space-y-0.5">
-                      {PANEL_ROLES.map((r) => (
-                        <button
-                          key={r.role}
-                          type="button"
-                          onClick={() => {
-                            setProfileMenuOpen(false);
-                            switchRoleAndNavigate(r.role, router.push);
-                          }}
-                          className={cn(
-                            "w-full flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors",
-                            r.role === "SUPER_ADMIN"
-                              ? "bg-blue-500/15 text-blue-700 dark:text-blue-300 font-semibold"
-                              : "text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text-primary)]"
-                          )}
-                        >
-                          <span>{r.label}</span>
-                          {r.role === "SUPER_ADMIN" && <Check className="w-3.5 h-3.5" />}
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between rounded-xl px-2.5 py-1.5 text-xs bg-blue-500/10 text-blue-700 dark:text-blue-300 font-semibold border border-blue-500/25">
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        <span>Super Admin Platform</span>
+                      </div>
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Active
+                      </span>
                     </div>
                   </div>
 
-                  <div className="pt-1.5 space-y-0.5">
+                  {/* Super Admin Features Only */}
+                  <div className="py-2 px-1 border-b border-[var(--color-border)]">
+                    <p className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                      Super Admin Features
+                    </p>
+                    <div className="space-y-0.5">
+                      {SUPER_ADMIN_FEATURES.map((feat) => {
+                        const Icon = feat.icon;
+                        const isActive = pathname === feat.href;
+                        return (
+                          <Link
+                            key={feat.href}
+                            href={feat.href}
+                            onClick={() => setProfileMenuOpen(false)}
+                            className={cn(
+                              "w-full flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors",
+                              isActive
+                                ? "bg-blue-500/15 text-blue-700 dark:text-blue-300 font-semibold"
+                                : "text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text-primary)]"
+                            )}
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <Icon
+                                className={cn(
+                                  "w-3.5 h-3.5 shrink-0",
+                                  isActive
+                                    ? "text-blue-600 dark:text-blue-400"
+                                    : "text-blue-500"
+                                )}
+                              />
+                              <span className="truncate">{feat.label}</span>
+                            </div>
+                            {feat.badge && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-[var(--color-app-bg)] text-[var(--color-text-muted)] border border-[var(--color-border)] shrink-0">
+                                {feat.badge}
+                              </span>
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Utilities & Sign Out */}
+                  <div className="pt-1.5 px-1 space-y-0.5">
                     <button
                       type="button"
                       onClick={() => {
@@ -884,16 +953,16 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
                       }}
                       className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text-primary)] transition-colors"
                     >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      Reset Demo Data
+                      <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Reset Demo Data</span>
                     </button>
                     <Link
                       href="/"
                       onClick={() => setProfileMenuOpen(false)}
                       className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text-primary)] transition-colors"
                     >
-                      <LayoutDashboard className="w-3.5 h-3.5" />
-                      Landing Page
+                      <LayoutDashboard className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Landing Page</span>
                     </Link>
                     <button
                       type="button"
@@ -902,10 +971,10 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
                         setProfileMenuOpen(false);
                         router.push("/login");
                       }}
-                      className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                      className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition-colors font-medium"
                     >
                       <LogOut className="w-3.5 h-3.5" />
-                      Sign Out
+                      <span>Sign Out</span>
                     </button>
                   </div>
                 </div>

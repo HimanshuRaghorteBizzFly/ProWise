@@ -18,10 +18,10 @@ import {
   FilterBar,
   KpiCard,
   OpButton,
+  OpModal,
   OpSelect,
   PageHeader,
   PaginationBar,
-  SlideOverDrawer,
   SortableHeader,
   StatusBadge,
   SurfaceCard,
@@ -381,11 +381,13 @@ export default function OperatorWebhookLogsPage() {
         />
       </SurfaceCard>
 
-      <SlideOverDrawer
+      {/* Webhook Event Detail Modal (Centered) */}
+      <OpModal
         isOpen={Boolean(selected)}
         onClose={() => setSelected(null)}
         title={selected ? `${selected.referenceId} — Delivery Summary` : "Webhook Event"}
-        subtitle={selected ? `${selected.source} · ${selected.orgName}` : undefined}
+        description={selected ? `${selected.source} · ${selected.orgName}` : undefined}
+        maxWidth="lg"
       >
         {selected && (
           <div className="space-y-4">
@@ -398,34 +400,45 @@ export default function OperatorWebhookLogsPage() {
             </div>
 
             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-4 text-xs space-y-2">
-              <p className="font-semibold text-[var(--color-text-primary)]">{selected.eventTitle}</p>
+              <p className="font-semibold text-[var(--color-text-primary)] text-sm">{selected.eventTitle}</p>
               <p className="text-[var(--color-text-secondary)] leading-relaxed">{selected.friendlyReason}</p>
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[var(--color-border)]">
                 <div>
-                  <span className="text-[var(--color-text-muted)] block">Delivery Attempts</span>
-                  <strong>{selected.attempts}</strong>
+                  <span className="text-[10px] uppercase font-semibold text-[var(--color-text-muted)] block">Delivery Attempts</span>
+                  <strong className="text-[var(--color-text-primary)]">{selected.attempts}</strong>
                 </div>
                 <div>
-                  <span className="text-[var(--color-text-muted)] block">Response Time</span>
-                  <strong>{selected.latencyMs} ms</strong>
+                  <span className="text-[10px] uppercase font-semibold text-[var(--color-text-muted)] block">Response Time</span>
+                  <strong className="text-[var(--color-text-primary)]">{selected.latencyMs} ms</strong>
                 </div>
               </div>
             </div>
 
-            {selected.status !== "Delivered" && (
+            <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
               <OpButton
-                variant="primary"
+                variant="outline"
                 size="sm"
-                disabled={!canRetry}
-                onClick={() => handleRetry(selected)}
+                onClick={() => setSelected(null)}
+                className="w-full sm:w-auto"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Replay Event & Sync Now
+                Close
               </OpButton>
-            )}
+              {selected.status !== "Delivered" && (
+                <OpButton
+                  variant="primary"
+                  size="sm"
+                  disabled={!canRetry}
+                  onClick={() => handleRetry(selected)}
+                  className="w-full sm:w-auto gap-1.5"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Replay Event & Sync Now</span>
+                </OpButton>
+              )}
+            </div>
           </div>
         )}
-      </SlideOverDrawer>
+      </OpModal>
     </div>
   );
 }

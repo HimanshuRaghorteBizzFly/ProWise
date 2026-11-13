@@ -5,6 +5,7 @@ import { persist } from "zustand/middleware";
 import {
   AccessApprovalRequest,
   ActivityCategory,
+  AdminCalendarEvent,
   AdminRole,
   Announcement,
   ApiAlertRule,
@@ -23,6 +24,7 @@ import {
   PlatformIntegration,
   PlatformOperator,
   PlatformPolicySettings,
+  RoleAssignedUser,
   SecurityAlert,
   SecurityPolicy,
   SmtpConfig,
@@ -30,9 +32,18 @@ import {
   SuperAdminAccountProfile,
   SuperAdminActivity,
   SupportEscalationTicket,
+  TicketAttachment,
+  TicketAuditEvent,
+  TicketCategory,
+  TicketMessage,
+  TicketPriority,
+  TicketSlaState,
+  TicketStatus,
   TenantOrganization,
   WebhookEventRecord,
 } from "../_types";
+import { usePlatformOperatorStore } from "../../platform-operator/_store/usePlatformOperatorStore";
+import { reconcileRoles } from "../_services/permission-matrix";
 import {
   INITIAL_ACTIVITIES,
   SEED_ACCESS_APPROVALS,
@@ -46,6 +57,7 @@ import {
   SEED_INCIDENTS,
   SEED_INTEGRATIONS,
   SEED_INVOICES,
+  SEED_MANUAL_CALENDAR_EVENTS,
   SEED_OPERATORS,
   SEED_ORGANIZATIONS,
   SEED_PAYMENTS,
@@ -139,10 +151,13 @@ interface SuperAdminStoreState {
   deleteOperator: (id: string) => { ok: boolean; error?: string };
 
   // Roles
-  createRole: (input: Omit<AdminRole, "id" | "createdAt" | "updatedAt" | "isSystem" | "slug">) => { ok: boolean; error?: string };
+  createRole: (input: Omit<AdminRole, "id" | "createdAt" | "updatedAt" | "isSystem" | "slug">) => { ok: boolean; error?: string; role?: AdminRole };
   updateRole: (id: string, updates: Partial<AdminRole>) => { ok: boolean; error?: string };
   cloneRole: (id: string) => AdminRole | null;
   deleteRole: (id: string) => { ok: boolean; error?: string };
+  assignRoleUsers: (roleId: string, users: RoleAssignedUser[]) => { ok: boolean; error?: string };
+  toggleRoleActive: (roleId: string) => { ok: boolean; error?: string };
+  reconcileSystemRoles: () => { roles: AdminRole[]; notes: string[] };
 
   // Plans
   createPlan: (input: Omit<BillingPlan, "id" | "createdAt" | "updatedAt">) => { ok: boolean; error?: string };
@@ -299,11 +314,27 @@ interface SuperAdminStoreState {
     orgId: string;
     subject: string;
     description: string;
-    priority: SupportEscalationTicket["priority"];
+    category?: TicketCategory;
+    priority?: TicketPriority;
     assignedOperatorId: string;
     requesterEmail: string;
+    requesterName?: string;
   }) => void;
   updateSupportTicket: (id: string, updates: Partial<SupportEscalationTicket>) => void;
+  respondToSupportTicket: (
+    ticketId: string,
+    message: string,
+    isInternal: boolean,
+    attachments?: TicketAttachment[]
+  ) => void;
+  assignSupportTicketOperator: (ticketId: string, operatorId: string) => void;
+  changeSupportTicketPriority: (ticketId: string, priority: TicketPriority) => void;
+  escalateSupportTicket: (ticketId: string, reason?: string) => void;
+  resolveSupportTicket: (ticketId: string, resolutionNotes: string, rootCause?: string) => void;
+  reopenSupportTicket: (ticketId: string, reason: string) => void;
+  closeSupportTicket: (ticketId: string) => void;
+  deleteSupportTicket: (ticketId: string) => void;
+  linkTicketToIncident: (ticketId: string, incidentId: string) => void;
 
   // Super Admin Account
   updateAccountProfile: (updates: Partial<Pick<SuperAdminAccountProfile, "name" | "title" | "email" | "timezone">>) => void;
@@ -312,10 +343,18 @@ interface SuperAdminStoreState {
   revokeAdminSession: (sessionId: string) => void;
   updateAccountNotifications: (updates: Partial<SuperAdminAccountProfile["notifications"]>) => void;
 
+  // Administrative Calendar
+  manualCalendarEvents: AdminCalendarEvent[];
+  addCalendarEvent: (event: Omit<AdminCalendarEvent, "id" | "createdAt" | "updatedAt">) => AdminCalendarEvent;
+  updateCalendarEvent: (id: string, updates: Partial<AdminCalendarEvent>) => { ok: boolean; error?: string };
+  deleteCalendarEvent: (id: string) => { ok: boolean; error?: string };
+  rescheduleCalendarEvent: (id: string, newStartDate: string, newEndDate: string) => { ok: boolean; error?: string };
+
   resetAllData: () => void;
 }
 
 const getInitialSnapshot = () => ({
+  manualCalendarEvents: SEED_MANUAL_CALENDAR_EVENTS,
   organizations: SEED_ORGANIZATIONS,
   operators: SEED_OPERATORS,
   roles: SEED_ROLES,
@@ -698,16 +737,40 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
 
       createRole: (input) => {
         const state = get();
-        const slug = slugify(input.name);
-        if (state.roles.some((r) => r.slug === slug)) {
-          return { ok: false, error: `Role "${input.name}" already exists.` };
+        const trimmedName = input.name.trim();
+        const slug = slugify(trimmedName);
+        if (state.roles.some((r) => r.slug === slug || r.name.toLowerCase() === trimmedName.toLowerCase())) {
+          return { ok: false, error: `A role with the name "${trimmedName}" already exists.` };
         }
+
+        // Scope boundary enforcement: Organization roles cannot have platform-only permissions
+        let sanitizedPermissions = [...input.permissions];
+        if (input.scope === "ORGANIZATION") {
+          sanitizedPermissions = sanitizedPermissions.filter((p) => {
+            const [mod, act] = p.split(".");
+            if (mod === "platform") return false;
+            if (mod === "security" && act === "manage") return false;
+            return true;
+          });
+        }
+
+        // Platform custom roles cannot inherit unrestricted Super Admin master authority
+        if (input.scope === "PLATFORM") {
+          sanitizedPermissions = sanitizedPermissions.filter((p) => p !== "platform.delete");
+        }
+
         const now = new Date().toISOString();
         const role: AdminRole = {
           ...input,
-          id: `role-${Date.now()}`,
+          name: trimmedName,
+          id: `role-custom-${Date.now()}`,
           slug,
           isSystem: false,
+          scope: input.scope || "ORGANIZATION",
+          color: input.color || "violet",
+          permissions: sanitizedPermissions,
+          userCount: input.assignedUsers?.length || 0,
+          isActive: input.isActive !== undefined ? input.isActive : true,
           createdAt: now,
           updatedAt: now,
         };
@@ -715,23 +778,52 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         get().logActivity(
           "ROLE",
           "ROLE_CREATED",
-          `Created role "${role.name}" with ${role.permissions.length} permissions`,
+          `Created custom role "${role.name}" (${role.scope} Scope) with ${role.permissions.length} capabilities`,
           "INFO",
           role.name
         );
-        return { ok: true };
+        return { ok: true, role };
       },
 
       updateRole: (id, updates) => {
         const state = get();
         const existing = state.roles.find((r) => r.id === id);
         if (!existing) return { ok: false, error: "Role not found." };
-        if (existing.id === "role-super-admin" && updates.permissions && !updates.permissions.includes("roles.manage")) {
-          return { ok: false, error: "Super Administrator must retain Role Management permission to prevent lockout." };
+
+        // Protect system roles from renaming or scope change
+        if (existing.isSystem) {
+          if (updates.name && updates.name.trim() !== existing.name) {
+            return { ok: false, error: "System role definitions are fixed and cannot be renamed." };
+          }
+          if (updates.scope && updates.scope !== existing.scope) {
+            return { ok: false, error: "System role scope is fixed and cannot be altered." };
+          }
         }
+
+        // Check duplicate name if renaming custom role
+        if (updates.name && updates.name.trim() !== existing.name) {
+          const trimmed = updates.name.trim();
+          if (state.roles.some((r) => r.id !== id && r.name.toLowerCase() === trimmed.toLowerCase())) {
+            return { ok: false, error: `A role with the name "${trimmed}" already exists.` };
+          }
+        }
+
+        // Super Admin lockout protection: ensure at least one core management permission is retained
+        if (existing.id === "role-super-admin" && updates.permissions) {
+          const hasRoleManage =
+            updates.permissions.includes("platform.manage") ||
+            updates.permissions.includes("roles.manage") ||
+            updates.permissions.includes("settings.manage");
+          if (!hasRoleManage) {
+            return { ok: false, error: "Super Administrator must retain Role Management permission to prevent lockout." };
+          }
+        }
+
+        const newPermissions = updates.permissions !== undefined ? [...updates.permissions] : existing.permissions;
+
         set((s) => ({
           roles: s.roles.map((r) =>
-            r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r
+            r.id === id ? { ...r, ...updates, permissions: newPermissions, updatedAt: new Date().toISOString() } : r
           ),
         }));
         get().logActivity(
@@ -750,10 +842,13 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         const now = new Date().toISOString();
         const cloned: AdminRole = {
           ...existing,
-          id: `role-${Date.now()}`,
-          name: `${existing.name} Copy`,
+          id: `role-custom-${Date.now()}`,
+          name: `${existing.name} (Copy)`,
           slug: `${existing.slug}-copy-${Date.now().toString().slice(-4)}`,
           isSystem: false,
+          userCount: 0,
+          assignedUsers: [],
+          isActive: true,
           createdAt: now,
           updatedAt: now,
         };
@@ -766,16 +861,82 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         const state = get();
         const role = state.roles.find((r) => r.id === id);
         if (!role) return { ok: false, error: "Role not found." };
-        if (role.isSystem) return { ok: false, error: "System-defined roles cannot be deleted." };
-        const assignedCount = state.operators.filter((o) => o.roleId === id).length;
+        if (role.isSystem) return { ok: false, error: "The 9 default system roles are protected and cannot be deleted." };
+        const assignedCount = (role.assignedUsers?.length || 0) + state.operators.filter((o) => o.roleId === id).length;
         if (assignedCount > 0) {
-          return { ok: false, error: `Cannot delete role while ${assignedCount} operator(s) remain assigned.` };
+          return { ok: false, error: `Cannot delete role "${role.name}" while ${assignedCount} user(s) remain assigned. Reassign or remove all users first.` };
         }
         set((s) => ({
           roles: s.roles.filter((r) => r.id !== id),
           activeRoleId: s.activeRoleId === id ? "role-super-admin" : s.activeRoleId,
         }));
         get().logActivity("ROLE", "ROLE_DELETED", `Deleted custom role "${role.name}"`, "WARNING", role.name);
+        return { ok: true };
+      },
+
+      reconcileSystemRoles: () => {
+        const state = get();
+        const { roles: reconciledRoles, notes } = reconcileRoles(state.roles);
+        const validRoleIds = new Set(reconciledRoles.map((r) => r.id));
+        const updatedOperators = state.operators.map((op) => {
+          if (!validRoleIds.has(op.roleId)) {
+            return { ...op, roleId: "role-platform-operator" };
+          }
+          return op;
+        });
+        set({ roles: reconciledRoles, operators: updatedOperators });
+        get().logActivity(
+          "ROLE",
+          "ROLES_RECONCILED",
+          `Reconciled directory: 9 System Roles restored (2 Platform, 7 Organization). ${notes.join("; ")}`,
+          "INFO",
+          "RBAC Directory"
+        );
+        return { roles: reconciledRoles, notes };
+      },
+
+      assignRoleUsers: (roleId, users) => {
+        const role = get().roles.find((r) => r.id === roleId);
+        if (!role) return { ok: false, error: "Role not found." };
+        set((s) => ({
+          roles: s.roles.map((r) =>
+            r.id === roleId
+              ? {
+                  ...r,
+                  assignedUsers: users,
+                  userCount: users.length,
+                  updatedAt: new Date().toISOString(),
+                }
+              : r
+          ),
+        }));
+        get().logActivity(
+          "ROLE",
+          "ROLE_MEMBERS_ASSIGNED",
+          `Assigned ${users.length} user(s) to "${role.name}"`,
+          "INFO",
+          role.name
+        );
+        return { ok: true };
+      },
+
+      toggleRoleActive: (roleId) => {
+        const role = get().roles.find((r) => r.id === roleId);
+        if (!role) return { ok: false, error: "Role not found." };
+        if (role.isSystem) return { ok: false, error: "System-defined roles cannot be deactivated." };
+        const nextActive = !role.isActive;
+        set((s) => ({
+          roles: s.roles.map((r) =>
+            r.id === roleId ? { ...r, isActive: nextActive, updatedAt: new Date().toISOString() } : r
+          ),
+        }));
+        get().logActivity(
+          "ROLE",
+          nextActive ? "ROLE_ACTIVATED" : "ROLE_DEACTIVATED",
+          `${nextActive ? "Activated" : "Deactivated"} custom role "${role.name}"`,
+          "INFO",
+          role.name
+        );
         return { ok: true };
       },
 
@@ -2165,46 +2326,483 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         get().logActivity("PLATFORM", "PLATFORM_PREFERENCES_SAVED", "Updated platform branding and localization preferences", "INFO");
       },
 
-      createSupportTicket: ({ orgId, subject, description, priority, assignedOperatorId, requesterEmail }) => {
+      createSupportTicket: ({ orgId, subject, description, category = "General Support", priority = "High", assignedOperatorId, requesterEmail, requesterName }) => {
         const state = get();
         const org = state.organizations.find((o) => o.id === orgId);
+        const op = state.operators.find((o) => o.id === assignedOperatorId);
         const now = new Date().toISOString();
+        const slaMinutes = priority === "Critical" ? 60 : priority === "High" ? 120 : priority === "Medium" ? 240 : 1440;
+        const respDeadline = new Date(Date.now() + Math.min(slaMinutes / 2, 60) * 60000).toISOString();
+        const resDeadline = new Date(Date.now() + slaMinutes * 60000).toISOString();
         const ticket: SupportEscalationTicket = {
           id: `sup-${Date.now()}`,
-          ticketNumber: `SUP-${1043 + state.supportTickets.length}`,
+          ticketNumber: `SUP-${1046 + state.supportTickets.length}`,
           orgId,
           orgName: org?.name || orgId,
           subject: subject.trim(),
           description: description.trim(),
+          category,
           priority,
           status: "Open",
           assignedOperatorId,
-          slaTargetMinutes: priority === "Critical" ? 30 : priority === "High" ? 60 : 180,
+          assignedOperatorName: op?.name || "Unassigned",
+          slaTargetMinutes: slaMinutes,
           slaState: "On Track",
+          responseDeadline: respDeadline,
+          resolutionDeadline: resDeadline,
           requesterEmail: requesterEmail.trim(),
+          requesterName: requesterName || org?.ownerName || "Customer Lead",
+          messages: [
+            {
+              id: `msg-${Date.now()}`,
+              senderName: requesterName || org?.ownerName || "Customer Lead",
+              senderEmail: requesterEmail.trim(),
+              senderRole: "customer",
+              message: description.trim(),
+              isInternal: false,
+              timestamp: now,
+            },
+          ],
+          auditHistory: [
+            {
+              id: `aud-${Date.now()}`,
+              action: "Ticket Created",
+              actor: "Super Admin Arthur Pendelton",
+              timestamp: now,
+              details: `Initial priority: ${priority}, Category: ${category}`,
+            },
+          ],
           createdAt: now,
           updatedAt: now,
         };
         set({ supportTickets: [ticket, ...state.supportTickets] });
-        get().logActivity("PLATFORM", "SUPPORT_TICKET_CREATED", `Logged escalation ${ticket.ticketNumber} for ${ticket.orgName}`, "INFO", ticket.ticketNumber);
+        get().logActivity("PLATFORM", "SUPPORT_TICKET_CREATED", `Logged customer ticket ${ticket.ticketNumber} for ${ticket.orgName}`, "INFO", ticket.ticketNumber);
+
+        // Sync to operator store if available
+        try {
+          if (typeof window !== "undefined") {
+            const opStore = usePlatformOperatorStore.getState();
+            opStore.createTicket({
+              orgId,
+              orgName: org?.name || orgId,
+              subject: subject.trim(),
+              description: description.trim(),
+              category: (category === "SSO & Access" ? "Workspace Access" : category === "API & Webhooks" ? "Integration" : category) as any,
+              priority: priority as any,
+              assignee: op?.name || "Alex Rivera",
+              requesterEmail: requesterEmail.trim(),
+            });
+          }
+        } catch {}
       },
 
       updateSupportTicket: (id, updates) => {
         const target = get().supportTickets.find((t) => t.id === id);
+        if (!target) return;
+        const now = new Date().toISOString();
         set((s) => ({
           supportTickets: s.supportTickets.map((t) =>
-            t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t
+            t.id === id ? { ...t, ...updates, updatedAt: now } : t
           ),
+        }));
+        get().logActivity(
+          "PLATFORM",
+          "SUPPORT_TICKET_UPDATED",
+          `Updated support ticket ${target.ticketNumber} (${updates.status || target.status})`,
+          updates.status === "Escalated" ? "WARNING" : "INFO",
+          target.ticketNumber
+        );
+
+        // Synchronize with Platform Operator store
+        try {
+          if (typeof window !== "undefined") {
+            const opStore = usePlatformOperatorStore.getState();
+            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === id);
+            if (matched) {
+              const opUpdates: any = {};
+              if (updates.status) opUpdates.status = updates.status === "Closed" ? "Resolved" : updates.status;
+              if (updates.priority) opUpdates.priority = updates.priority;
+              if (updates.assignedOperatorName) opUpdates.assignee = updates.assignedOperatorName;
+              if (updates.slaState) opUpdates.slaState = updates.slaState;
+              opStore.updateTicket(matched.id, opUpdates);
+            }
+          }
+        } catch {}
+      },
+
+      respondToSupportTicket: (ticketId, message, isInternal, attachments) => {
+        const target = get().supportTickets.find((t) => t.id === ticketId);
+        if (!target) return;
+        const now = new Date().toISOString();
+        const profile = get().accountProfile;
+        const newMsg: TicketMessage = {
+          id: `msg-${Date.now()}`,
+          senderName: profile.name || "Arthur Pendelton",
+          senderEmail: profile.email || "superadmin@prowise.io",
+          senderRole: "super-admin",
+          message: message.trim(),
+          isInternal,
+          timestamp: now,
+          attachments,
+        };
+        const auditItem: TicketAuditEvent = {
+          id: `aud-${Date.now()}`,
+          action: isInternal ? "Internal Staff Note Added" : "Public Customer Reply Sent",
+          actor: profile.name || "Arthur Pendelton",
+          timestamp: now,
+          details: isInternal ? "Private note for internal governance" : "Delivered to customer contact email",
+        };
+
+        const updatedMessages = [...(target.messages || []), newMsg];
+        const updatedAudit = [...(target.auditHistory || []), auditItem];
+        const updates: Partial<SupportEscalationTicket> = {
+          messages: updatedMessages,
+          auditHistory: updatedAudit,
+          updatedAt: now,
+          ...((!isInternal && !target.firstResponseAt) ? { firstResponseAt: now } : {}),
+        };
+
+        set((s) => ({
+          supportTickets: s.supportTickets.map((t) => (t.id === ticketId ? { ...t, ...updates } : t)),
+        }));
+
+        get().logActivity(
+          "PLATFORM",
+          isInternal ? "SUPPORT_INTERNAL_NOTE" : "SUPPORT_CUSTOMER_REPLY",
+          `${isInternal ? "Added internal note to" : "Replied to customer on"} ${target.ticketNumber}`,
+          "INFO",
+          target.ticketNumber
+        );
+
+        // Sync comments to operator store
+        try {
+          if (typeof window !== "undefined") {
+            const opStore = usePlatformOperatorStore.getState();
+            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            if (matched) {
+              opStore.addTicketComment(
+                matched.id,
+                `${isInternal ? "[INTERNAL NOTE] " : ""}${message.trim()}`
+              );
+            }
+          }
+        } catch {}
+      },
+
+      assignSupportTicketOperator: (ticketId, operatorId) => {
+        const state = get();
+        const target = state.supportTickets.find((t) => t.id === ticketId);
+        if (!target) return;
+        const op = state.operators.find((o) => o.id === operatorId);
+        const opName = op?.name || "Unassigned";
+        const now = new Date().toISOString();
+        const auditItem: TicketAuditEvent = {
+          id: `aud-${Date.now()}`,
+          action: "Operator Reassigned",
+          actor: state.accountProfile.name || "Arthur Pendelton",
+          timestamp: now,
+          details: `Reassigned ticket ownership to ${opName} (${op?.department || "Operations"})`,
+        };
+
+        const updates: Partial<SupportEscalationTicket> = {
+          assignedOperatorId: operatorId,
+          assignedOperatorName: opName,
+          auditHistory: [...(target.auditHistory || []), auditItem],
+          updatedAt: now,
+        };
+
+        set((s) => ({
+          supportTickets: s.supportTickets.map((t) => (t.id === ticketId ? { ...t, ...updates } : t)),
+        }));
+
+        get().logActivity(
+          "PLATFORM",
+          "SUPPORT_OPERATOR_ASSIGNED",
+          `Reassigned ${target.ticketNumber} to operator ${opName}`,
+          "INFO",
+          target.ticketNumber
+        );
+
+        try {
+          if (typeof window !== "undefined") {
+            const opStore = usePlatformOperatorStore.getState();
+            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            if (matched) {
+              opStore.updateTicket(matched.id, { assignee: opName });
+            }
+          }
+        } catch {}
+      },
+
+      changeSupportTicketPriority: (ticketId, priority) => {
+        const state = get();
+        const target = state.supportTickets.find((t) => t.id === ticketId);
+        if (!target) return;
+        const now = new Date().toISOString();
+        const slaMinutes = priority === "Critical" ? 60 : priority === "High" ? 120 : priority === "Medium" ? 240 : 1440;
+        const resDeadline = new Date(Date.now() + slaMinutes * 60000).toISOString();
+        const auditItem: TicketAuditEvent = {
+          id: `aud-${Date.now()}`,
+          action: "Priority Changed",
+          actor: state.accountProfile.name || "Arthur Pendelton",
+          timestamp: now,
+          details: `Changed priority from ${target.priority} to ${priority} (${slaMinutes}m SLA target)`,
+        };
+
+        const updates: Partial<SupportEscalationTicket> = {
+          priority,
+          slaTargetMinutes: slaMinutes,
+          resolutionDeadline: resDeadline,
+          slaState: target.status === "Resolved" ? "On Track" : target.slaState,
+          auditHistory: [...(target.auditHistory || []), auditItem],
+          updatedAt: now,
+        };
+
+        set((s) => ({
+          supportTickets: s.supportTickets.map((t) => (t.id === ticketId ? { ...t, ...updates } : t)),
+        }));
+
+        get().logActivity(
+          "PLATFORM",
+          "SUPPORT_PRIORITY_CHANGED",
+          `Changed priority of ${target.ticketNumber} to ${priority}`,
+          priority === "Critical" ? "WARNING" : "INFO",
+          target.ticketNumber
+        );
+
+        try {
+          if (typeof window !== "undefined") {
+            const opStore = usePlatformOperatorStore.getState();
+            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            if (matched) {
+              opStore.updateTicket(matched.id, { priority: priority as any });
+            }
+          }
+        } catch {}
+      },
+
+      escalateSupportTicket: (ticketId, reason) => {
+        const state = get();
+        const target = state.supportTickets.find((t) => t.id === ticketId);
+        if (!target) return;
+        const now = new Date().toISOString();
+        const auditItem: TicketAuditEvent = {
+          id: `aud-${Date.now()}`,
+          action: "Ticket Escalated",
+          actor: state.accountProfile.name || "Arthur Pendelton",
+          timestamp: now,
+          details: reason || "Escalated for Super Admin leadership oversight and immediate resolution",
+        };
+
+        const updates: Partial<SupportEscalationTicket> = {
+          status: "Escalated",
+          auditHistory: [...(target.auditHistory || []), auditItem],
+          updatedAt: now,
+        };
+
+        set((s) => ({
+          supportTickets: s.supportTickets.map((t) => (t.id === ticketId ? { ...t, ...updates } : t)),
+        }));
+
+        get().logActivity(
+          "PLATFORM",
+          "SUPPORT_TICKET_ESCALATED",
+          `Escalated support ticket ${target.ticketNumber}: ${reason || "Leadership governance requested"}`,
+          "WARNING",
+          target.ticketNumber
+        );
+
+        try {
+          if (typeof window !== "undefined") {
+            const opStore = usePlatformOperatorStore.getState();
+            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            if (matched) {
+              opStore.updateTicket(matched.id, { status: "Escalated" });
+            }
+          }
+        } catch {}
+      },
+
+      resolveSupportTicket: (ticketId, resolutionNotes, rootCause) => {
+        const state = get();
+        const target = state.supportTickets.find((t) => t.id === ticketId);
+        if (!target) return;
+        const now = new Date().toISOString();
+        const auditItem: TicketAuditEvent = {
+          id: `aud-${Date.now()}`,
+          action: "Ticket Resolved",
+          actor: state.accountProfile.name || "Arthur Pendelton",
+          timestamp: now,
+          details: `Resolution: ${resolutionNotes}${rootCause ? ` (Root Cause: ${rootCause})` : ""}`,
+        };
+
+        const updates: Partial<SupportEscalationTicket> = {
+          status: "Resolved",
+          slaState: "On Track",
+          resolvedAt: now,
+          resolutionNotes: resolutionNotes.trim(),
+          rootCause: rootCause?.trim() || undefined,
+          auditHistory: [...(target.auditHistory || []), auditItem],
+          updatedAt: now,
+        };
+
+        set((s) => ({
+          supportTickets: s.supportTickets.map((t) => (t.id === ticketId ? { ...t, ...updates } : t)),
+        }));
+
+        get().logActivity(
+          "PLATFORM",
+          "SUPPORT_TICKET_RESOLVED",
+          `Resolved customer ticket ${target.ticketNumber}: ${resolutionNotes.slice(0, 80)}`,
+          "INFO",
+          target.ticketNumber
+        );
+
+        try {
+          if (typeof window !== "undefined") {
+            const opStore = usePlatformOperatorStore.getState();
+            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            if (matched) {
+              opStore.updateTicket(matched.id, { status: "Resolved", slaState: "On Track" });
+            }
+          }
+        } catch {}
+      },
+
+      reopenSupportTicket: (ticketId, reason) => {
+        const state = get();
+        const target = state.supportTickets.find((t) => t.id === ticketId);
+        if (!target) return;
+        const now = new Date().toISOString();
+        const auditItem: TicketAuditEvent = {
+          id: `aud-${Date.now()}`,
+          action: "Ticket Reopened",
+          actor: state.accountProfile.name || "Arthur Pendelton",
+          timestamp: now,
+          details: `Reopened ticket: ${reason}`,
+        };
+
+        const updates: Partial<SupportEscalationTicket> = {
+          status: "Open",
+          resolvedAt: undefined,
+          closedAt: undefined,
+          auditHistory: [...(target.auditHistory || []), auditItem],
+          updatedAt: now,
+        };
+
+        set((s) => ({
+          supportTickets: s.supportTickets.map((t) => (t.id === ticketId ? { ...t, ...updates } : t)),
+        }));
+
+        get().logActivity(
+          "PLATFORM",
+          "SUPPORT_TICKET_REOPENED",
+          `Reopened support ticket ${target.ticketNumber}: ${reason}`,
+          "WARNING",
+          target.ticketNumber
+        );
+
+        try {
+          if (typeof window !== "undefined") {
+            const opStore = usePlatformOperatorStore.getState();
+            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            if (matched) {
+              opStore.updateTicket(matched.id, { status: "Open" });
+            }
+          }
+        } catch {}
+      },
+
+      closeSupportTicket: (ticketId) => {
+        const state = get();
+        const target = state.supportTickets.find((t) => t.id === ticketId);
+        if (!target) return;
+        const now = new Date().toISOString();
+        const auditItem: TicketAuditEvent = {
+          id: `aud-${Date.now()}`,
+          action: "Ticket Closed & Archived",
+          actor: state.accountProfile.name || "Arthur Pendelton",
+          timestamp: now,
+          details: "Case closed permanently and archived to customer support history",
+        };
+
+        const updates: Partial<SupportEscalationTicket> = {
+          status: "Closed",
+          closedAt: now,
+          auditHistory: [...(target.auditHistory || []), auditItem],
+          updatedAt: now,
+        };
+
+        set((s) => ({
+          supportTickets: s.supportTickets.map((t) => (t.id === ticketId ? { ...t, ...updates } : t)),
+        }));
+
+        get().logActivity(
+          "PLATFORM",
+          "SUPPORT_TICKET_CLOSED",
+          `Closed and archived support ticket ${target.ticketNumber}`,
+          "INFO",
+          target.ticketNumber
+        );
+
+        try {
+          if (typeof window !== "undefined") {
+            const opStore = usePlatformOperatorStore.getState();
+            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            if (matched) {
+              opStore.updateTicket(matched.id, { status: "Resolved" });
+            }
+          }
+        } catch {}
+      },
+
+      deleteSupportTicket: (ticketId) => {
+        const target = get().supportTickets.find((t) => t.id === ticketId);
+        set((s) => ({
+          supportTickets: s.supportTickets.filter((t) => t.id !== ticketId),
         }));
         if (target) {
           get().logActivity(
             "PLATFORM",
-            "SUPPORT_TICKET_UPDATED",
-            `Updated support escalation ${target.ticketNumber} (${updates.status || target.status})`,
-            updates.status === "Escalated" ? "WARNING" : "INFO",
+            "SUPPORT_TICKET_DELETED",
+            `Deleted support ticket record ${target.ticketNumber}`,
+            "WARNING",
             target.ticketNumber
           );
         }
+      },
+
+      linkTicketToIncident: (ticketId, incidentId) => {
+        const state = get();
+        const target = state.supportTickets.find((t) => t.id === ticketId);
+        const incident = state.incidents.find((i) => i.id === incidentId);
+        if (!target) return;
+        const now = new Date().toISOString();
+        const auditItem: TicketAuditEvent = {
+          id: `aud-${Date.now()}`,
+          action: "Linked to Platform Incident",
+          actor: state.accountProfile.name || "Arthur Pendelton",
+          timestamp: now,
+          details: `Linked to platform incident ${incident?.incidentCode || incidentId}: ${incident?.title || ""}`,
+        };
+
+        const updates: Partial<SupportEscalationTicket> = {
+          linkedIncidentId: incidentId,
+          auditHistory: [...(target.auditHistory || []), auditItem],
+          updatedAt: now,
+        };
+
+        set((s) => ({
+          supportTickets: s.supportTickets.map((t) => (t.id === ticketId ? { ...t, ...updates } : t)),
+        }));
+
+        get().logActivity(
+          "PLATFORM",
+          "SUPPORT_TICKET_LINKED_INCIDENT",
+          `Linked ${target.ticketNumber} to incident ${incident?.incidentCode || incidentId}`,
+          "INFO",
+          target.ticketNumber
+        );
       },
 
       // Super Admin Personal Account
@@ -2263,14 +2861,158 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         get().logActivity("SECURITY", "NOTIFICATION_PREFS_UPDATED", "Updated Super Admin alert preferences", "INFO");
       },
 
+      addCalendarEvent: (input) => {
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        // Ensure event start date is at least start of today
+        let validatedStartDate = input.startDate;
+        let validatedEndDate = input.endDate;
+        if (new Date(input.startDate).getTime() < startOfToday.getTime()) {
+          validatedStartDate = new Date().toISOString();
+          validatedEndDate = new Date(Date.now() + 3600000).toISOString();
+        }
+
+        const newEvent: AdminCalendarEvent = {
+          ...input,
+          startDate: validatedStartDate,
+          endDate: validatedEndDate,
+          id: `evt-custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          isAutoGenerated: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        set((s) => ({
+          manualCalendarEvents: [newEvent, ...s.manualCalendarEvents],
+        }));
+        get().logActivity(
+          "PLATFORM",
+          "CALENDAR_EVENT_CREATED",
+          `Scheduled "${newEvent.title}" under ${newEvent.category}`,
+          "INFO",
+          newEvent.title
+        );
+        return newEvent;
+      },
+
+      updateCalendarEvent: (id, updates) => {
+        if (updates.startDate) {
+          const startOfToday = new Date();
+          startOfToday.setHours(0, 0, 0, 0);
+          if (new Date(updates.startDate).getTime() < startOfToday.getTime()) {
+            return {
+              ok: false,
+              error: "Event dates cannot be moved to past dates. All changes must be for today or future dates.",
+            };
+          }
+        }
+        let found = false;
+        set((s) => ({
+          manualCalendarEvents: s.manualCalendarEvents.map((evt) => {
+            if (evt.id === id) {
+              found = true;
+              return { ...evt, ...updates, updatedAt: new Date().toISOString() };
+            }
+            return evt;
+          }),
+        }));
+        if (found) {
+          get().logActivity("PLATFORM", "CALENDAR_EVENT_UPDATED", `Updated calendar event`, "INFO");
+          return { ok: true };
+        }
+        return { ok: false, error: "Calendar event not found" };
+      },
+
+      deleteCalendarEvent: (id) => {
+        const existing = get().manualCalendarEvents.find((e) => e.id === id);
+        if (!existing) return { ok: false, error: "Event not found" };
+        set((s) => ({
+          manualCalendarEvents: s.manualCalendarEvents.filter((e) => e.id !== id),
+        }));
+        get().logActivity(
+          "PLATFORM",
+          "CALENDAR_EVENT_DELETED",
+          `Deleted calendar event "${existing.title}"`,
+          "WARNING",
+          existing.title
+        );
+        return { ok: true };
+      },
+
+      rescheduleCalendarEvent: (id, newStartDate, newEndDate) => {
+        const existing = get().manualCalendarEvents.find((e) => e.id === id);
+        if (!existing) return { ok: false, error: "Event not found" };
+
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        if (new Date(newStartDate).getTime() < startOfToday.getTime()) {
+          return {
+            ok: false,
+            error: "Cannot reschedule to a past date. All changes can only be done for today and future dates.",
+          };
+        }
+
+        set((s) => ({
+          manualCalendarEvents: s.manualCalendarEvents.map((evt) =>
+            evt.id === id
+              ? { ...evt, startDate: newStartDate, endDate: newEndDate, updatedAt: new Date().toISOString() }
+              : evt
+          ),
+        }));
+        get().logActivity(
+          "PLATFORM",
+          "CALENDAR_EVENT_RESCHEDULED",
+          `Rescheduled event "${existing.title}" to ${newStartDate}`,
+          "INFO",
+          existing.title
+        );
+        return { ok: true };
+      },
+
       resetAllData: () => {
         set(getInitialSnapshot());
       },
     }),
     {
-      name: "prowise-super-admin-store-v2",
+      name: "prowise-super-admin-store-v4",
       skipHydration: true,
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          const { roles: reconciled, migrated } = reconcileRoles(state.roles);
+          if (migrated || reconciled.length !== state.roles.length) {
+            state.roles = reconciled;
+          }
+          const validRoleIds = new Set(state.roles.map((r) => r.id));
+          state.operators = state.operators.map((op) => {
+            if (!validRoleIds.has(op.roleId)) {
+              return { ...op, roleId: "role-platform-operator" };
+            }
+            return op;
+          });
+
+          if (state.supportTickets) {
+            const existingIds = new Set(state.supportTickets.map((t) => t.id));
+            const missingSeed = SEED_SUPPORT_TICKETS.filter((t) => !existingIds.has(t.id));
+            state.supportTickets = [
+              ...state.supportTickets.map((t) => {
+                const seedMatch = SEED_SUPPORT_TICKETS.find((s) => s.id === t.id);
+                return {
+                  ...t,
+                  category: t.category || seedMatch?.category || "General Support",
+                  messages: t.messages && t.messages.length > 0 ? t.messages : (seedMatch?.messages || []),
+                  auditHistory: t.auditHistory && t.auditHistory.length > 0 ? t.auditHistory : (seedMatch?.auditHistory || []),
+                  attachments: t.attachments || seedMatch?.attachments || [],
+                  responseDeadline: t.responseDeadline || seedMatch?.responseDeadline,
+                  resolutionDeadline: t.resolutionDeadline || seedMatch?.resolutionDeadline,
+                  recurringIssueCount: t.recurringIssueCount || seedMatch?.recurringIssueCount || 1,
+                };
+              }),
+              ...missingSeed,
+            ];
+          }
+        }
+      },
       partialize: (state) => ({
+        manualCalendarEvents: state.manualCalendarEvents,
         organizations: state.organizations,
         operators: state.operators,
         roles: state.roles,
@@ -2308,9 +3050,52 @@ export function useAdminPermissions() {
   const activeRoleId = useSuperAdminStore((s) => s.activeRoleId);
   const activeRole = roles.find((r) => r.id === activeRoleId) || roles[0];
 
-  const can = (permission: PermissionKey): boolean => {
+  const can = (permission: PermissionKey | string): boolean => {
     if (!activeRole) return false;
-    return activeRole.permissions.includes(permission);
+    if (activeRole.permissions.includes(permission as any)) return true;
+
+    // Check alias maps
+    const aliasMap: Record<string, string[]> = {
+      "orgs.view": ["organizations.view", "orgs.view"],
+      "orgs.create": ["organizations.create", "orgs.create"],
+      "orgs.edit": ["organizations.edit", "orgs.edit"],
+      "orgs.suspend": ["organizations.manage", "orgs.suspend"],
+      "orgs.delete": ["organizations.delete", "orgs.delete"],
+      "operators.view": ["platform.view", "users.view", "operators.view"],
+      "operators.manage": ["platform.manage", "users.manage", "operators.manage"],
+      "roles.manage": ["platform.manage", "settings.manage", "roles.manage", "security.manage"],
+      "plans.manage": ["billing.manage", "plans.manage"],
+      "subscriptions.manage": ["billing.manage", "subscriptions.manage"],
+      "payments.view": ["billing.view", "payments.view"],
+      "payments.refund": ["billing.approve", "billing.manage", "payments.refund"],
+      "invoices.manage": ["billing.manage", "invoices.manage"],
+      "integrations.manage": ["integrations.manage", "integrations.create"],
+      "security.manage": ["security.manage", "security.approve"],
+      "smtp.configure": ["communication.manage", "settings.manage", "smtp.configure"],
+      "templates.manage": ["communication.edit", "settings.edit", "templates.manage"],
+      "announcements.manage": ["communication.create", "communication.manage", "settings.create", "announcements.manage"],
+      "config.manage": ["platform.manage", "settings.manage", "config.manage"],
+      "support.manage": ["incidents.manage", "support.manage", "support.approve"],
+      "audit.view": ["platform.view", "security.view", "audit.view", "reports.view"],
+      "system.export": ["reports.export", "dashboard.export", "system.export", "organizations.export"],
+      // Module cross-compat
+      "dashboard.view": ["reports.view"],
+      "dashboard.export": ["reports.export"],
+      "dashboard.manage": ["platform.manage"],
+      "settings.view": ["platform.view"],
+      "settings.manage": ["platform.manage"],
+    };
+
+    const aliases = aliasMap[permission];
+    if (aliases && aliases.some((a) => activeRole.permissions.includes(a as any))) {
+      return true;
+    }
+
+    if (activeRole.id === "role-super-admin" || activeRole.slug === "super-admin") {
+      return true;
+    }
+
+    return false;
   };
 
   return {
