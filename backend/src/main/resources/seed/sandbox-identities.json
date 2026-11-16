@@ -1,0 +1,30 @@
+{
+  "organizations": [
+    {
+      "id": "0a000000-0000-4000-8000-00000000000a",
+      "slug": "org-a",
+      "name": "Sandbox Org A",
+      "timezone": "Europe/London",
+      "users": [
+        { "id": "0a000000-0000-4000-8000-0000000000a1", "email": "owner@org-a.test", "display_name": "Ava Owner", "role_template": "ORGANIZATION_OWNER" },
+        { "id": "0a000000-0000-4000-8000-0000000000a2", "email": "admin@org-a.test", "display_name": "Adam Admin", "role_template": "ADMIN" },
+        { "id": "0a000000-0000-4000-8000-0000000000a3", "email": "pm@org-a.test", "display_name": "Pia Manager", "role_template": "PROJECT_MANAGER" },
+        { "id": "0a000000-0000-4000-8000-0000000000a4", "email": "developer@org-a.test", "display_name": "Dev Ana", "role_template": "DEVELOPER" },
+        { "id": "0a000000-0000-4000-8000-0000000000a5", "email": "viewer@org-a.test", "display_name": "Vic Viewer", "role_template": "VIEWER" }
+      ]
+    },
+    {
+      "id": "0b000000-0000-4000-8000-00000000000b",
+      "slug": "org-b",
+      "name": "Sandbox Org B",
+      "timezone": "America/New_York",
+      "users": [
+        { "id": "0b000000-0000-4000-8000-0000000000b1", "email": "owner@org-b.test", "display_name": "Bo Owner", "role_template": "ORGANIZATION_OWNER" },
+        { "id": "0b000000-0000-4000-8000-0000000000b2", "email": "admin@org-b.test", "display_name": "Bea Admin", "role_template": "ADMIN" },
+        { "id": "0b000000-0000-4000-8000-0000000000b3", "email": "pm@org-b.test", "display_name": "Ben Manager", "role_template": "PROJECT_MANAGER" },
+        { "id": "0b000000-0000-4000-8000-0000000000b4", "email": "developer@org-b.test", "display_name": "Dev Bryn", "role_template": "DEVELOPER" },
+        { "id": "0b000000-0000-4000-8000-0000000000b5", "email": "viewer@org-b.test", "display_name": "Val Viewer", "role_template": "VIEWER" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+# Unit/slice tests that need no database. Integration tests (@Tag("integration")) use the
+# default profile against the real PostgreSQL instead.
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+  datasource:
+    url: jdbc:postgresql://localhost:5432/unused-in-unit-tests
+    username: unit-test
+    password: unit-test-dummy
+  flyway:
+    enabled: false
+prowise:
+  auth:
+    jwt-signing-key: test-signing-key-that-is-at-least-32-bytes-long

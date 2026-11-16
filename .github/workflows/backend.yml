@@ -1,0 +1,51 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - "database/**"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "database/**"
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: prowise
+          POSTGRES_USER: prowise
+          POSTGRES_PASSWORD: ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U prowise -d prowise"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Verify database migration source
+        run: |
+          for migration in ../database/migrations/*.sql; do
+            test -f "$migration"
+          done
+      - run: ./mvnw test
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/prowise
+          DB_USERNAME: prowise
+          DB_PASSWORD: ci-password
+

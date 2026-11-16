@@ -1,0 +1,40 @@
+node_modules
+# Dependencies
+node_modules/
+frontend/node_modules/
+**/node_modules/
+
+# Next.js build
+.next/
+frontend/.next/
+frontend/out/
+frontend/build/
+**/.next/
+out/
+build/
+
+# Backend build
+backend/target/
+backend/**/target/
+
+# Database backups
+database/backups/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+!.env.local.example
+frontend/.env
+backend/.env
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
