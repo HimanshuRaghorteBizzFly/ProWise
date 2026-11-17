@@ -10,6 +10,12 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type = "text", label, error, helperText, id, ...props }, ref) => {
     const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, "-") : undefined);
+    const errorId = error && inputId ? `${inputId}-error` : undefined;
+    const helperId = helperText && !error && inputId ? `${inputId}-helper` : undefined;
+    const describedBy = [
+      props["aria-describedby"],
+      errorId ?? helperId,
+    ].filter(Boolean).join(" ") || undefined;
 
     return (
       <div className="w-full space-y-1.5">
@@ -28,9 +34,11 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             className
           )}
           {...props}
+          aria-invalid={error ? true : props["aria-invalid"]}
+          aria-describedby={describedBy}
         />
-        {error && <p className="text-xs text-red-500">{error}</p>}
-        {helperText && !error && <p className="text-xs text-app-text-muted">{helperText}</p>}
+        {error && <p id={errorId} className="text-xs text-red-500">{error}</p>}
+        {helperText && !error && <p id={helperId} className="text-xs text-app-text-muted">{helperText}</p>}
       </div>
     );
   }
@@ -46,6 +54,12 @@ export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextArea
 export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, label, error, helperText, id, rows = 3, ...props }, ref) => {
     const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, "-") : undefined);
+    const errorId = error && inputId ? `${inputId}-error` : undefined;
+    const helperId = helperText && !error && inputId ? `${inputId}-helper` : undefined;
+    const describedBy = [
+      props["aria-describedby"],
+      errorId ?? helperId,
+    ].filter(Boolean).join(" ") || undefined;
 
     return (
       <div className="w-full space-y-1.5">
@@ -64,9 +78,11 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
             className
           )}
           {...props}
+          aria-invalid={error ? true : props["aria-invalid"]}
+          aria-describedby={describedBy}
         />
-        {error && <p className="text-xs text-red-500">{error}</p>}
-        {helperText && !error && <p className="text-xs text-app-text-muted">{helperText}</p>}
+        {error && <p id={errorId} className="text-xs text-red-500">{error}</p>}
+        {helperText && !error && <p id={helperId} className="text-xs text-app-text-muted">{helperText}</p>}
       </div>
     );
   }

@@ -20,6 +20,6 @@ export const THEME_CONFIG = {
     borders: "#343943",
   },
   spacing: 8, // 8px spacing system
-  fontFamily: "var(--font-sans)",
+  fontFamily: "var(--font-platform)",
 };
 

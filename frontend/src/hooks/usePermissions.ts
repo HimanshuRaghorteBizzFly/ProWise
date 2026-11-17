@@ -1,21 +1,50 @@
+import { useCallback, useEffect } from "react";
+import { useStore } from "zustand";
+
+import { canAnyWithGrants, canWithGrants } from "@/lib/permissions";
 import { useAuthStore } from "@/store/auth-store";
-import { hasPermission, ROLE_PERMISSIONS } from "@/config/permissions";
-import { PermissionAction, SystemRole } from "@/types";
+import { permissionStore } from "@/store/permission-store";
+import type { PermissionGrant, PermissionKey, PermissionTarget } from "@/types/permission";
 
+const NO_GRANTS: readonly PermissionGrant[] = [];
+
+/**
+ * Effective permissions for the active membership, from GET /v1/me/permissions
+ * (dev-only fixture fallback). Deny by default while loading or on any failure.
+ * Never decide access from a role name: use `can` / `canAny`.
+ */
 export function usePermissions() {
-  const { currentRole } = useAuthStore();
-  const role: SystemRole = currentRole;
+  const orgId = useAuthStore((state) => state.currentOrg.id);
+  // The role template only selects the dev fixture response; it never grants anything.
+  const roleTemplate = useAuthStore((state) => state.currentRole);
+  const state = useStore(permissionStore);
+  const { load } = state;
 
-  const can = (action: PermissionAction) => {
-    return hasPermission(role, action);
-  };
+  useEffect(() => {
+    void load(orgId, roleTemplate);
+  }, [load, orgId, roleTemplate]);
 
-  const permissions = ROLE_PERMISSIONS[role] || [];
+  // Grants loaded for another organization are never used.
+  const grants = state.orgId === orgId && state.status === "ready" ? state.grants : NO_GRANTS;
+  const status = state.orgId === orgId || !orgId ? state.status : "loading";
+
+  const can = useCallback(
+    (key: PermissionKey, target?: PermissionTarget) => canWithGrants(grants, key, target),
+    [grants],
+  );
+  const canAny = useCallback(
+    (keys: readonly PermissionKey[], target?: PermissionTarget) => canAnyWithGrants(grants, keys, target),
+    [grants],
+  );
+  const retry = useCallback(() => void load(orgId, roleTemplate, { force: true }), [load, orgId, roleTemplate]);
 
   return {
-    role,
-    permissions,
+    status: status === "idle" ? ("loading" as const) : status,
+    source: state.source,
+    scopeReported: state.scopeReported,
+    grants,
     can,
+    canAny,
+    retry,
   };
 }
-

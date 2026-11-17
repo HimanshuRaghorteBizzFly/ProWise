@@ -124,6 +124,14 @@ export function createApiClient(options: ApiClientOptions = {}) {
       accessToken = null;
     },
     me: () => json<import("@/types/api").MeResponse>("/v1/me"),
+    myPermissions: (orgId: string) =>
+      json<import("@/types/api").MyPermissionsResponse>(
+        `/v1/me/permissions?org=${encodeURIComponent(orgId)}`,
+      ),
+    orgMembers: (orgId: string) =>
+      json<import("@/types/api").OrgMemberResponse[]>(`/v1/organizations/${encodeURIComponent(orgId)}/members`),
+    orgRoles: (orgId: string) =>
+      json<import("@/types/api").OrgRoleResponse[]>(`/v1/organizations/${encodeURIComponent(orgId)}/roles`),
     requestPasswordReset: (email: string) =>
       request("/v1/auth/password-reset/request", { method: "POST", body: { email } }),
     confirmPasswordReset: (token: string, password: string) =>

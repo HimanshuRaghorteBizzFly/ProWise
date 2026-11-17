@@ -29,3 +29,41 @@ export interface RolePermissionConfig {
   isPlatformLevel: boolean;
 }
 
+
+/**
+ * Documented tenant permission keys (docs/permissions.md, docs/permission-matrix.md).
+ * The legacy colon-style `PermissionAction` above is kept for untouched consumers only.
+ */
+export type PermissionKey =
+  | "org.manage"
+  | "member.invite"
+  | "member.disable"
+  | "role.manage"
+  | "team.manage"
+  | "project.create"
+  | "project.read"
+  | "project.edit"
+  | "project.archive"
+  | "project.mode.change"
+  | "project.scope.change"
+  | "project.deadline.edit"
+  | "project.progress.report"
+  | "project.progress.override"
+  | "task.create"
+  | "task.assign"
+  | "task.update"
+  | "task.review"
+  | "repo.connect"
+  | "repo.read"
+  | "report.export"
+  | "audit.read";
+
+export type PermissionScope = "ORG" | "PROJECT";
+
+export type PermissionGrant =
+  | { key: PermissionKey; scope: "ORG" }
+  | { key: PermissionKey; scope: "PROJECT"; scopeId: string };
+
+export interface PermissionTarget {
+  projectId: string;
+}

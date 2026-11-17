@@ -1,10 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Layers,
   LayoutDashboard,
   Building2,
   Users,
@@ -15,14 +14,10 @@ import {
   AlertTriangle,
   FileText,
   Settings,
-  HelpCircle,
-  ChevronDown,
-  ChevronRight,
-  Menu,
+  X,
   Activity,
   CreditCard,
   Mail,
-  Bell,
   Calendar,
   Clock,
   Sparkles,
@@ -30,9 +25,13 @@ import {
   KeyRound,
   FileCheck,
   LifeBuoy,
+  Layers,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth-store";
-import { SystemRole } from "@/types";
+import { usePermissions } from "@/hooks/usePermissions";
+import { buildOrgNav, filterOrgNav, type OrgNavFamily } from "@/components/owner/org-nav";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -47,22 +46,158 @@ interface NavGroup {
   items: NavItem[];
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  mobileOpen: boolean;
+  onMobileClose: () => void;
+  mobileTriggerRef: React.RefObject<HTMLButtonElement>;
+}
+
+const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+interface NavGroupsProps {
+  groups: NavGroup[];
+  pathname: string;
+  compact: boolean;
+  onNavigate: () => void;
+}
+
+function NavGroups({ groups, pathname, compact, onNavigate }: NavGroupsProps) {
+  return (
+    <>
+      {groups.map((group, groupIdx) => (
+        <div key={group.groupTitle ?? groupIdx} className="space-y-0.5">
+          {!compact && group.groupTitle ? (
+            <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-app-text-muted">
+              {group.groupTitle}
+            </p>
+          ) : (
+            compact && <div className="mx-2 my-1.5 border-t border-app-border" aria-hidden="true" />
+          )}
+          {group.items.map((item) => {
+            const Icon = item.icon;
+            const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href + "/"));
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={isActive ? "page" : undefined}
+                aria-label={compact ? item.label : undefined}
+                title={compact ? item.label : undefined}
+                onClick={onNavigate}
+                className={cn(
+                  "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors motion-reduce:transition-none",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent",
+                  isActive
+                    ? "bg-blue-500/15 font-semibold text-blue-700 dark:bg-blue-500/20 dark:text-blue-300"
+                    : "text-app-text-secondary hover:bg-app-hover hover:text-app-text-primary",
+                  compact && "justify-center px-0 py-2",
+                )}
+              >
+                <Icon
+                  aria-hidden="true"
+                  className={cn(
+                    "h-4 w-4 shrink-0",
+                    isActive
+                      ? "text-blue-600 dark:text-blue-400"
+                      : "text-app-text-muted group-hover:text-app-text-primary",
+                  )}
+                />
+                {!compact && <span className="flex-1 truncate">{item.label}</span>}
+                {!compact && item.badge !== undefined && (
+                  <span className="ml-auto rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** Owner/Admin menu: route family from the role template, every item gated by permission keys. */
+function OrgPermissionNav({
+  family,
+  orgId,
+  ...rest
+}: { family: OrgNavFamily; orgId: string } & Omit<NavGroupsProps, "groups">) {
+  const { canAny } = usePermissions();
+  const groups = filterOrgNav(buildOrgNav(family, orgId), canAny).map((group) => ({
+    groupTitle: group.title,
+    items: group.items,
+  }));
+  return <NavGroups groups={groups} {...rest} />;
+}
+
+export function Sidebar({ mobileOpen, onMobileClose, mobileTriggerRef }: SidebarProps) {
   const pathname = usePathname();
   const { currentRole, currentOrg } = useAuthStore();
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    main: true,
-    platform: true,
-    projects: true,
-    governance: true,
-  });
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const orgId = currentOrg.id;
+  const isCompact = isCollapsed && !mobileOpen;
+  const orgFamily: OrgNavFamily | null =
+    currentRole === "ORGANIZATION_OWNER" ? "owner" : currentRole === "ORGANIZATION_ADMIN" ? "admin" : null;
 
-  const toggleGroup = (key: string) => {
-    setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  const closeMobileNavigation = useCallback(() => {
+    onMobileClose();
+    mobileTriggerRef.current?.focus();
+  }, [mobileTriggerRef, onMobileClose]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeButtonRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMobileNavigation();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = sidebarRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE);
+      if (!focusable?.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!sidebarRef.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [mobileOpen, closeMobileNavigation]);
+
+  // Close the drawer if the viewport grows to desktop width while it is open.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const onChange = (event: MediaQueryListEvent) => {
+      if (event.matches) onMobileClose();
+    };
+    desktop.addEventListener("change", onChange);
+    return () => desktop.removeEventListener("change", onChange);
+  }, [mobileOpen, onMobileClose]);
 
   // Build role-specific navigation menu items
   const getNavGroups = (): NavGroup[] => {
@@ -118,48 +253,6 @@ export function Sidebar() {
               { label: "Failed Events & Retries", href: "/platform-operator/failed-events", icon: AlertTriangle },
               { label: "Backups & Maintenance", href: "/platform-operator/backups", icon: ShieldCheck },
               { label: "Operator Settings", href: "/platform-operator/settings", icon: Settings },
-            ],
-          },
-        ];
-
-      case "ORGANIZATION_OWNER":
-        return [
-          {
-            groupTitle: "Governance",
-            items: [
-              { label: "Owner Dashboard", href: `/org/${orgId}/owner`, icon: LayoutDashboard },
-              { label: "Organization Profile", href: `/org/${orgId}/owner/organization`, icon: Building2 },
-              { label: "Members", href: `/org/${orgId}/owner/members`, icon: Users },
-              { label: "Teams", href: `/org/${orgId}/owner/teams`, icon: Users },
-              { label: "Invitations", href: `/org/${orgId}/owner/invitations`, icon: Mail, badge: 2 },
-              { label: "Roles & Permissions", href: `/org/${orgId}/owner/roles-permissions`, icon: ShieldCheck },
-            ],
-          },
-          {
-            groupTitle: "Portfolio & Controls",
-            items: [
-              { label: "Projects", href: `/org/${orgId}/owner/projects`, icon: FolderGit2 },
-              { label: "Integrations", href: `/org/${orgId}/owner/integrations`, icon: FolderGit2 },
-              { label: "Reports", href: `/org/${orgId}/owner/reports`, icon: FileText },
-              { label: "Audit & Security", href: `/org/${orgId}/owner/audit-logs`, icon: Activity },
-              { label: "Org Settings", href: `/org/${orgId}/owner/settings`, icon: Settings },
-            ],
-          },
-        ];
-
-      case "ORGANIZATION_ADMIN":
-        return [
-          {
-            groupTitle: "Administration",
-            items: [
-              { label: "Admin Dashboard", href: `/org/${orgId}/admin`, icon: LayoutDashboard },
-              { label: "Members & Access", href: `/org/${orgId}/admin/members`, icon: Users },
-              { label: "Teams", href: `/org/${orgId}/admin/teams`, icon: Users },
-              { label: "Invitations", href: `/org/${orgId}/admin/invitations`, icon: Mail },
-              { label: "Projects Overview", href: `/org/${orgId}/admin/projects`, icon: FolderGit2 },
-              { label: "Repositories (GitHub)", href: `/org/${orgId}/admin/repositories`, icon: GitPullRequest },
-              { label: "Activity Stream", href: `/org/${orgId}/admin/activity`, icon: Activity },
-              { label: "Admin Settings", href: `/org/${orgId}/admin/settings`, icon: Settings },
             ],
           },
         ];
@@ -277,113 +370,112 @@ export function Sidebar() {
     }
   };
 
-  const navGroups = getNavGroups();
+  const onNavigate = () => {
+    if (mobileOpen) closeMobileNavigation();
+  };
 
   return (
-    <aside
-      className={cn(
-        "relative flex flex-col border-r border-app-border bg-app-sidebar transition-all duration-300 z-30 select-none",
-        isCollapsed ? "w-16" : "w-64"
+    <>
+      {mobileOpen && (
+        <div
+          aria-hidden="true"
+          onClick={closeMobileNavigation}
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+        />
       )}
-    >
-      {/* Brand Header */}
-      <div className="flex h-16 items-center justify-between px-4 border-b border-app-border">
-        {!isCollapsed && (
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-base shadow-sm">
-              P
-            </div>
-            <div>
-              <div className="text-base font-bold text-app-text-primary tracking-tight leading-none">
-                ProWise
-              </div>
-              <div className="text-[10px] text-app-text-muted mt-0.5 font-medium uppercase tracking-wider">
-                Delivery SaaS
-              </div>
-            </div>
-          </Link>
+      <aside
+        ref={sidebarRef}
+        id="primary-navigation"
+        role={mobileOpen ? "dialog" : undefined}
+        aria-modal={mobileOpen ? true : undefined}
+        aria-label="Primary navigation"
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex h-screen w-72 max-w-[85vw] shrink-0 flex-col border-r border-app-border bg-app-sidebar text-app-text-primary shadow-2xl",
+          "transition-transform duration-200 motion-reduce:transition-none",
+          "lg:sticky lg:top-0 lg:z-30 lg:max-w-none lg:translate-x-0 lg:shadow-none lg:visible lg:transition-[width]",
+          isCollapsed ? "lg:w-[68px]" : "lg:w-64",
+          mobileOpen ? "visible translate-x-0" : "invisible -translate-x-full",
         )}
-        {isCollapsed && (
-          <div className="mx-auto h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-base shadow-sm">
-            P
-          </div>
-        )}
-
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="rounded-lg p-1.5 text-app-text-secondary hover:bg-app-hover hover:text-app-text-primary transition-colors ml-auto"
-          title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          <Menu className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Workspace Selector (when in org context) */}
-      {!isCollapsed && currentRole !== "SUPER_ADMIN" && currentRole !== "PLATFORM_OPERATOR" && (
-        <div className="p-3 border-b border-app-border">
-          <div className="rounded-lg bg-app-surface border border-app-border p-2 shadow-xs">
-            <div className="text-[10px] uppercase font-bold text-app-text-muted tracking-wider">
-              Active Organization
-            </div>
-            <div className="text-xs font-semibold text-app-text-primary truncate mt-0.5">
-              {currentOrg.name}
-            </div>
-            <div className="text-[10px] text-app-text-secondary flex items-center gap-1 mt-0.5">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500"></span>
-              {currentOrg.timezone} • {currentOrg.plan}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Navigation Links */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
-        {navGroups.map((group, groupIdx) => (
-          <div key={groupIdx} className="space-y-1">
-            {!isCollapsed && group.groupTitle && (
-              <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-app-text-muted">
-                {group.groupTitle}
-              </div>
+      >
+        {/* Brand header */}
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-app-border px-3.5">
+          <Link
+            href="/"
+            aria-label="ProWise home"
+            className={cn(
+              "flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent",
+              isCompact && "mx-auto",
             )}
-            {group.items.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href + "/"));
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors relative",
-                    isActive
-                      ? "bg-blue-100/70 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 font-semibold"
-                      : "text-app-text-secondary hover:bg-app-hover hover:text-app-text-primary",
-                    isCollapsed && "justify-center px-0"
-                  )}
-                  title={isCollapsed ? item.label : undefined}
-                >
-                  <Icon className={cn("w-4 h-4 shrink-0", isActive ? "text-blue-600 dark:text-blue-400" : "text-app-text-muted")} />
-                  {!isCollapsed && <span className="truncate flex-1">{item.label}</span>}
-                  {!isCollapsed && item.badge !== undefined && (
-                    <span className="ml-auto rounded-full bg-blue-600 px-1.5 py-0.2 text-[10px] font-bold text-white">
-                      {item.badge}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-
-      {/* Footer Info */}
-      {!isCollapsed && (
-        <div className="p-3 border-t border-app-border text-[11px] text-app-text-muted flex items-center justify-between">
-          <span>Blueprint V1.1</span>
-          <span className="font-semibold text-blue-600 dark:text-blue-400">Online</span>
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1A73E8] text-white shadow-xs">
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+            </span>
+            {!isCompact && (
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-bold tracking-tight text-app-text-primary">ProWise</span>
+                <span className="block truncate text-[10px] text-app-text-muted">Delivery workspace</span>
+              </span>
+            )}
+          </Link>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            onClick={closeMobileNavigation}
+            aria-label="Close primary navigation"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-app-text-secondary hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent lg:hidden"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
-      )}
-    </aside>
+
+        {/* Active organization */}
+        {!isCompact && currentRole !== "SUPER_ADMIN" && currentRole !== "PLATFORM_OPERATOR" && (
+          <div className="shrink-0 border-b border-app-border p-2.5">
+            <div className="rounded-lg border border-app-border bg-app-surface px-2.5 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-app-text-muted">Active organization</p>
+              <p className="mt-0.5 truncate text-xs font-semibold text-app-text-primary">{currentOrg.name}</p>
+              {currentOrg.timezone && (
+                <p className="mt-0.5 truncate text-[10px] text-app-text-secondary">{currentOrg.timezone}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Navigation */}
+        <nav aria-label="Primary navigation" className="flex-1 space-y-4 overflow-y-auto px-2.5 py-3">
+          {orgFamily ? (
+            <OrgPermissionNav
+              family={orgFamily}
+              orgId={orgId}
+              pathname={pathname}
+              compact={isCompact}
+              onNavigate={onNavigate}
+            />
+          ) : (
+            <NavGroups groups={getNavGroups()} pathname={pathname} compact={isCompact} onNavigate={onNavigate} />
+          )}
+        </nav>
+
+        {/* Collapse toggle (desktop only) */}
+        <div className="hidden shrink-0 border-t border-app-border p-2.5 lg:block">
+          <button
+            type="button"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!isCollapsed}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-app-border bg-app-surface px-2.5 py-1.5 text-xs font-medium text-app-text-secondary transition-colors hover:bg-app-hover hover:text-app-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent motion-reduce:transition-none"
+          >
+            {isCollapsed ? (
+              <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <>
+                <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
+                <span>Collapse sidebar</span>
+              </>
+            )}
+          </button>
+        </div>
+      </aside>
+    </>
   );
 }
-

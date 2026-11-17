@@ -1,1 +1,13 @@
-export { default } from "../../owner/teams/page";
+"use client";
+
+import React from "react";
+
+import { OrgTeamsContent, OrgPage } from "@/components/owner/OrgPages";
+
+export default function AdminTeamsPage() {
+  return (
+    <OrgPage family="admin" title="Teams">
+      <OrgTeamsContent />
+    </OrgPage>
+  );
+}

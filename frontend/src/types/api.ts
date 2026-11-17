@@ -63,3 +63,26 @@ export interface ApiFilterParams {
   sortDirection?: "asc" | "desc";
 }
 
+
+/** GET /v1/me/permissions?org={orgId}. Keys are flat; the API does not report scope yet. */
+export interface MyPermissionsResponse {
+  organizationId: string;
+  permissions: string[];
+}
+
+/** GET /v1/organizations/{orgId}/members (requires role.manage). */
+export interface OrgMemberResponse {
+  id: string;
+  displayName: string;
+  email: string;
+  status: string;
+}
+
+/** GET /v1/organizations/{orgId}/roles (requires role.manage). */
+export interface OrgRoleResponse {
+  id: string;
+  name: string;
+  template: boolean;
+  version: number;
+  permissionKeys: string[];
+}

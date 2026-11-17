@@ -25,13 +25,19 @@ const EMPTY_USER: User = DEFAULT_USER;
 const EMPTY_ORG: Organization = DEFAULT_ORG;
 
 export function getRoleDashboardPath(role: SystemRole, orgId = ""): string {
+<<<<<<< Updated upstream
   const safeOrgId = orgId && orgId.trim() !== "" ? orgId : "org-acme";
+=======
+  const workspacePath = orgId ? `/org/${orgId}` : "/select-workspace";
+
+>>>>>>> Stashed changes
   switch (role) {
     case "SUPER_ADMIN":
       return "/super-admin/dashboard";
     case "PLATFORM_OPERATOR":
       return "/platform-operator/dashboard";
     case "ORGANIZATION_OWNER":
+<<<<<<< Updated upstream
       return `/org/${safeOrgId}/owner/dashboard`;
     case "ORGANIZATION_ADMIN":
       return `/org/${safeOrgId}/admin/dashboard`;
@@ -47,6 +53,23 @@ export function getRoleDashboardPath(role: SystemRole, orgId = ""): string {
       return `/org/${safeOrgId}/viewer/dashboard`;
     default:
       return `/org/${safeOrgId}/viewer/dashboard`;
+=======
+      return orgId ? `${workspacePath}/owner/dashboard` : workspacePath;
+    case "ORGANIZATION_ADMIN":
+      return orgId ? `${workspacePath}/admin/dashboard` : workspacePath;
+    case "PROJECT_MANAGER":
+      return orgId ? `${workspacePath}/manager/dashboard` : workspacePath;
+    case "TEAM_LEAD":
+      return orgId ? `${workspacePath}/lead/dashboard` : workspacePath;
+    case "DEVELOPER":
+      return orgId ? `${workspacePath}/developer/dashboard` : workspacePath;
+    case "QA_REVIEWER":
+      return orgId ? `${workspacePath}/reviewer/dashboard` : workspacePath;
+    case "VIEWER":
+      return orgId ? `${workspacePath}/viewer/dashboard` : workspacePath;
+    default:
+      return workspacePath;
+>>>>>>> Stashed changes
   }
 }
 
