@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@/store/auth-store";
+import { apiClient } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,40 +12,32 @@ import { ShieldAlert } from "lucide-react";
 
 export default function SignupPage() {
   const router = useRouter();
-  const { setCurrentOrg, setCurrentRole } = useAuthStore();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [orgName, setOrgName] = useState("");
   const [timezone, setTimezone] = useState("America/New_York");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSignup = (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-
-    setTimeout(() => {
-      setIsLoading(false);
-      // New organization created with the user as Organization Owner
-      const newOrgId = `org-${orgName.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
-      setCurrentOrg({
-        id: newOrgId,
-        slug: orgName.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+    try {
+      await apiClient.signup({ email, password, name });
+      const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      await apiClient.createOrganization({
         name: orgName,
-        ownerId: "usr-new",
+        slug,
         timezone,
-        workCalendar: {
-          workDays: [1, 2, 3, 4, 5],
-          dailyHours: 8,
-          holidays: [],
-        },
-        plan: "STARTER",
-        status: "ACTIVE",
-        createdAt: new Date().toISOString(),
+        calendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
       });
-      setCurrentRole("ORGANIZATION_OWNER");
       toast.success("Organization workspace registered successfully!");
-      router.push(`/org/${newOrgId}/owner`);
-    }, 400);
+      window.location.assign("/select-org");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to create the workspace.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -87,6 +79,16 @@ export default function SignupPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@company.com"
+              required
+            />
+
+            <Input
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="At least 12 characters"
+              minLength={12}
               required
             />
 

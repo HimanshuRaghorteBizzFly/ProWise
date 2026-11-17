@@ -259,12 +259,18 @@ export function Sidebar() {
           {
             groupTitle: "Stakeholder Overview",
             items: [
-              { label: "Viewer Dashboard", href: `/org/${orgId}/viewer`, icon: LayoutDashboard },
+              { label: "Dashboard", href: `/org/${orgId}/viewer/dashboard`, icon: LayoutDashboard },
               { label: "Projects Portfolio", href: `/org/${orgId}/viewer/projects`, icon: FolderGit2 },
+              { label: "Tasks & Work", href: `/org/${orgId}/viewer/tasks`, icon: CheckSquare },
               { label: "Progress Summaries", href: `/org/${orgId}/viewer/progress`, icon: Activity },
-              { label: "Milestones & Delivery", href: `/org/${orgId}/viewer/milestones`, icon: Calendar },
-              { label: "Project Activity", href: `/org/${orgId}/viewer/activity`, icon: Clock },
               { label: "Authorized Reports", href: `/org/${orgId}/viewer/reports`, icon: FileText },
+              { label: "Milestones & Delivery", href: `/org/${orgId}/viewer/milestones`, icon: Calendar },
+              { label: "Team Directory", href: `/org/${orgId}/viewer/team`, icon: Users },
+              { label: "Calendar", href: `/org/${orgId}/viewer/calendar`, icon: Calendar },
+              { label: "Files & Evidence", href: `/org/${orgId}/viewer/files`, icon: FileText },
+              { label: "Project Activity", href: `/org/${orgId}/viewer/activity`, icon: Clock },
+              { label: "Notifications", href: `/org/${orgId}/viewer/notifications`, icon: Bell },
+              { label: "Settings", href: `/org/${orgId}/viewer/settings`, icon: Settings },
             ],
           },
         ];

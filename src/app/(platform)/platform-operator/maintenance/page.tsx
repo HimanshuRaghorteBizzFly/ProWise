@@ -1230,7 +1230,7 @@ export default function OperatorMaintenancePage() {
                       <span className="text-[9px] text-[var(--color-text-muted)]">{formatDateTime(log.timestamp)}</span>
                     </div>
                     <p className="text-[10px] text-[var(--color-text-secondary)]">By {log.actor}</p>
-                    {log.details && <p className="text-[10px] text-[var(--color-text-muted)] italic">"{log.details}"</p>}
+                    {log.details && <p className="text-[10px] text-[var(--color-text-muted)] italic">&quot;{log.details}&quot;</p>}
                   </div>
                 ))}
               </div>

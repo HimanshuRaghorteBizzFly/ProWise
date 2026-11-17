@@ -3,16 +3,15 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
-import { SEEDED_ORGS } from "@/lib/mock-data";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Building2, ArrowRight } from "lucide-react";
 
 export default function SelectOrgPage() {
   const router = useRouter();
-  const { currentOrg, setCurrentOrg, currentRole } = useAuthStore();
+  const { organizations, setCurrentOrg, currentRole } = useAuthStore();
 
-  const handleSelect = (org: typeof SEEDED_ORGS[0]) => {
+  const handleSelect = (org: (typeof organizations)[number]) => {
     setCurrentOrg(org);
     const dest = getRoleDashboardPath(currentRole, org.id);
     router.push(dest);
@@ -34,7 +33,7 @@ export default function SelectOrgPage() {
         </div>
 
         <div className="space-y-3">
-          {SEEDED_ORGS.map((org) => (
+          {organizations.map((org) => (
             <Card
               key={org.id}
               className="p-4 hover:border-blue-500 cursor-pointer transition-all flex items-center justify-between"

@@ -829,6 +829,7 @@ export function LandingSections({
             <ul className="space-y-1.5 text-[var(--color-text-secondary)]">
               <li><Link href="/login" className="hover:text-[var(--color-text-primary)]">Login</Link></li>
               <li><Link href="/signup" className="hover:text-[var(--color-text-primary)]">Sign Up</Link></li>
+              <li><Link href="/org/org-acme/viewer/dashboard" className="hover:text-blue-600 font-semibold text-blue-500">Viewer Panel</Link></li>
               <li><Link href="/super-admin" className="hover:text-[var(--color-text-primary)]">Super Admin Panel</Link></li>
               <li><Link href="/platform-operator" className="hover:text-[var(--color-text-primary)]">Platform Operator</Link></li>
             </ul>

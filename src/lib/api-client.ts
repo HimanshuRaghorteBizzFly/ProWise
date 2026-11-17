@@ -1,4 +1,4 @@
-import { ApiResponse } from "@/types";
+import { ApiResponse, HealthResponse } from "@/types";
 
 export class ApiClient {
   private baseUrl: string;
@@ -34,6 +34,16 @@ export class ApiClient {
       success: true,
       data: null as any,
     };
+  }
+
+  async health(): Promise<HealthResponse> {
+    const response = await fetch(`${this.baseUrl}/v1/health`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) {
+      throw new Error(`Health request failed with status ${response.status}`);
+    }
+    return response.json() as Promise<HealthResponse>;
   }
 }
 

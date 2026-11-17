@@ -125,23 +125,24 @@ export function Sidebar() {
       case "ORGANIZATION_OWNER":
         return [
           {
-            groupTitle: "Workspace",
+            groupTitle: "Governance",
             items: [
               { label: "Owner Dashboard", href: `/org/${orgId}/owner`, icon: LayoutDashboard },
-              { label: "Organization Profile", href: `/org/${orgId}/owner/profile`, icon: Building2 },
-              { label: "Members & Leads", href: `/org/${orgId}/owner/members`, icon: Users },
-              { label: "Teams & Roster", href: `/org/${orgId}/owner/teams`, icon: Users },
+              { label: "Organization Profile", href: `/org/${orgId}/owner/organization`, icon: Building2 },
+              { label: "Members", href: `/org/${orgId}/owner/members`, icon: Users },
+              { label: "Teams", href: `/org/${orgId}/owner/teams`, icon: Users },
               { label: "Invitations", href: `/org/${orgId}/owner/invitations`, icon: Mail, badge: 2 },
+              { label: "Roles & Permissions", href: `/org/${orgId}/owner/roles-permissions`, icon: ShieldCheck },
             ],
           },
           {
-            groupTitle: "Delivery & Finance",
+            groupTitle: "Portfolio & Controls",
             items: [
-              { label: "Project Portfolio", href: `/org/${orgId}/owner/projects`, icon: FolderGit2 },
-              { label: "Subscription & Billing", href: `/org/${orgId}/owner/billing`, icon: CreditCard },
+              { label: "Projects", href: `/org/${orgId}/owner/projects`, icon: FolderGit2 },
               { label: "Integrations", href: `/org/${orgId}/owner/integrations`, icon: FolderGit2 },
-              { label: "Audit & Compliance", href: `/org/${orgId}/owner/audit`, icon: Activity },
-              { label: "Transfer Ownership", href: `/org/${orgId}/owner/transfer`, icon: KeyRound },
+              { label: "Reports", href: `/org/${orgId}/owner/reports`, icon: FileText },
+              { label: "Audit & Security", href: `/org/${orgId}/owner/audit-logs`, icon: Activity },
+              { label: "Org Settings", href: `/org/${orgId}/owner/settings`, icon: Settings },
             ],
           },
         ];
@@ -258,12 +259,18 @@ export function Sidebar() {
           {
             groupTitle: "Stakeholder Overview",
             items: [
-              { label: "Viewer Dashboard", href: `/org/${orgId}/viewer`, icon: LayoutDashboard },
+              { label: "Dashboard", href: `/org/${orgId}/viewer/dashboard`, icon: LayoutDashboard },
               { label: "Projects Portfolio", href: `/org/${orgId}/viewer/projects`, icon: FolderGit2 },
+              { label: "Tasks & Work", href: `/org/${orgId}/viewer/tasks`, icon: CheckSquare },
               { label: "Progress Summaries", href: `/org/${orgId}/viewer/progress`, icon: Activity },
-              { label: "Milestones & Delivery", href: `/org/${orgId}/viewer/milestones`, icon: Calendar },
-              { label: "Project Activity", href: `/org/${orgId}/viewer/activity`, icon: Clock },
               { label: "Authorized Reports", href: `/org/${orgId}/viewer/reports`, icon: FileText },
+              { label: "Milestones & Delivery", href: `/org/${orgId}/viewer/milestones`, icon: Calendar },
+              { label: "Team Directory", href: `/org/${orgId}/viewer/team`, icon: Users },
+              { label: "Calendar", href: `/org/${orgId}/viewer/calendar`, icon: Calendar },
+              { label: "Files & Evidence", href: `/org/${orgId}/viewer/files`, icon: FileText },
+              { label: "Project Activity", href: `/org/${orgId}/viewer/activity`, icon: Clock },
+              { label: "Notifications", href: `/org/${orgId}/viewer/notifications`, icon: Bell },
+              { label: "Settings", href: `/org/${orgId}/viewer/settings`, icon: Settings },
             ],
           },
         ];

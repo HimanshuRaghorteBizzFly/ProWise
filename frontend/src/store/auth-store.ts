@@ -1,48 +1,52 @@
 import { create } from "zustand";
 import { User, SystemRole, Organization } from "@/types";
 
-const EMPTY_USER: User = {
-  id: "",
-  email: "",
-  name: "",
-  timezone: "UTC",
-  createdAt: "",
-};
-
-const EMPTY_ORG: Organization = {
-  id: "",
-  slug: "",
-  name: "",
-  ownerId: "",
-  timezone: "UTC",
-  workCalendar: { workDays: [], dailyHours: 0, holidays: [] },
-  createdAt: "",
-  plan: "FREE",
+const DEFAULT_ORG: Organization = {
+  id: "org-acme",
+  slug: "acme-health",
+  name: "Acme Health Technologies",
+  ownerId: "usr-owner",
+  timezone: "America/New_York",
+  workCalendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
+  createdAt: "2026-02-15T09:00:00Z",
+  plan: "ENTERPRISE",
   status: "ACTIVE",
 };
 
+const DEFAULT_USER: User = {
+  id: "usr-viewer",
+  email: "jordan.lee@acmehealth.com",
+  name: "Jordan Lee (Viewer)",
+  timezone: "America/New_York",
+  createdAt: "2026-02-25T16:00:00Z",
+};
+
+const EMPTY_USER: User = DEFAULT_USER;
+const EMPTY_ORG: Organization = DEFAULT_ORG;
+
 export function getRoleDashboardPath(role: SystemRole, orgId = ""): string {
+  const safeOrgId = orgId && orgId.trim() !== "" ? orgId : "org-acme";
   switch (role) {
     case "SUPER_ADMIN":
       return "/super-admin/dashboard";
     case "PLATFORM_OPERATOR":
       return "/platform-operator/dashboard";
     case "ORGANIZATION_OWNER":
-      return `/org/${orgId}/owner/dashboard`;
+      return `/org/${safeOrgId}/owner/dashboard`;
     case "ORGANIZATION_ADMIN":
-      return `/org/${orgId}/admin/dashboard`;
+      return `/org/${safeOrgId}/admin/dashboard`;
     case "PROJECT_MANAGER":
-      return `/org/${orgId}/manager/dashboard`;
+      return `/org/${safeOrgId}/manager/dashboard`;
     case "TEAM_LEAD":
-      return `/org/${orgId}/lead/dashboard`;
+      return `/org/${safeOrgId}/lead/dashboard`;
     case "DEVELOPER":
-      return `/org/${orgId}/developer/dashboard`;
+      return `/org/${safeOrgId}/developer/dashboard`;
     case "QA_REVIEWER":
-      return `/org/${orgId}/reviewer/dashboard`;
+      return `/org/${safeOrgId}/reviewer/dashboard`;
     case "VIEWER":
-      return `/org/${orgId}/viewer/dashboard`;
+      return `/org/${safeOrgId}/viewer/dashboard`;
     default:
-      return `/org/${orgId}/viewer/dashboard`;
+      return `/org/${safeOrgId}/viewer/dashboard`;
   }
 }
 
@@ -89,17 +93,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   switchRoleAndNavigate: (role, routerPush) => {
     const { currentOrg } = get();
+    const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
     set({ currentRole: role, activeRole: role });
-    const targetUrl = getRoleDashboardPath(role, currentOrg.id);
+    const targetUrl = getRoleDashboardPath(role, safeOrgId);
     routerPush(targetUrl);
   },
 
   switchUserAndRole: (userId, routerPush) => {
-    if (userId && get().currentOrg.id) routerPush(getRoleDashboardPath(get().currentRole, get().currentOrg.id));
+    const { currentOrg, currentRole } = get();
+    const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
+    routerPush(getRoleDashboardPath(currentRole, safeOrgId));
   },
 
   logout: () => {
-    set({ currentUser: EMPTY_USER, currentOrg: EMPTY_ORG, activeOrgId: "", isAuthenticated: false });
+    set({ currentUser: DEFAULT_USER, currentOrg: DEFAULT_ORG, activeOrgId: "org-acme", isAuthenticated: false });
   },
 
   hydrate: (user, organizations, role) => {

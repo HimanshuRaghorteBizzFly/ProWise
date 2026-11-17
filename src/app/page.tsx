@@ -47,8 +47,9 @@ export default function LandingPage() {
     setMounted(true);
   }, []);
 
-  const appDashboardUrl = getRoleDashboardPath(currentRole, currentOrg.id);
-  const structuredFixtureUrl = `/org/${currentOrg.id}/developer/projects/proj-structured-cds/structured`;
+  const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
+  const appDashboardUrl = getRoleDashboardPath(currentRole, safeOrgId);
+  const structuredFixtureUrl = `/org/${safeOrgId}/developer/projects/proj-structured-cds/structured`;
 
   return (
     <div

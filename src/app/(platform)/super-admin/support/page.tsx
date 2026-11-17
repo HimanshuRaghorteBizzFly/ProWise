@@ -1875,7 +1875,7 @@ export default function SupportOversightPage() {
                           </p>
                           {item.details && (
                             <p className="text-xs text-[var(--color-text-muted)] italic">
-                              "{item.details}"
+                              &quot;{item.details}&quot;
                             </p>
                           )}
                         </div>

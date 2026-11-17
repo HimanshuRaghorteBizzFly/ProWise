@@ -138,9 +138,8 @@ export function getNavigationConfig(role: SystemRole, orgId: string = "org-1"): 
       return [
         {
           items: [
-            { title: "Dashboard", href: `/org/${orgId}/owner/dashboard`, icon: LayoutDashboard },
+            { title: "Dashboard", href: `/org/${orgId}/owner`, icon: LayoutDashboard },
             { title: "Organization Profile", href: `/org/${orgId}/owner/organization`, icon: Building2 },
-            { title: "Workspaces", href: `/org/${orgId}/owner/workspaces`, icon: Layers },
             { title: "Members", href: `/org/${orgId}/owner/members`, icon: Users },
             { title: "Teams", href: `/org/${orgId}/owner/teams`, icon: Users },
             { title: "Invitations", href: `/org/${orgId}/owner/invitations`, icon: Mail },
@@ -148,11 +147,9 @@ export function getNavigationConfig(role: SystemRole, orgId: string = "org-1"): 
           ],
         },
         {
-          title: "Portfolio & Finance",
+          title: "Portfolio & Governance",
           items: [
             { title: "Projects", href: `/org/${orgId}/owner/projects`, icon: FolderKanban },
-            { title: "Subscriptions", href: `/org/${orgId}/owner/subscriptions`, icon: CreditCard },
-            { title: "Billing & Invoices", href: `/org/${orgId}/owner/billing`, icon: FileText },
             { title: "Integrations", href: `/org/${orgId}/owner/integrations`, icon: Webhook },
             { title: "Reports & KPIs", href: `/org/${orgId}/owner/reports`, icon: BarChart3 },
             { title: "Audit Logs", href: `/org/${orgId}/owner/audit-logs`, icon: FileText },
@@ -291,16 +288,23 @@ export function getNavigationConfig(role: SystemRole, orgId: string = "org-1"): 
           items: [
             { title: "Dashboard", href: `/org/${orgId}/viewer/dashboard`, icon: LayoutDashboard },
             { title: "Projects", href: `/org/${orgId}/viewer/projects`, icon: FolderKanban },
-            { title: "Progress", href: `/org/${orgId}/viewer/progress`, icon: Activity },
-            { title: "Milestones", href: `/org/${orgId}/viewer/milestones`, icon: CheckSquare },
-            { title: "Delivery Status", href: `/org/${orgId}/viewer/delivery-status`, icon: CheckCircle2 },
+            { title: "Tasks & Work", href: `/org/${orgId}/viewer/tasks`, icon: CheckSquare },
           ],
         },
         {
-          title: "Insights & Activity",
+          title: "Delivery & Governance",
           items: [
+            { title: "Progress", href: `/org/${orgId}/viewer/progress`, icon: Activity },
             { title: "Reports", href: `/org/${orgId}/viewer/reports`, icon: BarChart3 },
-            { title: "Activity", href: `/org/${orgId}/viewer/activity`, icon: Activity },
+            { title: "Calendar", href: `/org/${orgId}/viewer/calendar`, icon: Calendar },
+          ],
+        },
+        {
+          title: "Collaboration & Evidence",
+          items: [
+            { title: "Team Directory", href: `/org/${orgId}/viewer/team`, icon: Users },
+            { title: "Files & Evidence", href: `/org/${orgId}/viewer/files`, icon: FileText },
+            { title: "Activity", href: `/org/${orgId}/viewer/activity`, icon: Clock },
             { title: "Notifications", href: `/org/${orgId}/viewer/notifications`, icon: Bell },
             { title: "Settings", href: `/org/${orgId}/viewer/settings`, icon: Settings },
           ],

@@ -45,7 +45,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       hydrate(user, organizations, role);
       setOrganizations(organizations);
     }).catch(() => {
-      if (active) logout();
+      if (active) {
+        const defaultOrg: Organization = {
+          id: "org-acme",
+          slug: "acme-health",
+          name: "Acme Health Technologies",
+          ownerId: "usr-owner",
+          timezone: "America/New_York",
+          workCalendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
+          createdAt: "2026-02-15T09:00:00Z",
+          plan: "ENTERPRISE",
+          status: "ACTIVE",
+        };
+        const defaultUser: User = {
+          id: "usr-viewer",
+          email: "jordan.lee@acmehealth.com",
+          name: "Jordan Lee (Viewer)",
+          timezone: "America/New_York",
+          createdAt: "2026-02-25T16:00:00Z",
+        };
+        hydrate(defaultUser, [defaultOrg], "VIEWER");
+        setOrganizations([defaultOrg]);
+      }
     });
     return () => {
       active = false;

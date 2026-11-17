@@ -7,20 +7,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { apiClient } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setTimeout(() => {
+    try {
+      await apiClient.requestPasswordReset(email);
       setIsLoading(false);
       setIsSubmitted(true);
       toast.success("Password recovery link sent!");
-    }, 400);
+    } catch (error) {
+      setIsLoading(false);
+      toast.error(error instanceof Error ? error.message : "Unable to send recovery instructions.");
+    }
   };
 
   return (
@@ -44,7 +49,7 @@ export default function ForgotPasswordPage() {
               <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto" />
               <h3 className="font-semibold text-app-text-primary">Check your inbox</h3>
               <p className="text-xs text-app-text-secondary">
-                We sent a secure password reset link to <strong>{email}</strong>. The link expires in 15 minutes.
+                We sent secure password reset instructions to <strong>{email}</strong>. The token expires in 30 minutes.
               </p>
               <div className="pt-4">
                 <Link href="/login">

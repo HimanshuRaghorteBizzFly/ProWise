@@ -8,17 +8,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Lock, CheckCircle2, ArrowRight } from "lucide-react";
+import { apiClient } from "@/lib/api";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [token] = useState(() =>
+    typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("token") || "",
+  );
   const [isSuccess, setIsSuccess] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < 8) {
-      toast.error("Password must be at least 8 characters");
+    if (password.length < 12) {
+      toast.error("Password must be at least 12 characters");
       return;
     }
     if (password !== confirmPassword) {
@@ -26,11 +30,13 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    setIsSuccess(true);
-    toast.success("Password reset successfully!");
-    setTimeout(() => {
-      router.push("/login");
-    }, 1500);
+    apiClient.confirmPasswordReset(token, password)
+      .then(() => {
+        setIsSuccess(true);
+        toast.success("Password reset successfully!");
+        setTimeout(() => router.push("/login"), 1500);
+      })
+      .catch((error) => toast.error(error instanceof Error ? error.message : "Unable to reset the password."));
   };
 
   return (

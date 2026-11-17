@@ -1,6 +1,17 @@
 import { create } from "zustand";
 import { Organization } from "@/types";
-import { INITIAL_ORGANIZATIONS } from "@/lib/mock-data";
+
+const EMPTY_ORGANIZATION: Organization = {
+  id: "",
+  slug: "",
+  name: "",
+  ownerId: "",
+  timezone: "UTC",
+  workCalendar: { workDays: [], dailyHours: 0, holidays: [] },
+  createdAt: "",
+  plan: "FREE",
+  status: "ACTIVE",
+};
 
 interface WorkspaceStoreState {
   currentOrg: Organization;
@@ -8,11 +19,12 @@ interface WorkspaceStoreState {
   setCurrentOrg: (org: Organization) => void;
   setCurrentOrgId: (orgId: string) => void;
   updateOrganization: (orgId: string, updates: Partial<Organization>) => void;
+  setOrganizations: (organizations: Organization[]) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceStoreState>((set) => ({
-  currentOrg: INITIAL_ORGANIZATIONS[0],
-  organizations: INITIAL_ORGANIZATIONS,
+  currentOrg: EMPTY_ORGANIZATION,
+  organizations: [],
 
   setCurrentOrg: (org) => set({ currentOrg: org }),
 
@@ -30,5 +42,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set) => ({
       const current = state.currentOrg.id === orgId ? { ...state.currentOrg, ...updates } : state.currentOrg;
       return { organizations: orgs, currentOrg: current };
     }),
+  setOrganizations: (organizations) =>
+    set({ organizations, currentOrg: organizations[0] || EMPTY_ORGANIZATION }),
 }));
 

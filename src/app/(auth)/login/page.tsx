@@ -3,41 +3,30 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
-import { SEEDED_USERS } from "@/lib/mock-data";
+import { apiClient } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Lock, Mail, ArrowRight, ShieldCheck, UserCheck } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { switchUserAndRole, currentOrg } = useAuthStore();
-  const [email, setEmail] = useState("sarah.chen@acmehealth.com");
-  const [password, setPassword] = useState("••••••••••••");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleCustomLogin = (e: React.FormEvent) => {
+  const handleCustomLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-
-    setTimeout(() => {
+    try {
+      await apiClient.signin({ email, password });
+      toast.success("Signed in successfully.");
+      router.push("/select-org");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to sign in.");
+    } finally {
       setIsLoading(false);
-      const matched = SEEDED_USERS.find((u) => u.email.toLowerCase() === email.toLowerCase());
-      if (matched) {
-        switchUserAndRole(matched.id, router.push);
-        toast.success(`Signed in as ${matched.name}`);
-      } else {
-        toast.error("Invalid credentials. Try selecting a seeded demo user below.");
-      }
-    }, 400);
-  };
-
-  const handleQuickLogin = (userId: string) => {
-    switchUserAndRole(userId, router.push);
-    const user = SEEDED_USERS.find((u) => u.id === userId);
-    toast.success(`Signed in as ${user?.name}`);
+    }
   };
 
   return (
@@ -91,78 +80,6 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          {/* Quick Demo Sign-ins */}
-          <div className="mt-6 pt-5 border-t border-app-border">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-app-text-muted mb-2.5">
-              1-Click Demo Profiles (All 9 Roles)
-            </p>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickLogin("usr-owner")}
-                className="justify-start text-left text-[11px]"
-              >
-                🏢 Org Owner
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickLogin("usr-manager")}
-                className="justify-start text-left text-[11px]"
-              >
-                📊 Project Manager
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickLogin("usr-lead")}
-                className="justify-start text-left text-[11px]"
-              >
-                👥 Team Lead
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickLogin("usr-developer")}
-                className="justify-start text-left text-[11px]"
-              >
-                💻 Developer
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickLogin("usr-reviewer")}
-                className="justify-start text-left text-[11px]"
-              >
-                🔍 QA / Reviewer
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickLogin("usr-viewer")}
-                className="justify-start text-left text-[11px]"
-              >
-                👀 Stakeholder Viewer
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickLogin("usr-superadmin")}
-                className="justify-start text-left text-[11px]"
-              >
-                🛡️ Super Admin
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickLogin("usr-operator")}
-                className="justify-start text-left text-[11px]"
-              >
-                ⚙️ Platform Operator
-              </Button>
-            </div>
-          </div>
         </Card>
 
         {/* Signup Link */}

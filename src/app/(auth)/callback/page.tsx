@@ -10,7 +10,7 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      const destination = getRoleDashboardPath(currentRole, currentOrg?.id || "org-1");
+      const destination = getRoleDashboardPath(currentRole, currentOrg.id);
       router.push(destination);
     }, 800);
     return () => clearTimeout(timer);

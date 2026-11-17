@@ -1656,7 +1656,7 @@ export default function PlatformConfigurationPage() {
 
           <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-blue-900 dark:text-blue-200 space-y-1">
             <p className="font-semibold">Customer Preview:</p>
-            <p className="italic">"{editNoticeMsg || "No notice entered"}"</p>
+            <p className="italic">&quot;{editNoticeMsg || "No notice entered"}&quot;</p>
             <p className="text-[10px] opacity-80">Estimated Restoration: {editNoticeTime || "Pending"}</p>
           </div>
 
@@ -1773,7 +1773,7 @@ export default function PlatformConfigurationPage() {
                     Restoration: {selectedMaintWindow.estimatedRestorationTime}
                   </span>
                 </div>
-                <p className="text-blue-950 dark:text-blue-100 italic">"{selectedMaintWindow.customerNoticeMessage}"</p>
+                <p className="text-blue-950 dark:text-blue-100 italic">&quot;{selectedMaintWindow.customerNoticeMessage}&quot;</p>
               </div>
 
               {/* Service Restoration Checks */}
@@ -1839,7 +1839,7 @@ export default function PlatformConfigurationPage() {
                         <span className="text-[10px] text-[var(--color-text-muted)]">{formatDateTime(log.timestamp)}</span>
                       </div>
                       <p className="text-[11px] text-[var(--color-text-secondary)]">By {log.actor}</p>
-                      {log.details && <p className="text-[10px] text-[var(--color-text-muted)] italic">"{log.details}"</p>}
+                      {log.details && <p className="text-[10px] text-[var(--color-text-muted)] italic">&quot;{log.details}&quot;</p>}
                     </div>
                   ))}
                 </div>

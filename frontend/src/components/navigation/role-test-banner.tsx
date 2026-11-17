@@ -24,16 +24,18 @@ export function RoleTestBanner() {
   const { approveScopeAddition, reopenWorkItem, resetToInitialFixtures } = useProjectStore();
   const [isExpanded, setIsExpanded] = useState(true);
 
+  const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
+
   const panels: { role: SystemRole; label: string; route: string }[] = [
     { role: "SUPER_ADMIN", label: "1. Super Admin", route: "/super-admin" },
     { role: "PLATFORM_OPERATOR", label: "2. Platform Operator", route: "/platform-operator" },
-    { role: "ORGANIZATION_OWNER", label: "3. Org Owner", route: `/org/${currentOrg.id}/owner` },
-    { role: "ORGANIZATION_ADMIN", label: "4. Org Admin", route: `/org/${currentOrg.id}/admin` },
-    { role: "PROJECT_MANAGER", label: "5. Project Manager", route: `/org/${currentOrg.id}/manager` },
-    { role: "TEAM_LEAD", label: "6. Team Lead", route: `/org/${currentOrg.id}/lead` },
-    { role: "DEVELOPER", label: "7. Developer", route: `/org/${currentOrg.id}/developer` },
-    { role: "QA_REVIEWER", label: "8. QA / Reviewer", route: `/org/${currentOrg.id}/reviewer` },
-    { role: "VIEWER", label: "9. Viewer", route: `/org/${currentOrg.id}/viewer` },
+    { role: "ORGANIZATION_OWNER", label: "3. Org Owner", route: `/org/${safeOrgId}/owner` },
+    { role: "ORGANIZATION_ADMIN", label: "4. Org Admin", route: `/org/${safeOrgId}/admin` },
+    { role: "PROJECT_MANAGER", label: "5. Project Manager", route: `/org/${safeOrgId}/manager` },
+    { role: "TEAM_LEAD", label: "6. Team Lead", route: `/org/${safeOrgId}/lead` },
+    { role: "DEVELOPER", label: "7. Developer", route: `/org/${safeOrgId}/developer` },
+    { role: "QA_REVIEWER", label: "8. QA / Reviewer", route: `/org/${safeOrgId}/reviewer` },
+    { role: "VIEWER", label: "9. Viewer", route: `/org/${safeOrgId}/viewer/dashboard` },
   ];
 
   // Test Scenario 8 trigger: Approve 25-point scope addition to CRM-100 (50/100 -> 50/125 = 40%)

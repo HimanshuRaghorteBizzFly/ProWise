@@ -14,7 +14,7 @@ export function useOrganization() {
   return {
     organization: currentOrg,
     organizations,
-    activeOrgId: authOrg?.id || "org-1",
+    activeOrgId: authOrg.id,
     setCurrentOrg,
     switchOrg: handleSwitchOrg,
     updateOrganization,

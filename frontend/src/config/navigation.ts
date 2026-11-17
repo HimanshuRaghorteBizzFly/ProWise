@@ -288,16 +288,23 @@ export function getNavigationConfig(role: SystemRole, orgId: string = "org-1"): 
           items: [
             { title: "Dashboard", href: `/org/${orgId}/viewer/dashboard`, icon: LayoutDashboard },
             { title: "Projects", href: `/org/${orgId}/viewer/projects`, icon: FolderKanban },
-            { title: "Progress", href: `/org/${orgId}/viewer/progress`, icon: Activity },
-            { title: "Milestones", href: `/org/${orgId}/viewer/milestones`, icon: CheckSquare },
-            { title: "Delivery Status", href: `/org/${orgId}/viewer/delivery-status`, icon: CheckCircle2 },
+            { title: "Tasks & Work", href: `/org/${orgId}/viewer/tasks`, icon: CheckSquare },
           ],
         },
         {
-          title: "Insights & Activity",
+          title: "Delivery & Governance",
           items: [
+            { title: "Progress", href: `/org/${orgId}/viewer/progress`, icon: Activity },
             { title: "Reports", href: `/org/${orgId}/viewer/reports`, icon: BarChart3 },
-            { title: "Activity", href: `/org/${orgId}/viewer/activity`, icon: Activity },
+            { title: "Calendar", href: `/org/${orgId}/viewer/calendar`, icon: Calendar },
+          ],
+        },
+        {
+          title: "Collaboration & Evidence",
+          items: [
+            { title: "Team Directory", href: `/org/${orgId}/viewer/team`, icon: Users },
+            { title: "Files & Evidence", href: `/org/${orgId}/viewer/files`, icon: FileText },
+            { title: "Activity", href: `/org/${orgId}/viewer/activity`, icon: Clock },
             { title: "Notifications", href: `/org/${orgId}/viewer/notifications`, icon: Bell },
             { title: "Settings", href: `/org/${orgId}/viewer/settings`, icon: Settings },
           ],

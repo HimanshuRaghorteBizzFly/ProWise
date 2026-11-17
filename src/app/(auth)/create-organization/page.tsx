@@ -3,55 +3,38 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useWorkspaceStore } from "@/store/workspace-store";
-import { useAuthStore } from "@/store/auth-store";
+import { apiClient } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Building2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
-import { Organization } from "@/types";
 
 export default function CreateOrganizationPage() {
   const router = useRouter();
-  const { organizations, setCurrentOrg } = useWorkspaceStore();
-  const { setCurrentOrg: setAuthOrg, setCurrentRole } = useAuthStore();
-
-
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [timezone, setTimezone] = useState("America/New_York");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (name.length < 2) {
       toast.error("Organization name must be at least 2 characters");
       return;
     }
 
-    const orgId = `org-${Date.now()}`;
-    const newOrg: Organization = {
-      id: orgId,
-      slug: slug || name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
-      name,
-      ownerId: "usr-current",
-      timezone,
-      workCalendar: {
-        workDays: [1, 2, 3, 4, 5],
-        dailyHours: 8,
-        holidays: [],
-      },
-      createdAt: new Date().toISOString().split("T")[0],
-      plan: "STARTER",
-      status: "ACTIVE",
-    };
-
-    setCurrentOrg(newOrg);
-    setAuthOrg(newOrg);
-    setCurrentRole("ORGANIZATION_OWNER");
-
-    toast.success(`Organization ${name} created!`);
-    router.push(`/org/${orgId}/owner/dashboard`);
+    try {
+      const organization = await apiClient.createOrganization({
+        name,
+        slug: slug || name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        timezone,
+        calendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
+      });
+      toast.success(`Organization ${name} created!`);
+      window.location.assign(`/org/${organization.id}/owner/dashboard`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to create the organization.");
+    }
   };
 
   return (
