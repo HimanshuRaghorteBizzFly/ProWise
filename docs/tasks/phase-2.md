@@ -35,20 +35,3 @@ Requires: 2.1, 2.2, 2.3. Enables: 3.6, 5.1. Trace: FR-014, FR-015, D01, D04.
 
 ---
 **After 2.4: MVP checkpoint.** Tag `v0.1-individual`.
-
-## Matching blueprint test rows
-
-| Test | Name | Expected result |
-|---|---|---|
-| T09 | Create and edit projects | Required fields and unique keys validate; duplicate keys and invalid date ranges fail. |
-| T10 | Filter the portfolio | Combined filters produce rows and counts from one authorized set. |
-| T11 | Individual project without tasks | Accountable owner can report immediately with zero tasks and no invented percentage. |
-| T14 | Archive and restore | Archive stops edits; restore preserves lifecycle, scope and history and reconciles reminders once. |
-| T15 | Accept delivery | 100% remains pending until authorized decision and checklist; accepted scope and evidence are recorded. |
-| T16 | Start from a template | Deferred by D12. |
-| T17 | Submit a check-in | 45% check-in validates and returns a dated entry without creating tasks. |
-| T18 | Immutable check-in revisions | Downward correction requires a reason and preserves original/correction authors and verification state. |
-| T28 | Label the reported figure | Portfolio, detail and report show `Developer reported` and time, including after verification. |
-| AS-01 | A solo developer starts | 40% is shown as Developer reported with its own repository timestamps. |
-| AS-02 | The owner reports 100% | 100% shows Awaiting acceptance; only authorized acceptance delivers it. |
-| NFR-12 | Localization | UTC instants, IANA zones, local date-only deadlines and DST behavior are correct. |

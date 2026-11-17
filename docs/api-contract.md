@@ -3,7 +3,6 @@
 ## Conventions
 - `Idempotency-Key` on retriable mutations, scoped to caller + org + route. Same key + same body -> earlier result. Same key + different body -> 409.
 - JPA `@Version` on conflicting edits. Stale -> 409 `STALE_VERSION`. Stale review -> 409 `STALE_REVIEW`.
-- Clients send `expectedVersion` (the entity's @Version value); a mismatch returns 409 STALE_VERSION.
 - Request DTO records use Jakarta Bean Validation with `@Valid`; springdoc-openapi generates the OpenAPI specification used to generate web client types.
 - Errors: `{ code, message, request_id, field_errors }`. Status: 400/422 validation, 401 unauthenticated, 403 missing permission, 404 foreign/unknown, 409 conflict, 429 limited, 503 unavailable.
 - Lists: cursor pagination, deterministic order with unique ID tiebreaker. Pagination never bypasses filter or scope.

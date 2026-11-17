@@ -33,19 +33,3 @@ Requires: 1.3, 1.4, 3.1. Enables: 5.6, 6.1. Trace: FR-023, NFR-06, NFR-10.
 **Pass when:**
 - T23: add comment, mention permitted colleague, attach clean file. Pending, rejected, foreign files unavailable.
 - Upload clean and rejected samples, revoke access, try a foreign file. A mention never grants membership. Scan error leaves file unavailable.
-
-## Matching blueprint test rows
-
-| Test | Name | Expected result |
-|---|---|---|
-| T07 | Access and integration audit | Repository removal has safe actor/time/target audit evidence. |
-| T23 | Comments and attachments | Permitted comments and clean files work; pending, rejected and foreign files remain unavailable. |
-| T31 | Authorized GitHub installation | Installation is tenant-bound and unselected repositories cannot leak or link events. |
-| T32 | Verified and replay-safe webhook | Tampered signatures fail; duplicates have one effect; failures retry or reconcile. |
-| T33 | Engineering activity feed | Permitted activity shows source/timestamps and sync loss is visible. |
-| T34 | Link work using a key or user choice | Unique authorized keys link; ambiguous shared-repository events remain unlinked. |
-| T35 | Protect task completion | Merge/CI evidence does not bypass review or advance delivery percentage. |
-| T36 | Deployment details | Deferred by D12. |
-| AS-01 | A solo developer starts | Repository activity has separate timestamps and does not replace the manual progress figure. |
-| AS-06 | GitHub delivers twice | Replay and interrupted polling yield one downstream effect and eventual sync state. |
-| NFR-04 | Reliable processing | Reordered/replayed deliveries and poller interruption recover with one business effect. |

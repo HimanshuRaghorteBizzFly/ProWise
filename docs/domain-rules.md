@@ -1,6 +1,6 @@
 # Domain rules (progress, lifecycle, calendar, health)
 
-Server owns calculations. Implement as pure Java classes in `com.prowise.domain` with no Spring dependencies.
+Server owns calculations. Implement as pure Java classes in `com.<org>.delivery.domain` with no Spring dependencies.
 
 ## Lifecycle (canonical categories)
 `Planned -> Active <-> On Hold -> (Awaiting acceptance) -> Delivered -> Closed`, plus `Cancelled`. `Archived` is a separate read-only flag (restore returns previous lifecycle).

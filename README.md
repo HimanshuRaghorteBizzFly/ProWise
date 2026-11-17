@@ -32,7 +32,7 @@ It natively supports two distinct operational modes:
 
 ## 3. Visual Design System (Google Workspace-Inspired)
 
-Semantic theme tokens mapped in `frontend/src/styles/globals.css` and `frontend/tailwind.config.ts`:
+Semantic theme tokens mapped in `src/styles/globals.css` and `tailwind.config.ts`:
 
 ### Light Palette
 - **App Background:** `#F8FAFD`
@@ -74,7 +74,7 @@ Semantic theme tokens mapped in `frontend/src/styles/globals.css` and `frontend/
 
 ## 5. Verification Test Scenarios (Prompt Section 18)
 
-All 15 master test scenarios are automated in `frontend/scripts/verify-all-scenarios.mjs` and interactive in the UI via the top **Blueprint V1.1 Quick Navigator Banner**:
+All 15 master test scenarios are automated in `scripts/verify-all-scenarios.mjs` and interactive in the UI via the top **Blueprint V1.1 Quick Navigator Banner**:
 
 1. **Role Routing & Authentication:** 1-Click login profiles for all 9 roles at `/login`.
 2. **Organization Switching:** Tenant switcher reauthorizes scoped workspace boundaries.
@@ -98,16 +98,16 @@ All 15 master test scenarios are automated in `frontend/scripts/verify-all-scena
 
 ```bash
 # 1. Install dependencies
-cd frontend && npm install
+npm install
 
 # 2. Run automated test suite verifying all Blueprint math and rules
-cd frontend && node scripts/verify-all-scenarios.mjs
+node scripts/verify-all-scenarios.mjs
 
 # 3. Start local development server
-cd frontend && npm run dev
+npm run dev
 
 # 4. Build production bundle
-cd frontend && npm run build
+npm run build
 ```
 
 ---
@@ -116,7 +116,13 @@ cd frontend && npm run build
 
 ### Development
 
-On Windows, start the local PostgreSQL service, backend, and frontend together:
+```bash
+docker compose up -d
+cd backend && ./mvnw spring-boot:run
+cd frontend && npm run dev
+```
+
+On Windows, start PostgreSQL, the backend, and the frontend together:
 
 ```cmd
 run-dev.cmd
@@ -147,6 +153,6 @@ docker compose -f docker-compose.prod.yml up --build
 - [x] **Complete:** OWASP Spreadsheet Formula Injection Protection
 - [x] **Complete:** Top Role Test Banner for 1-click verification of all scenarios
 - [x] **Complete:** Production Build Verification (Next.js 14 App Router, 0 Type Errors)
-- [x] **Mocked:** Backend REST API adapter in `frontend/src/proxy.ts` (ready for direct Spring Boot `/v1` replacement)
+- [x] **Mocked:** Backend REST API adapter in `src/proxy.ts` (ready for direct Spring Boot `/v1` replacement)
 - [x] **Deferred:** Live Spring Boot backend, live PostgreSQL migrations, live GitHub App webhook callbacks (per frontend-only master prompt instructions)
 

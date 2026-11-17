@@ -23,12 +23,3 @@ Requires: 6.1, 6.2, 6.3. Enables: release handover. Trace: D11, D12, AS-01..08.
 **Build:** Pilot representative workflows (one solo project + one structured team). Record outcomes and residual issues, staged rollout, health check, hand over support + rollback ownership.
 **Pass when:** Solo setup < 3 minutes. Risk discovery within two interactions. Successful delivery review in both modes. All must-haves accepted. Supported runbook named.
 Release gate: all applicable MUST tests accepted; no open high/critical security findings; name deployment owner, support contact, rollback triggers, monitoring period. Record proceed / hold / rollback.
-
-## Matching blueprint test rows
-
-| Test | Name | Expected result |
-|---|---|---|
-| T01-T46 | Full functional suite | All MUST rows pass or have a formally approved scope amendment; D12 SHOULD rows are recorded as deferred. |
-| AS-01-AS-08 | End-to-end acceptance | Both modes, tenant boundaries, progress labels, Git separation, notifications and scope snapshots pass. |
-| NFR-01-NFR-12 | Quality targets and evidence | Applicable availability, latency, capacity, recovery, security, accessibility, browser, retention, maintainability and localization evidence is recorded. |
-| T08/T16/T26/T36/T45/T46 | Deferred SHOULD items | Deferred explicitly by D12 and excluded from V1 release scope. |

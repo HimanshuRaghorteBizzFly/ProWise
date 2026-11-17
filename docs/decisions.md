@@ -13,10 +13,9 @@ Solo build: all proposed defaults are ACCEPTED. Change only through a new entry 
 | D07 | Mode conversion | Individual offered when one developer owns delivery. Preserve both series. Remaining work starts a new denominator. Reverse needs a new manual entry. |
 | D08 | GitHub | GitHub first. Org admin selects repos. Explicit contributor identity. Auto-link only a unique task key. |
 | D09 | People, dates, reports | Weekly planned hours vs available hours. Missing hours stay unknown. No points-to-hours conversion. |
-| D10 | Identity, hosting, retention | V1 auth: Spring Security local accounts (BCrypt) + short-lived JWT access token + rotating refresh token; OIDC provider can replace it later behind the same interface. Backend: Spring Boot (Java 21); ORM: Spring Data JPA + Flyway; no Redis/BullMQ (PostgreSQL outbox + scheduled pollers). Retention durations TBD before commercial use. |
+| D10 | Identity, hosting, retention | Managed OIDC provider chosen after a spike. Backend: Spring Boot (Java 21); ORM: Spring Data JPA + Flyway; no Redis/BullMQ (PostgreSQL outbox + scheduled pollers). Retention durations TBD before commercial use. |
 | D11 | Product and pilot | Working name kept. Pricing deferred. Pilot = one solo project + one structured team. |
 | D12 | SHOULD items | DEFER: T08 MFA/devices, T16 templates, T26 board/timeline views, T36 deployment details, T45 escalation/digests, T46 health override. |
 
 ## Change log
 2026-11-05 | D10 | Stack changed to Next.js + Spring Boot + PostgreSQL; managed OIDC provider remains deferred pending a spike and retention durations remain TBD before commercial use, as approved | All implementation tasks | Update API, migration, worker-profile and test tooling references
-2026-11-16 | D10 | V1 auth uses Spring Security local accounts (BCrypt), short-lived JWT access tokens and rotating refresh tokens; OIDC can replace it behind the same interface | Authentication implementation | Keep the interface replaceable for the later OIDC provider

@@ -25,12 +25,3 @@ Requires: 0.1. Enables: 1.1, 1.4.
 **Build:** Versioned env config, typed contract skeleton, migrations, CI, sandbox identities, synthetic GitHub/email fixtures. Confirm framework, ORM, support owners.
 **Pass when:** Fresh setup applies Flyway migrations, builds the web/API, starts the worker profile, and runs a sample request that returns a request ID. Credentials stored outside code and logs.
 Trace: D08, D10, NFR-08, NFR-11.
-
-## Matching blueprint test rows
-
-| Test | Name | Expected result |
-|---|---|---|
-| T01 | Create organization and calendar | Workspace owner, IANA timezone and work calendar are isolated after tenant switching. |
-| T08 | MFA, sessions and devices | Deferred by D12; any supported assurance is recorded and revoked sessions fail. |
-| NFR-08 | Observability | API action is traceable through outbox, poller, inbox and email with owned alerts. |
-| NFR-11 | Maintainability | Typed boundaries, migrations, OpenAPI examples, CI tests and rollback are verified. |
