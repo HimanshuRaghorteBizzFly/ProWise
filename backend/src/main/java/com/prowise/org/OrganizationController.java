@@ -13,6 +13,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 
 import com.prowise.identity.AuthPrincipal;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 @RestController
 @RequestMapping("/v1/organizations")
@@ -27,6 +28,7 @@ public class OrganizationController {
     }
 
     @PostMapping
+    @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Create an organization and its owner membership")
     ResponseEntity<OrganizationService.OrganizationResponse> create(
             HttpServletRequest request,

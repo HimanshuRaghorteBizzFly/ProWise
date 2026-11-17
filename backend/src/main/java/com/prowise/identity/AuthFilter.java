@@ -11,6 +11,11 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import org.hibernate.Session;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -19,6 +24,7 @@ import com.prowise.common.api.ApiError;
 import com.prowise.common.api.ApiHeaders;
 import com.prowise.common.api.ErrorCodes;
 import com.prowise.common.api.RequestIdFilter;
+import com.prowise.authz.TenantContext;
 
 @Component
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
@@ -29,6 +35,9 @@ public class AuthFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final ObjectProvider<JdbcTemplate> jdbc;
     private final ObjectMapper objectMapper;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public AuthFilter(JwtService jwtService, ObjectProvider<JdbcTemplate> jdbc, ObjectMapper objectMapper) {
         this.jwtService = jwtService;
@@ -61,10 +70,27 @@ public class AuthFilter extends OncePerRequestFilter {
                 writeUnauthorized(request, response);
                 return;
             }
+            if (principal.organizationId() != null) {
+                Integer member = jdbcTemplate.queryForObject(
+                        "SELECT count(*) FROM memberships WHERE org_id = ? AND user_id = ? AND status = 'ACTIVE'",
+                        Integer.class, principal.organizationId(), principal.userId());
+                if (member == null || member != 1) {
+                    writeUnauthorized(request, response);
+                    return;
+                }
+                TenantContext.setOrganizationId(principal.organizationId());
+                entityManager.unwrap(Session.class).enableFilter("tenantFilter")
+                        .setParameter("orgId", principal.organizationId());
+            }
             request.setAttribute(PRINCIPAL_ATTRIBUTE, principal);
+            SecurityContextHolder.getContext().setAuthentication(
+                    new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()));
             filterChain.doFilter(request, response);
         } catch (RuntimeException exception) {
             writeUnauthorized(request, response);
+        } finally {
+            SecurityContextHolder.clearContext();
+            TenantContext.clear();
         }
     }
 

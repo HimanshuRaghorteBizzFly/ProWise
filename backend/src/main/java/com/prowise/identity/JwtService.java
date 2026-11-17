@@ -32,21 +32,25 @@ public class JwtService {
 
     public String issueAccessToken(AuthPrincipal principal) {
         Instant now = Instant.now();
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(principal.userId().toString())
                 .claim("sid", principal.sessionId().toString())
                 .claim("email", principal.email())
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plus(accessTokenLifetime)))
-                .signWith(key)
-                .compact();
+                .expiration(Date.from(now.plus(accessTokenLifetime)));
+        if (principal.organizationId() != null) {
+            builder.claim("org", principal.organizationId().toString());
+        }
+        return builder.signWith(key).compact();
     }
 
     public AuthPrincipal parse(String token) {
         Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
+        String organization = claims.get("org", String.class);
         return new AuthPrincipal(
                 UUID.fromString(claims.getSubject()),
                 UUID.fromString(claims.get("sid", String.class)),
-                claims.get("email", String.class));
+                claims.get("email", String.class),
+                organization == null ? null : UUID.fromString(organization));
     }
 }

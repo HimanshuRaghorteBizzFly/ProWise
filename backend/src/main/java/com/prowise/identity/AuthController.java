@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import io.swagger.v3.oas.annotations.Operation;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 @RestController
 @RequestMapping("/v1")
@@ -32,18 +33,21 @@ public class AuthController {
     }
 
     @PostMapping("/auth/signup")
+    @PreAuthorize("permitAll()")
     @Operation(summary = "Create an identity and start a session")
     ResponseEntity<AccessTokenResponse> signup(@RequestBody Credentials request) {
         return withRefreshCookie(authService.signup(request.email(), request.password()), 201);
     }
 
     @PostMapping("/auth/signin")
+    @PreAuthorize("permitAll()")
     @Operation(summary = "Sign in and rotate a refresh session")
     ResponseEntity<AccessTokenResponse> signin(@RequestBody Credentials request) {
         return withRefreshCookie(authService.signin(request.email(), request.password()), 200);
     }
 
     @PostMapping("/auth/refresh")
+    @PreAuthorize("permitAll()")
     @Operation(summary = "Rotate the refresh session")
     ResponseEntity<AccessTokenResponse> refresh(HttpServletRequest request, @RequestBody(required = false) RefreshRequest body) {
         String refreshToken = body == null ? null : body.refreshToken();
@@ -53,6 +57,7 @@ public class AuthController {
     }
 
     @PostMapping("/auth/signout")
+    @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Revoke the current session")
     ResponseEntity<Void> signout(HttpServletRequest request) {
         authService.signout(AuthPrincipal.require(request));
@@ -60,6 +65,7 @@ public class AuthController {
     }
 
     @PostMapping("/auth/password-reset/request")
+    @PreAuthorize("permitAll()")
     @Operation(summary = "Request password reset instructions")
     ResponseEntity<Void> requestPasswordReset(@RequestBody EmailRequest request) {
         authService.requestPasswordReset(request.email());
@@ -67,6 +73,7 @@ public class AuthController {
     }
 
     @PostMapping("/auth/password-reset/confirm")
+    @PreAuthorize("permitAll()")
     @Operation(summary = "Confirm a password reset")
     ResponseEntity<Void> confirmPasswordReset(@RequestBody PasswordResetRequest request) {
         authService.confirmPasswordReset(request.token(), request.password());
@@ -74,6 +81,7 @@ public class AuthController {
     }
 
     @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Get the authenticated identity and active memberships")
     AuthService.MeResponse me(HttpServletRequest request) {
         return authService.me(AuthPrincipal.require(request).userId());

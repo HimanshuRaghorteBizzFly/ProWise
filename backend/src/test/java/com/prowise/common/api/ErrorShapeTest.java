@@ -155,16 +155,19 @@ class ErrorShapeTest {
     static class ErrorProbeController {
 
         @PostMapping("/v1/__test__/echo")
+        @org.springframework.security.access.prepost.PreAuthorize("permitAll()")
         EchoRequest echo(@Valid @RequestBody EchoRequest request) {
             return request;
         }
 
         @GetMapping("/v1/__test__/stale")
+        @org.springframework.security.access.prepost.PreAuthorize("permitAll()")
         void stale() {
             throw new ApiException(HttpStatus.CONFLICT, "STALE_VERSION", "The record was changed by someone else.");
         }
 
         @GetMapping("/v1/__test__/boom")
+        @org.springframework.security.access.prepost.PreAuthorize("permitAll()")
         void boom() {
             throw new IllegalStateException("internal detail");
         }

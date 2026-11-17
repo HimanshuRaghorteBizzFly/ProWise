@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import io.swagger.v3.oas.annotations.Hidden;
 
@@ -27,6 +28,7 @@ public class JsonErrorController implements ErrorController {
     private static final Logger log = LoggerFactory.getLogger(JsonErrorController.class);
 
     @RequestMapping("${server.error.path:${error.path:/error}}")
+    @PreAuthorize("permitAll()")
     ResponseEntity<ApiError> error(HttpServletRequest request) {
         Object statusAttribute = request.getAttribute(RequestDispatcher.ERROR_STATUS_CODE);
         HttpStatusCode status = statusAttribute instanceof Integer code

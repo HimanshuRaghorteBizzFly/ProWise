@@ -7,7 +7,11 @@ import jakarta.servlet.http.HttpServletRequest;
 import com.prowise.common.api.ApiException;
 import com.prowise.common.api.ErrorCodes;
 
-public record AuthPrincipal(UUID userId, UUID sessionId, String email) {
+public record AuthPrincipal(UUID userId, UUID sessionId, String email, UUID organizationId) {
+
+    public AuthPrincipal(UUID userId, UUID sessionId, String email) {
+        this(userId, sessionId, email, null);
+    }
 
     public static AuthPrincipal require(HttpServletRequest request) {
         Object principal = request.getAttribute(AuthFilter.PRINCIPAL_ATTRIBUTE);

@@ -116,13 +116,7 @@ cd frontend && npm run build
 
 ### Development
 
-```bash
-docker compose up -d
-cd backend && ./mvnw spring-boot:run
-cd frontend && npm run dev
-```
-
-On Windows, start PostgreSQL, the backend, and the frontend together:
+On Windows, start the local PostgreSQL service, backend, and frontend together:
 
 ```cmd
 run-dev.cmd

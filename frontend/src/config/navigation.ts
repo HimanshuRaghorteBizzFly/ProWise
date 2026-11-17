@@ -138,9 +138,8 @@ export function getNavigationConfig(role: SystemRole, orgId: string = "org-1"): 
       return [
         {
           items: [
-            { title: "Dashboard", href: `/org/${orgId}/owner/dashboard`, icon: LayoutDashboard },
+            { title: "Dashboard", href: `/org/${orgId}/owner`, icon: LayoutDashboard },
             { title: "Organization Profile", href: `/org/${orgId}/owner/organization`, icon: Building2 },
-            { title: "Workspaces", href: `/org/${orgId}/owner/workspaces`, icon: Layers },
             { title: "Members", href: `/org/${orgId}/owner/members`, icon: Users },
             { title: "Teams", href: `/org/${orgId}/owner/teams`, icon: Users },
             { title: "Invitations", href: `/org/${orgId}/owner/invitations`, icon: Mail },
@@ -148,11 +147,9 @@ export function getNavigationConfig(role: SystemRole, orgId: string = "org-1"): 
           ],
         },
         {
-          title: "Portfolio & Finance",
+          title: "Portfolio & Governance",
           items: [
             { title: "Projects", href: `/org/${orgId}/owner/projects`, icon: FolderKanban },
-            { title: "Subscriptions", href: `/org/${orgId}/owner/subscriptions`, icon: CreditCard },
-            { title: "Billing & Invoices", href: `/org/${orgId}/owner/billing`, icon: FileText },
             { title: "Integrations", href: `/org/${orgId}/owner/integrations`, icon: Webhook },
             { title: "Reports & KPIs", href: `/org/${orgId}/owner/reports`, icon: BarChart3 },
             { title: "Audit Logs", href: `/org/${orgId}/owner/audit-logs`, icon: FileText },

@@ -48,6 +48,13 @@ public class OrganizationService {
                     request.timezone(), json(request.calendar()));
             jdbc.update("INSERT INTO memberships (id, org_id, user_id, role_template) VALUES (?, ?, ?, 'ORGANIZATION_OWNER')",
                     UUID.randomUUID(), orgId, principal.userId());
+            jdbc.update("""
+                    INSERT INTO grants (id, org_id, membership_id, template_role_id, scope, granted_by)
+                    SELECT ?, ?, m.id, r.id, 'ORG', ?
+                    FROM memberships m
+                    JOIN roles r ON r.name = m.role_template AND r.is_template
+                    WHERE m.org_id = ? AND m.user_id = ?
+                    """, UUID.randomUUID(), orgId, principal.userId(), orgId, principal.userId());
         } catch (DuplicateKeyException exception) {
             throw new ApiException(HttpStatus.CONFLICT, "DUPLICATE_SLUG", "That organization slug is already in use.");
         }

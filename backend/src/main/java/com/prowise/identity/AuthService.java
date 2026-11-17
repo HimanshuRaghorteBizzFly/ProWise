@@ -115,6 +115,18 @@ public class AuthService {
                 principal.sessionId());
     }
 
+    @Transactional(readOnly = true)
+    public TokenPair switchOrganization(AuthPrincipal principal, UUID organizationId) {
+        Integer membership = jdbc.queryForObject("""
+                SELECT count(*) FROM memberships
+                WHERE org_id = ? AND user_id = ? AND status = 'ACTIVE'
+                """, Integer.class, organizationId, principal.userId());
+        if (membership == null || membership != 1) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "The requested resource was not found.");
+        }
+        return issueSession(principal.userId(), principal.email(), UUID.randomUUID(), organizationId);
+    }
+
     public MeResponse me(UUID userId) {
         Map<String, Object> user = jdbc.queryForMap("SELECT id, email FROM users WHERE id = ?", userId);
         List<MembershipResponse> memberships = jdbc.query(
@@ -163,12 +175,16 @@ public class AuthService {
     }
 
     private TokenPair issueSession(UUID userId, String email, UUID familyId) {
+        return issueSession(userId, email, familyId, null);
+    }
+
+    private TokenPair issueSession(UUID userId, String email, UUID familyId, UUID organizationId) {
         String refreshToken = randomToken();
         UUID sessionId = UUID.randomUUID();
         jdbc.update("INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, expires_at) "
                         + "VALUES (?, ?, ?, ?, now() + (? * interval '1 day'))",
                 sessionId, userId, hash(refreshToken), familyId, refreshTokenDays);
-        String accessToken = jwtService.issueAccessToken(new AuthPrincipal(userId, sessionId, email));
+        String accessToken = jwtService.issueAccessToken(new AuthPrincipal(userId, sessionId, email, organizationId));
         return new TokenPair(accessToken, refreshToken);
     }
 

@@ -3,11 +3,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $backend = Join-Path $root "backend"
 $frontend = Join-Path $root "frontend"
-$postgresHostPort = "55432"
 
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    throw "Docker is required. Install Docker Desktop and run this command again."
-}
 if (-not (Get-Command java -ErrorAction SilentlyContinue)) {
     throw "Java 21 is required. Install Java 21 and run this command again."
 }
@@ -15,26 +11,28 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     throw "Node.js/npm is required. Install Node.js 20+ and run this command again."
 }
 
-$javaPath = (Get-Command java).Source
-$env:JAVA_HOME = Split-Path (Split-Path $javaPath -Parent) -Parent
-$env:POSTGRES_PASSWORD = "prowise-dev-password"
-$env:POSTGRES_HOST_PORT = $postgresHostPort
-$env:DB_URL = "jdbc:postgresql://localhost:$postgresHostPort/prowise"
+$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.13.9-hotspot"
+$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+$env:DB_URL = "jdbc:postgresql://localhost:5432/prowise"
 $env:DB_USERNAME = "prowise"
 $env:DB_PASSWORD = "prowise-dev-password"
 $env:JWT_SIGNING_KEY = "local-development-signing-key-change-me-32-bytes"
+$env:API_BACKEND_URL = "http://localhost:8081"
 
-Write-Host "Starting PostgreSQL on port $postgresHostPort..."
-docker compose --project-directory $root up -d
-if ($LASTEXITCODE -ne 0) {
-    throw "PostgreSQL failed to start."
+$postgresService = Get-Service -Name "postgresql-x64-18" -ErrorAction SilentlyContinue
+if (-not $postgresService) {
+    throw "PostgreSQL Windows service 'postgresql-x64-18' was not found."
+}
+if ($postgresService.Status -ne "Running") {
+    Write-Host "Starting PostgreSQL service..."
+    Start-Service -Name "postgresql-x64-18"
 }
 
-Write-Host "Starting backend on http://localhost:8080..."
+Write-Host "Starting backend on http://localhost:8081..."
 $backendProcess = Start-Process `
     -FilePath (Join-Path $backend "mvnw.cmd") `
     -WorkingDirectory $backend `
-    -ArgumentList "spring-boot:run" `
+    -ArgumentList "spring-boot:run", "-Dspring-boot.run.arguments=--server.port=8081" `
     -PassThru
 
 Write-Host "Starting frontend on http://localhost:3000..."
@@ -46,7 +44,7 @@ $frontendProcess = Start-Process `
 
 Write-Host ""
 Write-Host "Prowise is starting:"
-Write-Host "  Backend:  http://localhost:8080/v1/health"
+Write-Host "  Backend:  http://localhost:8081/v1/health"
 Write-Host "  Frontend: http://localhost:3000"
 Write-Host "Close this window or press Ctrl+C to stop the application processes."
 
@@ -64,5 +62,4 @@ finally {
     if (-not $frontendProcess.HasExited) {
         Stop-Process -Id $frontendProcess.Id
     }
-    docker compose --project-directory $root down
 }

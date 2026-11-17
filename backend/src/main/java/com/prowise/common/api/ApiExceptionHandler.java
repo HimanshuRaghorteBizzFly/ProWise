@@ -10,6 +10,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authorization.AuthorizationDeniedException;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.web.ErrorResponseException;
@@ -109,6 +113,19 @@ public class ApiExceptionHandler {
     ResponseEntity<ApiError> handleErrorResponse(ErrorResponseException exception, HttpServletRequest request) {
         HttpStatusCode status = exception.getStatusCode();
         return respond(status, codeFor(status), messageFor(status), List.of(), request);
+    }
+
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    ResponseEntity<ApiError> handleAuthorizationDenied(AuthorizationDeniedException exception,
+            HttpServletRequest request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        boolean anonymous = authentication == null || authentication instanceof AnonymousAuthenticationToken;
+        if (anonymous) {
+            return respond(HttpStatus.UNAUTHORIZED, ErrorCodes.UNAUTHORIZED, "Authentication is required.",
+                    List.of(), request);
+        }
+        return respond(HttpStatus.FORBIDDEN, ErrorCodes.FORBIDDEN, "You are not allowed to perform this action.",
+                List.of(), request);
     }
 
     @ExceptionHandler(Exception.class)
