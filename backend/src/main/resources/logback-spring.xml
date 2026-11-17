@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- All appenders use the masking converters: credentials never reach log output. -->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <conversionRule conversionWord="mask" converterClass="com.prowise.common.logging.MaskingMessageConverter"/>
+    <conversionRule conversionWord="maskEx" converterClass="com.prowise.common.logging.MaskingThrowableConverter"/>
+
+    <property name="PROWISE_PATTERN"
+              value="%d{yyyy-MM-dd'T'HH:mm:ss.SSS'Z',UTC} %5p [%t] [%X{request_id:-}] %logger{40} : %mask%n%maskEx"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${PROWISE_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

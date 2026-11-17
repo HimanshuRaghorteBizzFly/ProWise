@@ -1,0 +1,360 @@
+ProWise_Frontend/
+│
+├── public/
+│   ├── images/
+│   ├── icons/
+│   ├── illustrations/
+│   └── logos/
+│
+├── scripts/                         # Existing
+│
+├── src/
+│   │
+│   ├── app/
+│   │   ├── layout.tsx
+│   │   ├── page.tsx
+│   │   ├── loading.tsx
+│   │   ├── error.tsx
+│   │   ├── not-found.tsx
+│   │   │
+│   │   ├── (auth)/
+│   │   │   ├── login/page.tsx
+│   │   │   ├── signup/page.tsx
+│   │   │   ├── forgot-password/page.tsx
+│   │   │   ├── reset-password/page.tsx
+│   │   │   ├── verify-email/page.tsx
+│   │   │   ├── callback/page.tsx
+│   │   │   ├── select-workspace/page.tsx
+│   │   │   └── create-organization/page.tsx
+│   │   │
+│   │   ├── (platform)/
+│   │   │   │
+│   │   │   ├── super-admin/
+│   │   │   │   ├── layout.tsx
+│   │   │   │   ├── dashboard/page.tsx
+│   │   │   │   ├── organizations/page.tsx
+│   │   │   │   ├── operators/page.tsx
+│   │   │   │   ├── roles-permissions/page.tsx
+│   │   │   │   ├── plans/page.tsx
+│   │   │   │   ├── subscriptions/page.tsx
+│   │   │   │   ├── payments/page.tsx
+│   │   │   │   ├── invoices/page.tsx
+│   │   │   │   ├── email-settings/page.tsx
+│   │   │   │   ├── email-templates/page.tsx
+│   │   │   │   ├── announcements/page.tsx
+│   │   │   │   ├── integrations/page.tsx
+│   │   │   │   ├── github-integrations/page.tsx
+│   │   │   │   ├── webhooks/page.tsx
+│   │   │   │   ├── api-monitoring/page.tsx
+│   │   │   │   ├── security/page.tsx
+│   │   │   │   ├── access-approvals/page.tsx
+│   │   │   │   ├── incidents/page.tsx
+│   │   │   │   ├── audit/page.tsx
+│   │   │   │   ├── reports/page.tsx
+│   │   │   │   ├── configuration/page.tsx
+│   │   │   │   └── support/page.tsx
+│   │   │   │
+│   │   │   └── platform-operator/
+│   │   │       ├── layout.tsx
+│   │   │       ├── dashboard/page.tsx
+│   │   │       ├── organization-status/page.tsx
+│   │   │       ├── monitoring/page.tsx
+│   │   │       ├── incidents/page.tsx
+│   │   │       ├── support-tickets/page.tsx
+│   │   │       ├── access-requests/page.tsx
+│   │   │       ├── integration-health/page.tsx
+│   │   │       ├── github-monitoring/page.tsx
+│   │   │       ├── webhook-logs/page.tsx
+│   │   │       ├── failed-events/page.tsx
+│   │   │       ├── sync-jobs/page.tsx
+│   │   │       ├── api-errors/page.tsx
+│   │   │       ├── email-delivery/page.tsx
+│   │   │       ├── email-drafts/page.tsx
+│   │   │       ├── announcement-drafts/page.tsx
+│   │   │       ├── subscription-status/page.tsx
+│   │   │       ├── payment-failures/page.tsx
+│   │   │       ├── invoice-delivery/page.tsx
+│   │   │       ├── backups/page.tsx
+│   │   │       ├── maintenance/page.tsx
+│   │   │       ├── alerts/page.tsx
+│   │   │       ├── activity-logs/page.tsx
+│   │   │       └── settings/page.tsx
+│   │   │
+│   │   ├── (workspace)/
+│   │   │   └── org/
+│   │   │       └── [orgId]/
+│   │   │           ├── layout.tsx
+│   │   │           │
+│   │   │           ├── owner/
+│   │   │           │   ├── layout.tsx
+│   │   │           │   ├── dashboard/page.tsx
+│   │   │           │   ├── organization/page.tsx
+│   │   │           │   ├── workspaces/page.tsx
+│   │   │           │   ├── members/page.tsx
+│   │   │           │   ├── teams/page.tsx
+│   │   │           │   ├── invitations/page.tsx
+│   │   │           │   ├── roles-permissions/page.tsx
+│   │   │           │   ├── projects/page.tsx
+│   │   │           │   ├── subscriptions/page.tsx
+│   │   │           │   ├── billing/page.tsx
+│   │   │           │   ├── integrations/page.tsx
+│   │   │           │   ├── reports/page.tsx
+│   │   │           │   ├── audit-logs/page.tsx
+│   │   │           │   └── settings/page.tsx
+│   │   │           │
+│   │   │           ├── admin/
+│   │   │           │   ├── layout.tsx
+│   │   │           │   ├── dashboard/page.tsx
+│   │   │           │   ├── members/page.tsx
+│   │   │           │   ├── teams/page.tsx
+│   │   │           │   ├── invitations/page.tsx
+│   │   │           │   ├── roles-permissions/page.tsx
+│   │   │           │   ├── projects/page.tsx
+│   │   │           │   ├── repositories/page.tsx
+│   │   │           │   ├── integrations/page.tsx
+│   │   │           │   ├── activity/page.tsx
+│   │   │           │   ├── reports/page.tsx
+│   │   │           │   └── settings/page.tsx
+│   │   │           │
+│   │   │           ├── manager/
+│   │   │           │   ├── layout.tsx
+│   │   │           │   ├── dashboard/page.tsx
+│   │   │           │   ├── projects/page.tsx
+│   │   │           │   ├── create-project/page.tsx
+│   │   │           │   ├── project-planning/page.tsx
+│   │   │           │   ├── work-items/page.tsx
+│   │   │           │   ├── team-assignments/page.tsx
+│   │   │           │   ├── progress/page.tsx
+│   │   │           │   ├── deadlines/page.tsx
+│   │   │           │   ├── dependencies/page.tsx
+│   │   │           │   ├── reviews/page.tsx
+│   │   │           │   ├── delivery/page.tsx
+│   │   │           │   ├── reports/page.tsx
+│   │   │           │   └── settings/page.tsx
+│   │   │           │
+│   │   │           ├── lead/
+│   │   │           │   ├── layout.tsx
+│   │   │           │   ├── dashboard/page.tsx
+│   │   │           │   ├── my-team/page.tsx
+│   │   │           │   ├── projects/page.tsx
+│   │   │           │   ├── work-items/page.tsx
+│   │   │           │   ├── assignments/page.tsx
+│   │   │           │   ├── sprint-planning/page.tsx
+│   │   │           │   ├── progress/page.tsx
+│   │   │           │   ├── blockers/page.tsx
+│   │   │           │   ├── reviews/page.tsx
+│   │   │           │   ├── workload/page.tsx
+│   │   │           │   ├── activity/page.tsx
+│   │   │           │   └── reports/page.tsx
+│   │   │           │
+│   │   │           ├── developer/
+│   │   │           │   ├── layout.tsx
+│   │   │           │   ├── dashboard/page.tsx
+│   │   │           │   ├── my-work/page.tsx
+│   │   │           │   ├── projects/page.tsx
+│   │   │           │   ├── tasks/page.tsx
+│   │   │           │   ├── check-ins/page.tsx
+│   │   │           │   ├── progress/page.tsx
+│   │   │           │   ├── repositories/page.tsx
+│   │   │           │   ├── evidence/page.tsx
+│   │   │           │   ├── blockers/page.tsx
+│   │   │           │   ├── comments/page.tsx
+│   │   │           │   ├── notifications/page.tsx
+│   │   │           │   ├── settings/page.tsx
+│   │   │           │   └── projects/
+│   │   │           │       └── [projectId]/
+│   │   │           │           ├── page.tsx
+│   │   │           │           ├── individual/
+│   │   │           │           │   ├── page.tsx
+│   │   │           │           │   ├── check-ins/page.tsx
+│   │   │           │           │   ├── new-check-in/page.tsx
+│   │   │           │           │   ├── progress-history/page.tsx
+│   │   │           │           │   ├── deadlines/page.tsx
+│   │   │           │           │   ├── evidence/page.tsx
+│   │   │           │           │   └── delivery-status/page.tsx
+│   │   │           │           └── structured/
+│   │   │           │               ├── page.tsx
+│   │   │           │               ├── my-tasks/page.tsx
+│   │   │           │               ├── tasks/[taskId]/page.tsx
+│   │   │           │               ├── submit-review/page.tsx
+│   │   │           │               ├── review-feedback/page.tsx
+│   │   │           │               ├── evidence/page.tsx
+│   │   │           │               ├── blockers/page.tsx
+│   │   │           │               ├── dependencies/page.tsx
+│   │   │           │               └── progress/page.tsx
+│   │   │           │
+│   │   │           ├── reviewer/
+│   │   │           │   ├── layout.tsx
+│   │   │           │   ├── dashboard/page.tsx
+│   │   │           │   ├── review-queue/page.tsx
+│   │   │           │   ├── assigned-reviews/page.tsx
+│   │   │           │   ├── work-items/page.tsx
+│   │   │           │   ├── test-checklists/page.tsx
+│   │   │           │   ├── evidence/page.tsx
+│   │   │           │   ├── approvals/page.tsx
+│   │   │           │   ├── rejected-work/page.tsx
+│   │   │           │   ├── review-history/page.tsx
+│   │   │           │   ├── reports/page.tsx
+│   │   │           │   └── settings/page.tsx
+│   │   │           │
+│   │   │           └── viewer/
+│   │   │               ├── layout.tsx
+│   │   │               ├── dashboard/page.tsx
+│   │   │               ├── projects/page.tsx
+│   │   │               ├── progress/page.tsx
+│   │   │               ├── milestones/page.tsx
+│   │   │               ├── delivery-status/page.tsx
+│   │   │               ├── reports/page.tsx
+│   │   │               ├── activity/page.tsx
+│   │   │               ├── notifications/page.tsx
+│   │   │               └── settings/page.tsx
+│   │   │
+│   │   └── unauthorized/page.tsx
+│   │
+│   ├── components/
+│   │   ├── ui/
+│   │   │   ├── Button.tsx
+│   │   │   ├── Input.tsx
+│   │   │   ├── Select.tsx
+│   │   │   ├── Card.tsx
+│   │   │   ├── Badge.tsx
+│   │   │   ├── Modal.tsx
+│   │   │   ├── DataTable.tsx
+│   │   │   ├── Tabs.tsx
+│   │   │   ├── Pagination.tsx
+│   │   │   ├── ConfirmDialog.tsx
+│   │   │   └── LoadingSkeleton.tsx
+│   │   │
+│   │   ├── layouts/
+│   │   │   ├── AppShell.tsx
+│   │   │   ├── DashboardHeader.tsx
+│   │   │   ├── SuperAdminSidebar.tsx
+│   │   │   ├── OperatorSidebar.tsx
+│   │   │   ├── OwnerSidebar.tsx
+│   │   │   ├── AdminSidebar.tsx
+│   │   │   ├── ManagerSidebar.tsx
+│   │   │   ├── LeadSidebar.tsx
+│   │   │   ├── DeveloperSidebar.tsx
+│   │   │   ├── ReviewerSidebar.tsx
+│   │   │   └── ViewerSidebar.tsx
+│   │   │
+│   │   ├── navigation/
+│   │   │   ├── GlobalSearch.tsx
+│   │   │   ├── Breadcrumbs.tsx
+│   │   │   ├── WorkspaceSwitcher.tsx
+│   │   │   ├── RoleSwitcher.tsx
+│   │   │   └── NotificationMenu.tsx
+│   │   │
+│   │   ├── charts/
+│   │   │   ├── ProgressChart.tsx
+│   │   │   ├── TaskStatusChart.tsx
+│   │   │   ├── ActivityChart.tsx
+│   │   │   ├── WorkloadChart.tsx
+│   │   │   └── RevenueChart.tsx
+│   │   │
+│   │   ├── developer/
+│   │   │   ├── IndividualProjectView.tsx
+│   │   │   ├── StructuredProjectView.tsx
+│   │   │   ├── CheckInForm.tsx
+│   │   │   ├── TaskBoard.tsx
+│   │   │   └── ProgressHistory.tsx
+│   │   │
+│   │   └── feedback/
+│   │       ├── EmptyState.tsx
+│   │       ├── ErrorState.tsx
+│   │       └── PermissionDenied.tsx
+│   │
+│   ├── features/
+│   │   ├── auth/
+│   │   ├── users/
+│   │   ├── organizations/
+│   │   ├── memberships/
+│   │   ├── teams/
+│   │   ├── invitations/
+│   │   ├── workspaces/
+│   │   ├── permissions/
+│   │   ├── platform/
+│   │   ├── billing/
+│   │   ├── communication/
+│   │   ├── projects/
+│   │   ├── delivery/
+│   │   │   ├── individual/
+│   │   │   ├── structured/
+│   │   │   ├── reviews/
+│   │   │   ├── evidence/
+│   │   │   ├── acceptance/
+│   │   │   └── progress/
+│   │   ├── integrations/
+│   │   ├── repositories/
+│   │   ├── notifications/
+│   │   ├── reports/
+│   │   ├── analytics/
+│   │   ├── support/
+│   │   ├── incidents/
+│   │   ├── security/
+│   │   ├── audit/
+│   │   └── settings/
+│   │
+│   ├── config/
+│   │   ├── navigation.ts
+│   │   ├── permissions.ts
+│   │   ├── routes.ts
+│   │   └── theme.ts
+│   │
+│   ├── lib/
+│   │   ├── csv.ts
+│   │   ├── health.ts
+│   │   ├── mock-data.ts
+│   │   ├── progress.ts
+│   │   ├── utils.ts
+│   │   ├── api-client.ts
+│   │   ├── mock-api.ts
+│   │   └── validators.ts
+│   │
+│   ├── hooks/
+│   │   ├── useAuth.ts
+│   │   ├── usePermissions.ts
+│   │   ├── useOrganization.ts
+│   │   ├── useProjects.ts
+│   │   ├── useTheme.ts
+│   │   └── useDebounce.ts
+│   │
+│   ├── providers/
+│   │   ├── AuthProvider.tsx
+│   │   ├── QueryProvider.tsx
+│   │   └── ThemeProvider.tsx
+│   │
+│   ├── store/
+│   │   ├── auth-store.ts
+│   │   ├── project-store.ts
+│   │   ├── theme-store.ts
+│   │   ├── notification-store.ts
+│   │   └── workspace-store.ts
+│   │
+│   ├── styles/
+│   │   ├── globals.css
+│   │   ├── themes.css
+│   │   ├── auth.module.css
+│   │   ├── dashboard.module.css
+│   │   └── landing.module.css
+│   │
+│   ├── types/
+│   │   ├── index.ts
+│   │   ├── auth.ts
+│   │   ├── organization.ts
+│   │   ├── project.ts
+│   │   ├── delivery.ts
+│   │   ├── work-item.ts
+│   │   ├── permission.ts
+│   │   └── api.ts
+│   │
+│   └── proxy.ts
+│
+├── next.config.mjs
+├── package.json
+├── package-lock.json
+├── postcss.config.mjs
+├── tailwind.config.ts
+├── tsconfig.json
+├── eslint.config.mjs
+└── README.md

@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-app-bg: #F8FAFD;
+  --color-surface: #FFFFFF;
+  --color-sidebar: #F6F8FC;
+  --color-elevated: #FFFFFF;
+  --color-hover: #EEF3FB;
+  --color-border: #E2E8F0;
+
+  --color-text-primary: #202124;
+  --color-text-secondary: #5F6368;
+  --color-text-muted: #80868B;
+
+  --color-accent: #2563EB;
+  --color-accent-hover: #1D4ED8;
+  --color-accent-subtle: #E8F0FE;
+  --color-accent-foreground: #FFFFFF;
+
+  --color-health-ontrack-bg: #E6F4EA;
+  --color-health-ontrack-text: #137333;
+  --color-health-ontrack-border: #CEEAD6;
+
+  --color-health-atrisk-bg: #FEF7E0;
+  --color-health-atrisk-text: #B06000;
+  --color-health-atrisk-border: #FEEFC3;
+
+  --color-health-delayed-bg: #FCE8E6;
+  --color-health-delayed-text: #C5221F;
+  --color-health-delayed-border: #FAD2CF;
+
+  --color-health-unknown-bg: #F1F3F4;
+  --color-health-unknown-text: #5F6368;
+  --color-health-unknown-border: #DADCE0;
+}
+
+.dark {
+  --color-app-bg: #111318;
+  --color-surface: #1B1E24;
+  --color-sidebar: #171A20;
+  --color-elevated: #252932;
+  --color-hover: #262B34;
+  --color-border: #343943;
+
+  --color-text-primary: #E8EAED;
+  --color-text-secondary: #A9B0BA;
+  --color-text-muted: #7E8590;
+
+  --color-accent: #8AB4F8;
+  --color-accent-hover: #AECBFA;
+  --color-accent-subtle: #1E293B;
+  --color-accent-foreground: #0F172A;
+
+  --color-health-ontrack-bg: #133E26;
+  --color-health-ontrack-text: #81C995;
+  --color-health-ontrack-border: #1E4620;
+
+  --color-health-atrisk-bg: #3E2F13;
+  --color-health-atrisk-text: #FDD663;
+  --color-health-atrisk-border: #4D3B16;
+
+  --color-health-delayed-bg: #441918;
+  --color-health-delayed-text: #F28B82;
+  --color-health-delayed-border: #5C1D1C;
+
+  --color-health-unknown-bg: #282C34;
+  --color-health-unknown-text: #A9B0BA;
+  --color-health-unknown-border: #3A404B;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--color-app-bg);
+  color: var(--color-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Google Workspace-style scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+

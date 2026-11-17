@@ -1,0 +1,16 @@
+# Local development (SPRING_PROFILES_ACTIVE=dev).
+prowise:
+  sandbox:
+    seed-enabled: true
+
+logging:
+  level:
+    com.prowise: DEBUG
+
+spring:
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
