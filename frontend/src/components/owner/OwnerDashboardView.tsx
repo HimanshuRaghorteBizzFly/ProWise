@@ -325,8 +325,12 @@ export function OwnerDashboardView({
                   <ProjectLink project={project} users={users} basePath={basePath} />
                   {project.healthReasons[0] && <p className="mt-1 px-3 text-xs text-app-text-secondary">{project.healthReasons[0]}</p>}
                   <p className="mt-1 px-3 text-xs text-app-text-muted">
-                    Who can resolve: {getOwnerName(project, users)} or the project manager ({users.find((user) => user.id === project.projectManagerId)?.name ?? "not reported"}).
-                  </p>
+  <span className="mr-1 rounded border border-app-border px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-app-text-muted">
+    From the project record
+  </span>
+  Who can resolve: {getOwnerName(project, users)} or the project manager (
+  {users.find((user) => user.id === project.projectManagerId)?.name ?? "not reported"}).
+</p>
                 </li>
               ))}
             </ul>

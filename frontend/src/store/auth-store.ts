@@ -24,27 +24,66 @@ const DEFAULT_USER: User = {
 const EMPTY_USER: User = DEFAULT_USER;
 const EMPTY_ORG: Organization = DEFAULT_ORG;
 
+// export function getRoleDashboardPath(role: SystemRole, orgId = ""): string {
+//   const workspacePath = orgId ? `/org/${orgId}` : "/select-workspace";
+//   switch (role) {
+//     case "SUPER_ADMIN":
+//       return "/super-admin/dashboard";
+//     case "PLATFORM_OPERATOR":
+//       return "/platform-operator/dashboard";
+//     case "ORGANIZATION_OWNER":
+//       return orgId ? `${workspacePath}/owner/dashboard` : workspacePath;
+//     case "ORGANIZATION_ADMIN":
+//       return orgId ? `${workspacePath}/admin/dashboard` : workspacePath;
+//     case "PROJECT_MANAGER":
+//       return orgId ? `${workspacePath}/manager/dashboard` : workspacePath;
+//     case "TEAM_LEAD":
+//       return orgId ? `${workspacePath}/lead/dashboard` : workspacePath;
+//     case "DEVELOPER":
+//       return orgId ? `${workspacePath}/developer/dashboard` : workspacePath;
+//     case "QA_REVIEWER":
+//       return orgId ? `${workspacePath}/reviewer/dashboard` : workspacePath;
+//     case "VIEWER":
+//       return orgId ? `${workspacePath}/viewer/dashboard` : workspacePath;
+//     default:
+//       return workspacePath;
+//   }
+// }
+
 export function getRoleDashboardPath(role: SystemRole, orgId = ""): string {
-  const workspacePath = orgId ? `/org/${orgId}` : "/select-workspace";
+  const hasOrg = orgId.trim() !== "";
+  const workspacePath = hasOrg ? `/org/${orgId}` : "/select-workspace";
+
   switch (role) {
     case "SUPER_ADMIN":
       return "/super-admin/dashboard";
+
     case "PLATFORM_OPERATOR":
       return "/platform-operator/dashboard";
+
     case "ORGANIZATION_OWNER":
-      return orgId ? `${workspacePath}/owner/dashboard` : workspacePath;
+      return hasOrg ? `${workspacePath}/owner/dashboard` : workspacePath;
+
     case "ORGANIZATION_ADMIN":
-      return orgId ? `${workspacePath}/admin/dashboard` : workspacePath;
+      return hasOrg ? `${workspacePath}/admin/dashboard` : workspacePath;
+
     case "PROJECT_MANAGER":
-      return orgId ? `${workspacePath}/manager/dashboard` : workspacePath;
+      return hasOrg ? `${workspacePath}/manager/dashboard` : workspacePath;
+
     case "TEAM_LEAD":
-      return orgId ? `${workspacePath}/lead/dashboard` : workspacePath;
+      return hasOrg ? `${workspacePath}/lead/dashboard` : workspacePath;
+
     case "DEVELOPER":
-      return orgId ? `${workspacePath}/developer/dashboard` : workspacePath;
+      return hasOrg ? `${workspacePath}/developer/dashboard` : workspacePath;
+
     case "QA_REVIEWER":
-      return orgId ? `${workspacePath}/reviewer/dashboard` : workspacePath;
-    case "VIEWER":
-      return orgId ? `${workspacePath}/viewer/dashboard` : workspacePath;
+      return hasOrg ? `${workspacePath}/reviewer/dashboard` : workspacePath;
+
+    case "VIEWER": {
+      const viewerOrgId = hasOrg ? orgId : "org-acme";
+      return `/org/${viewerOrgId}/viewer/dashboard`;
+    }
+
     default:
       return workspacePath;
   }
