@@ -1,19 +1,27 @@
+"use client";
+
 import React from "react";
 import Link from "next/link";
 import {
+  Activity,
   AlertTriangle,
   ArrowRight,
-  Check,
+  Building2,
   CircleHelp,
   FolderKanban,
-  Layers,
-  Minus,
+  GitBranch,
+  Mail,
+  ShieldCheck,
+  Users,
   UsersRound,
 } from "lucide-react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -22,76 +30,116 @@ import {
 
 import { OwnerChartFrame } from "@/components/owner/OwnerChartFrame";
 import { OwnerKpiCard } from "@/components/owner/OwnerKpiCard";
-import { OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
-import {
-  formatLifecycle,
-  formatUtcDate,
-  getOwnerName,
-  getProgressMethodLabel,
-  getProgressValue,
-} from "@/components/owner/project-format";
-import { PERMISSION_KEYS } from "@/lib/permissions";
-import type { PermissionGrant, PermissionKey } from "@/types/permission";
 import { OwnerPageState } from "@/components/owner/OwnerPageState";
 import { OwnerPanel } from "@/components/owner/OwnerPanel";
-import { OwnerTable } from "@/components/owner/OwnerTable";
-import { Badge } from "@/components/ui/badge";
+import { PageHeader, StatusBadge } from "@/components/owner/primitives";
+import { formatLifecycle, getOwnerName, getProgressMethodLabel, getProgressValue } from "@/components/owner/project-format";
+import { PERMISSION_KEYS } from "@/lib/permissions";
 import { HealthBadge } from "@/components/ui/health-badge";
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Project, ProjectHealth, User } from "@/types";
+import type {
+  AuditRecord,
+  InvitationRow,
+  OrgMember,
+  PortfolioData,
+  RepositoryRow,
+  TeamRow,
+} from "@/lib/fixtures/org-admin";
+import type { PermissionKey } from "@/types/permission";
+import type { Project, ProjectHealth } from "@/types";
 
-const HEALTH_SERIES: { health: ProjectHealth; label: string }[] = [
-  { health: "ON_TRACK", label: "On Track" },
-  { health: "AT_RISK", label: "At Risk" },
-  { health: "DELAYED", label: "Delayed" },
-  { health: "UNKNOWN", label: "Unknown" },
+const HEALTH: { key: ProjectHealth; label: string; color: string }[] = [
+  { key: "ON_TRACK", label: "On track", color: "#10B981" },
+  { key: "AT_RISK", label: "At risk", color: "#F59E0B" },
+  { key: "DELAYED", label: "Delayed", color: "#EF4444" },
+  { key: "UNKNOWN", label: "Unknown", color: "#94A3B8" },
 ];
 
-export interface OwnerDashboardViewProps {
+const LINK_CLASS =
+  "inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-medium text-blue-700 transition-colors hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:text-blue-300 motion-reduce:transition-none";
+
+export interface OwnerDashboardViewProps extends Partial<PortfolioData> {
   orgId: string;
   orgName: string;
-  projects: Project[];
-  users: User[];
+  projects?: Project[];
   canViewProjects: boolean;
-  /** Route family base, e.g. /org/{id}/admin. Defaults to the owner family. */
   basePath?: string;
-  /** The viewer's effective permissions for the access snapshot. */
-  access?: { grants: readonly PermissionGrant[]; scopeReported: boolean };
-  /** When the shown data was loaded (UTC ISO). */
+  access?: { grants: readonly { key: PermissionKey }[]; scopeReported: boolean };
   dataAsOf?: string;
+  members?: OrgMember[];
+  invitations?: InvitationRow[];
+  teams?: TeamRow[];
+  repositories?: RepositoryRow[];
+  audit?: AuditRecord[];
+  can?: (key: PermissionKey) => boolean;
 }
 
-const ACCESS_HIGHLIGHTS: PermissionKey[] = [
-  "org.manage",
-  "member.invite",
-  "role.manage",
-  "project.create",
-  "report.export",
-  "audit.read",
-];
+function CompactTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: { name?: string; value?: number; color?: string }[];
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-elevated)] px-3 py-2 text-xs text-[var(--color-text-primary)] shadow-xl">
+      {label && <p className="mb-1 font-semibold">{label}</p>}
+      {payload.map((item, index) => (
+        <p key={`${item.name}-${index}`} className="flex items-center justify-between gap-4">
+          <span className="flex items-center gap-1.5 text-[var(--color-text-secondary)]">
+            <span className="size-2 rounded-full" style={{ backgroundColor: item.color }} />
+            {item.name}
+          </span>
+          <strong className="tabular-nums">{item.value}</strong>
+        </p>
+      ))}
+    </div>
+  );
+}
 
-function formatUtcTime(timestamp: string): string {
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return "unknown time";
-  return `${new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "UTC",
-  }).format(date)} UTC`;
+function EmptyHint({ children }: { children: React.ReactNode }) {
+  return <p className="rounded-lg border border-dashed border-app-border px-3 py-5 text-center text-sm text-app-text-secondary">{children}</p>;
+}
+
+function ProjectLink({ project, users, basePath }: { project: Project; users: PortfolioData["users"]; basePath: string }) {
+  return (
+    <Link
+      href={`${basePath}/projects/${project.id}`}
+      className="group flex min-w-0 items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-500/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent motion-reduce:transform-none motion-reduce:transition-none"
+    >
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold text-app-text-primary group-hover:text-blue-700 dark:group-hover:text-blue-300">
+          {project.name}
+        </span>
+        <span className="mt-1 block truncate text-xs text-app-text-secondary">
+          {project.key} · {getOwnerName(project, users)} · {getProgressMethodLabel(project)}
+        </span>
+      </span>
+      <span className="flex shrink-0 items-center gap-2">
+        <HealthBadge health={project.health} showIcon={false} />
+        <ArrowRight className="h-4 w-4 text-app-text-muted" aria-hidden="true" />
+      </span>
+    </Link>
+  );
 }
 
 export function OwnerDashboardView({
   orgId,
   orgName,
-  projects,
-  users,
+  projects = [],
+  users = [],
+  teams = [],
+  members = [],
+  invitations = [],
+  repositories = [],
+  audit = [],
   canViewProjects,
   basePath = `/org/${orgId}/owner`,
   access,
   dataAsOf,
+  can = () => true,
 }: OwnerDashboardViewProps) {
   if (!canViewProjects) {
     return (
@@ -103,219 +151,181 @@ export function OwnerDashboardView({
     );
   }
 
-  const portfolioProjects = projects.filter((project) => !project.archived);
-  const activeProjects = portfolioProjects.filter((project) => project.lifecycle === "ACTIVE");
-  const attentionProjects = activeProjects.filter((project) => project.health !== "ON_TRACK");
-  const unreportedProjects = portfolioProjects.filter(
-    (project) => project.lastProgressMethod === "NOT_REPORTED",
-  );
-  const healthCounts = HEALTH_SERIES.map(({ health, label }) => ({
+  const portfolio = projects.filter((project) => !project.archived);
+  const activeProjects = portfolio.filter((project) => project.lifecycle === "ACTIVE");
+  const attention = activeProjects.filter((project) => project.health === "AT_RISK" || project.health === "DELAYED");
+  const activeMembers = members.filter((member) => member.status === "ACTIVE");
+  const pendingInvitations = invitations.filter((invitation) => invitation.status === "PENDING");
+  const activeTeams = teams.filter((team) => !team.archived);
+  const connectedRepositories = repositories.filter((repository) => repository.syncStatus === "SYNCED");
+  const healthCounts = HEALTH.map(({ key, label, color }) => ({
     label,
-    count: activeProjects.filter((project) => project.health === health).length,
+    count: activeProjects.filter((project) => project.health === key).length,
+    color,
   }));
-  const healthDescription = healthCounts.map(({ label, count }) => `${label}: ${count}`).join(", ");
   const portfolioHref = `${basePath}/projects`;
-  const allowedKeys = access ? PERMISSION_KEYS.filter((key) => access.grants.some((grant) => grant.key === key)) : [];
 
   return (
-    <div className="space-y-4">
-      <div
-        role="note"
-        className="flex flex-col gap-2 rounded-xl border border-app-border bg-app-surface px-4 py-3 sm:flex-row sm:items-center"
-      >
-        <Badge variant="outline" className="w-fit">
-          Read-only fixture preview
-        </Badge>
-        <p className="text-sm text-app-text-secondary">
-          {orgName} project data is seeded and is not a live organization summary. No dashboard action writes data.
-        </p>
-        {dataAsOf && (
-          <p className="text-caption text-app-text-muted sm:ml-auto sm:whitespace-nowrap">
-            Data as of <time dateTime={dataAsOf}>{formatUtcTime(dataAsOf)}</time>
-          </p>
-        )}
-      </div>
+    <div className="min-w-0 space-y-5">
+      <PageHeader
+        title="Organization overview"
+        description={`A delivery and access snapshot for ${orgName}. Progress is shown by the project’s own reporting method; GitHub activity never determines completion.`}
+        simulationLabel="Sample data"
+        actions={
+          <>
+            <Link href={`${basePath}/projects/new`} className={LINK_CLASS}>
+              Create project <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+            </Link>
+            <Link href={`${basePath}/invitations/new`} className={LINK_CLASS}>
+              Invite member <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+            </Link>
+          </>
+        }
+      />
 
-      <section aria-label="Portfolio summary" className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <OwnerKpiCard
-          label="Active projects"
-          value={activeProjects.length}
-          detail="Active lifecycle · organization-scoped fixture"
-          icon={<FolderKanban className="h-5 w-5" />}
-        />
-        <OwnerKpiCard
-          label="Need attention"
-          value={attentionProjects.length}
-          detail="Distinct active projects with non-On-Track health"
-          icon={<AlertTriangle className="h-5 w-5" />}
-        />
-        <OwnerKpiCard
-          label="Portfolio projects"
-          value={portfolioProjects.length}
-          detail="Non-archived fixture projects"
-          icon={<Layers className="h-5 w-5" />}
-        />
-        <OwnerKpiCard
-          label="Progress not reported"
-          value={unreportedProjects.length}
-          detail="Projects with no progress method in the fixture"
-          icon={<CircleHelp className="h-5 w-5" />}
-        />
+      <section aria-label="Organization key metrics" className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <Link href={portfolioHref} className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <OwnerKpiCard
+            label="Active projects"
+            value={activeProjects.length}
+            detail={`${portfolio.length} in portfolio`}
+            icon={<FolderKanban className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+            className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-500/40 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
+          />
+        </Link>
+        <Link href={`${basePath}/members`} className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <OwnerKpiCard
+            label="Active members"
+            value={can("role.manage") ? activeMembers.length : "—"}
+            detail={can("role.manage") ? `${members.length} total memberships` : "Access restricted"}
+            icon={<Users className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />}
+            className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-500/40 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
+          />
+        </Link>
+        <Link href={`${basePath}/teams`} className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <OwnerKpiCard
+            label="Active teams"
+            value={can("team.manage") ? activeTeams.length : "—"}
+            detail={can("team.manage") ? `${teams.length} teams total` : "Access restricted"}
+            icon={<UsersRound className="h-4 w-4 text-violet-600 dark:text-violet-400" />}
+            className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-violet-500/40 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
+          />
+        </Link>
+        <Link href={`${basePath}/invitations`} className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <OwnerKpiCard
+            label="Pending invites"
+            value={can("member.invite") ? pendingInvitations.length : "—"}
+            detail={can("member.invite") ? "Awaiting acceptance" : "Access restricted"}
+            icon={<Mail className="h-4 w-4 text-amber-600 dark:text-amber-400" />}
+            className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-500/40 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
+          />
+        </Link>
+        <Link href={`${basePath}/health`} className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <OwnerKpiCard
+            label="Need attention"
+            value={attention.length}
+            detail="At-risk or delayed active projects"
+            icon={<AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400" />}
+            className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-rose-500/40 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
+          />
+        </Link>
+        <Link href={`${basePath}/integrations`} className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <OwnerKpiCard
+            label="GitHub repositories"
+            value={can("repo.read") ? connectedRepositories.length : "—"}
+            detail={can("repo.read") ? `${repositories.length} linked repositories` : "Access restricted"}
+            icon={<GitBranch className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />}
+            className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-500/40 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
+          />
+        </Link>
       </section>
 
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
         <OwnerPanel
-          title="Projects by health"
-          description="Active projects only. Health labels and reasons are fixture values, not recalculated here."
+          title="Project health"
+          description="Health is read from project records and is separate from progress."
+          actions={<Link href={`${basePath}/health`} className={LINK_CLASS}>View health <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
         >
           {activeProjects.length === 0 ? (
-            <OwnerPageState
-              state="empty"
-              title="No active projects in this workspace"
-              description="There are no active project fixtures to summarize."
-            />
+            <EmptyHint>No active project health data is available.</EmptyHint>
           ) : (
-            <OwnerChartFrame
-              title="Active project health distribution"
-              description="Each project is counted once; lifecycle and health remain separate."
-            >
-              <div
-                role="img"
-                aria-label={`Active projects by health: ${healthDescription}`}
-                className="h-full w-full text-primary-600"
-              >
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    accessibilityLayer
-                    data={healthCounts}
-                    margin={{ top: 8, right: 8, bottom: 4, left: -20 }}
-                  >
-                    <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                    <Tooltip />
-                    <Bar dataKey="count" fill="currentColor" radius={[4, 4, 0, 0]} isAnimationActive={false} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-caption text-app-text-secondary" aria-label="Health counts">
-                {healthCounts.map(({ label, count }) => (
-                  <li key={label}>
-                    {label}: <span className="font-semibold tabular-nums text-app-text-primary">{count}</span>
+            <div className="grid min-w-0 grid-cols-1 items-center gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(8rem,0.8fr)]">
+              <OwnerChartFrame title="Active projects by health" description="Counts by current project health.">
+                <div role="img" aria-label={healthCounts.map((item) => `${item.label}: ${item.count}`).join(", ")} className="h-full w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={healthCounts} dataKey="count" nameKey="label" innerRadius="54%" outerRadius="82%" paddingAngle={3} stroke="var(--color-surface)" strokeWidth={2}>
+                        {healthCounts.map((item) => <Cell key={item.label} fill={item.color} />)}
+                      </Pie>
+                      <Tooltip content={<CompactTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </OwnerChartFrame>
+              <ul className="space-y-2" aria-label="Project health legend">
+                {healthCounts.map((item) => (
+                  <li key={item.label} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="flex min-w-0 items-center gap-2 text-app-text-secondary">
+                      <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="truncate">{item.label}</span>
+                    </span>
+                    <span className="font-semibold tabular-nums text-app-text-primary">{item.count}</span>
                   </li>
                 ))}
               </ul>
-            </OwnerChartFrame>
+            </div>
           )}
         </OwnerPanel>
 
         <OwnerPanel
-          title="Portfolio progress"
-          description="Individual and Structured progress are shown by method and are not combined into one percentage."
-          actions={
-            canViewProjects ? (
-              <Link
-                href={portfolioHref}
-                className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-sm font-medium text-primary-700 hover:bg-app-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-              >
-                Open portfolio <ArrowRight aria-hidden="true" className="h-4 w-4" />
-              </Link>
-            ) : undefined
-          }
+          title="Portfolio overview"
+          description="Active project counts by lifecycle. Progress remains attributed to the project’s configured method."
+          actions={<Link href={portfolioHref} className={LINK_CLASS}>Open portfolio <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
         >
-          {portfolioProjects.length === 0 ? (
-            <OwnerPageState
-              state="empty"
-              title="No projects in this workspace"
-              description="No project fixtures are available for this organization."
-            />
+          {portfolio.length === 0 ? (
+            <EmptyHint>No projects are available in this organization.</EmptyHint>
           ) : (
-            <OwnerTable label="Portfolio progress by project">
-              <TableHeader>
-                <TableRow>
-                  <TableHead scope="col">Project</TableHead>
-                  <TableHead scope="col">Accountable owner</TableHead>
-                  <TableHead scope="col">Lifecycle</TableHead>
-                  <TableHead scope="col">Progress</TableHead>
-                  <TableHead scope="col">Method</TableHead>
-                  <TableHead scope="col">Target date</TableHead>
-                  <TableHead scope="col">Evidence updated (UTC)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {portfolioProjects.map((project) => (
-                  <TableRow key={project.id}>
-                    <TableCell>
-                      <div className="font-medium text-app-text-primary">{project.name}</div>
-                      <div className="text-caption text-app-text-secondary">{project.key}</div>
-                    </TableCell>
-                    <TableCell>{getOwnerName(project, users)}</TableCell>
-                    <TableCell className="capitalize">{formatLifecycle(project.lifecycle)}</TableCell>
-                    <TableCell className="font-semibold tabular-nums">{getProgressValue(project)}</TableCell>
-                    <TableCell>{getProgressMethodLabel(project)}</TableCell>
-                    <TableCell>
-                      <time dateTime={project.targetDate}>{project.targetDate}</time>
-                    </TableCell>
-                    <TableCell>{formatUtcDate(project.lastReportedAt)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </OwnerTable>
+            <>
+              <OwnerChartFrame title="Projects by lifecycle" description={`${portfolio.length} non-archived projects in the portfolio.`}>
+                <div role="img" aria-label="Project count by lifecycle" className="h-full w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={["PLANNED", "ACTIVE", "ON_HOLD", "COMPLETED"].map((stage) => ({
+                      stage: formatLifecycle(stage as Project["lifecycle"]),
+                      projects: portfolio.filter((project) => project.lifecycle === stage).length,
+                    }))} margin={{ top: 8, right: 12, bottom: 4, left: -20 }}>
+                      <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="stage" tick={{ fontSize: 11, fill: "var(--color-text-secondary)" }} tickLine={false} axisLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "var(--color-text-secondary)" }} tickLine={false} axisLine={false} />
+                      <Tooltip content={<CompactTooltip />} cursor={{ fill: "rgba(59,130,246,0.08)" }} />
+                      <Bar dataKey="projects" name="Projects" fill="#3B82F6" radius={[5, 5, 0, 0]} maxBarSize={48} isAnimationActive />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </OwnerChartFrame>
+              <p className="mt-2 text-xs text-app-text-muted">
+                Data as of {dataAsOf ? new Date(dataAsOf).toLocaleString() : "the current sample"}.
+              </p>
+            </>
           )}
         </OwnerPanel>
       </div>
 
       <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
         <OwnerPanel
-          title="Items needing attention"
-          description="Active projects with fixture health other than On Track. Reasons are shown as supplied."
-          actions={
-            canViewProjects ? (
-              <Link
-                href={portfolioHref}
-                className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-sm font-medium text-primary-700 hover:bg-app-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
-              >
-                Open portfolio <ArrowRight aria-hidden="true" className="h-4 w-4" />
-              </Link>
-            ) : undefined
-          }
+          title="Projects requiring attention"
+          description="Prioritize recorded risk before reviewing delivery progress."
+          actions={<Link href={`${basePath}/health`} className={LINK_CLASS}>Review risks <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
         >
-          {attentionProjects.length === 0 ? (
-            <OwnerPageState
-              state="empty"
-              title="No active projects need attention"
-              description="No active project fixture has a non-On-Track health label."
-            />
+          {attention.length === 0 ? (
+            <EmptyHint>No active project is currently marked at risk or delayed.</EmptyHint>
           ) : (
-            <ul className="space-y-3">
-              {attentionProjects.map((project) => (
-                <li key={project.id} className="rounded-lg border border-app-border p-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <HealthBadge health={project.health} showIcon={false} />
-                    <span className="text-caption font-semibold text-app-text-secondary">{project.key}</span>
-                  </div>
-                  <h3 className="mt-2 text-sm font-semibold text-app-text-primary">{project.name}</h3>
-                  <p className="mt-1 text-sm text-app-text-secondary">
-                    Accountable owner: {getOwnerName(project, users)}
-                  </p>
-                  <p className="mt-1 text-caption text-app-text-secondary">
-                    <span className="mr-1 rounded border border-app-border px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-app-text-muted">
-                      From the project record
-                    </span>
-                    Who can resolve: the accountable owner, or the project manager (
-                    {users.find((user) => user.id === project.projectManagerId)?.name ?? "not in fixture"}) with project.edit.
-                  </p>
-                  {project.healthReasons.length > 0 ? (
-                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-app-text-secondary">
-                      {project.healthReasons.map((reason) => (
-                        <li key={reason}>{reason}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-2 text-sm text-app-text-secondary">No health reason is present in this fixture.</p>
-                  )}
-                  <p className="mt-2 text-caption text-app-text-muted">
-                    Corrective next action is not provided in this fixture.
+            <ul className="space-y-2">
+              {attention.slice(0, 4).map((project) => (
+                <li key={project.id}>
+                  <ProjectLink project={project} users={users} basePath={basePath} />
+                  {project.healthReasons[0] && <p className="mt-1 px-3 text-xs text-app-text-secondary">{project.healthReasons[0]}</p>}
+                  <p className="mt-1 px-3 text-xs text-app-text-muted">
+                    Who can resolve: {getOwnerName(project, users)} or the project manager ({users.find((user) => user.id === project.projectManagerId)?.name ?? "not reported"}).
                   </p>
                 </li>
               ))}
@@ -324,80 +334,162 @@ export function OwnerDashboardView({
         </OwnerPanel>
 
         <OwnerPanel
-          title="Workload snapshot"
-          description="Planned versus available hours by member and week."
+          title="Portfolio progress"
+          description="Individual and Structured values are presented using their own progress methods."
+          actions={<Link href={portfolioHref} className={LINK_CLASS}>All projects <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
         >
-          <div className="space-y-2 text-sm text-app-text-secondary">
-            <OwnerLaterBadge task="5.4" />
-            <p>
-              Planned and available hours are unknown, not zero. This fixture has no approved effort estimates or
-              member capacity records.
-            </p>
-          </div>
+          {portfolio.length === 0 ? (
+            <EmptyHint>No project progress to display.</EmptyHint>
+          ) : (
+            <ul className="space-y-2">
+              {portfolio.slice(0, 5).map((project) => (
+                <li key={project.id}>
+                  <Link href={`${basePath}/projects/${project.id}`} className="group flex min-w-0 items-center justify-between gap-3 rounded-lg border border-app-border px-3 py-2.5 transition-colors hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent motion-reduce:transition-none">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-app-text-primary">{project.name}</span>
+                      <span className="block truncate text-xs text-app-text-secondary">{formatLifecycle(project.lifecycle)} · {getProgressMethodLabel(project)}</span>
+                    </span>
+                    <span className="shrink-0 text-sm font-bold tabular-nums text-blue-700 dark:text-blue-300">{getProgressValue(project)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </OwnerPanel>
       </div>
 
-      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-3">
         <OwnerPanel
-          title="Members and access snapshot"
-          description="Membership and pending invitation counts."
+          title="People & teams"
+          description="Organization membership and active team overview."
+          actions={<Link href={`${basePath}/members`} className={LINK_CLASS}>Directory <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
         >
-          <div className="space-y-2 text-sm text-app-text-secondary">
-            <OwnerLaterBadge task="1.2" icon={<UsersRound aria-hidden="true" className="h-3.5 w-3.5" />} />
-            <p>
-              Counts and access details are withheld until a scoped member-read capability and the membership API are
-              available. No invitation or membership actions are available in this preview.
-            </p>
+          {!can("role.manage") ? <EmptyHint>Membership details are not available to this access level.</EmptyHint> : members.length === 0 ? (
+            <EmptyHint>No members are listed yet.</EmptyHint>
+          ) : (
+            <ul className="space-y-2">
+              {members.slice(0, 4).map((member) => (
+                <li key={member.id}>
+                  <Link href={`${basePath}/members/${member.id}`} className="flex items-center justify-between gap-2 rounded-lg border border-app-border px-3 py-2 transition-colors hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent motion-reduce:transition-none">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-app-text-primary">{member.displayName}</span>
+                      <span className="block truncate text-xs text-app-text-secondary">{member.roleLabel ?? member.email}</span>
+                    </span>
+                    <StatusBadge label={member.status.toLowerCase()} tone={member.status === "ACTIVE" ? "success" : "warning"} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          {can("team.manage") && (
+            <div className="mt-4 border-t border-app-border pt-3">
+              <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-app-text-muted"><UsersRound className="h-3.5 w-3.5" aria-hidden="true" /> Teams</h3>
+              {!activeTeams.length ? <EmptyHint>No active teams found.</EmptyHint> : (
+                <ul className="space-y-1">
+                  {activeTeams.slice(0, 3).map((team) => (
+                    <li key={team.id}>
+                      <Link href={`${basePath}/teams/${team.id}`} className="flex items-center justify-between gap-2 rounded-md px-2 py-2 text-sm text-app-text-primary hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent">
+                        <span className="truncate">{team.name}</span>
+                        <span className="shrink-0 text-xs tabular-nums text-app-text-muted">{team.memberNames.length} members</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </OwnerPanel>
+
+        <OwnerPanel
+          title="Invitations & integrations"
+          description="Outstanding invitations and GitHub connection health."
+          actions={<Link href={`${basePath}/invitations`} className={LINK_CLASS}>Invitations <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
+        >
+          <div className="space-y-4">
+            <div>
+              <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-app-text-muted"><Mail className="h-3.5 w-3.5" aria-hidden="true" /> Pending invitations</h3>
+              {!can("member.invite") ? <EmptyHint>Invitation details are not available.</EmptyHint> : pendingInvitations.length === 0 ? <EmptyHint>No pending invitations.</EmptyHint> : (
+                <ul className="space-y-2">
+                  {pendingInvitations.slice(0, 3).map((invitation) => (
+                    <li key={invitation.id} className="min-w-0">
+                      <Link href={`${basePath}/invitations/${invitation.id}`} className="block rounded-lg border border-app-border px-3 py-2 transition-colors hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent">
+                      <p className="truncate text-sm font-medium text-app-text-primary">{invitation.email}</p>
+                      <p className="mt-1 text-xs text-app-text-secondary">{invitation.roleLabel} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</p>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="border-t border-app-border pt-3">
+              <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-app-text-muted"><GitBranch className="h-3.5 w-3.5" aria-hidden="true" /> GitHub</h3>
+              {!can("repo.read") ? <EmptyHint>Integration details are not available.</EmptyHint> : repositories.length === 0 ? <EmptyHint>No repositories connected.</EmptyHint> : (
+                <ul className="space-y-2">
+                  {repositories.slice(0, 3).map((repository) => (
+                    <li key={repository.id} className="min-w-0">
+                      <Link href={`${basePath}/integrations/${repository.id}`} className="flex min-w-0 items-center justify-between gap-2 rounded-md px-2 py-2 hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent">
+                      <span className="truncate text-sm text-app-text-primary">{repository.fullName}</span>
+                      <StatusBadge label={repository.syncStatus.toLowerCase()} tone={repository.syncStatus === "SYNCED" ? "success" : repository.syncStatus === "FAILED" ? "danger" : "warning"} />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         </OwnerPanel>
 
         <OwnerPanel
-          title="Recent audit activity"
-          description="Restricted organization audit facts."
+          title="Security & audit"
+          description="Recent organization audit records, not GitHub activity."
+          actions={<Link href={`${basePath}/audit-logs`} className={LINK_CLASS}>Audit log <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
         >
-          <div className="space-y-2 text-sm text-app-text-secondary">
-            <OwnerLaterBadge task="1.4" />
-            <p>
-              Audit records are not shown until the documented <code>audit.read</code> permission is available in the
-              frontend and the audit API is built.
-            </p>
-          </div>
+          {!can("audit.read") ? <EmptyHint>Audit records are not available to this access level.</EmptyHint> : audit.length === 0 ? (
+            <EmptyHint>No audit events are recorded.</EmptyHint>
+          ) : (
+            <ul className="space-y-3">
+              {audit.slice(0, 4).map((entry) => (
+                <li key={entry.id} className="min-w-0 border-b border-app-border pb-3 last:border-0 last:pb-0">
+                  <Link href={`${basePath}/audit-logs/${entry.id}`} className="flex min-w-0 gap-3 rounded-lg p-1 transition-colors hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent">
+                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-300"><Activity className="h-4 w-4" aria-hidden="true" /></span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-app-text-primary">{entry.action}</span>
+                    <span className="mt-0.5 block text-xs text-app-text-secondary">{entry.actorEmail} · {entry.targetType}</span>
+                    <time className="mt-1 block text-[11px] text-app-text-muted" dateTime={entry.timestamp}>{new Date(entry.timestamp).toLocaleString()}</time>
+                  </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Link href={`${basePath}/roles-permissions`} className={`${LINK_CLASS} mt-3`}>
+            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> Roles & access
+          </Link>
         </OwnerPanel>
       </div>
 
       {access && (
         <OwnerPanel
           title="Your access"
-          description={`${allowedKeys.length} of ${PERMISSION_KEYS.length} documented permissions allowed for your active membership${
-            access.scopeReported ? "" : " (scope not reported by API)"
-          }.`}
-          actions={
-            <Link
-              href={`${basePath}/access`}
-              className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-sm font-medium text-blue-700 hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:text-blue-300"
-            >
-              Open Access Map <ArrowRight aria-hidden="true" className="h-4 w-4" />
-            </Link>
-          }
+          description={`${access.grants.length} of ${PERMISSION_KEYS.length} permissions are effective for your active organization membership${access.scopeReported ? "" : " (scope not reported by the API)"}.`}
+          actions={<Link href={`${basePath}/access`} className={LINK_CLASS}>Open access map <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></Link>}
         >
-          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {ACCESS_HIGHLIGHTS.map((key) => {
-              const allowed = allowedKeys.includes(key);
-              return (
-                <li key={key} className="flex items-center gap-2 rounded-lg border border-app-border px-3 py-2 text-sm">
-                  {allowed ? (
-                    <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                  ) : (
-                    <Minus aria-hidden="true" className="h-4 w-4 shrink-0 text-app-text-muted" />
-                  )}
-                  <code className="min-w-0 truncate text-caption text-app-text-primary">{key}</code>
-                  <span className="ml-auto text-caption text-app-text-muted">{allowed ? "Allowed" : "Denied"}</span>
-                </li>
-              );
-            })}
+          <ul className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {PERMISSION_KEYS.slice(0, 6).map((key) => (
+              <li key={key} className="flex min-w-0 items-center gap-2 rounded-lg border border-app-border px-3 py-2 text-xs">
+                <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                <code className="truncate text-app-text-primary">{key}</code>
+              </li>
+            ))}
           </ul>
         </OwnerPanel>
       )}
+
+      <div className="flex items-center gap-2 text-xs text-app-text-muted">
+        <Building2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        Dashboard uses organization-scoped sample data through the existing fixture adapters.
+        {!portfolio.length && <CircleHelp className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+      </div>
     </div>
   );
 }

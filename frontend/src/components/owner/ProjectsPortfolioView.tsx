@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import Link from "next/link";
 import { FolderKanban, LayoutGrid, List } from "lucide-react";
 
 import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
@@ -28,6 +29,7 @@ import type { PermissionKey } from "@/types/permission";
 export interface ProjectsPortfolioViewProps extends PortfolioData {
   source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
+  basePath?: string;
   now?: string;
 }
 
@@ -78,7 +80,7 @@ function FilterSelect({
   );
 }
 
-export function ProjectsPortfolioView({ projects, users, teams, source, can, now }: ProjectsPortfolioViewProps) {
+export function ProjectsPortfolioView({ projects, users, teams, source, can, basePath, now }: ProjectsPortfolioViewProps) {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [showArchived, setShowArchived] = useState(false);
@@ -116,10 +118,14 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, now
       simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={
         canCreate ? (
-          <>
-            <LaterActionButton>Create project</LaterActionButton>
-            <OwnerLaterBadge task="2.1" />
-          </>
+          basePath ? (
+            <Link
+              href={`${basePath}/projects/new`}
+              className="inline-flex min-h-9 items-center rounded-lg bg-[#1A73E8] px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#1557B0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
+            >
+              Create project
+            </Link>
+          ) : <><LaterActionButton>Create project</LaterActionButton><OwnerLaterBadge task="2.1" /></>
         ) : undefined
       }
     />
@@ -256,7 +262,9 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, now
                       <HealthBadge health={project.health} showIcon={false} />
                       {project.archived && <StatusBadge label="Archived" tone="neutral" />}
                     </div>
-                    <h3 className="text-sm font-semibold text-app-text-primary">{project.name}</h3>
+                    {basePath ? (
+                      <Link href={`${basePath}/projects/${project.id}`} className="rounded-sm text-sm font-semibold text-app-text-primary hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">{project.name}</Link>
+                    ) : <h3 className="text-sm font-semibold text-app-text-primary">{project.name}</h3>}
                     <p className="text-caption text-app-text-secondary">
                       {project.mode === "INDIVIDUAL" ? "Individual" : "Structured"} · {formatLifecycle(project.lifecycle)}
                     </p>
@@ -292,7 +300,9 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, now
                   <TableRow key={project.id}>
                     <TableCell>
                       <span className="block text-caption font-semibold text-app-text-secondary">{project.key}</span>
-                      <span className="font-medium text-app-text-primary">{project.name}</span>
+                      {basePath ? (
+                        <Link href={`${basePath}/projects/${project.id}`} className="font-medium text-app-text-primary hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">{project.name}</Link>
+                      ) : <span className="font-medium text-app-text-primary">{project.name}</span>}
                       {project.archived && <StatusBadge label="Archived" tone="neutral" className="ml-2" />}
                     </TableCell>
                     <TableCell>{project.mode === "INDIVIDUAL" ? "Individual" : "Structured"}</TableCell>

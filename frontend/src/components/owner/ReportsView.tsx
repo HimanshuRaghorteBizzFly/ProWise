@@ -1,4 +1,6 @@
 import React from "react";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 
 import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
 import { OwnerPageState } from "@/components/owner/OwnerPageState";
@@ -12,24 +14,25 @@ export interface ReportsViewProps {
   projects: Project[];
   source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
+  basePath?: string;
   now?: string;
 }
 
-interface ReportDefinition {
+export interface ReportDefinition {
   id: string;
   name: string;
   description: string;
   laterTask: string;
 }
 
-const REPORTS: ReportDefinition[] = [
+export const OWNER_REPORTS: ReportDefinition[] = [
   { id: "portfolio", name: "Portfolio", description: "Every readable project with lifecycle, health and progress by method.", laterTask: "5.5" },
   { id: "overdue", name: "Overdue", description: "Open projects past their approved target date, in each project's own time zone.", laterTask: "5.5" },
   { id: "workload", name: "Workload", description: "Known planned hours against availability by member and week.", laterTask: "5.4" },
   { id: "acceptance", name: "Acceptance", description: "Delivery acceptance requests and decisions.", laterTask: "2.4" },
 ];
 
-export function ReportsView({ projects, source, can, now }: ReportsViewProps) {
+export function ReportsView({ projects, source, can, basePath, now }: ReportsViewProps) {
   const canExport = can("report.export");
   const header = (
     <PageHeader
@@ -75,7 +78,7 @@ export function ReportsView({ projects, source, can, now }: ReportsViewProps) {
     <div className="space-y-4">
       {header}
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
-        {REPORTS.map((report) => (
+        {OWNER_REPORTS.map((report) => (
           <OwnerPanel
             key={report.id}
             title={report.name}
@@ -83,6 +86,12 @@ export function ReportsView({ projects, source, can, now }: ReportsViewProps) {
             actions={
               <>
                 {canExport && <LaterActionButton title="CSV export ships with task 5.5">Export CSV</LaterActionButton>}
+                <Link
+                  href={basePath ? `${basePath}/reports/${report.id}` : report.id}
+                  className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-blue-700 hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:text-blue-300"
+                >
+                  Open report <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+                </Link>
                 <OwnerLaterBadge task={report.laterTask} />
               </>
             }

@@ -76,6 +76,31 @@ describe("typed API client", () => {
     await expect(client.health()).rejects.toMatchObject({ status: 0, code: "NETWORK_ERROR" });
   });
 
+  it("does not send business API requests during development role preview", async () => {
+    const fetchMock = vi.fn();
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      fetch: fetchMock,
+      isRolePreview: () => true,
+    });
+
+    await expect(client.me()).rejects.toMatchObject({ status: 0, code: "ROLE_PREVIEW" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("allows sign-out while role preview blocks business API requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const client = createApiClient({
+      baseUrl: "http://api.test",
+      fetch: fetchMock,
+      isRolePreview: () => true,
+    });
+
+    await expect(client.signout()).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("http://api.test/v1/auth/signout");
+  });
+
   it("explains a missing NEXT_PUBLIC_API_BASE_URL clearly", () => {
     expect(() => resolveApiBaseUrl("")).toThrow(/NEXT_PUBLIC_API_BASE_URL/);
     expect(() => resolveApiBaseUrl(undefined)).toThrow(/frontend\/\.env\.example/);

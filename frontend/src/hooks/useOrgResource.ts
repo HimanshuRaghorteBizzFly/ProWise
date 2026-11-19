@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { classifyFailure, mocksAllowed, mocksRequested, readPermissionEnv } from "@/lib/permissions";
+import { useAuthStore } from "@/store/auth-store";
 import { useSampleDataNotice } from "@/store/sample-data-store";
 
 export type OrgResourceState<T> =
@@ -25,6 +26,7 @@ interface Options<T> {
 export function useOrgResource<T>({ name, orgId, enabled, fetch, fixture }: Options<T>) {
   const [state, setState] = useState<OrgResourceState<T>>({ status: "idle", orgId });
   const [attempt, setAttempt] = useState(0);
+  const isRolePreview = useAuthStore((auth) => auth.isRolePreview);
 
   useEffect(() => {
     let active = true;
@@ -41,7 +43,7 @@ export function useOrgResource<T>({ name, orgId, enabled, fetch, fixture }: Opti
       active && setState({ status: "ready", orgId, data, source, loadedAt: new Date().toISOString() });
 
     setState({ status: "loading", orgId });
-    if (mocksRequested(env)) {
+    if (mocksRequested(env, isRolePreview)) {
       ready(fixture(orgId), "fixture");
       return () => {
         active = false;
@@ -61,7 +63,7 @@ export function useOrgResource<T>({ name, orgId, enabled, fetch, fixture }: Opti
     };
     // fetch/fixture are module-level functions supplied by callers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, enabled, attempt]);
+  }, [orgId, enabled, attempt, isRolePreview]);
 
   const current: OrgResourceState<T> = state.orgId === orgId ? state : { status: "loading", orgId };
   useSampleDataNotice(name, current.status === "ready" && current.source === "fixture");

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import Link from "next/link";
 import { MailPlus } from "lucide-react";
 
 import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
@@ -16,6 +17,7 @@ export interface InvitationsViewProps {
   invitations: InvitationRow[];
   source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
+  basePath?: string;
   /** Injected for tests; defaults to the current time. */
   now?: string;
 }
@@ -44,7 +46,7 @@ function expiryText(invitation: InvitationRow, status: EffectiveStatus, nowMs: n
   return days <= 1 ? `Expires within a day (${date} UTC)` : `Expires in ${days} days`;
 }
 
-export function InvitationsView({ invitations, source, can, now }: InvitationsViewProps) {
+export function InvitationsView({ invitations, source, can, basePath, now }: InvitationsViewProps) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"ALL" | EffectiveStatus>("ALL");
   const nowMs = Date.parse(now ?? new Date().toISOString());
@@ -67,10 +69,14 @@ export function InvitationsView({ invitations, source, can, now }: InvitationsVi
       simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={
         canInvite ? (
-          <>
-            <LaterActionButton>Invite member</LaterActionButton>
-            <OwnerLaterBadge task="1.2" />
-          </>
+          basePath ? (
+            <Link
+              href={`${basePath}/invitations/new`}
+              className="inline-flex min-h-9 items-center rounded-lg bg-[#1A73E8] px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#1557B0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
+            >
+              Invite member
+            </Link>
+          ) : <><LaterActionButton>Invite member</LaterActionButton><OwnerLaterBadge task="1.2" /></>
         ) : undefined
       }
     />
@@ -137,7 +143,7 @@ export function InvitationsView({ invitations, source, can, now }: InvitationsVi
                     <li key={invitation.id} className="rounded-lg border border-app-border p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="break-all text-sm font-semibold text-app-text-primary">{invitation.email}</p>
+                          {basePath ? <Link href={`${basePath}/invitations/${invitation.id}`} className="block break-all rounded-sm text-sm font-semibold text-app-text-primary hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">{invitation.email}</Link> : <p className="break-all text-sm font-semibold text-app-text-primary">{invitation.email}</p>}
                           <p className="text-caption text-app-text-secondary">
                             {invitation.roleLabel}
                             {invitation.teamName ? ` · ${invitation.teamName}` : ""}
@@ -166,7 +172,7 @@ export function InvitationsView({ invitations, source, can, now }: InvitationsVi
                     <TableBody>
                       {visible.map(({ invitation, status: rowStatus }) => (
                         <TableRow key={invitation.id}>
-                          <TableCell className="break-all font-medium text-app-text-primary">{invitation.email}</TableCell>
+                          <TableCell className="break-all font-medium text-app-text-primary">{basePath ? <Link href={`${basePath}/invitations/${invitation.id}`} className="rounded-sm hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">{invitation.email}</Link> : invitation.email}</TableCell>
                           <TableCell>{invitation.roleLabel}</TableCell>
                           <TableCell>{invitation.teamName ?? "No team"}</TableCell>
                           <TableCell>{invitation.invitedByName}</TableCell>

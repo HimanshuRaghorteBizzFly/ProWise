@@ -1,4 +1,6 @@
 import type { ApiErrorResponse, HealthResponse } from "@/types/api";
+import { mocksAllowed, readPermissionEnv } from "@/lib/permissions";
+import { useAuthStore } from "@/store/auth-store";
 
 export const REQUEST_ID_HEADER = "X-Request-Id";
 export const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
@@ -38,10 +40,12 @@ export function resolveApiBaseUrl(configuredUrl = process.env.NEXT_PUBLIC_API_BA
 export interface ApiClientOptions {
   baseUrl?: string;
   fetch?: FetchLike;
+  isRolePreview?: () => boolean;
 }
 
 export function createApiClient(options: ApiClientOptions = {}) {
   const fetcher = options.fetch ?? globalThis.fetch;
+  const isRolePreview = options.isRolePreview ?? (() => useAuthStore.getState().isRolePreview);
   let accessToken: string | null = null;
   let refreshing: Promise<string | null> | null = null;
 
@@ -54,6 +58,11 @@ export function createApiClient(options: ApiClientOptions = {}) {
     path: string,
     requestOptions: { method?: string; body?: unknown; retryOnUnauthorized?: boolean } = {},
   ): Promise<Response> {
+    const previewAllowed = path === "/v1/health" || path === "/v1/auth/signout";
+    if (isRolePreview() && mocksAllowed(readPermissionEnv()) && !previewAllowed) {
+      throw new ApiError(0, "ROLE_PREVIEW", "API requests are disabled during role preview.", "");
+    }
+
     let response: Response;
     try {
       const headers = new Headers({ Accept: "application/json" });

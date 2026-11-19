@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
+import Link from "next/link";
 import { Check, Minus, ShieldCheck } from "lucide-react";
 
 import { PERMISSION_DESCRIPTIONS, PERMISSION_GROUPS } from "@/components/owner/AccessMapView";
@@ -19,12 +20,12 @@ export interface RolesViewProps {
   canManageRoles: boolean;
   /** The viewer's own grants: nobody can grant a key they do not hold. */
   heldGrants: readonly PermissionGrant[];
+  basePath?: string;
 }
 
 
-export function RolesView({ roles, source, canManageRoles, heldGrants }: RolesViewProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = roles.find((role) => role.id === selectedId) ?? roles[0];
+export function RolesView({ roles, source, canManageRoles, heldGrants, basePath }: RolesViewProps) {
+  const selected = roles[0];
   const held = new Set(heldGrants.filter((grant) => grant.scope === "ORG").map((grant) => grant.key));
 
   const header = (
@@ -34,12 +35,12 @@ export function RolesView({ roles, source, canManageRoles, heldGrants }: RolesVi
       simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={
         canManageRoles ? (
-          <>
-            <LaterActionButton>
+          <Link
+            href={basePath ? `${basePath}/roles-permissions/new` : "roles-permissions/new"}
+            className="inline-flex min-h-9 items-center rounded-lg bg-[#1A73E8] px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#1557B0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
+          >
               Create custom role
-            </LaterActionButton>
-            <OwnerLaterBadge task="1.4" after />
-          </>
+          </Link>
         ) : undefined
       }
     />
@@ -78,10 +79,9 @@ export function RolesView({ roles, source, canManageRoles, heldGrants }: RolesVi
               const active = role.id === selected.id;
               return (
                 <li key={role.id} className="lg:w-full">
-                  <button
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setSelectedId(role.id)}
+                  <Link
+                    href={basePath ? `${basePath}/roles-permissions/${role.id}` : `./${role.id}`}
+                    aria-current={active ? "page" : undefined}
                     className={cn(
                       "flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent motion-reduce:transition-none",
                       active
@@ -91,7 +91,7 @@ export function RolesView({ roles, source, canManageRoles, heldGrants }: RolesVi
                   >
                     <span className="truncate">{role.name}</span>
                     <span className="shrink-0 text-[11px] font-medium text-app-text-muted">{role.template ? "Template" : "Custom"}</span>
-                  </button>
+                  </Link>
                 </li>
               );
             })}

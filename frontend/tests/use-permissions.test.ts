@@ -151,6 +151,26 @@ describe("permission store", () => {
     expect(store.getState().grants).toEqual(FIXTURE_GRANTS.ORGANIZATION_ADMIN);
   });
 
+  it("uses role fixtures without calling the API in role preview mode", async () => {
+    const store = createPermissionStore({ fetchPermissions, env: devEnv });
+    await store.getState().load(ORG_A, "ORGANIZATION_OWNER", { preview: true });
+
+    expect(fetchPermissions).not.toHaveBeenCalled();
+    expect(store.getState().source).toBe("fixture");
+    expect(store.getState().grants).toEqual(FIXTURE_GRANTS.ORGANIZATION_OWNER);
+  });
+
+  it("does not allow role preview fixtures in production", async () => {
+    const store = createPermissionStore({
+      fetchPermissions,
+      env: { nodeEnv: "production", useMocks: undefined },
+    });
+    await store.getState().load(ORG_A, "ORGANIZATION_OWNER", { preview: true });
+
+    expect(fetchPermissions).toHaveBeenCalledWith(ORG_A);
+    expect(store.getState().source).toBe("api");
+  });
+
   it("falls back to the fixture only when the API is unreachable", async () => {
     const store = createPermissionStore({
       fetchPermissions: apiFail(new ApiError(0, "NETWORK_ERROR", "offline", "")),

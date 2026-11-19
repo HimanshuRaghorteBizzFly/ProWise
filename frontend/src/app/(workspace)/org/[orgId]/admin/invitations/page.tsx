@@ -7,7 +7,7 @@ import { OrgInvitationsContent, OrgPage } from "@/components/owner/OrgPages";
 export default function AdminInvitationsPage() {
   return (
     <OrgPage family="admin" title="Invitations">
-      <OrgInvitationsContent />
+      <OrgInvitationsContent family="admin" />
     </OrgPage>
   );
 }

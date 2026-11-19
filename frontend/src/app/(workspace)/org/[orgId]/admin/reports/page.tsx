@@ -7,7 +7,7 @@ import { OrgReportsContent, OrgPage } from "@/components/owner/OrgPages";
 export default function AdminReportsPage() {
   return (
     <OrgPage family="admin" title="Reports & exports">
-      <OrgReportsContent />
+      <OrgReportsContent family="admin" />
     </OrgPage>
   );
 }

@@ -58,6 +58,7 @@ interface AuthState {
   activeRole: SystemRole;
   activeOrgId: string;
   isAuthenticated: boolean;
+  isRolePreview: boolean;
   setCurrentUser: (user: User) => void;
   setCurrentRole: (role: SystemRole) => void;
   setCurrentOrg: (org: Organization) => void;
@@ -78,23 +79,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   activeRole: "ORGANIZATION_OWNER",
   activeOrgId: "",
   isAuthenticated: false,
+  isRolePreview: false,
 
   setCurrentUser: (user) => set({ currentUser: user }),
   setCurrentRole: (role) => set({ currentRole: role, activeRole: role }),
   setCurrentOrg: (org) => set({ currentOrg: org, activeOrgId: org.id }),
 
-  switchRole: (role) => set({ currentRole: role, activeRole: role }),
+  switchRole: (role) => set({ currentRole: role, activeRole: role, isRolePreview: process.env.NODE_ENV !== "production" }),
 
   switchOrg: (orgId) => {
     if (get().currentOrg.id === orgId) return;
   },
 
-  login: (_email, role) => set({ currentRole: role || "VIEWER", activeRole: role || "VIEWER", isAuthenticated: true }),
+  login: (_email, role) =>
+    set({
+      currentRole: role || "VIEWER",
+      activeRole: role || "VIEWER",
+      isAuthenticated: true,
+      isRolePreview: false,
+    }),
 
   switchRoleAndNavigate: (role, routerPush) => {
     const { currentOrg } = get();
     const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
-    set({ currentRole: role, activeRole: role });
+    set({
+      currentRole: role,
+      activeRole: role,
+      isRolePreview: process.env.NODE_ENV !== "production",
+    });
     const targetUrl = getRoleDashboardPath(role, safeOrgId);
     routerPush(targetUrl);
   },
@@ -106,7 +118,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
-    set({ currentUser: DEFAULT_USER, currentOrg: DEFAULT_ORG, activeOrgId: "org-acme", isAuthenticated: false });
+    set({
+      currentUser: DEFAULT_USER,
+      currentOrg: DEFAULT_ORG,
+      activeOrgId: "org-acme",
+      isAuthenticated: false,
+      isRolePreview: false,
+    });
   },
 
   hydrate: (user, organizations, role) => {
@@ -119,6 +137,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       activeRole: role,
       activeOrgId: organization.id,
       isAuthenticated: true,
+      isRolePreview: false,
     });
   },
 }));

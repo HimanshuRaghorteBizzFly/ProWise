@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import { GitBranch, Unplug } from "lucide-react";
 
 import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
@@ -15,6 +16,7 @@ export interface IntegrationsViewProps {
   repositories: RepositoryRow[];
   source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
+  basePath?: string;
 }
 
 const SYNC: Record<RepositoryRow["syncStatus"], { label: string; tone: StatusTone }> = {
@@ -24,7 +26,7 @@ const SYNC: Record<RepositoryRow["syncStatus"], { label: string; tone: StatusTon
   DISCONNECTED: { label: "Disconnected", tone: "neutral" },
 };
 
-export function IntegrationsView({ family, repositories, source, can }: IntegrationsViewProps) {
+export function IntegrationsView({ family, repositories, source, can, basePath }: IntegrationsViewProps) {
   const canConnect = can("repo.connect");
   // The owner approves integrations (blueprint section 3); there is no separate key, so org.manage gates it.
   const canApprove = family === "owner" && can("org.manage");
@@ -37,7 +39,9 @@ export function IntegrationsView({ family, repositories, source, can }: Integrat
       actions={
         canConnect || canApprove ? (
           <>
-            {canConnect && <LaterActionButton>Connect repositories</LaterActionButton>}
+            {canConnect && (basePath ? (
+              <Link href={`${basePath}/integrations/connect`} className="inline-flex min-h-9 items-center rounded-lg border border-app-border px-3 text-xs font-medium text-app-text-secondary hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent">Connect repositories</Link>
+            ) : <LaterActionButton>Connect repositories</LaterActionButton>)}
             {canApprove && <LaterActionButton>Approve integration</LaterActionButton>}
             <OwnerLaterBadge task="4.1" />
           </>
@@ -87,7 +91,7 @@ export function IntegrationsView({ family, repositories, source, can }: Integrat
                 <div className="flex items-start justify-between gap-2">
                   <p className="flex min-w-0 items-center gap-2 text-sm font-semibold text-app-text-primary">
                     <GitBranch aria-hidden="true" className="h-4 w-4 shrink-0 text-app-text-muted" />
-                    <span className="break-all">{repository.fullName}</span>
+                    {basePath ? <Link href={`${basePath}/integrations/${repository.id}`} className="break-all rounded-sm hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">{repository.fullName}</Link> : <span className="break-all">{repository.fullName}</span>}
                   </p>
                   <StatusBadge label={SYNC[repository.syncStatus].label} tone={SYNC[repository.syncStatus].tone} dot />
                 </div>

@@ -19,13 +19,25 @@ const acme = SEEDED_ORGS[0];
 
 // zustand v5 renders the server snapshot from getInitialState(), so tests seed that snapshot.
 const authInitial = useAuthStore.getInitialState();
-const authDefaults = { currentRole: authInitial.currentRole, currentOrg: authInitial.currentOrg };
+const authDefaults = {
+  currentRole: authInitial.currentRole,
+  currentOrg: authInitial.currentOrg,
+  isRolePreview: authInitial.isRolePreview,
+};
 vi.spyOn(permissionStore, "getInitialState").mockImplementation(() => permissionStore.getState());
 
 function setup(role: SystemRole, source: "api" | "fixture" = "fixture", grants = FIXTURE_GRANTS[role]) {
-  Object.assign(authInitial, { currentRole: role, currentOrg: acme });
-  useAuthStore.setState({ currentRole: role, currentOrg: acme });
-  permissionStore.setState({ orgId: acme.id, status: "ready", source, scopeReported: source === "fixture", grants });
+  Object.assign(authInitial, { currentRole: role, currentOrg: acme, isRolePreview: false });
+  useAuthStore.setState({ currentRole: role, currentOrg: acme, isRolePreview: false });
+  permissionStore.setState({
+    orgId: acme.id,
+    role,
+    preview: false,
+    status: "ready",
+    source,
+    scopeReported: source === "fixture",
+    grants,
+  });
 }
 
 const renderSidebar = (mobileOpen = false) =>
@@ -36,7 +48,15 @@ const renderSidebar = (mobileOpen = false) =>
 afterEach(() => {
   Object.assign(authInitial, authDefaults);
   useAuthStore.setState(authDefaults);
-  permissionStore.setState({ orgId: "", status: "idle", source: null, scopeReported: false, grants: [] });
+  permissionStore.setState({
+    orgId: "",
+    role: null,
+    preview: false,
+    status: "idle",
+    source: null,
+    scopeReported: false,
+    grants: [],
+  });
 });
 
 describe("org shell sidebar", () => {
