@@ -62,7 +62,7 @@ export default function ViewerTasksPage() {
   const inProgressCount = allTasks.filter((t) => t.state === "IN_PROGRESS").length;
   const inReviewCount = allTasks.filter((t) => t.state === "IN_REVIEW").length;
   const doneCount = allTasks.filter((t) => t.state === "DONE").length;
-  const blockedCount = allTasks.filter((t) => t.state === "BLOCKED").length;
+  const blockedCount = allTasks.filter((t) => t.isBlocked).length;
 
   const getPriorityBadgeTone = (priority: string) => {
     switch (priority) {
@@ -404,7 +404,11 @@ export default function ViewerTasksPage() {
           /* Grouped Kanban View Mode */
           <div className="p-4 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
             {(["OPEN", "IN_PROGRESS", "IN_REVIEW", "DONE", "BLOCKED"] as const).map((columnState) => {
-              const stateTasks = allTasks.filter((t) => t.state === columnState);
+              const stateTasks = allTasks.filter((t) => {
+                if (columnState === "BLOCKED") return t.isBlocked;
+                if (columnState === "OPEN") return t.state === "TODO";
+                return t.state === columnState;
+              });
               return (
                 <div
                   key={columnState}

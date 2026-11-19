@@ -57,8 +57,8 @@ export default function ViewerProgressPage() {
   // Individual Mode initiative (SOLO-10)
   const individualProj = projects.find((p) => p.mode === "INDIVIDUAL" && p.key === "SOLO-10");
 
-  const completedMilestones = milestones.filter((m) => m.status === "COMPLETED").length;
-  const totalWeight = milestones.reduce((sum, m) => sum + m.weightPoints, 0);
+  const completedMilestones = milestones.filter((m) => m.state === "DONE").length;
+  const totalWeight = milestones.reduce((sum, m) => sum + m.totalPoints, 0);
 
   // Sample verified individual check-ins
   const individualCheckins = useMemo(() => {
@@ -294,43 +294,48 @@ export default function ViewerProgressPage() {
 
                     {/* 4. Phase */}
                     <td className="px-4 py-3 hidden md:table-cell whitespace-nowrap text-[11px] text-[var(--color-text-secondary,#5F6368)]">
-                      {m.phase}
+                      {m.key}
                     </td>
 
                     {/* 5. Weight Points */}
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="font-mono font-bold text-[11px] text-[var(--color-text-primary,#202124)]">
-                        {m.weightPoints} pts
+                        {m.totalPoints} pts
                       </span>
                       <span className="text-[10px] text-[var(--color-text-muted,#80868B)] ml-1">
-                        ({Math.round((m.weightPoints / Math.max(1, totalWeight)) * 100)}%)
+                        ({Math.round((m.totalPoints / Math.max(1, totalWeight)) * 100)}%)
                       </span>
                     </td>
 
                     {/* 6. Status */}
                     <td className="px-4 py-3 whitespace-nowrap">
                       <ViewerStatusBadge
-                        label={m.status}
-                        tone={m.status === "COMPLETED" ? "success" : m.status === "IN_PROGRESS" ? "info" : "neutral"}
+                        label={m.state}
+                        tone={m.state === "DONE" ? "success" : m.state === "IN_PROGRESS" || m.state === "IN_REVIEW" ? "info" : "neutral"}
                         dot
                       />
                     </td>
 
                     {/* 7. Completion Bar */}
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16">
-                          <ProgressBar value={m.completionPercent} size="sm" />
-                        </div>
-                        <span className="font-mono font-bold text-[11px]">
-                          {m.completionPercent}%
-                        </span>
-                      </div>
+                      {(() => {
+                        const pct = m.totalPoints > 0 ? Math.round((m.completedPoints / m.totalPoints) * 100) : 0;
+                        return (
+                          <div className="flex items-center gap-2">
+                            <div className="w-16">
+                              <ProgressBar value={pct} size="sm" />
+                            </div>
+                            <span className="font-mono font-bold text-[11px]">
+                              {pct}%
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* 8. Target Date */}
                     <td className="px-4 py-3 text-right hidden sm:table-cell whitespace-nowrap font-mono text-[11px] text-[var(--color-text-secondary,#5F6368)]">
-                      {m.targetDate}
+                      {m.dueDate}
                     </td>
                   </tr>
                 ))}

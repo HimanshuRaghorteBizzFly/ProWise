@@ -72,11 +72,14 @@ export default function ViewerProjectsPage() {
         return true;
       })
       .sort((a, b) => {
-        let valA: any = a[sortBy];
-        let valB: any = b[sortBy];
+        let valA: any;
+        let valB: any;
         if (sortBy === "progress") {
           valA = a.lastProgressPercent;
           valB = b.lastProgressPercent;
+        } else {
+          valA = a[sortBy as keyof typeof a];
+          valB = b[sortBy as keyof typeof b];
         }
         if (valA < valB) return sortOrder === "asc" ? -1 : 1;
         if (valA > valB) return sortOrder === "asc" ? 1 : -1;

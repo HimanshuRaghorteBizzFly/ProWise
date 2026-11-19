@@ -83,6 +83,7 @@ const SUPER_ADMIN_SECTIONS = [
     title: "Platform Management",
     items: [
       { title: "Platform Configuration", href: "/super-admin/configuration", icon: Sliders },
+      { title: "Maintenance Mode", href: "/super-admin/maintenance", matchPaths: ["/super-admin/maintenance", "/super-admin/configuration/maintenance"], icon: Wrench },
       { title: "Reports & Analytics", href: "/super-admin/reports", icon: BarChart3 },
       { title: "Settings", href: "/super-admin/settings", icon: Settings },
       { title: "Support Oversight", href: "/super-admin/support", icon: LifeBuoy },

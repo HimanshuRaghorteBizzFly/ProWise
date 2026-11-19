@@ -389,12 +389,12 @@ export default function ViewerTeamPage() {
                   Assigned Initiatives ({selectedMember.assignedProjects.length})
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {selectedMember.assignedProjects.map((pKey) => (
+                  {selectedMember.assignedProjects.map((p) => (
                     <span
-                      key={pKey}
+                      key={p.id || p.key}
                       className="px-2.5 py-1 rounded-md bg-[var(--color-app-bg,#F8FAFD)] border border-[var(--color-border,#E2E8F0)] font-mono font-bold text-blue-600 dark:text-blue-400"
                     >
-                      {pKey}
+                      {p.key}
                     </span>
                   ))}
                 </div>

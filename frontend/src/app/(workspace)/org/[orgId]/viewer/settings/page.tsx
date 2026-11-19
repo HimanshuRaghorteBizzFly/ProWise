@@ -253,8 +253,8 @@ export default function ViewerSettingsPage() {
                 <label className="flex items-start gap-2.5 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={emailDigests}
-                    onChange={(e) => setEmailDigests(e.target.checked)}
+                    checked={emailDigests !== "OFF"}
+                    onChange={(e) => setEmailDigests(e.target.checked ? "WEEKLY" : "OFF")}
                     className="mt-0.5 rounded border-[var(--color-border,#E2E8F0)] text-blue-600 accent-blue-600"
                   />
                   <div>

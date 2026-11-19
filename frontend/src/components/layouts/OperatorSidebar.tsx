@@ -1,9 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { usePlatformOperatorStore } from "@/app/(platform)/platform-operator/_store/usePlatformOperatorStore";
+import { useSuperAdminStore } from "@/app/(platform)/super-admin/_store/useSuperAdminStore";
+import { isRouteAuthorized } from "@/app/(platform)/platform-operator/_services/operator-permission-service";
 import {
   Activity,
   AlertTriangle,
@@ -93,6 +96,36 @@ const OPERATOR_SECTIONS = [
 
 export function OperatorSidebar() {
   const pathname = usePathname();
+  const accountSettings = usePlatformOperatorStore((s) => s.accountSettings);
+  const activeDepartment = accountSettings.department || "Site Reliability";
+  const superAdminOperators = useSuperAdminStore((s) => s.operators);
+
+  const activeOperator = useMemo(() => {
+    const byId = superAdminOperators.find((o) => o.id === accountSettings.activeOperatorId);
+    if (byId) return byId;
+    const byDept = superAdminOperators.find((o) => o.department === activeDepartment);
+    if (byDept) return byDept;
+    return {
+      id: "op-current",
+      name: accountSettings.name,
+      email: accountSettings.email,
+      department: activeDepartment,
+      roleId: "role-platform-operator",
+      status: "ACTIVE" as const,
+      mfaEnabled: accountSettings.mfaEnabled,
+      onCall: true,
+      shiftName: accountSettings.shiftName,
+      lastActiveAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+  }, [superAdminOperators, accountSettings, activeDepartment]);
+
+  const authorizedSections = useMemo(() => {
+    return OPERATOR_SECTIONS.map((section) => ({
+      ...section,
+      items: section.items.filter((item) => isRouteAuthorized(activeOperator, item.href)),
+    })).filter((section) => section.items.length > 0);
+  }, [activeOperator]);
 
   return (
     <aside className="w-64 flex-shrink-0 border-r border-[var(--color-border)] bg-[var(--color-sidebar)] flex flex-col h-screen sticky top-0 overflow-hidden">
@@ -109,7 +142,7 @@ export function OperatorSidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3 space-y-4">
-        {OPERATOR_SECTIONS.map((section, idx) => (
+        {authorizedSections.map((section, idx) => (
           <div key={idx} className="space-y-1">
             <p className="px-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
               {section.title}

@@ -539,11 +539,11 @@ export default function ViewerDashboard() {
                         {act.summary}
                       </div>
                       <div className="text-[10px] text-[var(--color-text-muted,#80868B)] font-mono">
-                        {act.projectName} • {act.actionType}
+                        {act.projectName} • {act.type}
                       </div>
                     </td>
                     <td className="px-3 py-2.5 hidden sm:table-cell text-[11px] text-[var(--color-text-secondary,#5F6368)]">
-                      {act.actorName}
+                      {act.actor}
                     </td>
                     <td className="px-3 py-2.5 text-[11px] text-[var(--color-text-muted,#80868B)] whitespace-nowrap font-mono">
                       {act.timestamp.split(" ")[0]}

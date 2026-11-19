@@ -366,7 +366,7 @@ export const SEEDED_VIEWER_TASKS: ViewerTask[] = [
       name: "Priya Patel",
       email: "priya.patel@acmehealth.com",
     },
-    state: "BLOCKED",
+    state: "IN_PROGRESS",
     priority: "CRITICAL",
     weight: 40,
     weightUnit: "points",

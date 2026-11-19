@@ -67,7 +67,15 @@ export function getViewerTasks(
   return SEEDED_VIEWER_TASKS.filter((t) => {
     if (t.orgId !== safeId) return false;
     if (projectId && projectId !== "ALL" && t.projectId !== projectId) return false;
-    if (stateFilter && stateFilter !== "ALL" && t.state !== stateFilter) return false;
+    if (stateFilter && stateFilter !== "ALL") {
+      if (stateFilter === "BLOCKED") {
+        if (!t.isBlocked) return false;
+      } else if (stateFilter === "OPEN" || stateFilter === "TODO") {
+        if (t.state !== "TODO") return false;
+      } else if (t.state !== stateFilter) {
+        return false;
+      }
+    }
     if (priorityFilter && priorityFilter !== "ALL" && t.priority !== priorityFilter) return false;
     if (search) {
       const q = search.toLowerCase();

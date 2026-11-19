@@ -236,23 +236,37 @@ export function getNavigationConfig(role: SystemRole, orgId: string = "org-1"): 
     case "DEVELOPER":
       return [
         {
+          title: "Workspace",
           items: [
             { title: "Dashboard", href: `/org/${orgId}/developer/dashboard`, icon: LayoutDashboard },
-            { title: "My Work", href: `/org/${orgId}/developer/my-work`, icon: CheckSquare },
-            { title: "Assigned Projects", href: `/org/${orgId}/developer/projects`, icon: FolderKanban },
-            { title: "Tasks & Work Items", href: `/org/${orgId}/developer/tasks`, icon: Layers },
-            { title: "Check-Ins", href: `/org/${orgId}/developer/check-ins`, icon: Clock },
+            { title: "My Projects", href: `/org/${orgId}/developer/projects`, icon: FolderKanban },
+            { title: "My Tasks", href: `/org/${orgId}/developer/tasks`, icon: CheckSquare },
             { title: "Progress Tracker", href: `/org/${orgId}/developer/progress`, icon: Activity },
+            { title: "My Work", href: `/org/${orgId}/developer/my-work`, icon: Layers },
           ],
         },
         {
-          title: "Artifacts & Evidence",
+          title: "Development",
           items: [
-            { title: "Repositories", href: `/org/${orgId}/developer/repositories`, icon: GitBranch },
-            { title: "Evidence & PRs", href: `/org/${orgId}/developer/evidence`, icon: FileText },
-            { title: "My Blockers", href: `/org/${orgId}/developer/blockers`, icon: AlertTriangle },
-            { title: "Comments", href: `/org/${orgId}/developer/comments`, icon: Mail },
+            { title: "Sprint Board", href: `/org/${orgId}/developer/sprints`, icon: FolderKanban },
+            { title: "GitHub Activity", href: `/org/${orgId}/developer/github`, icon: GitBranch },
+            { title: "Code Reviews", href: `/org/${orgId}/developer/reviews`, icon: GitPullRequest },
+            { title: "Bugs & Issues", href: `/org/${orgId}/developer/bugs`, icon: AlertTriangle },
+          ],
+        },
+        {
+          title: "Collaboration",
+          items: [
+            { title: "Calendar & Deadlines", href: `/org/${orgId}/developer/calendar`, icon: Calendar },
+            { title: "Team Collaboration", href: `/org/${orgId}/developer/discussions`, icon: Users },
+            { title: "Files & Documents", href: `/org/${orgId}/developer/files`, icon: FileText },
+          ],
+        },
+        {
+          title: "Personal",
+          items: [
             { title: "Notifications", href: `/org/${orgId}/developer/notifications`, icon: Bell },
+            { title: "My Reports", href: `/org/${orgId}/developer/reports`, icon: BarChart3 },
             { title: "Settings", href: `/org/${orgId}/developer/settings`, icon: Settings },
           ],
         },

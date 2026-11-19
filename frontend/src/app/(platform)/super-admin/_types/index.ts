@@ -93,18 +93,32 @@ export interface TenantOrganization {
   notes?: string;
 }
 
-export type OperatorStatus = "ACTIVE" | "INACTIVE" | "INVITED";
+export type OperatorStatus = "ACTIVE" | "INACTIVE" | "INVITED" | "SUSPENDED";
+export type OperatorAccessLevel = "MAIN_PLATFORM_OPERATOR" | "DEPARTMENT_OPERATOR";
+
+export interface PermissionOverrideItem {
+  moduleKey: string;
+  action: "view" | "create" | "edit" | "delete" | "execute";
+  type: "GRANT" | "DENY";
+  grantedBy: string;
+  reason?: string;
+  createdAt: string;
+}
 
 export interface PlatformOperator {
   id: string;
   name: string;
   email: string;
   roleId: string;
+  accessLevel?: OperatorAccessLevel;
   department: string;
   status: OperatorStatus;
   mfaEnabled: boolean;
   onCall: boolean;
+  shiftName?: string;
   customPermissions?: PermissionKey[];
+  permissionOverrides?: PermissionOverrideItem[];
+  activeSessionsCount?: number;
   lastActiveAt: string;
   createdAt: string;
 }

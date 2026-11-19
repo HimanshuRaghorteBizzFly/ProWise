@@ -70,8 +70,8 @@ export default function ViewerFilesPage() {
     return filteredFiles.slice(start, start + pageSize);
   }, [filteredFiles, currentPage, pageSize]);
 
-  const permittedCount = rawFiles.filter((f) => f.securityClearance === "PERMITTED").length;
-  const restrictedCount = rawFiles.filter((f) => f.securityClearance === "RESTRICTED").length;
+  const permittedCount = rawFiles.filter((f) => !f.isRestricted).length;
+  const restrictedCount = rawFiles.filter((f) => f.isRestricted).length;
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
@@ -222,7 +222,7 @@ export default function ViewerFilesPage() {
               <tbody className="divide-y divide-[var(--color-border,#E2E8F0)]">
                 {paginatedFiles.map((file, idx) => {
                   const serialNum = (currentPage - 1) * pageSize + idx + 1;
-                  const isRestricted = file.securityClearance === "RESTRICTED";
+                  const isRestricted = file.isRestricted;
                   return (
                     <tr
                       key={file.id}
@@ -282,7 +282,7 @@ export default function ViewerFilesPage() {
 
                       {/* 8. Updated Date */}
                       <td className="px-4 py-3 hidden sm:table-cell whitespace-nowrap font-mono text-[11px] text-[var(--color-text-muted,#80868B)]">
-                        {file.lastModified}
+                        {file.updatedAt}
                       </td>
 
                       {/* 9. Actions */}

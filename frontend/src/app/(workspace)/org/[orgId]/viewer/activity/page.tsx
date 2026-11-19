@@ -55,7 +55,7 @@ export default function ViewerActivityPage() {
       (a) =>
         a.title.toLowerCase().includes(q) ||
         a.summary.toLowerCase().includes(q) ||
-        a.actorName.toLowerCase().includes(q) ||
+        a.actor.toLowerCase().includes(q) ||
         a.projectName.toLowerCase().includes(q)
     );
   }, [rawActivity, search]);
@@ -65,9 +65,9 @@ export default function ViewerActivityPage() {
     return filteredActivity.slice(start, start + pageSize);
   }, [filteredActivity, currentPage, pageSize]);
 
-  const commitCount = rawActivity.filter((a) => a.actionType === "COMMIT").length;
-  const checkinCount = rawActivity.filter((a) => a.actionType === "CHECKIN" || a.actionType === "DELIVERY").length;
-  const reviewCount = rawActivity.filter((a) => a.actionType === "REVIEW").length;
+  const commitCount = rawActivity.filter((a) => a.type === "COMMIT").length;
+  const checkinCount = rawActivity.filter((a) => a.type === "CHECKIN" || a.type === "DELIVERY").length;
+  const reviewCount = rawActivity.filter((a) => a.type === "REVIEW").length;
 
   const getTypeBadgeTone = (type: string) => {
     switch (type) {
@@ -245,18 +245,18 @@ export default function ViewerActivityPage() {
                       {/* 3. Actor */}
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="font-semibold text-[var(--color-text-primary,#202124)]">
-                          {act.actorName}
+                          {act.actor}
                         </div>
                         <div className="text-[10px] text-[var(--color-text-muted,#80868B)]">
-                          {act.actorRole}
+                          {act.actorEmail || "Contributor"}
                         </div>
                       </td>
 
                       {/* 4. Event Type */}
                       <td className="px-4 py-3 whitespace-nowrap">
                         <ViewerStatusBadge
-                          label={act.actionType}
-                          tone={getTypeBadgeTone(act.actionType)}
+                          label={act.type}
+                          tone={getTypeBadgeTone(act.type)}
                           dot
                         />
                       </td>
