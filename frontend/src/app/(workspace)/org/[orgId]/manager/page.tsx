@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { ManagerDashboardView } from "@/components/owner/ManagerDashboardView";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -135,7 +134,6 @@ export default function ProjectManagerDashboard() {
     >
       <div className="space-y-8">
         {/* ── NEW: Visual Dashboard ── */}
-        <ManagerDashboardView orgId={orgId} basePath={`/org/${orgId}/manager`} />
 
         {/* ── EXISTING: Detailed Portfolio Table ── */}
         <div className="space-y-6">

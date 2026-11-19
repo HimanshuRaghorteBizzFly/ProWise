@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import { useParams } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { ReviewerDashboardView } from "@/components/owner/ReviewerDashboardView";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -109,7 +108,7 @@ export default function ReviewerDashboard() {
     >
       <div className="space-y-8">
         {/* ── NEW: Visual Dashboard ── */}
-        <ReviewerDashboardView orgId={orgId} basePath={`/org/${orgId}/reviewer`} />
+    
 
         {/* ── EXISTING: Detailed Queue Controls ── */}
         <div className="space-y-6">

@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import { useParams } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { TeamLeadDashboardView } from "@/components/owner/TeamLeadDashboardView";
 import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -114,7 +113,6 @@ export default function TeamLeadDashboard() {
     >
       <div className="space-y-8">
         {/* ── NEW: Visual Dashboard ── */}
-        <TeamLeadDashboardView orgId={orgId} basePath={`/org/${orgId}/lead`} />
 
         {/* ── EXISTING: Detailed Controls ── */}
         <div className="space-y-6">

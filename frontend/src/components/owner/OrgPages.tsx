@@ -16,7 +16,6 @@ import { OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
 import { ProjectsPortfolioView } from "@/components/owner/ProjectsPortfolioView";
 import { TeamsView } from "@/components/owner/TeamsView";
 import { MembersView } from "@/components/owner/MembersView";
-import { AdminDashboardView } from "@/components/owner/AdminDashboardView";
 import { OwnerDashboardView } from "@/components/owner/OwnerDashboardView";
 import { OwnerPageState } from "@/components/owner/OwnerPageState";
 import { RolesView } from "@/components/owner/RolesView";
@@ -149,19 +148,7 @@ export function OrgDashboardContent({ family }: FamilyProps) {
   if (state.status === "error") {
     return <OwnerPageState state="error" title="Unable to load the dashboard" description={state.message} onRetry={retry} />;
   }
-  if (family === "admin") {
-    return (
-      <AdminDashboardView
-        orgId={orgId}
-        orgName={orgName}
-        basePath={`/org/${orgId}/admin`}
-        grants={grants}
-        scopeReported={scopeReported}
-        can={can}
-        canAny={canAny}
-      />
-    );
-  }
+  
 
   return (
     <OwnerDashboardView
