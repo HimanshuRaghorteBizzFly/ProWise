@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -52,6 +53,7 @@ public class OperatorService {
         );
     }
 
+    @Autowired
     public OperatorService(
             PlatformOperatorRepository operatorRepository,
             OperatorDepartmentRepository departmentRepository,

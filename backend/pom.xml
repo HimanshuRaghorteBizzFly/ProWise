@@ -21,6 +21,10 @@
         <java.version>21</java.version>
         <springdoc.version>2.7.0</springdoc.version>
         <shedlock.version>5.16.0</shedlock.version>
+        <test.db.url>jdbc:postgresql://localhost:5432/prowise</test.db.url>
+        <test.db.username>prowise</test.db.username>
+        <test.db.password>ci-password</test.db.password>
+        <test.jwt.signing.key>test-signing-key-that-is-at-least-32-bytes-long</test.jwt.signing.key>
     </properties>
 
     <dependencies>
@@ -137,6 +141,18 @@
             </testResource>
         </testResources>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <DB_URL>${test.db.url}</DB_URL>
+                        <DB_USERNAME>${test.db.username}</DB_USERNAME>
+                        <DB_PASSWORD>${test.db.password}</DB_PASSWORD>
+                        <JWT_SIGNING_KEY>${test.jwt.signing.key}</JWT_SIGNING_KEY>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

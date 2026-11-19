@@ -1,12 +1,15 @@
 com\prowise\common\api\HealthEndpointTest.class
 com\prowise\notification\InMemoryEmailSender.class
+com\prowise\operator\MainAndDepartmentOperatorTest.class
 com\prowise\authz\PermissionAccessIntegrationTest$TestResourceConfiguration.class
 com\prowise\identity\IdentityOrganizationIntegrationTest.class
 com\prowise\common\worker\WorkerProfileIntegrationTest.class
 com\prowise\EnvironmentContractTest.class
+com\prowise\developer\DeveloperServiceTest.class
 com\prowise\testsupport\github\GitHubFixturesTest.class
 com\prowise\authz\TenantFilterIntegrationTest.class
 com\prowise\authz\AuthorizationArchitectureTest.class
+com\prowise\superadmin\SuperAdminServiceTest.class
 com\prowise\common\api\ErrorShapeTest$ProbeConfiguration.class
 com\prowise\notification\InMemoryEmailSenderTest.class
 com\prowise\authz\PermissionAccessIntegrationTest$TestProtectedResourceController.class
@@ -16,9 +19,11 @@ com\prowise\common\api\ErrorShapeTest$ErrorProbeController.class
 com\prowise\testsupport\github\GitHubFixtures.class
 com\prowise\common\logging\LogRedactionTest.class
 com\prowise\common\db\FlywayMigrationIntegrationTest.class
+com\prowise\operator\OperatorAuthenticationTest.class
 com\prowise\common\api\ErrorShapeTest$EchoRequest.class
 com\prowise\common\api\ErrorShapeTest.class
 com\prowise\testsupport\github\GitHubWebhookSigner.class
+com\prowise\operator\OperatorAuthorizationTest.class
 com\prowise\authz\PermissionAccessIntegrationTest$TestResource.class
 com\prowise\authz\PermissionAccessIntegrationTest.class
 com\prowise\common\config\RequiredEnvironmentValidatorTest.class
