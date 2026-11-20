@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Sidebar } from "@/components/navigation/sidebar";
 import { TopNav } from "@/components/navigation/top-nav";
 import { RoleTestBanner } from "@/components/navigation/role-test-banner";
+import { RolePreviewGlobalBanner } from "@/app/(platform)/super-admin/_components/RolePreviewGlobalBanner";
 import { Toaster } from "sonner";
 import { useThemeStore } from "@/store/theme-store";
 
@@ -39,6 +40,7 @@ export function PanelLayout({ children, title, breadcrumb }: PanelLayoutProps) {
       </a>
       {/* Test Scenario Quick Navigator Banner */}
       <RoleTestBanner />
+      <RolePreviewGlobalBanner />
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Left Sidebar */}
@@ -67,7 +69,7 @@ export function PanelLayout({ children, title, breadcrumb }: PanelLayoutProps) {
         </div>
       </div>
 
-      <Toaster position="top-right" theme={resolvedTheme} richColors />
+      <Toaster position="bottom-right" theme={resolvedTheme} richColors closeButton />
     </div>
   );
 }

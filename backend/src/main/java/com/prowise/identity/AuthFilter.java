@@ -127,9 +127,20 @@ public class AuthFilter extends OncePerRequestFilter {
                 entityManager.unwrap(Session.class).enableFilter("tenantFilter")
                         .setParameter("orgId", principal.organizationId());
             }
+            List<GrantedAuthority> userAuthorities = new ArrayList<>();
+            if (principal.role() != null && !principal.role().isBlank()) {
+                String cleanRole = principal.role().toUpperCase().replace("-", "_");
+                userAuthorities.add(new SimpleGrantedAuthority("ROLE_" + cleanRole));
+                userAuthorities.add(new SimpleGrantedAuthority(cleanRole));
+                if ("SUPER_ADMIN".equalsIgnoreCase(cleanRole)) {
+                    userAuthorities.add(new SimpleGrantedAuthority("PLATFORM_SUPER_ADMIN"));
+                    userAuthorities.add(new SimpleGrantedAuthority("ROLE_PLATFORM_SUPER_ADMIN"));
+                }
+            }
+
             request.setAttribute(PRINCIPAL_ATTRIBUTE, principal);
             SecurityContextHolder.getContext().setAuthentication(
-                    new UsernamePasswordAuthenticationToken(principal, null, java.util.List.of()));
+                    new UsernamePasswordAuthenticationToken(principal, null, userAuthorities));
             filterChain.doFilter(request, response);
         } catch (RuntimeException exception) {
             writeUnauthorized(request, response);

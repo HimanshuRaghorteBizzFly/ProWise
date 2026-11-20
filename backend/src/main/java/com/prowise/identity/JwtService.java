@@ -38,10 +38,18 @@ public class JwtService {
                 .claim("email", principal.email())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTokenLifetime)));
+        if (principal.role() != null) {
+            builder.claim("role", principal.role());
+        }
+        if (principal.name() != null) {
+            builder.claim("name", principal.name());
+        }
+        if (principal.mustChangePassword()) {
+            builder.claim("mustChangePassword", true);
+        }
         if (principal.isOperator()) {
             builder.claim("type", "OPERATOR");
             builder.claim("opid", principal.operatorId());
-            if (principal.role() != null) builder.claim("role", principal.role());
             if (principal.departmentId() != null) builder.claim("dept", principal.departmentId());
             if (principal.accessLevel() != null) builder.claim("accessLevel", principal.accessLevel());
         }
@@ -69,10 +77,21 @@ public class JwtService {
             );
         }
         String organization = claims.get("org", String.class);
+        String role = claims.get("role", String.class);
+        String name = claims.get("name", String.class);
+        Boolean mustChangePassword = claims.get("mustChangePassword", Boolean.class);
+
         return new AuthPrincipal(
                 UUID.fromString(claims.getSubject()),
                 UUID.fromString(claims.get("sid", String.class)),
                 claims.get("email", String.class),
-                organization == null ? null : UUID.fromString(organization));
+                organization == null ? null : UUID.fromString(organization),
+                null,
+                role,
+                null,
+                null,
+                Boolean.TRUE.equals(mustChangePassword),
+                name
+        );
     }
 }

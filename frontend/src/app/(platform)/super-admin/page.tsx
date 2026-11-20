@@ -62,6 +62,7 @@ import { AdminCalendar } from "./_components/AdminCalendar";
 import { UpcomingEventsWidget } from "./_components/UpcomingEventsWidget";
 import { AdminCalendarEvent } from "./_types";
 import { generateSynchronizedCalendarEvents } from "./_services/calendar-service";
+import { RolePreviewDashboardView } from "./_components/RolePreviewDashboardView";
 
 const PLAN_COLORS = ["#64748B", "#3B82F6", "#8B5CF6", "#10B981", "#F59E0B"];
 
@@ -78,6 +79,7 @@ export default function SuperAdminDashboardPage() {
   const incidents = useSuperAdminStore((s) => s.incidents);
   const accessApprovals = useSuperAdminStore((s) => s.accessApprovals);
   const manualCalendarEvents = useSuperAdminStore((s) => s.manualCalendarEvents);
+  const activeRoleId = useSuperAdminStore((s) => s.activeRoleId);
 
   const { can } = useAdminPermissions();
 
@@ -355,6 +357,10 @@ export default function SuperAdminDashboardPage() {
     );
     toast.success("Exported organization & revenue summary CSV");
   };
+
+  if (activeRoleId && activeRoleId !== "role-super-admin") {
+    return <RolePreviewDashboardView roleId={activeRoleId} />;
+  }
 
   return (
     <div className="space-y-6 max-w-full overflow-x-hidden">

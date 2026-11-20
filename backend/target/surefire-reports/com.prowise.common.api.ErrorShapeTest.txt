@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: com.prowise.common.api.ErrorShapeTest
--------------------------------------------------------------------------------
-Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.567 s -- in com.prowise.common.api.ErrorShapeTest

@@ -1,2 +1,0 @@
-org.springframework.boot.env.EnvironmentPostProcessor=com.prowise.common.config.RequiredEnvironmentValidator
-org.springframework.boot.diagnostics.FailureAnalyzer=com.prowise.common.config.MissingEnvironmentFailureAnalyzer

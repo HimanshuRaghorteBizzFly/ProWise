@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
+import { RolePreviewGlobalBanner } from "@/app/(platform)/super-admin/_components/RolePreviewGlobalBanner";
 import { useThemeStore } from "@/store/theme-store";
 import { useViewerStore } from "../_store/useViewerStore";
 import { ProjectDetailDrawer } from "./ProjectDetailDrawer";
@@ -609,6 +610,8 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
+        <RolePreviewGlobalBanner />
+
         {/* Read-Only Stakeholder Governance Banner */}
         <div className="bg-slate-900 text-slate-100 px-4 sm:px-6 py-2 text-xs border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 shadow-xs">
           <div className="flex items-center gap-2">
@@ -834,7 +837,7 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
       <EventDetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
 
       {/* Notification Toaster */}
-      <Toaster position="top-right" theme={resolvedTheme} richColors />
+      <Toaster position="bottom-right" theme={resolvedTheme} richColors closeButton />
     </div>
   );
 }

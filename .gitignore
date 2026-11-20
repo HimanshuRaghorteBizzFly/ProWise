@@ -23,3 +23,8 @@ next-env.d.ts
 # OS files
 .DS_Store
 Thumbs.db
+
+.test_pgdata/
+backend/target/
+frontend/.next/
+frontend/node_modules/

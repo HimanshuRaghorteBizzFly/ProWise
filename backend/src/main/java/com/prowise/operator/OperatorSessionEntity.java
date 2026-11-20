@@ -15,7 +15,7 @@ public class OperatorSessionEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private UUID id = UUID.randomUUID();
+    private UUID id;
 
     @Column(name = "operator_id", nullable = false, length = 64)
     private String operatorId;
