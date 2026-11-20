@@ -131,7 +131,7 @@ export function TopNav({
         </div>
 
         {/* Center: search trigger */}
-        <div className="mx-2 hidden max-w-md flex-1 md:flex">
+        <div className="mx-2 hidden max-w-md flex-1 lg:flex">
           <button
             type="button"
             onClick={() => setIsSearchOpen(true)}
@@ -151,7 +151,7 @@ export function TopNav({
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           <SampleDataBadge />
 
-          <button type="button" onClick={() => setIsSearchOpen(true)} aria-label="Search" className={cn(ICON_BUTTON, "md:hidden")}>
+          <button type="button" onClick={() => setIsSearchOpen(true)} aria-label="Search" className={cn(ICON_BUTTON, "lg:hidden")}>
             <Search className="h-4 w-4" aria-hidden="true" />
           </button>
 

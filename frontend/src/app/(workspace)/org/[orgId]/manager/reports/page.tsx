@@ -2,130 +2,184 @@
 
 import React from "react";
 import { useParams } from "next/navigation";
+import { BarChart3, Download } from "lucide-react";
+
+import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
+import { OwnerKpiCard } from "@/components/owner/OwnerKpiCard";
+import { OwnerPageState } from "@/components/owner/OwnerPageState";
+import { OwnerPanel } from "@/components/owner/OwnerPanel";
+import { OwnerTable } from "@/components/owner/OwnerTable";
+import { PageHeader } from "@/components/owner/primitives";
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { generateCsv, downloadCsv } from "@/lib/csv";
-import { Download, FileText, CheckCircle2 } from "lucide-react";
-import { toast } from "sonner";
+import { HealthBadge } from "@/components/ui/health-badge";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatUtcTimestamp } from "@/components/owner/project-format";
+import { mockApiHealth, mockApiProjects } from "@/lib/prowise-mock-adapters";
+import { useManagerResource } from "@/hooks/useManagerResource";
+import { ManagerResourceNotice } from "../_components/ManagerResourceNotice";
+
+const loadPortfolioReport = (
+  orgId: string,
+  grants: Parameters<typeof mockApiProjects>[1],
+) => ({
+  projects: mockApiProjects(orgId, grants).items,
+  health: mockApiHealth(orgId, grants).items,
+});
 
 export default function ManagerReportsPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { currentOrg } = useAuthStore();
-  const { projects } = useProjectStore();
-
-  const handleExport = () => {
-    const headers = ["Key", "Name", "Mode", "Lifecycle", "Progress %", "Health", "Target Date"];
-    const rows = projects.map((p) => [
-      p.key,
-      p.name,
-      p.mode,
-      p.lifecycle,
-      p.lastProgressPercent,
-      p.health,
-      p.targetDate,
-    ]);
-    const csv = generateCsv(headers, rows);
-    downloadCsv(`prowise-executive-report-${orgId}.csv`, csv);
-    toast.success("Executive delivery report exported.");
-  };
+  const params = useParams<{ orgId: string }>();
+  const orgId = params?.orgId ?? "";
+  const resource = useManagerResource({
+    routeOrgId: orgId,
+    name: "project-manager-portfolio-report",
+    permission: "project.read",
+    fixture: loadPortfolioReport,
+  });
+  const data = resource.state.status === "ready" ? resource.state.data : null;
+  const healthByProject = new Map((data?.health ?? []).map((health) => [health.projectId, health]));
+  const structuredCount = data?.projects.filter((project) => project.mode === "STRUCTURED").length ?? 0;
+  const individualCount = data?.projects.filter((project) => project.mode === "INDIVIDUAL").length ?? 0;
+  const reportExportAllowed = resource.can("report.export");
+  const asOf = data
+    ? [...data.health.map((health) => health.calculatedAt), ...data.projects.map((project) => project.lastReportedAt ?? "")]
+      .filter(Boolean)
+      .sort()
+      .at(-1)
+    : undefined;
 
   return (
     <PanelLayout
-      title="Portfolio Delivery Reports"
-      breadcrumb={[
-        { label: "Project Manager", href: `/org/${orgId}/manager` },
-        { label: "Reports" },
-      ]}
+      title="Reports"
+      breadcrumb={[{ label: "Project Manager", href: `/org/${orgId}/manager` }, { label: "Reports" }]}
     >
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-bold text-app-text-primary">Executive Delivery Summary</h2>
-            <p className="text-xs text-app-text-secondary mt-0.5">
-              Consistent reporting data models pinned to current baseline versions and timestamps.
-            </p>
-          </div>
-          <Button size="sm" onClick={handleExport}>
-            <Download className="w-3.5 h-3.5 mr-1" /> Export Verified CSV
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Active Structured Progress</div>
-            <div className="text-2xl font-bold text-blue-600 mt-1">50% Average</div>
-            <div className="text-[10px] text-app-text-muted mt-0.5">Calculated by leaf completion</div>
-          </Card>
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Solo Check-in Compliance</div>
-            <div className="text-2xl font-bold text-green-600 mt-1">100%</div>
-            <div className="text-[10px] text-green-600 font-medium mt-0.5">All weekly check-ins filed</div>
-          </Card>
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Formula Injection Defense</div>
-            <div className="text-2xl font-bold text-emerald-600 mt-1">Active</div>
-            <div className="text-[10px] text-emerald-600 font-medium mt-0.5">OWASP prefix escaping</div>
-          </Card>
-        </div>
-
-        <Card className="p-0 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Key</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Mode</TableHead>
-                <TableHead>Lifecycle</TableHead>
-                <TableHead>Progress Method</TableHead>
-                <TableHead>Delivered %</TableHead>
-                <TableHead>Health Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {projects.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-mono font-bold text-xs text-blue-600">{p.key}</TableCell>
-                  <TableCell className="font-semibold text-xs text-app-text-primary">{p.name}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{p.mode}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={p.lifecycle === "ACTIVE" ? "success" : "outline"}>
-                      {p.lifecycle}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-app-text-secondary">
-                    {p.lastProgressMethod.replace("_", " ")}
-                  </TableCell>
-                  <TableCell className="font-bold text-xs">
-                    {p.lastProgressPercent >= 0 ? `${p.lastProgressPercent}%` : "Not Reported"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        p.health === "ON_TRACK"
-                          ? "success"
-                          : p.health === "DELAYED"
-                          ? "danger"
-                          : "warning"
-                      }
-                    >
-                      {p.health}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+      <div className="space-y-4 sm:space-y-6">
+        <PageHeader
+          title="Portfolio report"
+          description="Readable project records only. Individual reported progress and Structured baseline calculations are separately labelled."
+          simulationLabel={data ? "Sample data" : undefined}
+          actions={(
+            <div className="flex flex-wrap items-center gap-2">
+              <OwnerLaterBadge task="5.5" />
+              {reportExportAllowed && (
+                <LaterActionButton title="Authorized report exports ship with task 5.5">
+                  <Download aria-hidden="true" className="h-3.5 w-3.5" />
+                  Export report
+                </LaterActionButton>
+              )}
+            </div>
+          )}
+        />
+        {data ? (
+          data.projects.length === 0 ? (
+            <OwnerPageState
+              state="empty"
+              title="No readable project data"
+              description="Portfolio report rows appear only for projects you can read."
+              icon={BarChart3}
+            />
+          ) : (
+            <>
+              {resource.partialVisibility && (
+                <p role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-app-text-secondary">
+                  Partial visibility — this report excludes projects outside your readable scope.
+                </p>
+              )}
+              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <OwnerKpiCard
+                  label="Readable projects"
+                  value={data.projects.length}
+                  icon={<BarChart3 className="h-5 w-5" />}
+                  detail="Current project records · unit: projects"
+                />
+                <OwnerKpiCard
+                  label="Individual"
+                  value={individualCount}
+                  icon={<BarChart3 className="h-5 w-5" />}
+                  detail="Developer-reported method only · projects"
+                />
+                <OwnerKpiCard
+                  label="Structured"
+                  value={structuredCount}
+                  icon={<BarChart3 className="h-5 w-5" />}
+                  detail="Calculated-baseline method only · projects"
+                />
+                <OwnerKpiCard
+                  label="Health records"
+                  value={data.health.length}
+                  icon={<BarChart3 className="h-5 w-5" />}
+                  detail={`Latest recorded health · ${asOf ? `${formatUtcTimestamp(asOf)} UTC` : "time not recorded"} · records`}
+                />
+              </div>
+              <OwnerPanel
+                title="As-of portfolio"
+                description={`Scope: readable projects · as of ${asOf ? `${formatUtcTimestamp(asOf)} UTC` : "time not recorded"} · progress unit: percent by method`}
+              >
+                <OwnerTable label="Project Manager portfolio report">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Project</TableHead>
+                      <TableHead>Mode / lifecycle</TableHead>
+                      <TableHead>Progress</TableHead>
+                      <TableHead>Progress method</TableHead>
+                      <TableHead>Health and reason</TableHead>
+                      <TableHead>Target date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.projects.map((project) => {
+                      const health = healthByProject.get(project.id);
+                      const method = project.lastProgressMethod === "DEVELOPER_REPORTED"
+                        ? "Developer reported"
+                        : project.lastProgressMethod === "CALCULATED_BASELINE"
+                          ? "Calculated baseline"
+                          : "Not reported";
+                      const value = project.lastProgressMethod === "NOT_REPORTED"
+                        ? "Not reported"
+                        : `${project.lastProgressPercent}%`;
+                      return (
+                        <TableRow key={project.id}>
+                          <TableCell>{project.key} · {project.name}</TableCell>
+                          <TableCell>{project.mode} · {project.lifecycle}</TableCell>
+                          <TableCell>{value}</TableCell>
+                          <TableCell>
+                            <span className="block">{method}</span>
+                            <span className="text-xs text-app-text-muted">
+                              {project.lastReportedAt ? `${formatUtcTimestamp(project.lastReportedAt)} UTC` : "Time not recorded"}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <HealthBadge health={health?.status ?? project.health} />
+                            <span className="mt-1 block max-w-xs whitespace-normal text-xs text-app-text-muted">
+                              {(health?.reasons ?? project.healthReasons).join(" · ") || "No reason recorded"}
+                            </span>
+                          </TableCell>
+                          <TableCell>{project.targetDate} · {project.timezone}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </OwnerTable>
+              </OwnerPanel>
+              {!reportExportAllowed && (
+                <p className="text-sm text-app-text-muted" role="note">
+                  Export is hidden because report.export is not granted for this membership.
+                </p>
+              )}
+            </>
+          )
+        ) : (
+          <ManagerResourceNotice
+            orgMatches={resource.orgMatches}
+            permissionStatus={resource.permissionStatus}
+            resourceStatus={resource.state.status}
+            permission={resource.permission}
+            permissionName="project.read"
+            laterTask="5.5"
+            retry={resource.retry}
+            retryPermissions={resource.permissionRetry}
+          />
+        )}
       </div>
     </PanelLayout>
   );
 }
-

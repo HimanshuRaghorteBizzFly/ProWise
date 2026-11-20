@@ -1,148 +1,128 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { useParams } from "next/navigation";
+import { FileCheck } from "lucide-react";
+
+import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
+import { OwnerPageState } from "@/components/owner/OwnerPageState";
+import { OwnerPanel } from "@/components/owner/OwnerPanel";
+import { OwnerTable } from "@/components/owner/OwnerTable";
+import { PageHeader, StatusBadge } from "@/components/owner/primitives";
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { PlusCircle, FileCheck, Layers } from "lucide-react";
-import { toast } from "sonner";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatUtcTimestamp } from "@/components/owner/project-format";
+import { mockApiBaselines, mockApiProjects } from "@/lib/prowise-mock-adapters";
+import { useManagerResource } from "@/hooks/useManagerResource";
+import { ManagerResourceNotice } from "../_components/ManagerResourceNotice";
+
+const loadScopeHistory = (
+  orgId: string,
+  grants: Parameters<typeof mockApiProjects>[1],
+) => ({
+  projects: mockApiProjects(orgId, grants).items,
+  baselines: mockApiBaselines(orgId, grants).items,
+});
 
 export default function ManagerScopePage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { currentOrg } = useAuthStore();
-  const { baselines, approveScopeAddition } = useProjectStore();
-
-  const [isAddScopeOpen, setIsAddScopeOpen] = useState(false);
-  const [leafTitle, setLeafTitle] = useState("Automated Compliance Audit Trail");
-  const [leafWeight, setLeafWeight] = useState(25);
-  const [reason, setReason] = useState("Approved expansion per Regulatory M12 requirements");
-
-  const handleApprove = (e: React.FormEvent) => {
-    e.preventDefault();
-    approveScopeAddition("proj-structured-cds", leafTitle, leafWeight, reason, "usr-manager");
-    setIsAddScopeOpen(false);
-    toast.success(`Baseline expanded! Added ${leafWeight} points to denominator.`);
-  };
+  const params = useParams<{ orgId: string }>();
+  const orgId = params?.orgId ?? "";
+  const resource = useManagerResource({
+    routeOrgId: orgId,
+    name: "project-manager-scope-history",
+    permission: "project.read",
+    fixture: loadScopeHistory,
+  });
+  const data = resource.state.status === "ready" ? resource.state.data : null;
+  const projectById = new Map((data?.projects ?? []).map((project) => [project.id, project]));
 
   return (
     <PanelLayout
-      title="Scope &amp; Baselines Management"
-      breadcrumb={[
-        { label: "Project Manager", href: `/org/${orgId}/manager` },
-        { label: "Scope & Baselines" },
-      ]}
+      title="Scope & baselines"
+      breadcrumb={[{ label: "Project Manager", href: `/org/${orgId}/manager` }, { label: "Scope & baselines" }]}
     >
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-bold text-app-text-primary">Approved Baselines</h2>
-            <p className="text-xs text-app-text-secondary mt-0.5">
-              Blueprint V1.1 Rule D03: Denominators expand only via formally recorded scope approvals.
-            </p>
-          </div>
-          <Button size="sm" onClick={() => setIsAddScopeOpen(true)}>
-            <PlusCircle className="w-3.5 h-3.5 mr-1" /> Approve Scope Addition (+25 pts)
-          </Button>
-        </div>
-
-        <div className="space-y-6">
-          {baselines.map((b) => (
-            <Card key={b.id} className="p-5 space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-app-border">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm text-app-text-primary">
-                      Baseline Version {b.version}
-                    </span>
-                    <Badge variant="default">{b.totalWeight} Total {b.unit}</Badge>
-                  </div>
-                  <p className="text-xs text-app-text-muted mt-0.5">{b.reason}</p>
-                </div>
-                <span className="text-xs text-app-text-muted">
-                  Approved on {new Date(b.approvedAt).toLocaleDateString()}
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                <span className="text-xs font-semibold text-app-text-primary">Eligible Leaves:</span>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Leaf Title</TableHead>
-                      <TableHead>Approved Weight</TableHead>
-                      <TableHead>Eligible Status</TableHead>
-                      <TableHead>Done Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {b.leaves.map((leaf, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell className="font-medium text-xs">{leaf.title}</TableCell>
-                        <TableCell className="font-semibold text-xs">{leaf.weight} pts</TableCell>
-                        <TableCell>
-                          <Badge variant="success">Eligible</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={leaf.isDone ? "success" : "warning"}>
-                            {leaf.isDone ? "Accepted" : "In Progress / Review"}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </Card>
-          ))}
-        </div>
+      <div className="space-y-4 sm:space-y-6">
+        <PageHeader
+          title="Approved baselines"
+          description="Scope versions preserve their reason and approval time. Changes affect future calculations only; historical snapshots are not rewritten."
+          simulationLabel={data ? "Sample data" : undefined}
+          actions={<OwnerLaterBadge task="3.2" />}
+        />
+        {data ? (
+          data.baselines.length === 0 ? (
+            <OwnerPageState
+              state="empty"
+              title="No approved baselines"
+              description="Structured projects may show their active and superseded scope versions here."
+              icon={FileCheck}
+            />
+          ) : (
+            <div className="space-y-4">
+              {data.baselines.map((baseline) => {
+                const project = projectById.get(baseline.projectId);
+                const isActive = project?.activeBaselineId === baseline.id;
+                const canChangeScope = resource.can("project.scope.change", { projectId: baseline.projectId });
+                return (
+                  <OwnerPanel
+                    key={baseline.id}
+                    title={`${project?.key ?? "Project"} · Baseline v${baseline.version}`}
+                    description={`${baseline.totalWeight} ${baseline.unit} · Approved ${formatUtcTimestamp(baseline.approvedAt)} UTC · ${baseline.reason}`}
+                    actions={
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusBadge label={isActive ? "Active baseline" : "Historical baseline"} tone={isActive ? "success" : "neutral"} />
+                        {canChangeScope ? (
+                          <>
+                            <LaterActionButton title="Scope approval ships with task 3.2">Propose scope change</LaterActionButton>
+                            <OwnerLaterBadge task="3.2" />
+                          </>
+                        ) : (
+                          <span className="text-xs text-app-text-muted">No project.scope.change grant</span>
+                        )}
+                      </div>
+                    }
+                  >
+                    <OwnerTable label={`Baseline ${baseline.version} scope leaves`}>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Eligible leaf</TableHead>
+                          <TableHead>Approved weight</TableHead>
+                          <TableHead>Recorded credit state</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {baseline.leaves.map((leaf) => (
+                          <TableRow key={`${baseline.id}-${leaf.workItemId}`}>
+                            <TableCell>{leaf.title}</TableCell>
+                            <TableCell>{leaf.weight} {baseline.unit}</TableCell>
+                            <TableCell>
+                              {!leaf.isEligible
+                                ? "Not eligible"
+                                : leaf.isDone
+                                  ? "Credit recorded"
+                                  : "No credit recorded"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </OwnerTable>
+                  </OwnerPanel>
+                );
+              })}
+            </div>
+          )
+        ) : (
+          <ManagerResourceNotice
+            orgMatches={resource.orgMatches}
+            permissionStatus={resource.permissionStatus}
+            resourceStatus={resource.state.status}
+            permission={resource.permission}
+            permissionName="project.read"
+            laterTask="3.2"
+            retry={resource.retry}
+            retryPermissions={resource.permissionRetry}
+          />
+        )}
       </div>
-
-      <Dialog
-        isOpen={isAddScopeOpen}
-        onClose={() => setIsAddScopeOpen(false)}
-        title="Approve Scope Change"
-        description="Expands baseline denominator and updates progress percentage mathematically."
-      >
-        <form onSubmit={handleApprove} className="space-y-4 pt-2">
-          <Input
-            label="Work Item Title"
-            value={leafTitle}
-            onChange={(e) => setLeafTitle(e.target.value)}
-            required
-          />
-
-          <Input
-            label="Approved Points / Weight"
-            type="number"
-            value={leafWeight}
-            onChange={(e) => setLeafWeight(parseInt(e.target.value) || 25)}
-            required
-          />
-
-          <Input
-            label="Mandatory Reason"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            required
-          />
-
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-app-border">
-            <Button type="button" variant="outline" onClick={() => setIsAddScopeOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">Commit Approved Scope</Button>
-          </div>
-        </form>
-      </Dialog>
     </PanelLayout>
   );
 }
-

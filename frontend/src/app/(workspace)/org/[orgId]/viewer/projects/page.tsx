@@ -72,15 +72,13 @@ export default function ViewerProjectsPage() {
         return true;
       })
       .sort((a, b) => {
-        let valA: any = a[sortBy];
-        let valB: any = b[sortBy];
-        if (sortBy === "progress") {
-          valA = a.lastProgressPercent;
-          valB = b.lastProgressPercent;
-        }
-        if (valA < valB) return sortOrder === "asc" ? -1 : 1;
-        if (valA > valB) return sortOrder === "asc" ? 1 : -1;
-        return 0;
+        const comparison =
+          sortBy === "progress"
+            ? a.lastProgressPercent - b.lastProgressPercent
+            : sortBy === "targetDate"
+              ? a.targetDate.localeCompare(b.targetDate)
+              : a[sortBy].localeCompare(b[sortBy]);
+        return sortOrder === "asc" ? comparison : -comparison;
       });
   }, [rawProjects, modeFilter, lifecycleFilter, healthFilter, search, sortBy, sortOrder]);
 

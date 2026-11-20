@@ -13,15 +13,16 @@ import {
 } from "../src/app/(workspace)/org/[orgId]/viewer/_services/viewer-service";
 
 describe("Viewer Panel Routing & UI/UX Integrity", () => {
-  it("resolves the viewer dashboard path safely without 404", () => {
+  it("sends users without an active organization to workspace selection", () => {
     const defaultPath = getRoleDashboardPath("VIEWER");
-    expect(defaultPath).toBe("/org/org-acme/viewer/dashboard");
+    expect(defaultPath).toBe("/select-workspace");
+    expect(getRoleDashboardPath("VIEWER", "")).toBe("/select-workspace");
+  });
 
-    const customOrgPath = getRoleDashboardPath("VIEWER", "org-test-123");
-    expect(customOrgPath).toBe("/org/org-test-123/viewer/dashboard");
-
-    const emptyOrgPath = getRoleDashboardPath("VIEWER", "");
-    expect(emptyOrgPath).toBe("/org/org-acme/viewer/dashboard");
+  it("routes an active organization to its Viewer dashboard", () => {
+    expect(getRoleDashboardPath("VIEWER", "org-test-123")).toBe(
+      "/org/org-test-123/viewer/dashboard",
+    );
   });
 
   it("has complete viewer routes registered in ROUTES config", () => {

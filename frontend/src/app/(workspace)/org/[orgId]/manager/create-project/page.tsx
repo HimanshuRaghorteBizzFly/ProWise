@@ -1,396 +1,260 @@
 "use client";
 
 import React, { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
+import { CalendarDays, FolderPlus, UserRound } from "lucide-react";
+
+import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
+import { OwnerPanel } from "@/components/owner/OwnerPanel";
+import { PageHeader } from "@/components/owner/primitives";
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input, Textarea } from "@/components/ui/input";
+import { mockApiOrganizationMembersForProjectCreation } from "@/lib/prowise-mock-adapters";
+import { useManagerResource } from "@/hooks/useManagerResource";
 import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { SEEDED_USERS } from "@/lib/mock-data";
-import { ProjectMode, Priority, ReportingCadence } from "@/types";
-import { toast } from "sonner";
-import { Check, ArrowRight, ArrowLeft, Sparkles, User, Calendar, Layers, ShieldCheck } from "lucide-react";
+import type { Priority, ProjectMode } from "@/types";
+import { ManagerResourceNotice } from "../_components/ManagerResourceNotice";
+
+const loadEligibleMembers = (
+  orgId: string,
+  grants: Parameters<typeof mockApiOrganizationMembersForProjectCreation>[1],
+) => mockApiOrganizationMembersForProjectCreation(orgId, grants).items;
+
+const PRIORITIES: readonly Priority[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+const MODES: readonly ProjectMode[] = ["INDIVIDUAL", "STRUCTURED"];
+const CADENCES = ["DAILY", "WEEKLY", "FORTNIGHTLY"] as const;
+type Cadence = (typeof CADENCES)[number];
+
+const isPriority = (value: string): value is Priority => PRIORITIES.some((item) => item === value);
+const isMode = (value: string): value is ProjectMode => MODES.some((item) => item === value);
+const isCadence = (value: string): value is Cadence => CADENCES.some((item) => item === value);
 
 export default function CreateProjectWizard() {
-  const params = useParams();
-  const router = useRouter();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { currentOrg, currentUser } = useAuthStore();
-  const { createProject } = useProjectStore();
-
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
-
-  // Step 1: Basic
+  const params = useParams<{ orgId: string }>();
+  const orgId = params?.orgId ?? "";
+  const currentOrg = useAuthStore((state) => state.currentOrg);
+  const currentUser = useAuthStore((state) => state.currentUser);
   const [name, setName] = useState("");
   const [key, setKey] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<Priority>("HIGH");
-
-  // Step 2: Mode
   const [mode, setMode] = useState<ProjectMode>("STRUCTURED");
+  const [accountableOwnerId, setAccountableOwnerId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [targetDate, setTargetDate] = useState("");
+  const [cadence, setCadence] = useState<Cadence>("WEEKLY");
+  const resource = useManagerResource({
+    routeOrgId: orgId,
+    name: "project-manager-project-creation-members",
+    permission: "project.create",
+    fixture: loadEligibleMembers,
+  });
+  const members = resource.state.status === "ready" ? resource.state.data : [];
+  const invalidDateRange = Boolean(startDate && targetDate && targetDate < startDate);
 
-  // Step 3: Ownership
-  const [pmId, setPmId] = useState("usr-manager");
-  const [accountableOwnerId, setAccountableOwnerId] = useState("usr-developer");
-
-  // Step 4: Schedule
-  const [startDate, setStartDate] = useState("2026-11-01");
-  const [targetDate, setTargetDate] = useState("2026-12-31");
-  const [cadence, setCadence] = useState<ReportingCadence>("WEEKLY");
-  const [timezone, setTimezone] = useState(currentOrg.timezone || "America/New_York");
-
-  const handleNext = () => {
-    if (step === 1) {
-      if (!name || !key) {
-        toast.error("Please enter a project name and unique project key.");
-        return;
-      }
-    }
-    if (step < 5) setStep((step + 1) as any);
-  };
-
-  const handleBack = () => {
-    if (step > 1) setStep((step - 1) as any);
-  };
-
-  const handleCreate = () => {
-    const project = createProject({
-      orgId,
-      key: key.toUpperCase(),
-      name,
-      description,
-      mode,
-      lifecycle: "ACTIVE",
-      archived: false,
-      priority,
-      projectManagerId: pmId,
-      accountableOwnerId,
-      teamIds: ["team-eng-core"],
-      memberIds: [pmId, accountableOwnerId],
-      startDate,
-      targetDate,
-      timezone,
-      cadence,
-      graceWorkingDays: 1,
-      repositoryIds: ["repo-1"],
-    });
-
-    toast.success(`Project ${project.name} (${project.key}) created in ${mode} mode!`);
-    router.push(`/org/${orgId}/manager`);
-  };
+  const pageHeader = (
+    <PageHeader
+      title="Create & plan project"
+      description="Prepare the project record and initial delivery plan. Saving is not available until the backend task ships."
+      simulationLabel={resource.state.status === "ready" ? "Sample data" : undefined}
+    />
+  );
 
   return (
     <PanelLayout
-      title="Create New Project"
-      breadcrumb={[
-        { label: "Project Manager", href: `/org/${orgId}/manager` },
-        { label: "Create Project Wizard" },
-      ]}
+      title="Create & plan project"
+      breadcrumb={[{ label: "Project Manager", href: `/org/${orgId}/manager` }, { label: "Create & plan" }]}
     >
-      <div className="max-w-3xl mx-auto space-y-6">
-        {/* Step Indicator Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-app-border text-xs">
-          {[
-            { num: 1, label: "Basics" },
-            { num: 2, label: "Mode" },
-            { num: 3, label: "Ownership" },
-            { num: 4, label: "Schedule" },
-            { num: 5, label: "Review" },
-          ].map((s) => (
-            <div
-              key={s.num}
-              className={`flex items-center gap-1.5 font-medium ${
-                step === s.num
-                  ? "text-blue-600 dark:text-blue-400 font-bold"
-                  : step > s.num
-                  ? "text-green-600"
-                  : "text-app-text-muted"
-              }`}
-            >
-              <div
-                className={`h-6 w-6 rounded-full flex items-center justify-center text-xs ${
-                  step === s.num
-                    ? "bg-blue-600 text-white font-bold"
-                    : step > s.num
-                    ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300"
-                    : "bg-slate-100 dark:bg-slate-800 text-app-text-muted"
-                }`}
+      <div className="space-y-4 sm:space-y-6">
+        {pageHeader}
+        {resource.state.status === "ready" ? (
+          <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)]">
+            <div className="space-y-4">
+              <OwnerPanel
+                title="Project record"
+                description="Create a stable project key and choose its accountable owner."
               >
-                {step > s.num ? <Check className="w-3.5 h-3.5" /> : s.num}
-              </div>
-              <span className="hidden sm:inline">{s.label}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Wizard Form Card */}
-        <Card className="p-6">
-          {/* Step 1: Basic project details */}
-          {step === 1 && (
-            <div className="space-y-4">
-              <CardTitle>Step 1: Project Details</CardTitle>
-              <CardDescription>
-                Provide the high-level identity and priority for this software delivery initiative.
-              </CardDescription>
-
-              <Input
-                label="Project Name"
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  if (!key) {
-                    setKey(e.target.value.slice(0, 4).toUpperCase());
-                  }
-                }}
-                placeholder="e.g. Telehealth Video Gateway"
-                required
-              />
-
-              <Input
-                label="Project Key (Unique identifier)"
-                value={key}
-                onChange={(e) => setKey(e.target.value.toUpperCase())}
-                placeholder="e.g. TELE"
-                helperText="Keys are immutable across tasks and git event linkages (e.g. TELE-101)."
-                required
-              />
-
-              <Textarea
-                label="Scope Description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe business outcomes, target deliverables, and acceptance standards..."
-                rows={3}
-              />
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-app-text-secondary">
-                  Priority
-                </label>
-                <select
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value as any)}
-                  className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-                >
-                  <option value="LOW">Low</option>
-                  <option value="MEDIUM">Medium</option>
-                  <option value="HIGH">High</option>
-                  <option value="CRITICAL">Critical</option>
-                </select>
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Choose project mode */}
-          {step === 2 && (
-            <div className="space-y-4">
-              <CardTitle>Step 2: Choose Delivery Mode</CardTitle>
-              <CardDescription>
-                Select the tracking philosophy that matches your engineering structure.
-              </CardDescription>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                <div
-                  onClick={() => setMode("INDIVIDUAL")}
-                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                    mode === "INDIVIDUAL"
-                      ? "border-blue-600 bg-blue-50/50 dark:bg-blue-950/30"
-                      : "border-app-border hover:border-slate-300 dark:hover:border-slate-700"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-sm text-app-text-primary">
-                      Mode A: Individual Ownership
-                    </span>
-                    {mode === "INDIVIDUAL" && <Check className="w-4 h-4 text-blue-600" />}
-                  </div>
-                  <p className="text-xs text-app-text-secondary leading-relaxed">
-                    Designed for one accountable developer. <strong>No compulsory tasks required</strong>.
-                    Weekly check-in reports progress percentage (0–100) with history.
-                  </p>
+                <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Input
+                    label="Project name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="Project name"
+                  />
+                  <Input
+                    label="Project key"
+                    value={key}
+                    onChange={(event) => setKey(event.target.value.toUpperCase())}
+                    placeholder="e.g. CRM-200"
+                    helperText="Stable project identifier; uniqueness is checked by the API when task 2.1 ships."
+                  />
                 </div>
-
-                <div
-                  onClick={() => setMode("STRUCTURED")}
-                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                    mode === "STRUCTURED"
-                      ? "border-blue-600 bg-blue-50/50 dark:bg-blue-950/30"
-                      : "border-app-border hover:border-slate-300 dark:hover:border-slate-700"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-sm text-app-text-primary">
-                      Mode B: Structured Delivery
-                    </span>
-                    {mode === "STRUCTURED" && <Check className="w-4 h-4 text-blue-600" />}
-                  </div>
-                  <p className="text-xs text-app-text-secondary leading-relaxed">
-                    Designed for teams. Approved baseline scope with weighted leaves. Progress = Sum(Done Leaves) / Total Baseline.
-                  </p>
+                <div className="mt-4">
+                  <Textarea
+                    label="Description"
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    placeholder="Describe the planned project outcome"
+                    rows={3}
+                  />
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Ownership */}
-          {step === 3 && (
-            <div className="space-y-4">
-              <CardTitle>Step 3: Ownership &amp; Accountability</CardTitle>
-              <CardDescription>
-                Appoint the Project Manager and the Accountable Developer or Lead.
-              </CardDescription>
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-app-text-secondary">
-                  Project Manager
-                </label>
-                <select
-                  value={pmId}
-                  onChange={(e) => setPmId(e.target.value)}
-                  className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-                >
-                  <option value="usr-manager">Elena Rostova (Project Manager)</option>
-                  <option value="usr-admin">Marcus Vance (Org Admin)</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-app-text-secondary">
-                  {mode === "INDIVIDUAL" ? "Accountable Solo Developer" : "Accountable Lead"}
-                </label>
-                <select
-                  value={accountableOwnerId}
-                  onChange={(e) => setAccountableOwnerId(e.target.value)}
-                  className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-                >
-                  <option value="usr-developer">Alex Rivera (Developer)</option>
-                  <option value="usr-lead">David Kim (Team Lead)</option>
-                </select>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Schedule */}
-          {step === 4 && (
-            <div className="space-y-4">
-              <CardTitle>Step 4: Schedule &amp; Cadence</CardTitle>
-              <CardDescription>
-                Configure target dates, working calendar, and check-in reporting frequency.
-              </CardDescription>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Input
-                  label="Start Date"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  required
-                />
-
-                <Input
-                  label="Target Delivery Date"
-                  type="date"
-                  value={targetDate}
-                  onChange={(e) => setTargetDate(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-app-text-secondary">
-                    Reporting Cadence
+                <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                  <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-app-text-secondary">
+                    Priority
+                    <select
+                      value={priority}
+                      onChange={(event) => {
+                        const nextPriority = event.target.value;
+                        if (isPriority(nextPriority)) setPriority(nextPriority);
+                      }}
+                      className="h-9 min-w-0 rounded-lg border border-app-border bg-app-bg px-3 text-sm text-app-text-primary"
+                    >
+                      {PRIORITIES.map((value) => <option key={value} value={value}>{value}</option>)}
+                    </select>
                   </label>
-                  <select
-                    value={cadence}
-                    onChange={(e) => setCadence(e.target.value as any)}
-                    className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-                  >
-                    <option value="WEEKLY">Weekly (Default, 1 day grace)</option>
-                    <option value="DAILY">Daily</option>
-                    <option value="FORTNIGHTLY">Fortnightly</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-app-text-secondary">
-                    Project Timezone
+                  <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-app-text-secondary">
+                    Delivery mode
+                    <select
+                      value={mode}
+                      onChange={(event) => {
+                        const nextMode = event.target.value;
+                        if (isMode(nextMode)) setMode(nextMode);
+                      }}
+                      className="h-9 min-w-0 rounded-lg border border-app-border bg-app-bg px-3 text-sm text-app-text-primary"
+                    >
+                      <option value="INDIVIDUAL">Individual</option>
+                      <option value="STRUCTURED">Structured</option>
+                    </select>
                   </label>
-                  <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} />
                 </div>
-              </div>
+                <p className="mt-3 text-xs text-app-text-muted">
+                  Individual: accountable developer reports progress; work items are optional. Structured: progress comes from an approved weighted baseline.
+                </p>
+              </OwnerPanel>
+
+              <OwnerPanel
+                title="Initial plan"
+                description="Dates remain local calendar dates in the selected IANA timezone."
+                actions={<OwnerLaterBadge task="2.3" />}
+              >
+                <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Input label="Start date" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+                  <Input label="Target date" type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} />
+                  <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-app-text-secondary">
+                    Reporting cadence
+                    <select
+                      value={cadence}
+                      onChange={(event) => {
+                        const nextCadence = event.target.value;
+                        if (isCadence(nextCadence)) setCadence(nextCadence);
+                      }}
+                      className="h-9 min-w-0 rounded-lg border border-app-border bg-app-bg px-3 text-sm text-app-text-primary"
+                    >
+                      {CADENCES.map((value) => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                  </label>
+                  <Input
+                    label="Project timezone"
+                    value={currentOrg.timezone}
+                    readOnly
+                    helperText="Inherited from the active organization."
+                  />
+                </div>
+                {invalidDateRange && (
+                  <p role="alert" className="mt-3 text-sm text-red-600">
+                    Target date must be on or after the start date.
+                  </p>
+                )}
+              </OwnerPanel>
+
+              <OwnerPanel
+                title="Ownership"
+                description="Record the current session and select an active organization member as accountable owner."
+                actions={<OwnerLaterBadge task="2.1" />}
+              >
+                <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="min-w-0 rounded-lg border border-app-border bg-app-bg p-3">
+                    <p className="flex items-center gap-2 text-xs text-app-text-muted">
+                      <UserRound aria-hidden="true" className="h-4 w-4" /> Current session
+                    </p>
+                    <p className="mt-1 truncate text-sm font-medium text-app-text-primary">{currentUser.name}</p>
+                  </div>
+                  <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-app-text-secondary">
+                    Accountable owner
+                    <select
+                      value={accountableOwnerId}
+                      onChange={(event) => setAccountableOwnerId(event.target.value)}
+                      className="h-9 min-w-0 rounded-lg border border-app-border bg-app-bg px-3 text-sm text-app-text-primary"
+                    >
+                      <option value="">Select an active member</option>
+                      {members.map((member) => (
+                        <option key={member.id} value={member.id}>{member.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                {members.length === 0 && (
+                  <p className="mt-3 text-sm text-app-text-muted">No eligible active members are available in this organization.</p>
+                )}
+              </OwnerPanel>
             </div>
-          )}
 
-          {/* Step 5: Review & Create */}
-          {step === 5 && (
-            <div className="space-y-4">
-              <CardTitle>Step 5: Review &amp; Launch</CardTitle>
-              <CardDescription>
-                Confirm your project parameters before activating the delivery workspace.
-              </CardDescription>
-
-              <div className="p-4 rounded-xl border border-app-border bg-app-sidebar/50 space-y-3 text-xs">
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">Project Name &amp; Key:</span>
-                  <span className="font-bold text-app-text-primary">
-                    {name} ({key})
-                  </span>
+            <aside className="min-w-0 space-y-4">
+              <OwnerPanel
+                title="Plan preview"
+                description="This preview is local to this page and is not saved."
+              >
+                <dl className="space-y-3 text-sm">
+                  <div>
+                    <dt className="text-xs text-app-text-muted">Project</dt>
+                    <dd className="break-words font-medium text-app-text-primary">{name || "Not entered"} {key && `(${key})`}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-app-text-muted">Mode</dt>
+                    <dd className="font-medium text-app-text-primary">{mode}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-app-text-muted">Accountable owner</dt>
+                    <dd className="break-words font-medium text-app-text-primary">
+                      {members.find((member) => member.id === accountableOwnerId)?.name ?? "Not selected"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-app-text-muted">Schedule</dt>
+                    <dd className="break-words font-medium text-app-text-primary">
+                      {startDate || "Start date not set"} → {targetDate || "Target date not set"}
+                    </dd>
+                    <dd className="text-xs text-app-text-muted">{cadence} · {currentOrg.timezone}</dd>
+                  </div>
+                </dl>
+                <div className="mt-4 rounded-lg border border-app-border p-3 text-xs text-app-text-secondary">
+                  <CalendarDays aria-hidden="true" className="mb-1 h-4 w-4" />
+                  No work items are required for an Individual project. Structured progress needs an approved baseline.
                 </div>
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">Delivery Mode:</span>
-                  <Badge variant="default">{mode}</Badge>
-                </div>
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">Accountable Owner:</span>
-                  <span className="font-semibold text-blue-600">
-                    {SEEDED_USERS.find((u) => u.id === accountableOwnerId)?.name}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">Schedule:</span>
-                  <span>
-                    {startDate} &rarr; {targetDate} ({cadence} Cadence)
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-app-text-secondary">Baseline Starting Tasks:</span>
-                  <span>
-                    {mode === "INDIVIDUAL"
-                      ? "Zero tasks required (Solo Check-in enabled)"
-                      : "Ready for baseline leaf creation"}
-                  </span>
-                </div>
+              </OwnerPanel>
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-app-border bg-app-surface p-4">
+                <LaterActionButton title="Project creation ships with task 2.1">
+                  <FolderPlus aria-hidden="true" className="h-3.5 w-3.5" />
+                  Create project
+                </LaterActionButton>
+                <OwnerLaterBadge task="2.1" />
+                <p className="w-full text-xs text-app-text-muted">The form does not create or mutate a project.</p>
               </div>
-            </div>
-          )}
-
-          {/* Wizard Controls */}
-          <div className="flex items-center justify-between pt-6 border-t border-app-border mt-6">
-            {step > 1 ? (
-              <Button variant="outline" size="sm" onClick={handleBack}>
-                <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Back
-              </Button>
-            ) : (
-              <div />
-            )}
-
-            {step < 5 ? (
-              <Button size="sm" onClick={handleNext}>
-                Next <ArrowRight className="w-3.5 h-3.5 ml-1" />
-              </Button>
-            ) : (
-              <Button size="sm" onClick={handleCreate} className="bg-green-600 hover:bg-green-700">
-                Launch Project Workspace
-              </Button>
-            )}
+            </aside>
           </div>
-        </Card>
+        ) : (
+          <ManagerResourceNotice
+            orgMatches={resource.orgMatches}
+            permissionStatus={resource.permissionStatus}
+            resourceStatus={resource.state.status}
+            permission={resource.permission}
+            permissionName="project.create"
+            laterTask="2.1"
+            retry={resource.retry}
+            retryPermissions={resource.permissionRetry}
+          />
+        )}
       </div>
     </PanelLayout>
   );
 }
-

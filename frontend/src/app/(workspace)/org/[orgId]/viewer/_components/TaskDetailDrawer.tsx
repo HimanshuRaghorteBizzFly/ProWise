@@ -63,8 +63,6 @@ export function TaskDetailDrawer({
         return "violet";
       case "IN_PROGRESS":
         return "info";
-      case "BLOCKED":
-        return "danger";
       default:
         return "neutral";
     }

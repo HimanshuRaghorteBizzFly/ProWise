@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Building2,
   Users,
+  Bell,
   FolderGit2,
   GitPullRequest,
   CheckSquare,
@@ -32,6 +33,7 @@ import {
 import { useAuthStore } from "@/store/auth-store";
 import { usePermissions } from "@/hooks/usePermissions";
 import { buildOrgNav, filterOrgNav, type OrgNavFamily } from "@/components/owner/org-nav";
+import { getNavigationConfig } from "@/config/navigation";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -134,6 +136,7 @@ function OrgPermissionNav({
 export function Sidebar({ mobileOpen, onMobileClose, mobileTriggerRef }: SidebarProps) {
   const pathname = usePathname();
   const { currentRole, currentOrg } = useAuthStore();
+  const permissions = usePermissions();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const sidebarRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -257,28 +260,25 @@ export function Sidebar({ mobileOpen, onMobileClose, mobileTriggerRef }: Sidebar
           },
         ];
 
-      case "PROJECT_MANAGER":
-        return [
-          {
-            groupTitle: "Project Delivery",
-            items: [
-              { label: "PM Dashboard", href: `/org/${orgId}/manager`, icon: LayoutDashboard },
-              { label: "All Projects", href: `/org/${orgId}/manager/projects`, icon: FolderGit2 },
-              { label: "Create Project", href: `/org/${orgId}/manager/create-project`, icon: Sparkles },
-              { label: "Scope & Baselines", href: `/org/${orgId}/manager/scope`, icon: FileCheck },
-              { label: "Progress History", href: `/org/${orgId}/manager/progress`, icon: Clock },
-            ],
-          },
-          {
-            groupTitle: "Governance & Reviews",
-            items: [
-              { label: "Deadlines & Health", href: `/org/${orgId}/manager/deadlines`, icon: AlertTriangle },
-              { label: "Delivery Approvals", href: `/org/${orgId}/manager/delivery-approvals`, icon: ShieldCheck, badge: 1 },
-              { label: "Workload & Capacity", href: `/org/${orgId}/manager/workload`, icon: Users },
-              { label: "Portfolio Reports", href: `/org/${orgId}/manager/reports`, icon: FileText },
-            ],
-          },
-        ];
+      case "PROJECT_MANAGER": {
+        const canManagerPermission = (key: Parameters<typeof permissions.can>[0]) =>
+          permissions.can(key) ||
+          permissions.grants.some(
+            (grant) =>
+              grant.key === key &&
+              grant.scope === "PROJECT" &&
+              permissions.can(key, { projectId: grant.scopeId }),
+          );
+        return getNavigationConfig("PROJECT_MANAGER", orgId, canManagerPermission).map((section) => ({
+          groupTitle: section.title,
+          items: section.items.map(({ title, href, icon, badge }) => ({
+            label: title,
+            href,
+            icon,
+            badge,
+          })),
+        }));
+      }
 
       case "TEAM_LEAD":
         return [

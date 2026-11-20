@@ -36,7 +36,7 @@ export default function ViewerMilestonesPage() {
       (m) =>
         m.title.toLowerCase().includes(q) ||
         m.projectName.toLowerCase().includes(q) ||
-        m.phase.toLowerCase().includes(q)
+        m.key.toLowerCase().includes(q)
     );
   }, [milestones, search]);
 
@@ -45,8 +45,8 @@ export default function ViewerMilestonesPage() {
     return filteredMilestones.slice(start, start + pageSize);
   }, [filteredMilestones, currentPage, pageSize]);
 
-  const completedCount = milestones.filter((m) => m.status === "COMPLETED").length;
-  const totalWeight = milestones.reduce((sum, m) => sum + m.weightPoints, 0);
+  const completedCount = milestones.filter((m) => m.state === "DONE").length;
+  const totalWeight = milestones.reduce((sum, m) => sum + m.totalPoints, 0);
 
   return (
     <div className="space-y-5 sm:space-y-6 max-w-full overflow-x-hidden">
@@ -156,30 +156,30 @@ export default function ViewerMilestonesPage() {
                       {m.projectName}
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell whitespace-nowrap text-[11px] text-[var(--color-text-secondary,#5F6368)]">
-                      {m.phase}
+                      {m.key}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap font-mono font-bold">
-                      {m.weightPoints} pts
+                      {m.totalPoints} pts
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <ViewerStatusBadge
-                        label={m.status}
-                        tone={m.status === "COMPLETED" ? "success" : m.status === "IN_PROGRESS" ? "info" : "neutral"}
+                        label={m.state === "DONE" ? "COMPLETED" : m.state}
+                        tone={m.state === "DONE" ? "success" : m.state === "IN_PROGRESS" ? "info" : "neutral"}
                         dot
                       />
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <div className="w-16">
-                          <ProgressBar value={m.completionPercent} size="sm" />
+                          <ProgressBar value={Math.round((m.completedPoints / m.totalPoints) * 100)} size="sm" />
                         </div>
                         <span className="font-mono font-bold text-[11px]">
-                          {m.completionPercent}%
+                          {Math.round((m.completedPoints / m.totalPoints) * 100)}%
                         </span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right hidden sm:table-cell whitespace-nowrap font-mono text-[11px] text-[var(--color-text-secondary,#5F6368)]">
-                      {m.targetDate}
+                      {m.dueDate}
                     </td>
                   </tr>
                 );

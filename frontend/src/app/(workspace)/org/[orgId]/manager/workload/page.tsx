@@ -2,75 +2,136 @@
 
 import React from "react";
 import { useParams } from "next/navigation";
+import { Users } from "lucide-react";
+
+import { OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
+import { OwnerKpiCard } from "@/components/owner/OwnerKpiCard";
+import { OwnerPageState } from "@/components/owner/OwnerPageState";
+import { OwnerPanel } from "@/components/owner/OwnerPanel";
+import { OwnerTable } from "@/components/owner/OwnerTable";
+import { PageHeader } from "@/components/owner/primitives";
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { useAuthStore } from "@/store/auth-store";
-import { Users, Clock } from "lucide-react";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { mockApiProjectMembers, mockApiProjects, mockApiWorkItemsForOrg } from "@/lib/prowise-mock-adapters";
+import { useManagerResource } from "@/hooks/useManagerResource";
+import { ManagerResourceNotice } from "../_components/ManagerResourceNotice";
+
+const loadWorkloadData = (
+  orgId: string,
+  grants: Parameters<typeof mockApiProjects>[1],
+) => ({
+  projects: mockApiProjects(orgId, grants).items,
+  members: mockApiProjectMembers(orgId, grants).items,
+  items: mockApiWorkItemsForOrg(orgId, grants).items,
+});
 
 export default function ManagerWorkloadPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { currentOrg } = useAuthStore();
-
-  const members = [
-    { name: "Alex Rivera", role: "Developer", team: "Core Clinical Engineering", plannedHours: 36, capacity: 40, activeTasks: 3 },
-    { name: "David Kim", role: "Team Lead", team: "Core Clinical Engineering", plannedHours: 32, capacity: 40, activeTasks: 2 },
-    { name: "Priya Patel", role: "QA Reviewer", team: "Core Clinical Engineering", plannedHours: 28, capacity: 35, activeTasks: 4 },
-  ];
+  const params = useParams<{ orgId: string }>();
+  const orgId = params?.orgId ?? "";
+  const resource = useManagerResource({
+    routeOrgId: orgId,
+    name: "project-manager-workload",
+    permission: "project.read",
+    fixture: loadWorkloadData,
+  });
+  const data = resource.state.status === "ready" ? resource.state.data : null;
+  const assignedItemCount = data?.items.filter((item) => item.primaryAssigneeId).length ?? 0;
 
   return (
     <PanelLayout
-      title="Team Workload &amp; Capacity"
-      breadcrumb={[
-        { label: "Project Manager", href: `/org/${orgId}/manager` },
-        { label: "Workload" },
-      ]}
+      title="Workload & capacity"
+      breadcrumb={[{ label: "Project Manager", href: `/org/${orgId}/manager` }, { label: "Workload & capacity" }]}
     >
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-base font-bold text-app-text-primary">Resource Capacity Ledger</h2>
-          <p className="text-xs text-app-text-secondary mt-0.5">
-            Blueprint Rule: Workload tracks planned vs available working hours. No points-to-hours conversion.
-          </p>
-        </div>
-
-        <Card className="p-0 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Team Member</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Squad</TableHead>
-                <TableHead>Planned Hours</TableHead>
-                <TableHead>Capacity</TableHead>
-                <TableHead>Utilization</TableHead>
-                <TableHead>Active Tasks</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {members.map((m, idx) => {
-                const util = Math.round((m.plannedHours / m.capacity) * 100);
-                return (
-                  <TableRow key={idx}>
-                    <TableCell className="font-semibold text-xs text-app-text-primary">{m.name}</TableCell>
-                    <TableCell className="text-xs text-app-text-secondary">{m.role}</TableCell>
-                    <TableCell className="text-xs text-app-text-muted">{m.team}</TableCell>
-                    <TableCell className="font-mono text-xs">{m.plannedHours}h</TableCell>
-                    <TableCell className="font-mono text-xs">{m.capacity}h</TableCell>
-                    <TableCell>
-                      <Badge variant={util > 90 ? "warning" : "success"}>{util}%</Badge>
-                    </TableCell>
-                    <TableCell className="text-xs font-semibold">{m.activeTasks}</TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Card>
+      <div className="space-y-4 sm:space-y-6">
+        <PageHeader
+          title="Workload & capacity"
+          description="Effort and available capacity are not provided in this fixture. No points-to-hours conversion is made."
+          simulationLabel={data ? "Sample data" : undefined}
+          actions={<OwnerLaterBadge task="5.4" />}
+        />
+        {data ? (
+          <>
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <OwnerKpiCard
+                label="Planned effort"
+                value="Not measurable"
+                icon={<Users className="h-5 w-5" />}
+                detail="No task-hour estimates · readable projects · hours"
+              />
+              <OwnerKpiCard
+                label="Available capacity"
+                value="Not measurable"
+                icon={<Users className="h-5 w-5" />}
+                detail="No member capacity records · readable projects · hours"
+              />
+            </div>
+            <OwnerPanel
+              title="Current assignments"
+              description={`Scope: ${data.projects.length} readable projects · current mock assignments · unit: work items per member`}
+            >
+              {data.members.length === 0 ? (
+                <OwnerPageState
+                  state="empty"
+                  title="No readable project members"
+                  description="Active members of projects you can read will appear here."
+                  icon={Users}
+                />
+              ) : (
+                <OwnerTable label="Project Manager current assignments">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Member</TableHead>
+                      <TableHead>Assigned work items</TableHead>
+                      <TableHead>Planned hours</TableHead>
+                      <TableHead>Available hours</TableHead>
+                      <TableHead>Measurement status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.members.map((member) => {
+                      const assigned = data.items.filter((item) => item.primaryAssigneeId === member.id);
+                      return (
+                        <TableRow key={member.id}>
+                          <TableCell>{member.name}</TableCell>
+                          <TableCell>
+                            <span className="font-medium">{assigned.length}</span>
+                            {assigned.length > 0 && (
+                              <span className="mt-1 block max-w-sm whitespace-normal text-xs text-app-text-muted">
+                                {assigned.map((item) => item.key).join(", ")}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell>Not measurable</TableCell>
+                          <TableCell>Not measurable</TableCell>
+                          <TableCell>No effort or capacity values in sample data</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    <TableRow>
+                      <TableCell className="font-semibold">Readable assignments</TableCell>
+                      <TableCell>{assignedItemCount} work items</TableCell>
+                      <TableCell>Not measurable</TableCell>
+                      <TableCell>Not measurable</TableCell>
+                      <TableCell>Counts are not converted to hours</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </OwnerTable>
+              )}
+            </OwnerPanel>
+          </>
+        ) : (
+          <ManagerResourceNotice
+            orgMatches={resource.orgMatches}
+            permissionStatus={resource.permissionStatus}
+            resourceStatus={resource.state.status}
+            permission={resource.permission}
+            permissionName="project.read"
+            laterTask="5.4"
+            retry={resource.retry}
+            retryPermissions={resource.permissionRetry}
+          />
+        )}
       </div>
     </PanelLayout>
   );
 }
-

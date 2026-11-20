@@ -33,6 +33,20 @@ export function formatUtcDate(timestamp?: string): string {
   return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(date);
 }
 
+export function formatUtcTimestamp(timestamp?: string): string {
+  if (!timestamp) return "Time not recorded";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "Timestamp unavailable";
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "UTC",
+  }).format(date);
+}
+
 export function formatLifecycle(lifecycle: Project["lifecycle"]): string {
   return lifecycle.toLowerCase().replace(/_/g, " ");
 }

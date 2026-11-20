@@ -48,7 +48,7 @@ export function EventDetailModal({
                 <Badge
                   variant={
                     event.type === "DEADLINE"
-                      ? "destructive"
+                      ? "danger"
                       : event.type === "MILESTONE"
                       ? "default"
                       : "secondary"

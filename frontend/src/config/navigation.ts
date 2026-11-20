@@ -28,12 +28,14 @@ import {
   Briefcase,
 } from "lucide-react";
 import { SystemRole } from "@/types";
+import type { PermissionKey } from "@/types/permission";
 
 export interface NavItem {
   title: string;
   href: string;
   icon: any;
   badge?: string;
+  requiredPermission?: PermissionKey;
 }
 
 export interface NavSection {
@@ -41,7 +43,11 @@ export interface NavSection {
   items: NavItem[];
 }
 
-export function getNavigationConfig(role: SystemRole, orgId: string = "org-1"): NavSection[] {
+export function getNavigationConfig(
+  role: SystemRole,
+  orgId: string = "org-1",
+  can?: (key: PermissionKey) => boolean,
+): NavSection[] {
   switch (role) {
     case "SUPER_ADMIN":
       return [
@@ -182,31 +188,39 @@ export function getNavigationConfig(role: SystemRole, orgId: string = "org-1"): 
         },
       ];
 
-    case "PROJECT_MANAGER":
-      return [
+    case "PROJECT_MANAGER": {
+      const managerSections: NavSection[] = [
         {
+          title: "Project Delivery",
           items: [
-            { title: "Dashboard", href: `/org/${orgId}/manager/dashboard`, icon: LayoutDashboard },
-            { title: "Projects", href: `/org/${orgId}/manager/projects`, icon: FolderKanban },
-            { title: "Create Project", href: `/org/${orgId}/manager/create-project`, icon: Sparkles },
-            { title: "Project Planning", href: `/org/${orgId}/manager/project-planning`, icon: Calendar },
-            { title: "Work Items", href: `/org/${orgId}/manager/work-items`, icon: CheckSquare },
-            { title: "Team Assignments", href: `/org/${orgId}/manager/team-assignments`, icon: Users },
+            { title: "PM Dashboard", href: `/org/${orgId}/manager`, icon: LayoutDashboard, requiredPermission: "project.read" },
+            { title: "Projects", href: `/org/${orgId}/manager/projects`, icon: FolderKanban, requiredPermission: "project.read" },
+            { title: "Create & plan", href: `/org/${orgId}/manager/create-project`, icon: Sparkles, requiredPermission: "project.create" },
+            { title: "Work items", href: `/org/${orgId}/manager/work-items`, icon: CheckSquare, requiredPermission: "project.read" },
+            { title: "Team assignments", href: `/org/${orgId}/manager/team-assignments`, icon: Users, requiredPermission: "project.read" },
           ],
         },
         {
-          title: "Delivery & Tracking",
+          title: "Delivery & tracking",
           items: [
-            { title: "Progress & Baseline", href: `/org/${orgId}/manager/progress`, icon: Activity },
-            { title: "Deadlines & Cadence", href: `/org/${orgId}/manager/deadlines`, icon: Clock },
-            { title: "Dependencies", href: `/org/${orgId}/manager/dependencies`, icon: Layers },
-            { title: "Review Oversight", href: `/org/${orgId}/manager/reviews`, icon: FileCheck },
-            { title: "Delivery Approvals", href: `/org/${orgId}/manager/delivery`, icon: CheckCircle2 },
-            { title: "Reports & Analytics", href: `/org/${orgId}/manager/reports`, icon: BarChart3 },
-            { title: "Settings", href: `/org/${orgId}/manager/settings`, icon: Settings },
+            { title: "Scope & baselines", href: `/org/${orgId}/manager/scope`, icon: FileCheck, requiredPermission: "project.read" },
+            { title: "Progress history", href: `/org/${orgId}/manager/progress`, icon: Activity, requiredPermission: "project.read" },
+            { title: "Deadlines & health", href: `/org/${orgId}/manager/deadlines`, icon: Clock, requiredPermission: "project.read" },
+            { title: "Dependencies & blockers", href: `/org/${orgId}/manager/dependencies`, icon: Layers, requiredPermission: "project.read" },
+            { title: "Workload & capacity", href: `/org/${orgId}/manager/workload`, icon: Users, requiredPermission: "project.read" },
+            { title: "Reports", href: `/org/${orgId}/manager/reports`, icon: BarChart3, requiredPermission: "project.read" },
           ],
         },
       ];
+      return can
+        ? managerSections
+            .map((section) => ({
+              ...section,
+              items: section.items.filter((item) => item.requiredPermission && can(item.requiredPermission)),
+            }))
+            .filter((section) => section.items.length > 0)
+        : managerSections;
+    }
 
     case "TEAM_LEAD":
       return [

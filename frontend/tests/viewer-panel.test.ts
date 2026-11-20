@@ -34,6 +34,16 @@ describe("Viewer Panel RBAC & Scoping Security Contract", () => {
     expect(acmeTasks.every((t) => t.projectId === "proj-structured-cds")).toBe(true);
   });
 
+  it("filters Open by TODO state and Blocked by the separate blocker flag", () => {
+    const openTasks = getViewerTasks("org-acme", "ALL", "OPEN");
+    expect(openTasks.every((task) => task.state === "TODO")).toBe(true);
+
+    const blockedTasks = getViewerTasks("org-acme", "ALL", "BLOCKED");
+    expect(blockedTasks.length).toBeGreaterThan(0);
+    expect(blockedTasks.every((task) => task.isBlocked)).toBe(true);
+    expect(blockedTasks[0].state).toBe("IN_PROGRESS");
+  });
+
   it("identifies restricted credential files and blocks clearance", () => {
     const restrictedFile = getViewerFileById("org-acme", "file-restricted-keys");
     expect(restrictedFile).toBeDefined();

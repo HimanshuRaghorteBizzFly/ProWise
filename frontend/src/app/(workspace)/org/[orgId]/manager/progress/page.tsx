@@ -2,79 +2,122 @@
 
 import React from "react";
 import { useParams } from "next/navigation";
+import { Activity } from "lucide-react";
+
+import { OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
+import { OwnerPageState } from "@/components/owner/OwnerPageState";
+import { OwnerPanel } from "@/components/owner/OwnerPanel";
+import { OwnerTable } from "@/components/owner/OwnerTable";
+import { PageHeader } from "@/components/owner/primitives";
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { Clock, TrendingUp } from "lucide-react";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatUtcTimestamp } from "@/components/owner/project-format";
+import { mockApiProgressForOrg, mockApiProjects } from "@/lib/prowise-mock-adapters";
+import { useManagerResource } from "@/hooks/useManagerResource";
+import { ManagerResourceNotice } from "../_components/ManagerResourceNotice";
+
+const loadProgressHistory = (
+  orgId: string,
+  grants: Parameters<typeof mockApiProjects>[1],
+) => ({
+  projects: mockApiProjects(orgId, grants).items,
+  snapshots: mockApiProgressForOrg(orgId, grants).items,
+});
 
 export default function ManagerProgressPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { currentOrg } = useAuthStore();
-  const { snapshots, projects } = useProjectStore();
+  const params = useParams<{ orgId: string }>();
+  const orgId = params?.orgId ?? "";
+  const resource = useManagerResource({
+    routeOrgId: orgId,
+    name: "project-manager-progress-history",
+    permission: "project.read",
+    fixture: loadProgressHistory,
+  });
+  const data = resource.state.status === "ready" ? resource.state.data : null;
+  const projectById = new Map((data?.projects ?? []).map((project) => [project.id, project]));
 
   return (
     <PanelLayout
-      title="Progress Snapshots Ledger"
-      breadcrumb={[
-        { label: "Project Manager", href: `/org/${orgId}/manager` },
-        { label: "Progress History" },
-      ]}
+      title="Progress history"
+      breadcrumb={[{ label: "Project Manager", href: `/org/${orgId}/manager` }, { label: "Progress history" }]}
     >
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-base font-bold text-app-text-primary">Historical Progress Series</h2>
-          <p className="text-xs text-app-text-secondary mt-0.5">
-            Blueprint Rule M06: Old snapshots retain value, timestamp, method, and original scope version. No retroactive rewriting.
-          </p>
-        </div>
-
-        <Card className="p-0 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Timestamp</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Recorded Progress</TableHead>
-                <TableHead>Calculation Method</TableHead>
-                <TableHead>Baseline Weights</TableHead>
-                <TableHead>Triggering Cause</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {snapshots.map((snap) => {
-                const proj = projects.find((p) => p.id === snap.projectId);
-                return (
-                  <TableRow key={snap.id}>
-                    <TableCell className="text-xs text-app-text-muted whitespace-nowrap">
-                      {new Date(snap.instant).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="font-semibold text-xs text-blue-600">
-                      {proj ? `${proj.key} - ${proj.name}` : snap.projectId}
-                    </TableCell>
-                    <TableCell className="font-bold text-sm text-app-text-primary">
-                      {snap.value >= 0 ? `${snap.value}%` : "Not Reported"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{snap.method.replace("_", " ")}</Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-app-text-secondary font-mono">
-                      {snap.denominator !== undefined
-                        ? `${snap.numerator} / ${snap.denominator} pts`
-                        : "Solo Check-In"}
-                    </TableCell>
-                    <TableCell className="text-xs text-app-text-primary">{snap.cause}</TableCell>
+      <div className="space-y-4 sm:space-y-6">
+        <PageHeader
+          title="Progress snapshots"
+          description="Historical values retain their timestamp, method, and original scope version. Reported and calculated progress are never blended."
+          simulationLabel={data ? "Sample data" : undefined}
+          actions={<OwnerLaterBadge task="3.5" />}
+        />
+        {data ? (
+          <OwnerPanel
+            title="Snapshot ledger"
+            description="Scope: readable projects · time basis: recorded event instant in UTC · unit: percent by the labelled method."
+          >
+            {data.snapshots.length === 0 ? (
+              <OwnerPageState
+                state="empty"
+                title="No progress snapshots"
+                description="Saved progress events for projects you can read will appear here."
+                icon={Activity}
+              />
+            ) : (
+              <OwnerTable label="Project Manager progress snapshot ledger">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Recorded (UTC)</TableHead>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Value</TableHead>
+                    <TableHead>Method</TableHead>
+                    <TableHead>Scope version</TableHead>
+                    <TableHead>Cause</TableHead>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Card>
+                </TableHeader>
+                <TableBody>
+                  {data.snapshots.map((snapshot) => {
+                    const project = projectById.get(snapshot.projectId);
+                    const value = snapshot.isNotReported
+                      ? "Not reported"
+                      : snapshot.isNotMeasurable
+                        ? "Not measurable"
+                        : `${snapshot.value}%`;
+                    const method = snapshot.method === "DEVELOPER_REPORTED"
+                      ? "Developer reported"
+                      : "Calculated baseline";
+                    const scope = snapshot.baselineVersion === undefined
+                      ? "Not applicable"
+                      : `Baseline v${snapshot.baselineVersion}${snapshot.numerator !== undefined && snapshot.denominator !== undefined
+                        ? ` · ${snapshot.numerator}/${snapshot.denominator}`
+                        : ""}`;
+                    return (
+                      <TableRow key={snapshot.id}>
+                        <TableCell className="whitespace-nowrap">{formatUtcTimestamp(snapshot.instant)} UTC</TableCell>
+                        <TableCell>
+                          {project ? `${project.key} · ${project.name}` : "Project not available"}
+                        </TableCell>
+                        <TableCell className="font-semibold">{value}</TableCell>
+                        <TableCell>{method}</TableCell>
+                        <TableCell>{scope}</TableCell>
+                        <TableCell className="max-w-sm whitespace-normal">{snapshot.cause}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </OwnerTable>
+            )}
+          </OwnerPanel>
+        ) : (
+          <ManagerResourceNotice
+            orgMatches={resource.orgMatches}
+            permissionStatus={resource.permissionStatus}
+            resourceStatus={resource.state.status}
+            permission={resource.permission}
+            permissionName="project.read"
+            laterTask="3.5"
+            retry={resource.retry}
+            retryPermissions={resource.permissionRetry}
+          />
+        )}
       </div>
     </PanelLayout>
   );
 }
-
