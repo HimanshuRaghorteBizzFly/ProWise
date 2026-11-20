@@ -1,128 +1,83 @@
 "use client";
 
-import React from "react";
-import { useParams } from "next/navigation";
-import { FileCheck } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { Scale } from "lucide-react";
+import { useDeliveryStore } from "@/store/delivery-store";
+import { VIEWERS, type ScopeChange } from "@/mocks/delivery-dashboards";
+import {
+  DataTable,
+  KpiGrid,
+  KpiTile,
+  PageFrame,
+  SegmentTabs,
+  StatusBadge,
+  SurfaceCard,
+  formatDate,
+  useDemoLoad,
+  useLookups,
+  useRoleHref,
+} from "@/components/delivery/DeliveryUI";
 
-import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
-import { OwnerPageState } from "@/components/owner/OwnerPageState";
-import { OwnerPanel } from "@/components/owner/OwnerPanel";
-import { OwnerTable } from "@/components/owner/OwnerTable";
-import { PageHeader, StatusBadge } from "@/components/owner/primitives";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatUtcTimestamp } from "@/components/owner/project-format";
-import { mockApiBaselines, mockApiProjects } from "@/lib/prowise-mock-adapters";
-import { useManagerResource } from "@/hooks/useManagerResource";
-import { ManagerResourceNotice } from "../_components/ManagerResourceNotice";
-
-const loadScopeHistory = (
-  orgId: string,
-  grants: Parameters<typeof mockApiProjects>[1],
-) => ({
-  projects: mockApiProjects(orgId, grants).items,
-  baselines: mockApiBaselines(orgId, grants).items,
-});
+type Filter = "ALL" | ScopeChange["status"];
+const SCOPE_TONE = { PENDING: "warning", APPROVED: "success", REJECTED: "danger" } as const;
+const SCOPE_LABEL = { PENDING: "Pending", APPROVED: "Approved", REJECTED: "Rejected" } as const;
 
 export default function ManagerScopePage() {
-  const params = useParams<{ orgId: string }>();
-  const orgId = params?.orgId ?? "";
-  const resource = useManagerResource({
-    routeOrgId: orgId,
-    name: "project-manager-scope-history",
-    permission: "project.read",
-    fixture: loadScopeHistory,
-  });
-  const data = resource.state.status === "ready" ? resource.state.data : null;
-  const projectById = new Map((data?.projects ?? []).map((project) => [project.id, project]));
+  const href = useRoleHref("manager");
+  const { status, retry, forceEmpty } = useDemoLoad();
+  const lk = useLookups();
+  const allProjects = useDeliveryStore((s) => s.projects);
+  const allChanges = useDeliveryStore((s) => s.scopeChanges);
+  const [filter, setFilter] = useState<Filter>("PENDING");
+
+  const changes = useMemo(() => {
+    if (forceEmpty) return [];
+    const ids = new Set(allProjects.filter((p) => p.managerId === VIEWERS.manager.id).map((p) => p.id));
+    return allChanges.filter((c) => ids.has(c.projectId));
+  }, [allProjects, allChanges, forceEmpty]);
+  const rows = changes.filter((c) => filter === "ALL" || c.status === filter);
+  const pending = changes.filter((c) => c.status === "PENDING");
 
   return (
-    <PanelLayout
-      title="Scope & baselines"
-      breadcrumb={[{ label: "Project Manager", href: `/org/${orgId}/manager` }, { label: "Scope & baselines" }]}
+    <PageFrame
+      crumbs={[{ label: "Manager", href: href() }, { label: "Delivery" }, { label: "Scope changes" }]}
+      back={{ href: href(), label: "Back to dashboard" }}
+      title="Scope changes"
+      description="Requests that add or remove work. Open one to approve or reject it with a note."
+      status={status}
+      onRetry={retry}
+      skeleton="list"
     >
-      <div className="space-y-4 sm:space-y-6">
-        <PageHeader
-          title="Approved baselines"
-          description="Scope versions preserve their reason and approval time. Changes affect future calculations only; historical snapshots are not rewritten."
-          simulationLabel={data ? "Sample data" : undefined}
-          actions={<OwnerLaterBadge task="3.2" />}
+      <KpiGrid>
+        <KpiTile label="Pending decision" value={pending.length} icon={Scale} tone="amber" chip={{ label: `+${pending.reduce((s, c) => s + c.impactDays, 0)}d`, tone: "warning" }} footer="Decide now" href={href("scope")} />
+        <KpiTile label="Approved" value={changes.filter((c) => c.status === "APPROVED").length} icon={Scale} tone="emerald" footer="Accepted changes" href={href("scope")} />
+        <KpiTile label="Rejected" value={changes.filter((c) => c.status === "REJECTED").length} icon={Scale} tone="rose" footer="Declined changes" href={href("scope")} />
+        <KpiTile label="Hours at stake" value={`${pending.reduce((s, c) => s + c.impactHours, 0)}h`} icon={Scale} tone="cyan" footer="If all approved" href={href("scope")} />
+      </KpiGrid>
+      <SegmentTabs<Filter>
+        value={filter}
+        onChange={setFilter}
+        options={[
+          { value: "PENDING", label: "Pending", count: pending.length },
+          { value: "APPROVED", label: "Approved" },
+          { value: "REJECTED", label: "Rejected" },
+          { value: "ALL", label: "All", count: changes.length },
+        ]}
+      />
+      <SurfaceCard className="overflow-hidden">
+        <DataTable
+          rows={rows}
+          rowHref={(c) => href(`scope/${c.id}`)}
+          empty={{ icon: Scale, title: "No scope changes", description: "Nothing in this list right now." }}
+          columns={[
+            { key: "t", header: "Change", className: "w-[55%] md:w-[38%]", render: (c) => <div className="min-w-0"><p className="font-semibold truncate">{c.title}</p><p className="text-[11px] text-[var(--color-text-muted)] truncate">{c.code} · {lk.project(c.projectId)?.name}</p></div> },
+            { key: "s", header: "Status", render: (c) => <StatusBadge label={SCOPE_LABEL[c.status]} tone={SCOPE_TONE[c.status]} dot /> },
+            { key: "i", header: "Impact", hideBelow: "sm", render: (c) => <span className={`font-semibold tabular-nums ${c.impactDays > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>{c.impactDays > 0 ? "+" : ""}{c.impactDays}d · {c.impactHours}h</span> },
+            { key: "r", header: "Requested by", hideBelow: "lg", render: (c) => <span className="truncate block">{c.requestedBy}</span> },
+            { key: "d", header: "Date", hideBelow: "md", render: (c) => formatDate(c.requestedAt, true) },
+          ]}
         />
-        {data ? (
-          data.baselines.length === 0 ? (
-            <OwnerPageState
-              state="empty"
-              title="No approved baselines"
-              description="Structured projects may show their active and superseded scope versions here."
-              icon={FileCheck}
-            />
-          ) : (
-            <div className="space-y-4">
-              {data.baselines.map((baseline) => {
-                const project = projectById.get(baseline.projectId);
-                const isActive = project?.activeBaselineId === baseline.id;
-                const canChangeScope = resource.can("project.scope.change", { projectId: baseline.projectId });
-                return (
-                  <OwnerPanel
-                    key={baseline.id}
-                    title={`${project?.key ?? "Project"} · Baseline v${baseline.version}`}
-                    description={`${baseline.totalWeight} ${baseline.unit} · Approved ${formatUtcTimestamp(baseline.approvedAt)} UTC · ${baseline.reason}`}
-                    actions={
-                      <div className="flex flex-wrap items-center gap-2">
-                        <StatusBadge label={isActive ? "Active baseline" : "Historical baseline"} tone={isActive ? "success" : "neutral"} />
-                        {canChangeScope ? (
-                          <>
-                            <LaterActionButton title="Scope approval ships with task 3.2">Propose scope change</LaterActionButton>
-                            <OwnerLaterBadge task="3.2" />
-                          </>
-                        ) : (
-                          <span className="text-xs text-app-text-muted">No project.scope.change grant</span>
-                        )}
-                      </div>
-                    }
-                  >
-                    <OwnerTable label={`Baseline ${baseline.version} scope leaves`}>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Eligible leaf</TableHead>
-                          <TableHead>Approved weight</TableHead>
-                          <TableHead>Recorded credit state</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {baseline.leaves.map((leaf) => (
-                          <TableRow key={`${baseline.id}-${leaf.workItemId}`}>
-                            <TableCell>{leaf.title}</TableCell>
-                            <TableCell>{leaf.weight} {baseline.unit}</TableCell>
-                            <TableCell>
-                              {!leaf.isEligible
-                                ? "Not eligible"
-                                : leaf.isDone
-                                  ? "Credit recorded"
-                                  : "No credit recorded"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </OwnerTable>
-                  </OwnerPanel>
-                );
-              })}
-            </div>
-          )
-        ) : (
-          <ManagerResourceNotice
-            orgMatches={resource.orgMatches}
-            permissionStatus={resource.permissionStatus}
-            resourceStatus={resource.state.status}
-            permission={resource.permission}
-            permissionName="project.read"
-            laterTask="3.2"
-            retry={resource.retry}
-            retryPermissions={resource.permissionRetry}
-          />
-        )}
-      </div>
-    </PanelLayout>
+      </SurfaceCard>
+    </PageFrame>
   );
 }

@@ -25,7 +25,7 @@ public class SubscriptionController {
     }
 
     @GetMapping({"/v1/admin/subscriptions", "/api/v1/admin/subscriptions"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('subscriptions.manage')")
     public List<SubscriptionDTOs.SubscriptionResponse> listSubscriptions(
             @RequestParam(required = false) String planId,
             @RequestParam(required = false) String status
@@ -34,13 +34,13 @@ public class SubscriptionController {
     }
 
     @GetMapping({"/v1/admin/subscriptions/{id}", "/api/v1/admin/subscriptions/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('subscriptions.manage')")
     public SubscriptionDTOs.SubscriptionResponse getSubscription(@PathVariable String id) {
         return subscriptionService.getSubscription(id);
     }
 
     @PostMapping({"/v1/admin/subscriptions", "/api/v1/admin/subscriptions"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('subscriptions.manage')")
     public ResponseEntity<SubscriptionDTOs.SubscriptionResponse> assignSubscription(
             @RequestBody SubscriptionDTOs.AssignSubscriptionRequest request
     ) {
@@ -49,7 +49,7 @@ public class SubscriptionController {
     }
 
     @PatchMapping({"/v1/admin/subscriptions/{id}", "/api/v1/admin/subscriptions/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('subscriptions.manage')")
     public SubscriptionDTOs.SubscriptionResponse updateSubscription(
             @PathVariable String id,
             @RequestBody SubscriptionDTOs.UpdateSubscriptionRequest request
@@ -58,13 +58,13 @@ public class SubscriptionController {
     }
 
     @PostMapping({"/v1/admin/subscriptions/{id}/renew", "/api/v1/admin/subscriptions/{id}/renew"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('subscriptions.manage')")
     public SubscriptionDTOs.SubscriptionResponse renewSubscription(@PathVariable String id) {
         return subscriptionService.renewSubscription(id);
     }
 
     @PostMapping({"/v1/admin/subscriptions/{id}/cancel", "/api/v1/admin/subscriptions/{id}/cancel"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('subscriptions.manage')")
     public SubscriptionDTOs.SubscriptionResponse cancelSubscription(
             @PathVariable String id,
             @RequestParam(required = false, defaultValue = "false") boolean immediate
@@ -73,13 +73,13 @@ public class SubscriptionController {
     }
 
     @PostMapping({"/v1/admin/subscriptions/{id}/reactivate", "/api/v1/admin/subscriptions/{id}/reactivate"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('subscriptions.manage')")
     public SubscriptionDTOs.SubscriptionResponse reactivateSubscription(@PathVariable String id) {
         return subscriptionService.reactivateSubscription(id);
     }
 
     @DeleteMapping({"/v1/admin/subscriptions/{id}", "/api/v1/admin/subscriptions/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('subscriptions.manage')")
     public ResponseEntity<Void> deleteSubscription(@PathVariable String id) {
         subscriptionService.deleteSubscription(id);
         return ResponseEntity.noContent().build();

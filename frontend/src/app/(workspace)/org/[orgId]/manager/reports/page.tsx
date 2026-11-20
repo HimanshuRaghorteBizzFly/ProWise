@@ -1,185 +1,70 @@
 "use client";
 
-import React from "react";
-import { useParams } from "next/navigation";
-import { BarChart3, Download } from "lucide-react";
+import React, { useMemo } from "react";
+import Link from "next/link";
+import { BarChart3, FileBarChart, FolderKanban, ShieldAlert, Users } from "lucide-react";
+import { useDeliveryStore } from "@/store/delivery-store";
+import type { Report } from "@/mocks/delivery-dashboards";
+import { EmptyStateView, PageFrame, StatusBadge, SurfaceCard, formatDateTime, useDemoLoad, useRoleHref } from "@/components/delivery/DeliveryUI";
+import { cn } from "@/lib/utils";
 
-import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
-import { OwnerKpiCard } from "@/components/owner/OwnerKpiCard";
-import { OwnerPageState } from "@/components/owner/OwnerPageState";
-import { OwnerPanel } from "@/components/owner/OwnerPanel";
-import { OwnerTable } from "@/components/owner/OwnerTable";
-import { PageHeader } from "@/components/owner/primitives";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { HealthBadge } from "@/components/ui/health-badge";
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatUtcTimestamp } from "@/components/owner/project-format";
-import { mockApiHealth, mockApiProjects } from "@/lib/prowise-mock-adapters";
-import { useManagerResource } from "@/hooks/useManagerResource";
-import { ManagerResourceNotice } from "../_components/ManagerResourceNotice";
-
-const loadPortfolioReport = (
-  orgId: string,
-  grants: Parameters<typeof mockApiProjects>[1],
-) => ({
-  projects: mockApiProjects(orgId, grants).items,
-  health: mockApiHealth(orgId, grants).items,
-});
+const KIND: Record<Report["kind"], { label: string; icon: React.ElementType; cls: string; tone: "info" | "violet" | "warning" | "success" }> = {
+  PORTFOLIO: { label: "Portfolio", icon: FolderKanban, cls: "bg-blue-500/12 text-blue-600 dark:text-blue-400", tone: "info" },
+  STATUS: { label: "Status", icon: FileBarChart, cls: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400", tone: "success" },
+  WORKLOAD: { label: "Workload", icon: Users, cls: "bg-violet-500/12 text-violet-600 dark:text-violet-400", tone: "violet" },
+  RISK: { label: "Risk", icon: ShieldAlert, cls: "bg-amber-500/12 text-amber-600 dark:text-amber-400", tone: "warning" },
+};
 
 export default function ManagerReportsPage() {
-  const params = useParams<{ orgId: string }>();
-  const orgId = params?.orgId ?? "";
-  const resource = useManagerResource({
-    routeOrgId: orgId,
-    name: "project-manager-portfolio-report",
-    permission: "project.read",
-    fixture: loadPortfolioReport,
-  });
-  const data = resource.state.status === "ready" ? resource.state.data : null;
-  const healthByProject = new Map((data?.health ?? []).map((health) => [health.projectId, health]));
-  const structuredCount = data?.projects.filter((project) => project.mode === "STRUCTURED").length ?? 0;
-  const individualCount = data?.projects.filter((project) => project.mode === "INDIVIDUAL").length ?? 0;
-  const reportExportAllowed = resource.can("report.export");
-  const asOf = data
-    ? [...data.health.map((health) => health.calculatedAt), ...data.projects.map((project) => project.lastReportedAt ?? "")]
-      .filter(Boolean)
-      .sort()
-      .at(-1)
-    : undefined;
+  const href = useRoleHref("manager");
+  const { status, retry, forceEmpty } = useDemoLoad();
+  const allReports = useDeliveryStore((s) => s.reports);
+  const reports = useMemo(() => (forceEmpty ? [] : allReports), [allReports, forceEmpty]);
 
   return (
-    <PanelLayout
+    <PageFrame
+      crumbs={[{ label: "Manager", href: href() }, { label: "Plan & report" }, { label: "Reports" }]}
+      back={{ href: href(), label: "Back to dashboard" }}
       title="Reports"
-      breadcrumb={[{ label: "Project Manager", href: `/org/${orgId}/manager` }, { label: "Reports" }]}
+      description="Generated status, portfolio, workload and risk reports. Open one to read it."
+      status={status}
+      onRetry={retry}
+      skeleton="list"
     >
-      <div className="space-y-4 sm:space-y-6">
-        <PageHeader
-          title="Portfolio report"
-          description="Readable project records only. Individual reported progress and Structured baseline calculations are separately labelled."
-          simulationLabel={data ? "Sample data" : undefined}
-          actions={(
-            <div className="flex flex-wrap items-center gap-2">
-              <OwnerLaterBadge task="5.5" />
-              {reportExportAllowed && (
-                <LaterActionButton title="Authorized report exports ship with task 5.5">
-                  <Download aria-hidden="true" className="h-3.5 w-3.5" />
-                  Export report
-                </LaterActionButton>
-              )}
-            </div>
-          )}
-        />
-        {data ? (
-          data.projects.length === 0 ? (
-            <OwnerPageState
-              state="empty"
-              title="No readable project data"
-              description="Portfolio report rows appear only for projects you can read."
-              icon={BarChart3}
-            />
-          ) : (
-            <>
-              {resource.partialVisibility && (
-                <p role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-app-text-secondary">
-                  Partial visibility — this report excludes projects outside your readable scope.
-                </p>
-              )}
-              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <OwnerKpiCard
-                  label="Readable projects"
-                  value={data.projects.length}
-                  icon={<BarChart3 className="h-5 w-5" />}
-                  detail="Current project records · unit: projects"
-                />
-                <OwnerKpiCard
-                  label="Individual"
-                  value={individualCount}
-                  icon={<BarChart3 className="h-5 w-5" />}
-                  detail="Developer-reported method only · projects"
-                />
-                <OwnerKpiCard
-                  label="Structured"
-                  value={structuredCount}
-                  icon={<BarChart3 className="h-5 w-5" />}
-                  detail="Calculated-baseline method only · projects"
-                />
-                <OwnerKpiCard
-                  label="Health records"
-                  value={data.health.length}
-                  icon={<BarChart3 className="h-5 w-5" />}
-                  detail={`Latest recorded health · ${asOf ? `${formatUtcTimestamp(asOf)} UTC` : "time not recorded"} · records`}
-                />
-              </div>
-              <OwnerPanel
-                title="As-of portfolio"
-                description={`Scope: readable projects · as of ${asOf ? `${formatUtcTimestamp(asOf)} UTC` : "time not recorded"} · progress unit: percent by method`}
-              >
-                <OwnerTable label="Project Manager portfolio report">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Project</TableHead>
-                      <TableHead>Mode / lifecycle</TableHead>
-                      <TableHead>Progress</TableHead>
-                      <TableHead>Progress method</TableHead>
-                      <TableHead>Health and reason</TableHead>
-                      <TableHead>Target date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.projects.map((project) => {
-                      const health = healthByProject.get(project.id);
-                      const method = project.lastProgressMethod === "DEVELOPER_REPORTED"
-                        ? "Developer reported"
-                        : project.lastProgressMethod === "CALCULATED_BASELINE"
-                          ? "Calculated baseline"
-                          : "Not reported";
-                      const value = project.lastProgressMethod === "NOT_REPORTED"
-                        ? "Not reported"
-                        : `${project.lastProgressPercent}%`;
-                      return (
-                        <TableRow key={project.id}>
-                          <TableCell>{project.key} · {project.name}</TableCell>
-                          <TableCell>{project.mode} · {project.lifecycle}</TableCell>
-                          <TableCell>{value}</TableCell>
-                          <TableCell>
-                            <span className="block">{method}</span>
-                            <span className="text-xs text-app-text-muted">
-                              {project.lastReportedAt ? `${formatUtcTimestamp(project.lastReportedAt)} UTC` : "Time not recorded"}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <HealthBadge health={health?.status ?? project.health} />
-                            <span className="mt-1 block max-w-xs whitespace-normal text-xs text-app-text-muted">
-                              {(health?.reasons ?? project.healthReasons).join(" · ") || "No reason recorded"}
-                            </span>
-                          </TableCell>
-                          <TableCell>{project.targetDate} · {project.timezone}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </OwnerTable>
-              </OwnerPanel>
-              {!reportExportAllowed && (
-                <p className="text-sm text-app-text-muted" role="note">
-                  Export is hidden because report.export is not granted for this membership.
-                </p>
-              )}
-            </>
-          )
-        ) : (
-          <ManagerResourceNotice
-            orgMatches={resource.orgMatches}
-            permissionStatus={resource.permissionStatus}
-            resourceStatus={resource.state.status}
-            permission={resource.permission}
-            permissionName="project.read"
-            laterTask="5.5"
-            retry={resource.retry}
-            retryPermissions={resource.permissionRetry}
-          />
-        )}
-      </div>
-    </PanelLayout>
+      {reports.length === 0 ? (
+        <SurfaceCard><EmptyStateView icon={BarChart3} title="No reports yet" description="Weekly reports are generated every Monday at 07:00 UTC." /></SurfaceCard>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-4">
+          {reports.map((r) => {
+            const k = KIND[r.kind];
+            const Icon = k.icon;
+            return (
+              <Link key={r.id} href={href(`reports/${r.id}`)} className="group block rounded-xl">
+                <SurfaceCard className="h-full p-4 flex flex-col gap-3 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:border-blue-500/40">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={cn("h-9 w-9 rounded-xl flex items-center justify-center", k.cls)}><Icon className="w-4 h-4" /></span>
+                    <StatusBadge label={k.label} tone={k.tone} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold group-hover:text-blue-600 dark:group-hover:text-blue-400">{r.title}</p>
+                    <p className="text-[11px] text-[var(--color-text-muted)]">{r.period}</p>
+                  </div>
+                  <p className="text-xs text-[var(--color-text-secondary)] line-clamp-3 flex-1">{r.summary}</p>
+                  <div className="grid grid-cols-3 gap-2 pt-3 border-t border-[var(--color-border)]">
+                    {r.metrics.map((m) => (
+                      <div key={m.label} className="min-w-0">
+                        <p className="text-sm font-bold tabular-nums">{m.value}</p>
+                        <p className="text-[10px] text-[var(--color-text-muted)] truncate">{m.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-[var(--color-text-muted)]">Generated {formatDateTime(r.generatedAt)} UTC</p>
+                </SurfaceCard>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </PageFrame>
   );
 }

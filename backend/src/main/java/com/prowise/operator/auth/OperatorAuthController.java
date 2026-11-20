@@ -88,7 +88,7 @@ public class OperatorAuthController {
     }
 
     @PostMapping({"/v1/auth/operator/logout", "/api/v1/auth/operator/logout"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Revoke current operator session and clear authentication cookies")
     public ResponseEntity<OperatorAuthDTOs.MessageResponse> logout(HttpServletRequest httpRequest) {
         AuthPrincipal principal = AuthPrincipal.current(httpRequest);
@@ -101,7 +101,7 @@ public class OperatorAuthController {
     }
 
     @PostMapping({"/v1/auth/operator/logout-all", "/api/v1/auth/operator/logout-all"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Revoke all active sessions for current platform operator across all devices")
     public ResponseEntity<OperatorAuthDTOs.MessageResponse> logoutAll(HttpServletRequest httpRequest) {
         AuthPrincipal principal = AuthPrincipal.current(httpRequest);

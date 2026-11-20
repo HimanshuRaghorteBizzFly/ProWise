@@ -67,17 +67,6 @@ export function getViewerTasks(
   return SEEDED_VIEWER_TASKS.filter((t) => {
     if (t.orgId !== safeId) return false;
     if (projectId && projectId !== "ALL" && t.projectId !== projectId) return false;
-<<<<<<< HEAD
-    if (stateFilter === "OPEN" && t.state !== "TODO") return false;
-    if (stateFilter === "BLOCKED" && !t.isBlocked) return false;
-    if (
-      stateFilter &&
-      stateFilter !== "ALL" &&
-      stateFilter !== "OPEN" &&
-      stateFilter !== "BLOCKED" &&
-      t.state !== stateFilter
-    ) return false;
-=======
     if (stateFilter && stateFilter !== "ALL") {
       if (stateFilter === "BLOCKED") {
         if (!t.isBlocked) return false;
@@ -87,7 +76,6 @@ export function getViewerTasks(
         return false;
       }
     }
->>>>>>> 616e528e6f65ef6de66dd7269ed38b36fb90c447
     if (priorityFilter && priorityFilter !== "ALL" && t.priority !== priorityFilter) return false;
     if (search) {
       const q = search.toLowerCase();

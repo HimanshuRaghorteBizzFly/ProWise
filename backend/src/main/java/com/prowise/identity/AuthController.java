@@ -93,7 +93,7 @@ public class AuthController {
     public record PasswordResetRequest(String token, String password) {}
     public record AccessTokenResponse(String accessToken) {}
 
-    private static ResponseEntity<AccessTokenResponse> withRefreshCookie(AuthService.TokenPair tokens, int status) {
+    static ResponseEntity<AccessTokenResponse> withRefreshCookie(AuthService.TokenPair tokens, int status) {
         return ResponseEntity.status(status)
                 .header(HttpHeaders.SET_COOKIE, refreshCookie(tokens.refreshToken()).toString())
                 .body(new AccessTokenResponse(tokens.accessToken()));

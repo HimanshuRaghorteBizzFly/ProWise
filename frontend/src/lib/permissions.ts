@@ -40,6 +40,29 @@ export function grantsFromApi(keys: readonly string[]): PermissionGrant[] {
   return keys.filter(isPermissionKey).map((key) => ({ key, scope: "ORG" as const }));
 }
 
+/**
+ * Grants from GET /v1/me/permissions. Uses the scoped `grants` list when the API reports it
+ * (PROJECT grants keep their project id); older responses fall back to ORG-only keys.
+ */
+export function grantsFromPermissionsResponse(response: {
+  permissions: readonly string[];
+  grants?: readonly { key: string; scope: string; scope_id: string | null }[];
+}): { grants: PermissionGrant[]; scopeReported: boolean } {
+  if (!response.grants) {
+    return { grants: grantsFromApi(response.permissions), scopeReported: false };
+  }
+  const grants: PermissionGrant[] = [];
+  for (const grant of response.grants) {
+    if (!isPermissionKey(grant.key)) continue;
+    if (grant.scope === "PROJECT" && grant.scope_id) {
+      grants.push({ key: grant.key, scope: "PROJECT", scopeId: grant.scope_id });
+    } else if (grant.scope === "ORG") {
+      grants.push({ key: grant.key, scope: "ORG" });
+    }
+  }
+  return { grants, scopeReported: true };
+}
+
 /** No target: only an ORG grant counts. With a project target: ORG grant or that project's grant. */
 export function canWithGrants(
   grants: readonly PermissionGrant[],

@@ -27,13 +27,26 @@ public class RoleController {
     }
 
     @GetMapping("/roles")
-    @PreAuthorize("@permissionService.can(authentication, #orgId, 'role.manage')")
+    @PreAuthorize("@permissionService.authorize(authentication, #orgId, 'role.manage')")
     List<RoleService.RoleResponse> listRoles(@PathVariable UUID orgId, Authentication authentication) {
         return roles.list(orgId, authentication);
     }
 
+    @GetMapping("/roles/{roleId}")
+    @PreAuthorize("@permissionService.authorize(authentication, #orgId, 'role.manage')")
+    RoleService.RoleResponse getRole(@PathVariable UUID orgId, @PathVariable UUID roleId, Authentication authentication) {
+        return roles.get(orgId, roleId, authentication);
+    }
+
+    @GetMapping("/roles/{roleId}/grants")
+    @PreAuthorize("@permissionService.authorize(authentication, #orgId, 'role.manage')")
+    List<RoleService.RoleHolderResponse> roleHolders(
+            @PathVariable UUID orgId, @PathVariable UUID roleId, Authentication authentication) {
+        return roles.roleHolders(orgId, roleId, authentication);
+    }
+
     @PostMapping("/roles")
-    @PreAuthorize("@permissionService.can(authentication, #orgId, 'role.manage')")
+    @PreAuthorize("@permissionService.authorize(authentication, #orgId, 'role.manage')")
     ResponseEntity<RoleService.RoleResponse> createRole(
             @PathVariable UUID orgId,
             Authentication authentication,
@@ -42,7 +55,7 @@ public class RoleController {
     }
 
     @PatchMapping("/roles/{roleId}")
-    @PreAuthorize("@permissionService.can(authentication, #orgId, 'role.manage')")
+    @PreAuthorize("@permissionService.authorize(authentication, #orgId, 'role.manage')")
     RoleService.RoleResponse updateRole(
             @PathVariable UUID orgId,
             @PathVariable UUID roleId,
@@ -52,17 +65,18 @@ public class RoleController {
     }
 
     @DeleteMapping("/roles/{roleId}")
-    @PreAuthorize("@permissionService.can(authentication, #orgId, 'role.manage')")
+    @PreAuthorize("@permissionService.authorize(authentication, #orgId, 'role.manage')")
     ResponseEntity<Void> deleteRole(
             @PathVariable UUID orgId,
             @PathVariable UUID roleId,
+            @RequestParam long expectedVersion,
             Authentication authentication) {
-        roles.delete(orgId, roleId, authentication);
+        roles.delete(orgId, roleId, expectedVersion, authentication);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/members")
-    @PreAuthorize("@permissionService.can(authentication, #orgId, 'role.manage')")
+    @PreAuthorize("@permissionService.authorize(authentication, #orgId, 'role.manage')")
     List<RoleService.MemberResponse> members(
             @PathVariable UUID orgId,
             Authentication authentication,
@@ -71,7 +85,7 @@ public class RoleController {
     }
 
     @GetMapping("/members/{membershipId}/permissions")
-    @PreAuthorize("@permissionService.can(authentication, #orgId, 'role.manage')")
+    @PreAuthorize("@permissionService.authorize(authentication, #orgId, 'role.manage')")
     List<String> memberPermissions(
             @PathVariable UUID orgId,
             @PathVariable UUID membershipId,
@@ -79,8 +93,17 @@ public class RoleController {
         return roles.effectivePermissions(orgId, membershipId, authentication);
     }
 
+    @GetMapping("/members/{membershipId}/grants")
+    @PreAuthorize("@permissionService.authorize(authentication, #orgId, 'role.manage')")
+    List<RoleService.GrantResponse> memberGrants(
+            @PathVariable UUID orgId,
+            @PathVariable UUID membershipId,
+            Authentication authentication) {
+        return roles.memberGrants(orgId, membershipId, authentication);
+    }
+
     @PostMapping("/grants")
-    @PreAuthorize("@permissionService.can(authentication, #orgId, 'role.manage')")
+    @PreAuthorize("@permissionService.authorize(authentication, #orgId, 'role.manage')")
     ResponseEntity<RoleService.GrantResponse> grant(
             @PathVariable UUID orgId,
             Authentication authentication,
@@ -89,7 +112,7 @@ public class RoleController {
     }
 
     @DeleteMapping("/grants/{grantId}")
-    @PreAuthorize("@permissionService.can(authentication, #orgId, 'role.manage')")
+    @PreAuthorize("@permissionService.authorize(authentication, #orgId, 'role.manage')")
     ResponseEntity<Void> revoke(
             @PathVariable UUID orgId,
             @PathVariable UUID grantId,

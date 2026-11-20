@@ -70,13 +70,8 @@ export default function ViewerFilesPage() {
     return filteredFiles.slice(start, start + pageSize);
   }, [filteredFiles, currentPage, pageSize]);
 
-<<<<<<< HEAD
-  const permittedCount = rawFiles.filter((file) => file.permittedDownload).length;
-  const restrictedCount = rawFiles.filter((file) => file.isRestricted).length;
-=======
   const permittedCount = rawFiles.filter((f) => !f.isRestricted).length;
   const restrictedCount = rawFiles.filter((f) => f.isRestricted).length;
->>>>>>> 616e528e6f65ef6de66dd7269ed38b36fb90c447
 
   const getCategoryIcon = (category: string) => {
     switch (category) {

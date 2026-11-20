@@ -72,15 +72,6 @@ export default function ViewerProjectsPage() {
         return true;
       })
       .sort((a, b) => {
-<<<<<<< HEAD
-        const comparison =
-          sortBy === "progress"
-            ? a.lastProgressPercent - b.lastProgressPercent
-            : sortBy === "targetDate"
-              ? a.targetDate.localeCompare(b.targetDate)
-              : a[sortBy].localeCompare(b[sortBy]);
-        return sortOrder === "asc" ? comparison : -comparison;
-=======
         let valA: any;
         let valB: any;
         if (sortBy === "progress") {
@@ -93,7 +84,6 @@ export default function ViewerProjectsPage() {
         if (valA < valB) return sortOrder === "asc" ? -1 : 1;
         if (valA > valB) return sortOrder === "asc" ? 1 : -1;
         return 0;
->>>>>>> 616e528e6f65ef6de66dd7269ed38b36fb90c447
       });
   }, [rawProjects, modeFilter, lifecycleFilter, healthFilter, search, sortBy, sortOrder]);
 

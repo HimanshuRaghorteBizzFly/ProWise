@@ -1,137 +1,104 @@
 "use client";
 
-import React from "react";
-import { useParams } from "next/navigation";
-import { Users } from "lucide-react";
-
-import { OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
-import { OwnerKpiCard } from "@/components/owner/OwnerKpiCard";
-import { OwnerPageState } from "@/components/owner/OwnerPageState";
-import { OwnerPanel } from "@/components/owner/OwnerPanel";
-import { OwnerTable } from "@/components/owner/OwnerTable";
-import { PageHeader } from "@/components/owner/primitives";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { mockApiProjectMembers, mockApiProjects, mockApiWorkItemsForOrg } from "@/lib/prowise-mock-adapters";
-import { useManagerResource } from "@/hooks/useManagerResource";
-import { ManagerResourceNotice } from "../_components/ManagerResourceNotice";
-
-const loadWorkloadData = (
-  orgId: string,
-  grants: Parameters<typeof mockApiProjects>[1],
-) => ({
-  projects: mockApiProjects(orgId, grants).items,
-  members: mockApiProjectMembers(orgId, grants).items,
-  items: mockApiWorkItemsForOrg(orgId, grants).items,
-});
+import React, { useMemo } from "react";
+import Link from "next/link";
+import { Scale, UserPlus, Users } from "lucide-react";
+import { useDeliveryStore } from "@/store/delivery-store";
+import { VIEWERS } from "@/mocks/delivery-dashboards";
+import {
+  Avatar,
+  ButtonLink,
+  EmptyStateView,
+  PageFrame,
+  Panel,
+  ProgressBar,
+  StatusBadge,
+  SurfaceCard,
+  useDemoLoad,
+  useRoleHref,
+  utilisationTone,
+} from "@/components/delivery/DeliveryUI";
+import { DonutChart, HorizontalBarChart } from "@/components/delivery/DeliveryCharts";
 
 export default function ManagerWorkloadPage() {
-  const params = useParams<{ orgId: string }>();
-  const orgId = params?.orgId ?? "";
-  const resource = useManagerResource({
-    routeOrgId: orgId,
-    name: "project-manager-workload",
-    permission: "project.read",
-    fixture: loadWorkloadData,
-  });
-  const data = resource.state.status === "ready" ? resource.state.data : null;
-  const assignedItemCount = data?.items.filter((item) => item.primaryAssigneeId).length ?? 0;
+  const href = useRoleHref("manager");
+  const { status, retry, forceEmpty } = useDemoLoad();
+  const allProjects = useDeliveryStore((s) => s.projects);
+  const people = useDeliveryStore((s) => s.people);
+  const tasks = useDeliveryStore((s) => s.tasks);
+
+  const team = useMemo(() => {
+    if (forceEmpty) return [];
+    const ids = new Set(allProjects.filter((p) => p.managerId === VIEWERS.manager.id).flatMap((p) => p.memberIds));
+    return people
+      .filter((p) => ids.has(p.id))
+      .map((p) => ({
+        ...p,
+        pct: Math.round((p.assignedHours / p.capacityHours) * 100),
+        open: tasks.filter((t) => t.assigneeId === p.id && t.status !== "DONE").length,
+        projects: allProjects.filter((pr) => pr.memberIds.includes(p.id)).length,
+      }))
+      .sort((a, b) => b.pct - a.pct);
+  }, [allProjects, people, tasks, forceEmpty]);
+
+  const bands = [
+    { name: "Over capacity", value: team.filter((p) => p.pct > 100).length, color: "#EF4444" },
+    { name: "Near capacity", value: team.filter((p) => p.pct >= 85 && p.pct <= 100).length, color: "#F59E0B" },
+    { name: "Healthy", value: team.filter((p) => p.pct >= 60 && p.pct < 85).length, color: "#10B981" },
+    { name: "Has room", value: team.filter((p) => p.pct < 60).length, color: "#3B82F6" },
+  ];
 
   return (
-    <PanelLayout
-      title="Workload & capacity"
-      breadcrumb={[{ label: "Project Manager", href: `/org/${orgId}/manager` }, { label: "Workload & capacity" }]}
+    <PageFrame
+      crumbs={[{ label: "Manager", href: href() }, { label: "People" }, { label: "Team workload" }]}
+      back={{ href: href(), label: "Back to dashboard" }}
+      title="Team workload"
+      description="Assigned hours against weekly capacity for everyone on your projects."
+      status={status}
+      onRetry={retry}
+      actions={<ButtonLink href={href("team-assignments")}><UserPlus className="w-3.5 h-3.5" /> Assign work</ButtonLink>}
     >
-      <div className="space-y-4 sm:space-y-6">
-        <PageHeader
-          title="Workload & capacity"
-          description="Effort and available capacity are not provided in this fixture. No points-to-hours conversion is made."
-          simulationLabel={data ? "Sample data" : undefined}
-          actions={<OwnerLaterBadge task="5.4" />}
-        />
-        {data ? (
-          <>
-            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-              <OwnerKpiCard
-                label="Planned effort"
-                value="Not measurable"
-                icon={<Users className="h-5 w-5" />}
-                detail="No task-hour estimates · readable projects · hours"
-              />
-              <OwnerKpiCard
-                label="Available capacity"
-                value="Not measurable"
-                icon={<Users className="h-5 w-5" />}
-                detail="No member capacity records · readable projects · hours"
-              />
-            </div>
-            <OwnerPanel
-              title="Current assignments"
-              description={`Scope: ${data.projects.length} readable projects · current mock assignments · unit: work items per member`}
-            >
-              {data.members.length === 0 ? (
-                <OwnerPageState
-                  state="empty"
-                  title="No readable project members"
-                  description="Active members of projects you can read will appear here."
-                  icon={Users}
-                />
-              ) : (
-                <OwnerTable label="Project Manager current assignments">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Member</TableHead>
-                      <TableHead>Assigned work items</TableHead>
-                      <TableHead>Planned hours</TableHead>
-                      <TableHead>Available hours</TableHead>
-                      <TableHead>Measurement status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.members.map((member) => {
-                      const assigned = data.items.filter((item) => item.primaryAssigneeId === member.id);
-                      return (
-                        <TableRow key={member.id}>
-                          <TableCell>{member.name}</TableCell>
-                          <TableCell>
-                            <span className="font-medium">{assigned.length}</span>
-                            {assigned.length > 0 && (
-                              <span className="mt-1 block max-w-sm whitespace-normal text-xs text-app-text-muted">
-                                {assigned.map((item) => item.key).join(", ")}
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell>Not measurable</TableCell>
-                          <TableCell>Not measurable</TableCell>
-                          <TableCell>No effort or capacity values in sample data</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    <TableRow>
-                      <TableCell className="font-semibold">Readable assignments</TableCell>
-                      <TableCell>{assignedItemCount} work items</TableCell>
-                      <TableCell>Not measurable</TableCell>
-                      <TableCell>Not measurable</TableCell>
-                      <TableCell>Counts are not converted to hours</TableCell>
-                    </TableRow>
-                  </TableBody>
-                </OwnerTable>
-              )}
-            </OwnerPanel>
-          </>
-        ) : (
-          <ManagerResourceNotice
-            orgMatches={resource.orgMatches}
-            permissionStatus={resource.permissionStatus}
-            resourceStatus={resource.state.status}
-            permission={resource.permission}
-            permissionName="project.read"
-            laterTask="5.4"
-            retry={resource.retry}
-            retryPermissions={resource.permissionRetry}
-          />
-        )}
-      </div>
-    </PanelLayout>
+      {team.length === 0 ? (
+        <SurfaceCard><EmptyStateView icon={Users} title="No team members" description="People appear here once they join one of your projects." /></SurfaceCard>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <Panel className="xl:col-span-2" title="Utilisation" description="100% = full weekly capacity" icon={Users} iconTone="violet">
+              <HorizontalBarChart data={team.map((p) => ({ name: p.name.split(" ")[0], value: p.pct, color: utilisationTone(p.pct).color }))} valueLabel="Utilisation" />
+            </Panel>
+            <Panel title="Capacity bands" icon={Scale} iconTone="amber">
+              <DonutChart data={bands} centerLabel="people" />
+            </Panel>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+            {team.map((p) => {
+              const u = utilisationTone(p.pct);
+              return (
+                <Link key={p.id} href={href(`workload/${p.id}`)} className="group block rounded-xl">
+                  <SurfaceCard className="h-full p-4 space-y-3 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:border-blue-500/40">
+                    <div className="flex items-center gap-3">
+                      <Avatar person={p} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">{p.name}</p>
+                        <p className="text-[11px] text-[var(--color-text-muted)] truncate">{p.title} · {p.location}</p>
+                      </div>
+                      <StatusBadge label={u.label} tone={u.tone} />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px]"><span className="text-[var(--color-text-secondary)]">{p.assignedHours}h of {p.capacityHours}h</span><span className="font-bold tabular-nums" style={{ color: u.color }}>{p.pct}%</span></div>
+                      <ProgressBar value={Math.min(100, p.pct)} color={u.color} />
+                    </div>
+                    <div className="flex gap-3 text-[11px] text-[var(--color-text-muted)]">
+                      <span><b className="text-[var(--color-text-primary)]">{p.open}</b> open tasks</span>
+                      <span><b className="text-[var(--color-text-primary)]">{p.projects}</b> projects</span>
+                    </div>
+                  </SurfaceCard>
+                </Link>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </PageFrame>
   );
 }

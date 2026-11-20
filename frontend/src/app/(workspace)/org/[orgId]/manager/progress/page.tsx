@@ -1,123 +1,89 @@
 "use client";
 
-import React from "react";
-import { useParams } from "next/navigation";
-import { Activity } from "lucide-react";
-
-import { OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
-import { OwnerPageState } from "@/components/owner/OwnerPageState";
-import { OwnerPanel } from "@/components/owner/OwnerPanel";
-import { OwnerTable } from "@/components/owner/OwnerTable";
-import { PageHeader } from "@/components/owner/primitives";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatUtcTimestamp } from "@/components/owner/project-format";
-import { mockApiProgressForOrg, mockApiProjects } from "@/lib/prowise-mock-adapters";
-import { useManagerResource } from "@/hooks/useManagerResource";
-import { ManagerResourceNotice } from "../_components/ManagerResourceNotice";
-
-const loadProgressHistory = (
-  orgId: string,
-  grants: Parameters<typeof mockApiProjects>[1],
-) => ({
-  projects: mockApiProjects(orgId, grants).items,
-  snapshots: mockApiProgressForOrg(orgId, grants).items,
-});
+import React, { useMemo } from "react";
+import { BarChart3, FolderKanban, TrendingUp } from "lucide-react";
+import { useDeliveryStore } from "@/store/delivery-store";
+import { VIEWERS } from "@/mocks/delivery-dashboards";
+import {
+  DataTable,
+  HealthBadge,
+  PageFrame,
+  Panel,
+  ProgressBar,
+  StatPill,
+  StatusBadge,
+  SurfaceCard,
+  formatDate,
+  useDemoLoad,
+  useRoleHref,
+} from "@/components/delivery/DeliveryUI";
+import { GaugeRing, GroupedBarChart } from "@/components/delivery/DeliveryCharts";
 
 export default function ManagerProgressPage() {
-  const params = useParams<{ orgId: string }>();
-  const orgId = params?.orgId ?? "";
-  const resource = useManagerResource({
-    routeOrgId: orgId,
-    name: "project-manager-progress-history",
-    permission: "project.read",
-    fixture: loadProgressHistory,
-  });
-  const data = resource.state.status === "ready" ? resource.state.data : null;
-  const projectById = new Map((data?.projects ?? []).map((project) => [project.id, project]));
+  const href = useRoleHref("manager");
+  const { status, retry, forceEmpty } = useDemoLoad();
+  const allProjects = useDeliveryStore((s) => s.projects);
+  const projects = useMemo(
+    () => (forceEmpty ? [] : allProjects.filter((p) => p.managerId === VIEWERS.manager.id)),
+    [allProjects, forceEmpty]
+  );
+  const avg = projects.length ? Math.round(projects.reduce((s, p) => s + p.progress, 0) / projects.length) : 0;
+  const ahead = projects.filter((p) => p.progress >= p.plannedProgress).length;
+  const worst = [...projects].sort((a, b) => a.progress - a.plannedProgress - (b.progress - b.plannedProgress))[0];
 
   return (
-    <PanelLayout
-      title="Progress history"
-      breadcrumb={[{ label: "Project Manager", href: `/org/${orgId}/manager` }, { label: "Progress history" }]}
+    <PageFrame
+      crumbs={[{ label: "Manager", href: href() }, { label: "Overview" }, { label: "Progress" }]}
+      back={{ href: href(), label: "Back to dashboard" }}
+      title="Progress per project"
+      description="Approved progress against plan. Progress is never set from Git activity, time spent or task counts."
+      status={status}
+      onRetry={retry}
     >
-      <div className="space-y-4 sm:space-y-6">
-        <PageHeader
-          title="Progress snapshots"
-          description="Historical values retain their timestamp, method, and original scope version. Reported and calculated progress are never blended."
-          simulationLabel={data ? "Sample data" : undefined}
-          actions={<OwnerLaterBadge task="3.5" />}
-        />
-        {data ? (
-          <OwnerPanel
-            title="Snapshot ledger"
-            description="Scope: readable projects · time basis: recorded event instant in UTC · unit: percent by the labelled method."
-          >
-            {data.snapshots.length === 0 ? (
-              <OwnerPageState
-                state="empty"
-                title="No progress snapshots"
-                description="Saved progress events for projects you can read will appear here."
-                icon={Activity}
-              />
-            ) : (
-              <OwnerTable label="Project Manager progress snapshot ledger">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Recorded (UTC)</TableHead>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Value</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>Scope version</TableHead>
-                    <TableHead>Cause</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.snapshots.map((snapshot) => {
-                    const project = projectById.get(snapshot.projectId);
-                    const value = snapshot.isNotReported
-                      ? "Not reported"
-                      : snapshot.isNotMeasurable
-                        ? "Not measurable"
-                        : `${snapshot.value}%`;
-                    const method = snapshot.method === "DEVELOPER_REPORTED"
-                      ? "Developer reported"
-                      : "Calculated baseline";
-                    const scope = snapshot.baselineVersion === undefined
-                      ? "Not applicable"
-                      : `Baseline v${snapshot.baselineVersion}${snapshot.numerator !== undefined && snapshot.denominator !== undefined
-                        ? ` · ${snapshot.numerator}/${snapshot.denominator}`
-                        : ""}`;
-                    return (
-                      <TableRow key={snapshot.id}>
-                        <TableCell className="whitespace-nowrap">{formatUtcTimestamp(snapshot.instant)} UTC</TableCell>
-                        <TableCell>
-                          {project ? `${project.key} · ${project.name}` : "Project not available"}
-                        </TableCell>
-                        <TableCell className="font-semibold">{value}</TableCell>
-                        <TableCell>{method}</TableCell>
-                        <TableCell>{scope}</TableCell>
-                        <TableCell className="max-w-sm whitespace-normal">{snapshot.cause}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </OwnerTable>
-            )}
-          </OwnerPanel>
-        ) : (
-          <ManagerResourceNotice
-            orgMatches={resource.orgMatches}
-            permissionStatus={resource.permissionStatus}
-            resourceStatus={resource.state.status}
-            permission={resource.permission}
-            permissionName="project.read"
-            laterTask="3.5"
-            retry={resource.retry}
-            retryPermissions={resource.permissionRetry}
-          />
-        )}
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+        <SurfaceCard className="p-5 flex flex-col items-center justify-center gap-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+          <GaugeRing value={avg} color="#10B981" label="portfolio avg" size={150} />
+          <div className="grid grid-cols-2 gap-2 w-full">
+            <StatPill label="On / ahead" value={ahead} tone="success" />
+            <StatPill label="Behind plan" value={projects.length - ahead} tone={projects.length - ahead ? "warning" : "success"} />
+          </div>
+          {worst && (
+            <p className="text-[11px] text-center text-[var(--color-text-muted)]">
+              Largest gap: <span className="font-semibold text-[var(--color-text-primary)]">{worst.name}</span> ({worst.progress - worst.plannedProgress} pts)
+            </p>
+          )}
+        </SurfaceCard>
+        <Panel className="xl:col-span-3" title="Actual vs planned" description="Percentage complete today" icon={BarChart3} iconTone="emerald">
+          {projects.length ? (
+            <GroupedBarChart
+              data={projects.map((p) => ({ label: p.code, primary: p.progress, secondary: p.plannedProgress }))}
+              primaryLabel="Actual"
+              secondaryLabel="Planned"
+              primaryColor="#10B981"
+              secondaryColor="#CBD5E1"
+              unit="%"
+              height={250}
+            />
+          ) : (
+            <p className="py-12 text-center text-xs text-[var(--color-text-muted)]">No projects to chart.</p>
+          )}
+        </Panel>
       </div>
-    </PanelLayout>
+
+      <Panel title="Project breakdown" description="Click a project to open its plan" icon={TrendingUp} bodyClassName="p-0">
+        <DataTable
+          rows={projects}
+          rowHref={(p) => href(`projects/${p.id}`)}
+          empty={{ icon: FolderKanban, title: "No projects", description: "Create a project to track progress." }}
+          columns={[
+            { key: "name", header: "Project", className: "w-[40%] md:w-[28%]", render: (p) => <div className="min-w-0"><p className="font-semibold truncate">{p.name}</p><p className="text-[11px] text-[var(--color-text-muted)]">{p.code} · due {formatDate(p.dueDate)}</p></div> },
+            { key: "bar", header: "Actual vs plan", render: (p) => <ProgressBar value={p.progress} planned={p.plannedProgress} color={p.color} showLabel /> },
+            { key: "var", header: "Variance", hideBelow: "sm", render: (p) => { const v = p.progress - p.plannedProgress; return <StatusBadge label={`${v >= 0 ? "+" : ""}${v} pts`} tone={v >= 0 ? "success" : v > -10 ? "warning" : "danger"} />; } },
+            { key: "health", header: "Health", hideBelow: "md", render: (p) => <HealthBadge health={p.health} /> },
+            { key: "ms", header: "Milestones", hideBelow: "lg", render: (p) => <span className="tabular-nums">{p.milestones.filter((m) => m.status === "DONE").length} / {p.milestones.length} done</span> },
+          ]}
+        />
+      </Panel>
+    </PageFrame>
   );
 }

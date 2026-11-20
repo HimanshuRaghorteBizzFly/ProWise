@@ -1,71 +1,97 @@
 "use client";
 
-import React from "react";
-import { useParams } from "next/navigation";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { Clock } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { Download, FileStack } from "lucide-react";
+import { toast } from "sonner";
+import { useDeliveryStore } from "@/store/delivery-store";
+import { VIEWERS, type ReviewStatus } from "@/mocks/delivery-dashboards";
+import {
+  AdminButton,
+  Avatar,
+  DataTable,
+  FilterBar,
+  PageFrame,
+  ReviewStatusBadge,
+  SegmentTabs,
+  SurfaceCard,
+  formatDateTime,
+  hoursSince,
+  formatWaiting,
+  useDemoLoad,
+  useLookups,
+  useRoleHref,
+} from "@/components/delivery/DeliveryUI";
+import { downloadCsv, generateCsv } from "@/lib/csv";
+
+type Filter = "ALL" | ReviewStatus;
 
 export default function ReviewerHistoryPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { currentOrg } = useAuthStore();
-  const { auditLogs } = useProjectStore();
+  const href = useRoleHref("reviewer");
+  const { status, retry, forceEmpty } = useDemoLoad();
+  const lk = useLookups();
+  const allReviews = useDeliveryStore((s) => s.reviews);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<Filter>("ALL");
 
-  const reviews = auditLogs.filter((l) => l.action.includes("WORK_ITEM") || l.action.includes("APPROVED"));
+  const mine = useMemo(
+    () => (forceEmpty ? [] : allReviews.filter((r) => r.reviewerId === VIEWERS.reviewer.id)).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)),
+    [allReviews, forceEmpty]
+  );
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return mine.filter((r) => (filter === "ALL" || r.status === filter) && (!q || r.code.toLowerCase().includes(q) || (lk.task(r.taskId)?.title.toLowerCase().includes(q) ?? false)));
+  }, [mine, search, filter, lk]);
+
+  const turnaround = (submittedAt: string, decidedAt?: string) =>
+    decidedAt ? formatWaiting(Math.max(0, hoursSince(submittedAt) - hoursSince(decidedAt))) : "—";
+
+  const exportCsv = () => {
+    downloadCsv(
+      "review-history.csv",
+      generateCsv(
+        ["Code", "Task", "Developer", "Status", "Submitted (UTC)", "Decided (UTC)", "Reason"],
+        rows.map((r) => [r.code, lk.task(r.taskId)?.title ?? "", lk.person(r.submittedById)?.name ?? "", r.status, r.submittedAt, r.decidedAt ?? "", r.reason ?? ""])
+      )
+    );
+    toast.success(`Exported ${rows.length} reviews`);
+  };
 
   return (
-    <PanelLayout
-      title="Review History Ledger"
-      breadcrumb={[
-        { label: "Reviewer", href: `/org/${orgId}/reviewer` },
-        { label: "History" },
-      ]}
+    <PageFrame
+      crumbs={[{ label: "QA", href: href() }, { label: "Records" }, { label: "Review history" }]}
+      back={{ href: href(), label: "Back to dashboard" }}
+      title="Review history"
+      description="Every review assigned to you, newest first."
+      status={status}
+      onRetry={retry}
+      skeleton="list"
+      actions={<AdminButton variant="outline" onClick={exportCsv} disabled={rows.length === 0}><Download className="w-3.5 h-3.5" /> Export CSV</AdminButton>}
     >
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-base font-bold text-app-text-primary">Historical Inspection Decisions</h2>
-          <p className="text-xs text-app-text-secondary mt-0.5">
-            Immutable log of all approvals, rework requests, and criteria checks.
-          </p>
-        </div>
-
-        <Card className="p-0 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Timestamp</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Details</TableHead>
-                <TableHead>Reviewer</TableHead>
-                <TableHead>Target Entity</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {reviews.map((rev) => (
-                <TableRow key={rev.id}>
-                  <TableCell className="text-xs text-app-text-muted">
-                    {new Date(rev.timestamp).toLocaleString()}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="default">{rev.action}</Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-app-text-primary font-medium">
-                    {rev.details}
-                  </TableCell>
-                  <TableCell className="text-xs text-app-text-secondary">{rev.actorEmail}</TableCell>
-                  <TableCell className="font-mono text-xs text-app-text-muted">{rev.targetId}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      </div>
-    </PanelLayout>
+      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Search code or task" hasActiveFilters={Boolean(search) || filter !== "ALL"} onResetFilters={() => { setSearch(""); setFilter("ALL"); }} />
+      <SegmentTabs<Filter>
+        value={filter}
+        onChange={setFilter}
+        options={[
+          { value: "ALL", label: "All", count: mine.length },
+          { value: "PENDING", label: "Pending", count: mine.filter((r) => r.status === "PENDING").length },
+          { value: "APPROVED", label: "Approved", count: mine.filter((r) => r.status === "APPROVED").length },
+          { value: "CHANGES_REQUESTED", label: "Changes", count: mine.filter((r) => r.status === "CHANGES_REQUESTED").length },
+        ]}
+      />
+      <SurfaceCard className="overflow-hidden">
+        <DataTable
+          rows={rows}
+          rowHref={(r) => href(`reviews/${r.id}`)}
+          empty={{ icon: FileStack, title: mine.length ? "No reviews match" : "No history yet", description: mine.length ? "Adjust the search or filter." : "Reviews you handle will be recorded here." }}
+          columns={[
+            { key: "t", header: "Review", className: "w-[52%] md:w-[34%]", render: (r) => <div className="min-w-0"><p className="font-semibold truncate">{lk.task(r.taskId)?.title}</p><p className="text-[11px] text-[var(--color-text-muted)] truncate">{r.code} · round {r.round}</p></div> },
+            { key: "s", header: "Outcome", render: (r) => <ReviewStatusBadge status={r.status} /> },
+            { key: "d", header: "Developer", hideBelow: "md", render: (r) => <span className="flex items-center gap-2 min-w-0"><Avatar person={lk.person(r.submittedById)} size="sm" /><span className="truncate">{lk.person(r.submittedById)?.name}</span></span> },
+            { key: "sub", header: "Submitted", hideBelow: "lg", render: (r) => formatDateTime(r.submittedAt) },
+            { key: "ta", header: "Turnaround", hideBelow: "sm", render: (r) => <span className="tabular-nums">{turnaround(r.submittedAt, r.decidedAt)}</span> },
+          ]}
+        />
+      </SurfaceCard>
+    </PageFrame>
   );
 }
-

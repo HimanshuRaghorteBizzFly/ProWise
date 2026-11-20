@@ -1,13 +1,18 @@
 package com.prowise.developer;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+/** Every query is scoped by org_id (task 1.3). Never call findById: use the org-scoped finder. */
 @Repository
 public interface CodeReviewRepository extends JpaRepository<CodeReviewEntity, String> {
-    List<CodeReviewEntity> findByReviewerId(String reviewerId);
-    List<CodeReviewEntity> findByAuthorId(String authorId);
-    List<CodeReviewEntity> findByProjectId(String projectId);
-    long countByReviewerIdAndStatus(String reviewerId, String status);
+    Optional<CodeReviewEntity> findByIdAndOrgId(String id, UUID orgId);
+    List<CodeReviewEntity> findByOrgIdAndReviewerId(UUID orgId, String reviewerId);
+    List<CodeReviewEntity> findByOrgIdAndAuthorId(UUID orgId, String authorId);
+    long countByOrgIdAndReviewerIdAndStatus(UUID orgId, String reviewerId, String status);
 }

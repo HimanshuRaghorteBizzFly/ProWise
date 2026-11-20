@@ -23,7 +23,7 @@ public class AuditController {
     }
 
     @GetMapping({"/v1/admin/audit-logs", "/api/v1/admin/audit-logs"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('audit.view')")
     public List<AuditDTOs.AuditLogResponse> listAuditLogs(
             @RequestParam(required = false) String category,
             @RequestParam(required = false) String severity,
@@ -35,7 +35,7 @@ public class AuditController {
     }
 
     @PostMapping({"/v1/admin/audit-logs", "/api/v1/admin/audit-logs"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('audit.view')")
     public ResponseEntity<AuditDTOs.AuditLogResponse> recordAuditLog(@RequestBody AuditDTOs.RecordAuditLogRequest request) {
         AuditDTOs.AuditLogResponse response = auditService.recordAuditLog(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);

@@ -1,61 +1,90 @@
 "use client";
 
 import React from "react";
-import { useParams } from "next/navigation";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Network } from "lucide-react";
+import {
+  EmptyStateView,
+  PageFrame,
+  Panel,
+  StatusBadge,
+  SurfaceCard,
+  TaskStatusBadge,
+  useDemoLoad,
+  useLookups,
+  useRoleHref,
+} from "@/components/delivery/DeliveryUI";
+import { DonutChart } from "@/components/delivery/DeliveryCharts";
+import { useLeadTeam } from "@/components/delivery/useLeadTeam";
+import type { Dependency } from "@/mocks/delivery-dashboards";
 
-export default function LeadDependenciesPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { currentOrg } = useAuthStore();
-  const { workItems } = useProjectStore();
+const KIND: Record<Dependency["kind"], string> = { BLOCKS: "Blocks", NEEDS_INPUT: "Needs input", SHARED_COMPONENT: "Shared component" };
 
-  const dependencies = [
-    { from: "CRM-101 (Design)", to: "CRM-102 (API Core)", status: "Completed" },
-    { from: "CRM-102 (API Core)", to: "CRM-103 (Release & Security)", status: "In Progress" },
-  ];
+export default function TeamLeadDependenciesPage() {
+  const href = useRoleHref("lead");
+  const { status, retry, forceEmpty } = useDemoLoad();
+  const lk = useLookups();
+  const t = useLeadTeam(forceEmpty);
+  const deps = forceEmpty ? [] : t.dependencies;
+
+  const TaskChip = ({ id }: { id: string }) => {
+    const task = lk.task(id);
+    const mine = t.isTeamTask(id);
+    const inner = (
+      <div className={`rounded-lg border p-2.5 min-w-0 transition-colors ${mine ? "border-[var(--color-border)] bg-[var(--color-app-bg)] hover:border-violet-500/40" : "border-dashed border-[var(--color-border)]"}`}>
+        <p className="text-[11px] font-bold">{task?.key}</p>
+        <p className="text-[11px] text-[var(--color-text-secondary)] truncate">{mine ? task?.title : "Another team"}</p>
+        {mine && task && <div className="mt-1"><TaskStatusBadge status={task.status} /></div>}
+      </div>
+    );
+    return mine ? <Link href={href(`work-items/${id}`)} className="block min-w-0 flex-1">{inner}</Link> : <div className="min-w-0 flex-1">{inner}</div>;
+  };
 
   return (
-    <PanelLayout
-      title="Finish-to-Start Dependencies"
-      breadcrumb={[
-        { label: "Team Lead", href: `/org/${orgId}/lead` },
-        { label: "Dependencies" },
-      ]}
+    <PageFrame
+      crumbs={[{ label: "Lead", href: href() }, { label: "Team work" }, { label: "Dependencies" }]}
+      back={{ href: href(), label: "Back to dashboard" }}
+      title="Dependencies"
+      description="Links between your team's tasks and work owned by other teams."
+      status={status}
+      onRetry={retry}
+      skeleton="list"
     >
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-base font-bold text-app-text-primary">Dependency DAG Graph</h2>
-          <p className="text-xs text-app-text-secondary mt-0.5">
-            Blueprint Rule M07: Finish-to-Start only inside project. Rejects cycles, self-links, and loops. Moving a predecessor never silently moves dates.
-          </p>
-        </div>
-
-        <div className="space-y-3">
-          {dependencies.map((dep, idx) => (
-            <Card key={idx} className="p-4 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-3">
-                <span className="font-mono font-bold text-blue-600 bg-blue-50 dark:bg-blue-950/60 px-2 py-1 rounded">
-                  {dep.from}
-                </span>
-                <ArrowRight className="w-4 h-4 text-app-text-muted" />
-                <span className="font-mono font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-1 rounded">
-                  {dep.to}
-                </span>
-              </div>
-              <Badge variant={dep.status === "Completed" ? "success" : "warning"}>
-                {dep.status}
-              </Badge>
-            </Card>
-          ))}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+        <Panel title="By state" icon={Network} iconTone="cyan">
+          <DonutChart
+            centerLabel="links"
+            data={[
+              { name: "At risk", value: deps.filter((d) => d.status === "AT_RISK").length, color: "#EF4444" },
+              { name: "Open", value: deps.filter((d) => d.status === "OPEN").length, color: "#F59E0B" },
+              { name: "Resolved", value: deps.filter((d) => d.status === "RESOLVED").length, color: "#10B981" },
+            ]}
+          />
+        </Panel>
+        <div className="xl:col-span-2 space-y-3">
+          {deps.length === 0 ? (
+            <SurfaceCard><EmptyStateView icon={Network} title="No dependencies" description="Your team's tasks are independent right now." /></SurfaceCard>
+          ) : (
+            deps.map((d) => (
+              <SurfaceCard key={d.id} className="p-3.5 space-y-2.5 transition-all duration-200 hover:shadow-md">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <StatusBadge label={KIND[d.kind]} tone="info" />
+                    {d.external && <StatusBadge label="Cross-team" tone="violet" />}
+                  </div>
+                  <StatusBadge label={d.status === "AT_RISK" ? "At risk" : d.status === "OPEN" ? "Open" : "Resolved"} tone={d.status === "AT_RISK" ? "danger" : d.status === "OPEN" ? "warning" : "success"} dot />
+                </div>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <TaskChip id={d.fromTaskId} />
+                  <ArrowRight className="w-4 h-4 shrink-0 self-center rotate-90 sm:rotate-0 text-[var(--color-text-muted)]" />
+                  <TaskChip id={d.toTaskId} />
+                </div>
+                <p className="text-[11px] text-[var(--color-text-secondary)]">{d.note}</p>
+              </SurfaceCard>
+            ))
+          )}
         </div>
       </div>
-    </PanelLayout>
+    </PageFrame>
   );
 }
-

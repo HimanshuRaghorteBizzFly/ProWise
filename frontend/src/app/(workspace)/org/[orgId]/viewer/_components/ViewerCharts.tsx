@@ -127,11 +127,7 @@ export function TaskStateBreakdownChart({ tasks }: { tasks: ViewerTask[] }) {
     { name: "In Review", count: tasks.filter((t) => t.state === "IN_REVIEW").length, color: "#8B5CF6" },
     { name: "In Progress", count: tasks.filter((t) => t.state === "IN_PROGRESS").length, color: "#3B82F6" },
     { name: "Blocked", count: tasks.filter((t) => t.isBlocked).length, color: "#EF4444" },
-<<<<<<< HEAD
-    { name: "Open", count: tasks.filter((t) => t.state === "TODO").length, color: "#94A3B8" },
-=======
     { name: "To Do", count: tasks.filter((t) => t.state === "TODO").length, color: "#94A3B8" },
->>>>>>> 616e528e6f65ef6de66dd7269ed38b36fb90c447
   ].filter((s) => s.count > 0);
 
   return (

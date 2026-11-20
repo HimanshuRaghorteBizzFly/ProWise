@@ -8,12 +8,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+/** Every query is scoped by org_id (task 1.3). Never call findById: use the org-scoped finder. */
 @Repository
 public interface ProjectRepository extends JpaRepository<ProjectEntity, String> {
+    Optional<ProjectEntity> findByIdAndOrgId(String id, UUID orgId);
 
-    @Query("SELECT p FROM ProjectEntity p WHERE p.accountableOwnerId = :userId OR p.memberIds LIKE %:userId%")
-    List<ProjectEntity> findAssignedProjects(@Param("userId") String userId);
+    List<ProjectEntity> findByOrgIdOrderByNameAsc(UUID orgId);
 
-    @Query("SELECT p FROM ProjectEntity p WHERE (p.accountableOwnerId = :userId OR p.memberIds LIKE %:userId%) AND (:orgId IS NULL OR p.orgId = :orgId)")
-    List<ProjectEntity> findAssignedProjectsByOrg(@Param("userId") String userId, @Param("orgId") UUID orgId);
+    @Query("SELECT p FROM ProjectEntity p WHERE p.orgId = :orgId AND (p.accountableOwnerId = :userId OR p.memberIds LIKE CONCAT('%', :userId, '%')) ORDER BY p.name")
+    List<ProjectEntity> findAssignedProjectsInOrg(@Param("orgId") UUID orgId, @Param("userId") String userId);
 }

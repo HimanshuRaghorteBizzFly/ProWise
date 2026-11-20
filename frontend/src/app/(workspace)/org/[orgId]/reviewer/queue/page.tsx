@@ -1,127 +1,96 @@
 "use client";
 
-import React, { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
-import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { CheckCircle2, AlertTriangle, ShieldCheck } from "lucide-react";
-import { toast } from "sonner";
-import { WorkItem } from "@/types";
+import React, { useMemo, useState } from "react";
+import { GitPullRequestArrow } from "lucide-react";
+import { useDeliveryStore } from "@/store/delivery-store";
+import { VIEWERS, type Priority } from "@/mocks/delivery-dashboards";
+import {
+  AdminSelect,
+  Avatar,
+  DataTable,
+  FilterBar,
+  PageFrame,
+  PriorityBadge,
+  SegmentTabs,
+  StatusBadge,
+  SurfaceCard,
+  formatWaiting,
+  hoursSince,
+  useDemoLoad,
+  useLookups,
+  useRoleHref,
+} from "@/components/delivery/DeliveryUI";
+
+type PFilter = "ALL" | Priority;
 
 export default function ReviewerQueuePage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { currentOrg, currentUser } = useAuthStore();
-  const { workItems, reviewWorkItem } = useProjectStore();
+  const href = useRoleHref("reviewer");
+  const { status, retry, forceEmpty } = useDemoLoad();
+  const lk = useLookups();
+  const allReviews = useDeliveryStore((s) => s.reviews);
+  const evidence = useDeliveryStore((s) => s.evidence);
+  const [search, setSearch] = useState("");
+  const [priority, setPriority] = useState<PFilter>("ALL");
+  const [projectId, setProjectId] = useState("ALL");
 
-  const [selectedItem, setSelectedItem] = useState<WorkItem | null>(null);
-  const queue = workItems.filter((w) => w.state === "IN_REVIEW");
-
-  const handleApprove = () => {
-    if (!selectedItem) return;
-    const res = reviewWorkItem(
-      selectedItem.id,
-      currentUser.id,
-      "APPROVED",
-      undefined,
-      selectedItem.currentRevision
-    );
-    if (res.success) {
-      toast.success(`Approved ${selectedItem.key}!`);
-      setSelectedItem(null);
-    }
-  };
+  const queue = useMemo(
+    () => (forceEmpty ? [] : allReviews.filter((r) => r.reviewerId === VIEWERS.reviewer.id && r.status === "PENDING").map((r) => ({ ...r, waited: hoursSince(r.submittedAt) }))),
+    [allReviews, forceEmpty]
+  );
+  const projectOptions = Array.from(new Set(queue.map((r) => r.projectId)));
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const rank: Priority[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+    return queue
+      .filter((r) => (priority === "ALL" || r.priority === priority) && (projectId === "ALL" || r.projectId === projectId))
+      .filter((r) => !q || r.code.toLowerCase().includes(q) || (lk.task(r.taskId)?.title.toLowerCase().includes(q) ?? false) || (lk.person(r.submittedById)?.name.toLowerCase().includes(q) ?? false))
+      .sort((a, b) => rank.indexOf(a.priority) - rank.indexOf(b.priority) || b.waited - a.waited);
+  }, [queue, search, priority, projectId, lk]);
 
   return (
-    <PanelLayout
-      title="Pending Review Queue"
-      breadcrumb={[
-        { label: "Reviewer", href: `/org/${orgId}/reviewer` },
-        { label: "Queue" },
-      ]}
+    <PageFrame
+      crumbs={[{ label: "QA", href: href() }, { label: "Review queue" }]}
+      back={{ href: href(), label: "Back to dashboard" }}
+      title="Review queue"
+      description="Submissions waiting for your decision, highest priority first."
+      status={status}
+      onRetry={retry}
+      skeleton="list"
     >
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-base font-bold text-app-text-primary">Assigned Verification Items</h2>
-          <p className="text-xs text-app-text-secondary mt-0.5">
-            Module M05: Required reviewer inspects criteria, evidence, and exact revision snapshot.
-          </p>
-        </div>
-
-        <Card className="p-0 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Key</TableHead>
-                <TableHead>Title</TableHead>
-                <TableHead>Weight</TableHead>
-                <TableHead>Revision</TableHead>
-                <TableHead>Criticality</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {queue.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="font-mono font-bold text-xs text-blue-600">{item.key}</TableCell>
-                  <TableCell className="font-semibold text-xs text-app-text-primary">{item.title}</TableCell>
-                  <TableCell className="text-xs font-semibold">{item.weight} pts</TableCell>
-                  <TableCell className="font-mono text-xs text-app-text-muted">
-                    rev {item.submittedRevision || item.currentRevision}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={item.criticality === "CRITICAL" ? "danger" : "warning"}>
-                      {item.criticality}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" onClick={() => setSelectedItem(item)}>
-                      Inspect
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {queue.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-xs text-app-text-muted">
-                    Queue is clear. No work items currently awaiting review.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </Card>
-      </div>
-
-      {selectedItem && (
-        <Dialog
-          isOpen={!!selectedItem}
-          onClose={() => setSelectedItem(null)}
-          title={`Review [${selectedItem.key}] ${selectedItem.title}`}
-          description={`Inspecting revision ${selectedItem.submittedRevision || selectedItem.currentRevision}`}
-        >
-          <div className="space-y-4 pt-2 text-xs">
-            <p className="p-3 bg-app-sidebar/60 rounded-lg border border-app-border text-app-text-secondary">
-              <strong>Criteria:</strong> {selectedItem.criteria}
-            </p>
-            <div className="flex justify-end gap-2 pt-4 border-t border-app-border">
-              <Button variant="outline" size="sm" onClick={() => setSelectedItem(null)}>
-                Cancel
-              </Button>
-              <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={handleApprove}>
-                <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve Work
-              </Button>
-            </div>
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search code, task or developer"
+        filters={
+          <div className="w-full sm:w-52">
+            <AdminSelect aria-label="Project" value={projectId} onChange={(e) => setProjectId(e.target.value)} options={[{ label: "All projects", value: "ALL" }, ...projectOptions.map((id) => ({ label: lk.project(id)?.name ?? id, value: id }))]} />
           </div>
-        </Dialog>
-      )}
-    </PanelLayout>
+        }
+        hasActiveFilters={Boolean(search) || priority !== "ALL" || projectId !== "ALL"}
+        onResetFilters={() => { setSearch(""); setPriority("ALL"); setProjectId("ALL"); }}
+      />
+      <SegmentTabs<PFilter>
+        value={priority}
+        onChange={setPriority}
+        options={[
+          { value: "ALL", label: "All", count: queue.length },
+          ...(["CRITICAL", "HIGH", "MEDIUM", "LOW"] as Priority[]).map((p) => ({ value: p, label: p[0] + p.slice(1).toLowerCase(), count: queue.filter((r) => r.priority === p).length })),
+        ]}
+      />
+      <SurfaceCard className="overflow-hidden">
+        <DataTable
+          rows={rows}
+          rowHref={(r) => href(`reviews/${r.id}`)}
+          empty={{ icon: GitPullRequestArrow, title: queue.length ? "No reviews match" : "Queue is empty", description: queue.length ? "Change filters to see more." : "New submissions will appear here." }}
+          columns={[
+            { key: "t", header: "Submission", className: "w-[52%] md:w-[36%]", render: (r) => <div className="min-w-0"><p className="font-semibold truncate">{lk.task(r.taskId)?.title}</p><p className="text-[11px] text-[var(--color-text-muted)] truncate">{r.code} · {lk.task(r.taskId)?.key} · round {r.round}</p></div> },
+            { key: "p", header: "Priority", render: (r) => <PriorityBadge priority={r.priority} /> },
+            { key: "d", header: "Developer", hideBelow: "md", render: (r) => <span className="flex items-center gap-2 min-w-0"><Avatar person={lk.person(r.submittedById)} size="sm" /><span className="truncate">{lk.person(r.submittedById)?.name}</span></span> },
+            { key: "e", header: "Evidence", hideBelow: "lg", render: (r) => { const ev = evidence.filter((e) => e.reviewId === r.id); const todo = ev.filter((e) => e.status === "TO_INSPECT").length; return <span className="tabular-nums">{ev.length} items{todo ? <span className="text-violet-600 dark:text-violet-400"> · {todo} to inspect</span> : ""}</span>; } },
+            { key: "w", header: "Waiting", hideBelow: "sm", render: (r) => <StatusBadge label={formatWaiting(r.waited)} tone={r.waited >= 96 ? "danger" : r.waited >= 48 ? "warning" : "success"} dot /> },
+          ]}
+        />
+      </SurfaceCard>
+    </PageFrame>
   );
 }
-

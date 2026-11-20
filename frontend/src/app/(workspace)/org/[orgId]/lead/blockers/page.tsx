@@ -1,102 +1,74 @@
 "use client";
 
 import React, { useState } from "react";
-import { useParams } from "next/navigation";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { toast } from "sonner";
+import Link from "next/link";
+import { OctagonAlert, ShieldCheck } from "lucide-react";
+import {
+  Avatar,
+  EmptyStateView,
+  KpiGrid,
+  KpiTile,
+  PageFrame,
+  SegmentTabs,
+  SeverityBadge,
+  StatusBadge,
+  SurfaceCard,
+  daysFromToday,
+  formatDate,
+  useDemoLoad,
+  useLookups,
+  useRoleHref,
+} from "@/components/delivery/DeliveryUI";
+import { useLeadTeam } from "@/components/delivery/useLeadTeam";
 
-export default function LeadBlockersPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { currentOrg } = useAuthStore();
-  const { workItems, resolveBlocker } = useProjectStore();
-
-  const blockers = workItems.flatMap((w) =>
-    (w.blockers || []).map((b) => ({ ...b, taskKey: w.key, taskTitle: w.title, workItemId: w.id }))
-  );
+export default function TeamLeadBlockersPage() {
+  const href = useRoleHref("lead");
+  const { status, retry, forceEmpty } = useDemoLoad();
+  const lk = useLookups();
+  const t = useLeadTeam(forceEmpty);
+  const [tab, setTab] = useState<"OPEN" | "RESOLVED">("OPEN");
+  const open = t.blockers.filter((b) => b.status === "OPEN");
+  const rows = t.blockers.filter((b) => b.status === tab).sort((a, b) => a.raisedAt.localeCompare(b.raisedAt));
+  const oldest = open.length ? Math.max(...open.map((b) => -daysFromToday(b.raisedAt))) : 0;
 
   return (
-    <PanelLayout
-      title="Squad Blocker Ledger"
-      breadcrumb={[
-        { label: "Team Lead", href: `/org/${orgId}/lead` },
-        { label: "Blockers" },
-      ]}
+    <PageFrame
+      crumbs={[{ label: "Lead", href: href() }, { label: "Team work" }, { label: "Blockers" }]}
+      back={{ href: href(), label: "Back to dashboard" }}
+      title="Team blockers"
+      description="Impediments raised on your team's tasks. Open one to resolve it with a note."
+      status={status}
+      onRetry={retry}
+      skeleton="list"
     >
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-base font-bold text-app-text-primary">Impediments &amp; Blockers</h2>
-          <p className="text-xs text-app-text-secondary mt-0.5">
-            Blueprint Rule FR-021: Blocked is an explicit condition with owner and reason, not a replacement for task workflow state.
-          </p>
+      <KpiGrid>
+        <KpiTile label="Open" value={open.length} icon={OctagonAlert} tone="rose" footer="Needs action" href={href("blockers")} />
+        <KpiTile label="Critical" value={open.filter((b) => b.severity === "CRITICAL").length} icon={OctagonAlert} tone="pink" footer="Escalate" href={href("blockers")} />
+        <KpiTile label="Oldest" value={`${oldest}d`} icon={OctagonAlert} tone="amber" footer="Days open" href={href("blockers")} />
+        <KpiTile label="Resolved" value={t.blockers.length - open.length} icon={ShieldCheck} tone="emerald" footer="This sprint" href={href("blockers")} />
+      </KpiGrid>
+      <SegmentTabs<"OPEN" | "RESOLVED"> value={tab} onChange={setTab} options={[{ value: "OPEN", label: "Open", count: open.length }, { value: "RESOLVED", label: "Resolved", count: t.blockers.length - open.length }]} />
+      {rows.length === 0 ? (
+        <SurfaceCard><EmptyStateView icon={ShieldCheck} title={tab === "OPEN" ? "No open blockers" : "Nothing resolved yet"} description="The team is moving freely." /></SurfaceCard>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
+          {rows.map((b) => (
+            <Link key={b.id} href={href(`blockers/${b.id}`)} className="block rounded-xl">
+              <SurfaceCard className="h-full p-4 space-y-2.5 border-l-4 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg" style={{ borderLeftColor: b.status === "RESOLVED" ? "#10B981" : b.severity === "CRITICAL" ? "#E11D48" : b.severity === "HIGH" ? "#F97316" : "#F59E0B" }}>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-semibold">{b.title}</p>
+                  {b.status === "OPEN" ? <SeverityBadge severity={b.severity} /> : <StatusBadge label="Resolved" tone="success" />}
+                </div>
+                <p className="text-xs text-[var(--color-text-secondary)]">{b.resolution ?? b.note}</p>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[var(--color-border)] text-[11px] text-[var(--color-text-muted)]">
+                  <span className="flex items-center gap-1.5"><Avatar person={lk.person(b.raisedById)} size="sm" />Raised by {lk.person(b.raisedById)?.name}</span>
+                  <span>{lk.task(b.taskId)?.key} · {formatDate(b.raisedAt)} · {Math.abs(daysFromToday(b.raisedAt))}d</span>
+                </div>
+              </SurfaceCard>
+            </Link>
+          ))}
         </div>
-
-        <Card className="p-0 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Task</TableHead>
-                <TableHead>Blocker Description</TableHead>
-                <TableHead>Severity</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Logged Date</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {blockers.map((b) => (
-                <TableRow key={b.id}>
-                  <TableCell className="font-mono font-bold text-xs text-blue-600">
-                    {b.taskKey}
-                  </TableCell>
-                  <TableCell className="text-xs text-app-text-primary">{b.reason}</TableCell>
-                  <TableCell>
-                    <Badge variant={b.severity === "CRITICAL" ? "danger" : "warning"}>
-                      {b.severity}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={b.resolvedAt ? "success" : "danger"}>
-                      {b.resolvedAt ? "Resolved" : "Active"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-app-text-muted">
-                    {new Date(b.createdAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {!b.resolvedAt && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => {
-                          resolveBlocker(b.workItemId, b.id);
-                          toast.success("Blocker resolved.");
-                        }}
-                      >
-                        Resolve
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {blockers.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-xs text-app-text-muted">
-                    No active blockers recorded.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </Card>
-      </div>
-    </PanelLayout>
+      )}
+    </PageFrame>
   );
 }
-

@@ -141,6 +141,34 @@ export function createApiClient(options: ApiClientOptions = {}) {
       json<import("@/types/api").OrgMemberResponse[]>(`/v1/organizations/${encodeURIComponent(orgId)}/members`),
     orgRoles: (orgId: string) =>
       json<import("@/types/api").OrgRoleResponse[]>(`/v1/organizations/${encodeURIComponent(orgId)}/roles`),
+
+    /* ---- Task 1.3: roles, grants and organization switch (snake_case wire format) ---- */
+    roles: (orgId: string) => json<import("@/types/api").RoleDto[]>(`${orgPath(orgId)}/roles`),
+    role: (orgId: string, roleId: string) =>
+      json<import("@/types/api").RoleDto>(`${orgPath(orgId)}/roles/${encodeURIComponent(roleId)}`),
+    roleHolders: (orgId: string, roleId: string) =>
+      json<import("@/types/api").RoleHolderDto[]>(`${orgPath(orgId)}/roles/${encodeURIComponent(roleId)}/grants`),
+    createRole: (orgId: string, body: import("@/types/api").RoleRequestDto) =>
+      json<import("@/types/api").RoleDto>(`${orgPath(orgId)}/roles`, { method: "POST", body }),
+    updateRole: (orgId: string, roleId: string, body: import("@/types/api").RoleRequestDto) =>
+      json<import("@/types/api").RoleDto>(`${orgPath(orgId)}/roles/${encodeURIComponent(roleId)}`, { method: "PATCH", body }),
+    deleteRole: (orgId: string, roleId: string, expectedVersion: number) =>
+      request(`${orgPath(orgId)}/roles/${encodeURIComponent(roleId)}?expectedVersion=${expectedVersion}`, { method: "DELETE" }),
+    members: (orgId: string) => json<import("@/types/api").MemberDto[]>(`${orgPath(orgId)}/members`),
+    memberGrants: (orgId: string, membershipId: string) =>
+      json<import("@/types/api").GrantDto[]>(`${orgPath(orgId)}/members/${encodeURIComponent(membershipId)}/grants`),
+    grantRole: (orgId: string, body: import("@/types/api").GrantRequestDto) =>
+      json<import("@/types/api").GrantDto>(`${orgPath(orgId)}/grants`, { method: "POST", body }),
+    revokeGrant: (orgId: string, grantId: string, expectedVersion: number) =>
+      request(`${orgPath(orgId)}/grants/${encodeURIComponent(grantId)}?expectedVersion=${expectedVersion}`, { method: "DELETE" }),
+    /** Selects the active workspace; the old token is revoked server-side and replaced here. */
+    switchOrganization: (orgId: string) =>
+      json<{ access_token: string }>(`/v1/me/organizations/${encodeURIComponent(orgId)}/switch`, { method: "POST" }).then(
+        (tokens) => {
+          accessToken = tokens.access_token;
+          return tokens;
+        },
+      ),
     requestPasswordReset: (email: string) =>
       request("/v1/auth/password-reset/request", { method: "POST", body: { email } }),
     confirmPasswordReset: (token: string, password: string) =>
@@ -155,6 +183,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
 }
 
 export const apiClient = createApiClient();
+
+function orgPath(orgId: string): string {
+  return `/v1/organizations/${encodeURIComponent(orgId)}`;
+}
 
 async function toApiError(response: Response): Promise<ApiError> {
   const requestId = response.headers.get(REQUEST_ID_HEADER) ?? "";

@@ -37,12 +37,8 @@ class IdentityOrganizationIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
-        jdbc.update("DELETE FROM password_reset_tokens");
-        jdbc.update("DELETE FROM sessions");
-        jdbc.update("DELETE FROM grants");
-        jdbc.update("DELETE FROM memberships");
-        jdbc.update("DELETE FROM organizations");
-        jdbc.update("DELETE FROM users");
+        // Same rows as before, plus append-only security evidence and custom roles added in task 1.3.
+        com.prowise.authz.TestDatabase.clean(jdbc);
     }
 
     @Test

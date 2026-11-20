@@ -2,12 +2,14 @@
 
 import React from "react";
 
-import { OrgRolesContent, OrgPage } from "@/components/owner/OrgPages";
+import { OrgGate } from "@/components/org-console/OrgUI";
+import { RolesListView } from "@/components/org-console/ApiRoleViews";
 
+/** Admin · Roles & permissions (task 1.3): role ladder from GET /v1/organizations/{org}/roles. */
 export default function AdminRolesPermissionsPage() {
   return (
-    <OrgPage family="admin" title="Roles & permissions">
-      <OrgRolesContent family="admin" />
-    </OrgPage>
+    <OrgGate family="admin" need="role.manage">
+      <RolesListView family="admin" />
+    </OrgGate>
   );
 }

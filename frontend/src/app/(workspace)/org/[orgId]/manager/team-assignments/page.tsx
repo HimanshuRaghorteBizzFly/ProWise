@@ -1,128 +1,194 @@
 "use client";
 
-import React from "react";
-import { useParams } from "next/navigation";
-import { Users } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Inbox, UserPlus, Users } from "lucide-react";
+import { toast } from "sonner";
+import { useDeliveryStore } from "@/store/delivery-store";
+import { VIEWERS, type Priority } from "@/mocks/delivery-dashboards";
+import {
+  AdminButton,
+  AdminInput,
+  AdminSelect,
+  AdminTextarea,
+  Avatar,
+  LinkRow,
+  PageFrame,
+  Panel,
+  PriorityBadge,
+  ProgressBar,
+  StatusBadge,
+  dueLabel,
+  useDemoLoad,
+  useLookups,
+  useQueryParam,
+  useRoleHref,
+  utilisationTone,
+} from "@/components/delivery/DeliveryUI";
 
-import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
-import { OwnerPageState } from "@/components/owner/OwnerPageState";
-import { OwnerPanel } from "@/components/owner/OwnerPanel";
-import { OwnerTable } from "@/components/owner/OwnerTable";
-import { PageHeader } from "@/components/owner/primitives";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { mockApiProjectMembers, mockApiProjects, mockApiWorkItemsForOrg } from "@/lib/prowise-mock-adapters";
-import { useManagerResource } from "@/hooks/useManagerResource";
-import { ManagerResourceNotice } from "../_components/ManagerResourceNotice";
+export default function ManagerAssignWorkPage() {
+  const href = useRoleHref("manager");
+  const router = useRouter();
+  const { status, retry, forceEmpty } = useDemoLoad(300);
+  const lk = useLookups();
+  const projectParam = useQueryParam("project");
+  const allProjects = useDeliveryStore((s) => s.projects);
+  const projects = useMemo(() => allProjects.filter((p) => p.managerId === VIEWERS.manager.id), [allProjects]);
+  const people = useDeliveryStore((s) => s.people);
+  const tasks = useDeliveryStore((s) => s.tasks);
+  const createTask = useDeliveryStore((s) => s.createTask);
 
-const loadAssignments = (
-  orgId: string,
-  grants: Parameters<typeof mockApiProjects>[1],
-) => ({
-  projects: mockApiProjects(orgId, grants).items,
-  items: mockApiWorkItemsForOrg(orgId, grants).items,
-  members: mockApiProjectMembers(orgId, grants).items,
-});
+  const [projectId, setProjectId] = useState("");
+  const [title, setTitle] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
+  const [priority, setPriority] = useState<Priority>("MEDIUM");
+  const [dueDate, setDueDate] = useState("");
+  const [estimate, setEstimate] = useState("8");
+  const [description, setDescription] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
 
-export default function ManagerTeamAssignmentsPage() {
-  const params = useParams<{ orgId: string }>();
-  const orgId = params?.orgId ?? "";
-  const resource = useManagerResource({
-    routeOrgId: orgId,
-    name: "project-manager-team-assignments",
-    permission: "project.read",
-    fixture: loadAssignments,
-  });
-  const data = resource.state.status === "ready" ? resource.state.data : null;
-  const projectById = new Map((data?.projects ?? []).map((project) => [project.id, project]));
+  useEffect(() => {
+    if (projectParam && projects.some((p) => p.id === projectParam)) setProjectId(projectParam);
+    else if (!projectId && projects[0]) setProjectId(projects[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectParam]);
+
+  const project = lk.project(projectId);
+  const candidates = useMemo(
+    () =>
+      people
+        .filter((p) => project?.memberIds.includes(p.id))
+        .map((p) => ({ ...p, pct: Math.round((p.assignedHours / p.capacityHours) * 100) }))
+        .sort((a, b) => a.pct - b.pct),
+    [people, project]
+  );
+  const unassigned = forceEmpty ? [] : tasks.filter((t) => !t.assigneeId && t.status !== "DONE" && projects.some((p) => p.id === t.projectId));
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const next: Record<string, string> = {};
+    if (!projectId) next.project = "Choose a project.";
+    if (title.trim().length < 4) next.title = "Describe the work (at least 4 characters).";
+    if (!dueDate) next.dueDate = "Pick a due date.";
+    const hours = Number(estimate);
+    if (!Number.isFinite(hours) || hours <= 0 || hours > 80) next.estimate = "Estimate between 1 and 80 hours.";
+    setErrors(next);
+    if (Object.keys(next).length) return;
+    setSaving(true);
+    window.setTimeout(() => {
+      const task = createTask({
+        title: title.trim(),
+        projectId,
+        assigneeId: assigneeId || null,
+        priority,
+        dueDate,
+        estimateHours: hours,
+        description: description.trim(),
+      });
+      toast.success(`${task.key} created`, {
+        description: assigneeId ? `Assigned to ${lk.person(assigneeId)?.name}.` : "Left unassigned for now.",
+      });
+      router.push(href(`work-items/${task.id}`));
+    }, 500);
+  };
 
   return (
-    <PanelLayout
-      title="Team assignments"
-      breadcrumb={[{ label: "Project Manager", href: `/org/${orgId}/manager` }, { label: "Team assignments" }]}
+    <PageFrame
+      crumbs={[{ label: "Manager", href: href() }, { label: "People" }, { label: "Assign work" }]}
+      back={{ href: href(), label: "Back to dashboard" }}
+      title="Assign work"
+      description="Create a task and give it to someone with capacity, or pick up unassigned work."
+      status={status}
+      onRetry={retry}
+      skeleton="detail"
     >
-      <div className="space-y-4 sm:space-y-6">
-        <PageHeader
-          title="Assignments"
-          description="Current assignees are shown only for readable projects. Reassignment never changes task state or completion."
-          simulationLabel={data ? "Sample data" : undefined}
-          actions={<OwnerLaterBadge task="3.1" />}
-        />
-        {data ? (
-          <OwnerPanel
-            title="Project work assignments"
-            description={`Scope: ${data.projects.length} readable projects · as of the mock snapshot · unit: assigned work items`}
-          >
-            {data.items.length === 0 ? (
-              <OwnerPageState
-                state="empty"
-                title="No work items to assign"
-                description="Structured work items for readable projects appear here. Individual projects may have no compulsory tasks."
-                icon={Users}
-              />
-            ) : (
-              <OwnerTable label="Project Manager team assignments">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Work item</TableHead>
-                    <TableHead>Primary assignee</TableHead>
-                    <TableHead>Reviewer</TableHead>
-                    <TableHead>Collaborators</TableHead>
-                    <TableHead>Task state</TableHead>
-                    <TableHead>Assignment action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.items.map((item) => {
-                    const project = projectById.get(item.projectId);
-                    const primary = data.members.find((member) => member.id === item.primaryAssigneeId);
-                    const reviewer = data.members.find((member) => member.id === item.reviewerId);
-                    const collaborators = item.collaboratorIds
-                      .map((id) => data.members.find((member) => member.id === id)?.name)
-                      .filter((name) => name !== undefined);
-                    const canAssign = resource.can("task.assign", { projectId: item.projectId });
-                    return (
-                      <TableRow key={item.id}>
-                        <TableCell>{project?.key ?? "Project not available"}</TableCell>
-                        <TableCell>
-                          <span className="block font-medium text-app-text-primary">{item.key} · {item.title}</span>
-                          <span className="text-xs text-app-text-muted">{item.type}</span>
-                        </TableCell>
-                        <TableCell>{primary?.name ?? (item.primaryAssigneeId ? "Member not available" : "Unassigned")}</TableCell>
-                        <TableCell>{reviewer?.name ?? (item.reviewerId ? "Member not available" : "Not assigned")}</TableCell>
-                        <TableCell>{collaborators.length ? collaborators.join(", ") : "None"}</TableCell>
-                        <TableCell>{item.state.replace("_", " ")}</TableCell>
-                        <TableCell>
-                          {canAssign ? (
-                            <span className="inline-flex flex-wrap items-center gap-1">
-                              <LaterActionButton title="Assignment changes ship with task 3.1">Reassign</LaterActionButton>
-                              <OwnerLaterBadge task="3.1" />
-                            </span>
-                          ) : (
-                            <span className="text-xs text-app-text-muted">No task.assign grant for this project</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </OwnerTable>
-            )}
-          </OwnerPanel>
-        ) : (
-          <ManagerResourceNotice
-            orgMatches={resource.orgMatches}
-            permissionStatus={resource.permissionStatus}
-            resourceStatus={resource.state.status}
-            permission={resource.permission}
-            permissionName="project.read"
-            laterTask="3.1"
-            retry={resource.retry}
-            retryPermissions={resource.permissionRetry}
-          />
-        )}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <Panel className="xl:col-span-2" title="New task" icon={UserPlus}>
+          <form onSubmit={submit} noValidate className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <AdminSelect label="Project" value={projectId} onChange={(e) => { setProjectId(e.target.value); setAssigneeId(""); }} error={errors.project} options={projects.map((p) => ({ label: `${p.code} · ${p.name}`, value: p.id }))} />
+            <AdminSelect
+              label="Assignee"
+              value={assigneeId}
+              onChange={(e) => setAssigneeId(e.target.value)}
+              options={[{ label: "Leave unassigned", value: "" }, ...candidates.map((c) => ({ label: `${c.name} · ${c.pct}% loaded`, value: c.id }))]}
+            />
+            <div className="md:col-span-2">
+              <AdminInput label="Task title" placeholder="e.g. Export invoices as CSV" value={title} onChange={(e) => setTitle(e.target.value)} error={errors.title} />
+            </div>
+            <AdminSelect
+              label="Priority"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value as Priority)}
+              options={[
+                { label: "Low", value: "LOW" },
+                { label: "Medium", value: "MEDIUM" },
+                { label: "High", value: "HIGH" },
+                { label: "Critical", value: "CRITICAL" },
+              ]}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <AdminInput label="Due date" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} error={errors.dueDate} />
+              <AdminInput label="Estimate (h)" type="number" min={1} max={80} value={estimate} onChange={(e) => setEstimate(e.target.value)} error={errors.estimate} />
+            </div>
+            <div className="md:col-span-2">
+              <AdminTextarea label="Acceptance criteria" rows={3} placeholder="What does done look like?" value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+            <div className="md:col-span-2 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
+              <AdminButton type="button" variant="outline" onClick={() => router.push(href())}>Cancel</AdminButton>
+              <AdminButton type="submit" isLoading={saving}><UserPlus className="w-3.5 h-3.5" /> Create & assign</AdminButton>
+            </div>
+          </form>
+        </Panel>
+
+        <Panel title="Who has room" description={project ? `Team on ${project.name}` : "Pick a project"} icon={Users} iconTone="emerald">
+          <div className="space-y-2">
+            {candidates.length === 0 && <p className="py-4 text-center text-xs text-[var(--color-text-muted)]">No team members on this project.</p>}
+            {candidates.map((c) => {
+              const u = utilisationTone(c.pct);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setAssigneeId(c.id)}
+                  className={`w-full flex items-center gap-2.5 rounded-lg border p-2 text-left transition-all duration-200 hover:-translate-y-0.5 ${assigneeId === c.id ? "border-blue-500/60 bg-blue-500/10" : "border-[var(--color-border)] hover:bg-[var(--color-hover)]"}`}
+                >
+                  <Avatar person={c} size="sm" />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center justify-between text-xs gap-2">
+                      <span className="font-medium truncate">{c.name}</span>
+                      <span className="font-semibold tabular-nums" style={{ color: u.color }}>{c.pct}%</span>
+                    </div>
+                    <ProgressBar value={Math.min(100, c.pct)} color={u.color} size="sm" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </Panel>
       </div>
-    </PanelLayout>
+
+      <Panel title="Unassigned work" description="Open a task to assign it" icon={Inbox} iconTone="amber">
+        {unassigned.length === 0 ? (
+          <p className="py-6 text-center text-xs text-[var(--color-text-muted)]">Everything is assigned. Nice.</p>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6">
+            {unassigned.map((t) => {
+              const d = dueLabel(t.dueDate);
+              return (
+                <LinkRow key={t.id} href={href(`work-items/${t.id}`)}>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold truncate">{t.key} · {t.title}</p>
+                    <p className="text-[11px] text-[var(--color-text-muted)] truncate">{lk.project(t.projectId)?.name} · {t.estimateHours}h</p>
+                  </div>
+                  <PriorityBadge priority={t.priority} />
+                  <StatusBadge label={d.label} tone={d.tone} className="hidden sm:inline-flex" />
+                </LinkRow>
+              );
+            })}
+          </div>
+        )}
+      </Panel>
+    </PageFrame>
   );
 }

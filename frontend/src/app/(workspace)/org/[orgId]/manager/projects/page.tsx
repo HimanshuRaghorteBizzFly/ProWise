@@ -1,303 +1,166 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { useParams } from "next/navigation";
-import { LayoutGrid, List, Search, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { CalendarDays, FolderKanban, FolderPlus, OctagonAlert, Search, Users } from "lucide-react";
+import { useDeliveryStore } from "@/store/delivery-store";
+import { VIEWERS, type Health } from "@/mocks/delivery-dashboards";
+import {
+  AvatarStack,
+  ButtonLink,
+  EmptyStateView,
+  FilterBar,
+  HealthBadge,
+  PageFrame,
+  ProgressBar,
+  SegmentTabs,
+  StatusBadge,
+  SurfaceCard,
+  dueLabel,
+  useDemoLoad,
+  useLookups,
+  useRoleHref,
+} from "@/components/delivery/DeliveryUI";
 
-import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
-import { OwnerPageState } from "@/components/owner/OwnerPageState";
-import { OwnerPanel } from "@/components/owner/OwnerPanel";
-import { OwnerTable } from "@/components/owner/OwnerTable";
-import { PageHeader, StatusBadge, SurfaceCard } from "@/components/owner/primitives";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { HealthBadge } from "@/components/ui/health-badge";
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatDateOnly, formatLifecycle, formatUtcTimestamp, getUserName, deadlineStatus, DEADLINE_LABELS } from "@/components/owner/project-format";
-import { mockApiProjectMembers, mockApiProjects } from "@/lib/prowise-mock-adapters";
-import { useManagerResource } from "@/hooks/useManagerResource";
-import { ManagerResourceNotice } from "../_components/ManagerResourceNotice";
+type HealthFilter = "ALL" | Health;
 
-const loadProjects = (orgId: string, grants: Parameters<typeof mockApiProjects>[1]) => ({
-  projects: mockApiProjects(orgId, grants).items,
-  members: mockApiProjectMembers(orgId, grants).items,
-});
-
-const SELECT =
-  "h-9 min-w-0 rounded-lg border border-app-border bg-app-bg px-2 text-sm text-app-text-primary";
-
-export default function ManagerProjectsListPage() {
-  const params = useParams<{ orgId: string }>();
-  const orgId = params?.orgId ?? "";
+export default function ManagerPortfolioPage() {
+  const href = useRoleHref("manager");
+  const { status, retry, forceEmpty } = useDemoLoad();
+  const lk = useLookups();
+  const allProjects = useDeliveryStore((s) => s.projects);
+  const tasks = useDeliveryStore((s) => s.tasks);
+  const blockers = useDeliveryStore((s) => s.blockers);
   const [search, setSearch] = useState("");
-  const [mode, setMode] = useState("ALL");
-  const [health, setHealth] = useState("ALL");
-  const [lifecycle, setLifecycle] = useState("ALL");
-  const [deadline, setDeadline] = useState("ALL");
-  const [ownerId, setOwnerId] = useState("ALL");
-  const [layout, setLayout] = useState<"list" | "cards">("list");
-  const resource = useManagerResource({
-    routeOrgId: orgId,
-    name: "project-manager-projects",
-    permission: "project.read",
-    fixture: loadProjects,
-  });
-  const data = resource.state.status === "ready" ? resource.state.data : null;
-  const projects = useMemo(() => data?.projects ?? [], [data]);
-  const members = data?.members ?? [];
-  const owners = Array.from(new Set(projects.map((project) => project.accountableOwnerId)));
+  const [health, setHealth] = useState<HealthFilter>("ALL");
 
-  const visible = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
-    return projects.filter((project) =>
-      (!query || `${project.key} ${project.name}`.toLocaleLowerCase().includes(query)) &&
-      (mode === "ALL" || project.mode === mode) &&
-      (health === "ALL" || project.health === health) &&
-      (lifecycle === "ALL" || project.lifecycle === lifecycle) &&
-      (ownerId === "ALL" || project.accountableOwnerId === ownerId) &&
-      (deadline === "ALL" || deadlineStatus(project, undefined) === deadline),
-    );
-  }, [projects, search, mode, health, lifecycle, ownerId, deadline]);
-
-  const header = (
-    <PageHeader
-      title="Projects portfolio"
-      description="Projects visible through your active permission scope. Progress methods stay separate and are never averaged."
-      simulationLabel={data ? "Sample data" : undefined}
-      actions={
-        <div className="flex flex-wrap items-center gap-2">
-          <OwnerLaterBadge task="5.3" />
-          {resource.can("project.create") && (
-            <LaterActionButton title="Project creation ships with task 2.1">
-              <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
-              Create project
-            </LaterActionButton>
-          )}
-          {resource.can("project.create") && <OwnerLaterBadge task="2.1" />}
-        </div>
-      }
-    />
+  const mine = useMemo(
+    () => (forceEmpty ? [] : allProjects.filter((p) => p.managerId === VIEWERS.manager.id)),
+    [allProjects, forceEmpty]
   );
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return mine.filter(
+      (p) =>
+        (health === "ALL" || p.health === health) &&
+        (!q || p.name.toLowerCase().includes(q) || p.client.toLowerCase().includes(q) || p.code.toLowerCase().includes(q))
+    );
+  }, [mine, search, health]);
+
+  const count = (h: Health) => mine.filter((p) => p.health === h).length;
 
   return (
-    <PanelLayout
-      title="Projects portfolio"
-      breadcrumb={[{ label: "Project Manager", href: `/org/${orgId}/manager` }, { label: "Projects" }]}
+    <PageFrame
+      crumbs={[{ label: "Manager", href: href() }, { label: "Portfolio" }]}
+      back={{ href: href(), label: "Back to dashboard" }}
+      title="Project portfolio"
+      description="Every project you manage, with health, approved progress and next deadline."
+      status={status}
+      onRetry={retry}
+      skeleton="list"
+      actions={
+        <ButtonLink href={href("create-project")}>
+          <FolderPlus className="w-3.5 h-3.5" /> Create project
+        </ButtonLink>
+      }
     >
-      <div className="space-y-4 sm:space-y-6">
-        {header}
-        {data ? (
-          <>
-            {resource.partialVisibility && (
-              <div role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-app-text-secondary">
-                Partial visibility — totals include readable projects only; hidden project details are not exposed.
-              </div>
-            )}
-            <OwnerPanel
-              title="All readable projects"
-              description={`${visible.length} of ${projects.length} readable projects · current project records · unit: projects`}
-              actions={
-                <div className="flex items-center gap-2">
-                  <div role="group" aria-label="Portfolio layout" className="inline-flex rounded-lg border border-app-border p-0.5">
-                    <button
-                      type="button"
-                      aria-pressed={layout === "list"}
-                      onClick={() => setLayout("list")}
-                      className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
-                    >
-                      <List aria-hidden="true" className="h-3.5 w-3.5" /> List
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={layout === "cards"}
-                      onClick={() => setLayout("cards")}
-                      className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent"
-                    >
-                      <LayoutGrid aria-hidden="true" className="h-3.5 w-3.5" /> Cards
-                    </button>
-                  </div>
-                </div>
-              }
-            >
-              <div className="mb-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                <label className="relative min-w-0">
-                  <span className="sr-only">Search projects</span>
-                  <Search aria-hidden="true" className="absolute left-2.5 top-2.5 h-4 w-4 text-app-text-muted" />
-                  <input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search project key or name"
-                    className={`${SELECT} w-full pl-8`}
-                  />
-                </label>
-                <label className="sr-only" htmlFor="pm-mode-filter">Mode</label>
-                <select id="pm-mode-filter" value={mode} onChange={(event) => setMode(event.target.value)} className={SELECT}>
-                  <option value="ALL">All modes</option>
-                  <option value="INDIVIDUAL">Individual</option>
-                  <option value="STRUCTURED">Structured</option>
-                </select>
-                <label className="sr-only" htmlFor="pm-health-filter">Health</label>
-                <select id="pm-health-filter" value={health} onChange={(event) => setHealth(event.target.value)} className={SELECT}>
-                  <option value="ALL">All health</option>
-                  <option value="ON_TRACK">On track</option>
-                  <option value="AT_RISK">At risk</option>
-                  <option value="DELAYED">Delayed</option>
-                  <option value="UNKNOWN">Unknown</option>
-                </select>
-                <label className="sr-only" htmlFor="pm-lifecycle-filter">Lifecycle</label>
-                <select id="pm-lifecycle-filter" value={lifecycle} onChange={(event) => setLifecycle(event.target.value)} className={SELECT}>
-                  <option value="ALL">All lifecycle states</option>
-                  {["PLANNED", "ACTIVE", "ON_HOLD", "DELIVERED", "CLOSED", "CANCELLED"].map((value) => (
-                    <option key={value} value={value}>{formatLifecycle(value as Parameters<typeof formatLifecycle>[0])}</option>
-                  ))}
-                </select>
-                <label className="sr-only" htmlFor="pm-owner-filter">Accountable owner</label>
-                <select id="pm-owner-filter" value={ownerId} onChange={(event) => setOwnerId(event.target.value)} className={SELECT}>
-                  <option value="ALL">All owners</option>
-                  {owners.map((id) => <option key={id} value={id}>{getUserName(id, members)}</option>)}
-                </select>
-                <label className="sr-only" htmlFor="pm-deadline-filter">Deadline</label>
-                <select id="pm-deadline-filter" value={deadline} onChange={(event) => setDeadline(event.target.value)} className={SELECT}>
-                  <option value="ALL">All deadlines</option>
-                  {(["overdue", "due-soon", "later", "closed"] as const).map((value) => (
-                    <option key={value} value={value}>{DEADLINE_LABELS[value]}</option>
-                  ))}
-                </select>
-              </div>
-
-              {visible.length === 0 ? (
-                <OwnerPageState
-                  state="empty"
-                  title={projects.length ? "No projects match your filters" : "No readable projects"}
-                  description={projects.length ? "Adjust or clear the filters." : "Projects you may read appear here."}
-                />
-              ) : layout === "cards" ? (
-                <ul className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
-                  {visible.map((project) => {
-                    const method = project.lastProgressMethod === "DEVELOPER_REPORTED"
-                      ? "Developer reported"
-                      : project.lastProgressMethod === "CALCULATED_BASELINE"
-                        ? "Calculated baseline"
-                        : "Not reported";
-                    return (
-                      <li key={project.id} className="min-w-0">
-                        <SurfaceCard className="flex h-full flex-col gap-3 p-4">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-semibold text-sm text-app-text-primary">{project.key}</span>
-                            <HealthBadge health={project.health} />
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-app-text-primary">{project.name}</h3>
-                            <p className="text-xs text-app-text-secondary">
-                              {project.mode === "INDIVIDUAL" ? "Individual" : "Structured"} · {formatLifecycle(project.lifecycle)}
-                            </p>
-                          </div>
-                          <p className="text-sm text-app-text-primary">
-                            {project.lastProgressMethod === "NOT_REPORTED" ? "Not reported" : `${project.lastProgressPercent}%`}
-                            <span className="ml-1 text-xs text-app-text-muted">· {method}</span>
-                          </p>
-                          <p className="text-xs text-app-text-secondary">
-                            Target {formatDateOnly(project.targetDate, project.timezone)}
-                          </p>
-                          <div className="mt-auto flex flex-wrap gap-2 border-t border-app-border pt-3">
-                            {resource.can("project.edit", { projectId: project.id }) && (
-                              <LaterActionButton title="Project record editing ships with task 2.1">Edit project</LaterActionButton>
-                            )}
-                            {resource.can("project.mode.change", { projectId: project.id }) && (
-                              <LaterActionButton title="Mode transitions ship with task 3.6">Change mode</LaterActionButton>
-                            )}
-                            {resource.can("project.deadline.edit", { projectId: project.id }) && (
-                              <LaterActionButton title="Deadline and cadence changes ship with task 2.3">Change dates</LaterActionButton>
-                            )}
-                          </div>
-                        </SurfaceCard>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <OwnerTable label="Project Manager project portfolio">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Project</TableHead>
-                      <TableHead>Mode / lifecycle</TableHead>
-                      <TableHead>Health</TableHead>
-                      <TableHead>Progress method</TableHead>
-                      <TableHead>Target date</TableHead>
-                      <TableHead>Accountable owner</TableHead>
-                      <TableHead>Permitted actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visible.map((project) => {
-                      const method = project.lastProgressMethod === "DEVELOPER_REPORTED"
-                        ? "Developer reported"
-                        : project.lastProgressMethod === "CALCULATED_BASELINE"
-                          ? "Calculated baseline"
-                          : "Not reported";
-                      return (
-                        <TableRow key={project.id}>
-                          <TableCell>
-                            <span className="block font-semibold text-app-text-primary">{project.key} · {project.name}</span>
-                            <span className="text-xs text-app-text-muted">Progress as of {formatUtcTimestamp(project.lastReportedAt)} UTC</span>
-                          </TableCell>
-                          <TableCell>{project.mode === "INDIVIDUAL" ? "Individual" : "Structured"} · {formatLifecycle(project.lifecycle)}</TableCell>
-                          <TableCell>
-                            <HealthBadge health={project.health} />
-                            <span className="mt-1 block max-w-xs text-xs text-app-text-muted">
-                              {project.healthReasons.join(" · ") || "No health reason recorded"}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <span className="block font-medium text-app-text-primary">
-                              {project.lastProgressMethod === "NOT_REPORTED" ? "Not reported" : `${project.lastProgressPercent}%`}
-                            </span>
-                            <span className="text-xs text-app-text-muted">{method}</span>
-                          </TableCell>
-                          <TableCell>{formatDateOnly(project.targetDate, project.timezone)}</TableCell>
-                          <TableCell>{getUserName(project.accountableOwnerId, members)}</TableCell>
-                          <TableCell>
-                            <div className="flex min-w-28 flex-wrap gap-1">
-                              {resource.can("project.edit", { projectId: project.id }) && (
-                                <span className="inline-flex items-center gap-1">
-                                  <LaterActionButton title="Project record editing ships with task 2.1">Edit</LaterActionButton>
-                                  <OwnerLaterBadge task="2.1" />
-                                </span>
-                              )}
-                              {resource.can("project.mode.change", { projectId: project.id }) && (
-                                <span className="inline-flex items-center gap-1">
-                                  <LaterActionButton title="Mode transitions ship with task 3.6">Mode</LaterActionButton>
-                                  <OwnerLaterBadge task="3.6" />
-                                </span>
-                              )}
-                              {resource.can("project.deadline.edit", { projectId: project.id }) && (
-                                <span className="inline-flex items-center gap-1">
-                                  <LaterActionButton title="Deadline changes ship with task 2.3">Dates</LaterActionButton>
-                                  <OwnerLaterBadge task="2.3" />
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </OwnerTable>
-              )}
-            </OwnerPanel>
-          </>
-        ) : (
-          <ManagerResourceNotice
-            orgMatches={resource.orgMatches}
-            permissionStatus={resource.permissionStatus}
-            resourceStatus={resource.state.status}
-            permission={resource.permission}
-            permissionName="project.read"
-            laterTask="5.3"
-            retry={resource.retry}
-            retryPermissions={resource.permissionRetry}
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search project, client or code"
+        filters={
+          <SegmentTabs<HealthFilter>
+            value={health}
+            onChange={setHealth}
+            options={[
+              { value: "ALL", label: "All", count: mine.length },
+              { value: "ON_TRACK", label: "On track", count: count("ON_TRACK") },
+              { value: "AT_RISK", label: "At risk", count: count("AT_RISK") },
+              { value: "OFF_TRACK", label: "Off track", count: count("OFF_TRACK") },
+            ]}
           />
-        )}
-      </div>
-    </PanelLayout>
+        }
+        hasActiveFilters={Boolean(search) || health !== "ALL"}
+        onResetFilters={() => {
+          setSearch("");
+          setHealth("ALL");
+        }}
+      />
+
+      {rows.length === 0 ? (
+        <SurfaceCard>
+          <EmptyStateView
+            icon={mine.length ? Search : FolderKanban}
+            title={mine.length ? "No projects match" : "No projects yet"}
+            description={mine.length ? "Try a different search or health filter." : "Create your first project to start tracking delivery."}
+          />
+        </SurfaceCard>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 min-[1800px]:grid-cols-4 gap-4">
+          {rows.map((p) => {
+            const projectTasks = tasks.filter((t) => t.projectId === p.id);
+            const open = projectTasks.filter((t) => t.status !== "DONE").length;
+            const blocked = blockers.filter((b) => b.projectId === p.id && b.status === "OPEN").length;
+            const next = p.milestones.find((ms) => ms.status !== "DONE");
+            const due = dueLabel(next?.dueDate ?? p.dueDate);
+            const team = p.memberIds.map((id) => lk.person(id)).filter((x): x is NonNullable<typeof x> => Boolean(x));
+            return (
+              <Link key={p.id} href={href(`projects/${p.id}`)} className="group block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                <SurfaceCard className="relative h-full overflow-hidden p-4 space-y-3.5 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:border-blue-500/40">
+                  <span className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: p.color }} />
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="h-10 w-10 rounded-xl text-xs font-bold text-white flex items-center justify-center shrink-0 shadow-sm" style={{ backgroundColor: p.color }}>
+                        {p.code}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{p.name}</p>
+                        <p className="text-[11px] text-[var(--color-text-muted)] truncate">{p.client}</p>
+                      </div>
+                    </div>
+                    <HealthBadge health={p.health} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-[var(--color-text-secondary)]">Progress (plan {p.plannedProgress}%)</span>
+                      <span className="font-bold tabular-nums">{p.progress}%</span>
+                    </div>
+                    <ProgressBar value={p.progress} planned={p.plannedProgress} color={p.color} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-lg bg-[var(--color-app-bg)] border border-[var(--color-border)] py-1.5">
+                      <p className="text-sm font-bold tabular-nums">{open}</p>
+                      <p className="text-[10px] text-[var(--color-text-muted)]">Open tasks</p>
+                    </div>
+                    <div className="rounded-lg bg-[var(--color-app-bg)] border border-[var(--color-border)] py-1.5">
+                      <p className={`text-sm font-bold tabular-nums ${blocked ? "text-rose-600 dark:text-rose-400" : ""}`}>{blocked}</p>
+                      <p className="text-[10px] text-[var(--color-text-muted)]">Blockers</p>
+                    </div>
+                    <div className="rounded-lg bg-[var(--color-app-bg)] border border-[var(--color-border)] py-1.5">
+                      <p className="text-sm font-bold tabular-nums">{p.budgetUsed}%</p>
+                      <p className="text-[10px] text-[var(--color-text-muted)]">Budget</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-[var(--color-border)]">
+                    <div className="flex items-center gap-1.5 min-w-0 text-[11px] text-[var(--color-text-secondary)]">
+                      <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{next ? next.name : "Final delivery"}</span>
+                    </div>
+                    <StatusBadge label={due.label} tone={due.tone} />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <AvatarStack people={team} />
+                    <span className="inline-flex items-center gap-1 text-[10px] text-[var(--color-text-muted)]">
+                      {blocked > 0 ? <OctagonAlert className="w-3 h-3 text-rose-500" /> : <Users className="w-3 h-3" />}
+                      {p.mode === "INDIVIDUAL" ? "Individual" : "Structured"}
+                    </span>
+                  </div>
+                </SurfaceCard>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </PageFrame>
   );
 }

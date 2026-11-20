@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.prowise.common.api.HealthEndpointTest
+-------------------------------------------------------------------------------
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.093 s -- in com.prowise.common.api.HealthEndpointTest

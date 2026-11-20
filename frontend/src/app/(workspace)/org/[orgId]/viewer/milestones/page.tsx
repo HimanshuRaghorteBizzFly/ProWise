@@ -163,30 +163,18 @@ export default function ViewerMilestonesPage() {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <ViewerStatusBadge
-<<<<<<< HEAD
-                        label={m.state === "DONE" ? "COMPLETED" : m.state}
-                        tone={m.state === "DONE" ? "success" : m.state === "IN_PROGRESS" ? "info" : "neutral"}
-=======
                         label={m.state}
                         tone={m.state === "DONE" ? "success" : m.state === "IN_PROGRESS" || m.state === "IN_REVIEW" ? "info" : "neutral"}
->>>>>>> 616e528e6f65ef6de66dd7269ed38b36fb90c447
                         dot
                       />
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <div className="w-16">
-<<<<<<< HEAD
-                          <ProgressBar value={Math.round((m.completedPoints / m.totalPoints) * 100)} size="sm" />
-                        </div>
-                        <span className="font-mono font-bold text-[11px]">
-                          {Math.round((m.completedPoints / m.totalPoints) * 100)}%
-=======
                           <ProgressBar value={m.totalPoints > 0 ? Math.round((m.completedPoints / m.totalPoints) * 100) : 0} size="sm" />
                         </div>
                         <span className="font-mono font-bold text-[11px]">
                           {m.totalPoints > 0 ? Math.round((m.completedPoints / m.totalPoints) * 100) : 0}%
->>>>>>> 616e528e6f65ef6de66dd7269ed38b36fb90c447
                         </span>
                       </div>
                     </td>

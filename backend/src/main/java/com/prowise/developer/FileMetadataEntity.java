@@ -62,4 +62,11 @@ public class FileMetadataEntity {
     public void setFileUrl(String fileUrl) { this.storagePath = fileUrl; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+
+    /** Tenant scope (task 1.3); every query filters by it. */
+    @Column(name = "org_id")
+    private java.util.UUID orgId;
+
+    public java.util.UUID getOrgId() { return orgId; }
+    public void setOrgId(java.util.UUID orgId) { this.orgId = orgId; }
 }

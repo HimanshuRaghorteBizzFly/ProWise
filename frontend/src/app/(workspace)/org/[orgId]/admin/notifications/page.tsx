@@ -1,13 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import React from "react";
-
-import { OrgNotificationsContent, OrgPage } from "@/components/owner/OrgPages";
-
-export default function AdminNotificationsPage() {
-  return (
-    <OrgPage family="admin" title="Notifications">
-      <OrgNotificationsContent family="admin" />
-    </OrgPage>
-  );
+// Admin activity alerts live in Audit Activity.
+export default function Page({ params }: { params: { orgId: string } }) {
+  redirect(`/org/${encodeURIComponent(params.orgId)}/admin/audit-logs`);
 }

@@ -1,464 +1,216 @@
 "use client";
 
-import React, { useState } from "react";
-import { useParams } from "next/navigation";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Dialog } from "@/components/ui/dialog";
-import { Input, Textarea } from "@/components/ui/input";
+import React, { useMemo } from "react";
 import {
-  Users,
-  CheckSquare,
-  AlertTriangle,
   Activity,
-  Plus,
-  ArrowRight,
-  ShieldAlert,
-  Clock,
-  RotateCcw,
+  AlarmClockOff,
+  CalendarDays,
+  CircleDot,
+  GitBranch,
+  ListChecks,
+  MessageSquareText,
+  OctagonAlert,
+  UserPlus,
+  Users,
 } from "lucide-react";
-import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { SEEDED_USERS } from "@/lib/mock-data";
-import { Priority, WorkItem } from "@/types";
-import { toast } from "sonner";
+import { DEMO_TODAY, LEAD_ACTIVITY, LEAD_DAILY_COMPLETION, VIEWERS, type TaskStatus } from "@/mocks/delivery-dashboards";
+import {
+  Avatar,
+  AvatarStack,
+  ButtonLink,
+  Dot,
+  KpiGrid,
+  KpiTile,
+  LinkRow,
+  PageFrame,
+  Panel,
+  SeverityBadge,
+  StatusBadge,
+  TASK_STATUS_COLOR,
+  TASK_STATUS_LABEL,
+  daysFromToday,
+  dueLabel,
+  formatDate,
+  formatDateTime,
+  useDemoLoad,
+  useLookups,
+  useRoleHref,
+  utilisationTone,
+} from "@/components/delivery/DeliveryUI";
+import { DonutChart, GroupedBarChart, HorizontalBarChart } from "@/components/delivery/DeliveryCharts";
+import { useLeadTeam } from "@/components/delivery/useLeadTeam";
 
-export default function TeamLeadDashboard() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { currentOrg } = useAuthStore();
-  const {
-    workItems,
-    projects,
-    addBlocker,
-    resolveBlocker,
-    reopenWorkItem,
-    createWorkItem,
-  } = useProjectStore();
+const STATUSES: TaskStatus[] = ["TODO", "IN_PROGRESS", "IN_REVIEW", "BLOCKED", "DONE"];
 
-  const [activeTab, setActiveTab] = useState<"work" | "blockers" | "roster" | "workload">("work");
+export default function TeamLeadDashboardPage() {
+  const href = useRoleHref("lead");
+  const { status, retry, forceEmpty } = useDemoLoad();
+  const lk = useLookups();
+  const t = useLeadTeam(forceEmpty);
 
-  // Blocker Dialog
-  const [isBlockerDialogOpen, setIsBlockerDialogOpen] = useState(false);
-  const [selectedWorkItemId, setSelectedWorkItemId] = useState(workItems[1]?.id || "");
-  const [blockerReason, setBlockerReason] = useState("");
-  const [blockerSeverity, setBlockerSeverity] = useState<Priority>("HIGH");
+  const m = useMemo(() => {
+    const open = t.tasks.filter((x) => x.status !== "DONE");
+    const today = open.filter((x) => daysFromToday(x.dueDate) === 0);
+    const overdue = open.filter((x) => daysFromToday(x.dueDate) < 0);
+    const openBlockers = t.blockers.filter((b) => b.status === "OPEN");
+    const due = t.checkIns.filter((c) => c.status !== "SUBMITTED");
+    const avg = t.members.length ? Math.round(t.members.reduce((s, x) => s + x.pct, 0) / t.members.length) : 0;
+    return {
+      open,
+      today,
+      overdue,
+      openBlockers,
+      due,
+      avg,
+      inProgress: t.tasks.filter((x) => x.status === "IN_PROGRESS").length,
+      byStatus: STATUSES.map((s) => ({ name: TASK_STATUS_LABEL[s], value: t.tasks.filter((x) => x.status === s).length, color: TASK_STATUS_COLOR[s] })),
+      deps: t.dependencies.filter((d) => d.status !== "RESOLVED"),
+    };
+  }, [t]);
 
-  // Reopen Dialog
-  const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
-  const [reopenItemId, setReopenItemId] = useState("");
-  const [reopenReason, setReopenReason] = useState("");
-
-  // New Task Dialog
-  const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskWeight, setTaskWeight] = useState(10);
-  const [taskAssignee, setTaskAssignee] = useState("usr-developer");
-
-  const handleAddBlocker = (e: React.FormEvent) => {
-    e.preventDefault();
-    addBlocker(selectedWorkItemId, blockerReason, blockerSeverity, "usr-lead");
-    setIsBlockerDialogOpen(false);
-    setBlockerReason("");
-    toast.warning("Blocker logged. Successor tasks flagged with risk warning.");
-  };
-
-  const handleReopen = (e: React.FormEvent) => {
-    e.preventDefault();
-    reopenWorkItem(reopenItemId, reopenReason, "usr-lead");
-    setIsReopenDialogOpen(false);
-    setReopenReason("");
-    toast.warning("Task reopened to In Progress. Completion credit revoked immediately.");
-  };
-
-  const handleCreateTask = (e: React.FormEvent) => {
-    e.preventDefault();
-    createWorkItem({
-      projectId: "proj-structured-cds",
-      orgId,
-      type: "TASK",
-      key: `CRM-${100 + workItems.length + 1}`,
-      title: taskTitle,
-      description: "Scoped sprint work item",
-      primaryAssigneeId: taskAssignee,
-      reviewerId: "usr-reviewer",
-      collaboratorIds: [],
-      state: "TODO",
-      isBlocked: false,
-      blockers: [],
-      weight: taskWeight,
-      weightUnit: "points",
-      criteria: "Pass acceptance checklist and unit test suite",
-      criteriaVersion: 1,
-      criticality: "HIGH",
-    });
-    setIsTaskDialogOpen(false);
-    setTaskTitle("");
-    toast.success("Work item added to team backlog.");
-  };
-
-  const allActiveBlockers = workItems.flatMap((w) =>
-    (w.blockers || [])
-      .filter((b) => !b.resolvedAt)
-      .map((b) => ({ ...b, taskKey: w.key, taskTitle: w.title, workItemId: w.id }))
-  );
+  const focus = [...m.overdue, ...m.today];
 
   return (
-    <PanelLayout
-      title="Team Lead Dashboard"
-      breadcrumb={[{ label: currentOrg.name }, { label: "Core Clinical Squad" }, { label: "Lead Panel" }]}
+    <PageFrame
+      crumbs={[{ label: "Lead", href: href() }, { label: "Dashboard" }]}
+      title={`${t.team.name} · stand-up view`}
+      description={`Hi ${VIEWERS.lead.name.split(" ")[0]} — ${formatDate(DEMO_TODAY, true)}. ${m.today.length} due today, ${m.overdue.length} overdue, ${m.due.length} check-ins outstanding.`}
+      badge="Team Lead"
+      status={status}
+      onRetry={retry}
+      actions={
+        <>
+          <ButtonLink href={href("check-ins")} variant="outline">
+            <MessageSquareText className="w-3.5 h-3.5" /> Check-ins
+          </ButtonLink>
+          <ButtonLink href={href("assignments")}>
+            <UserPlus className="w-3.5 h-3.5" /> Assign work
+          </ButtonLink>
+        </>
+      }
     >
-      <div className="space-y-8">
-        {/* ── NEW: Visual Dashboard ── */}
+      <KpiGrid>
+        <KpiTile
+          label="Team members"
+          value={t.members.length}
+          icon={Users}
+          tone="violet"
+          chip={{ label: `${m.avg}% avg load`, tone: m.avg > 100 ? "danger" : m.avg >= 85 ? "warning" : "success" }}
+          meta={<AvatarStack people={t.members} max={5} />}
+          footer="Open members"
+          href={href("team")}
+        />
+        <KpiTile
+          label="In progress"
+          value={m.inProgress}
+          icon={CircleDot}
+          tone="blue"
+          chip={{ label: `${m.open.length} open`, tone: "info" }}
+          meta={<><span className="inline-flex items-center gap-1"><Dot className="bg-violet-500" />{t.tasks.filter((x) => x.status === "IN_REVIEW").length} in review</span><span>•</span><span>{t.tasks.filter((x) => x.status === "TODO").length} to do</span></>}
+          footer="Tasks by status"
+          href={href("work-items")}
+        />
+        <KpiTile label="Due today" value={m.today.length} icon={CalendarDays} tone="amber" chip={{ label: "Today", tone: "warning" }} meta={<span>{m.today.map((x) => x.key).join(", ") || "Nothing due"}</span>} footer="Today's work" href={href("today")} />
+        <KpiTile label="Overdue" value={m.overdue.length} icon={AlarmClockOff} tone="rose" chip={{ label: m.overdue.length ? "Chase" : "Clear", tone: m.overdue.length ? "danger" : "success" }} meta={<span>Oldest {m.overdue.length ? `${Math.max(...m.overdue.map((x) => -daysFromToday(x.dueDate)))}d late` : "—"}</span>} footer="Overdue work" href={href("today")} />
+        <KpiTile label="Blockers" value={m.openBlockers.length} icon={OctagonAlert} tone="pink" chip={{ label: `${m.openBlockers.filter((b) => b.severity === "CRITICAL").length} critical`, tone: "danger" }} meta={<span>Unblock first thing</span>} footer="Resolve blockers" href={href("blockers")} />
+        <KpiTile label="Check-ins due" value={m.due.length} icon={MessageSquareText} tone="teal" chip={{ label: `${t.checkIns.filter((c) => c.status === "OVERDUE").length} late`, tone: "warning" }} meta={<span>{t.checkIns.filter((c) => c.status === "SUBMITTED").length} submitted today</span>} footer="Check-ins" href={href("check-ins")} />
+      </KpiGrid>
 
-        {/* ── EXISTING: Detailed Controls ── */}
-        <div className="space-y-6">
-          {/* Squad Header */}
-          <div className="p-4 rounded-xl bg-app-surface border border-app-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-subtle">
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-app-text-primary">
-                  Core Clinical Engineering Squad
-                </h2>
-                <Badge variant="default">Sprint 42</Badge>
-              </div>
-              <p className="text-xs text-app-text-secondary mt-0.5">
-                Assigned Projects: Clinical Decision Support API (CRM-100), FHIR Patient Intake (SOLO-10)
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={() => setIsBlockerDialogOpen(true)}>
-                <AlertTriangle className="w-3.5 h-3.5 mr-1 text-amber-500" /> Flag Blocker
-              </Button>
-              <Button size="sm" onClick={() => setIsTaskDialogOpen(true)}>
-                <Plus className="w-3.5 h-3.5 mr-1" /> New Task
-              </Button>
-            </div>
-          </div>
-
-          {/* Tab Buttons */}
-          <div className="flex border-b border-app-border space-x-4">
-            <button
-              onClick={() => setActiveTab("work")}
-              className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
-                activeTab === "work"
-                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                  : "border-transparent text-app-text-muted hover:text-app-text-primary"
-              }`}
-            >
-              Work Items &amp; State ({workItems.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("blockers")}
-              className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
-                activeTab === "blockers"
-                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                  : "border-transparent text-app-text-muted hover:text-app-text-primary"
-              }`}
-            >
-              Blockers ({allActiveBlockers.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("workload")}
-              className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
-                activeTab === "workload"
-                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                  : "border-transparent text-app-text-muted hover:text-app-text-primary"
-              }`}
-            >
-              Planned Capacity vs Hours
-            </button>
-          </div>
-
-          {/* Tab 1: Work Items */}
-          {activeTab === "work" && (
-            <Card className="p-0 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Key</TableHead>
-                    <TableHead>Title</TableHead>
-                    <TableHead>Assignee</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Weight</TableHead>
-                    <TableHead>Revision</TableHead>
-                    <TableHead className="text-right">Lead Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {workItems.map((item) => {
-                    const assignee = SEEDED_USERS.find((u) => u.id === item.primaryAssigneeId);
-                    return (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-mono font-bold text-xs text-blue-600">
-                          {item.key}
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-semibold text-xs text-app-text-primary">{item.title}</div>
-                          <div className="text-[11px] text-app-text-muted">{item.criteria}</div>
-                        </TableCell>
-                        <TableCell className="text-xs text-app-text-secondary">
-                          {assignee?.name || "Unassigned"}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              item.state === "DONE"
-                                ? "success"
-                                : item.state === "IN_REVIEW"
-                                ? "warning"
-                                : "secondary"
-                            }
-                          >
-                            {item.state}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs font-semibold">{item.weight} pts</TableCell>
-                        <TableCell className="font-mono text-xs text-app-text-muted">
-                          rev {item.currentRevision}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {item.state === "DONE" && (
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onClick={() => {
-                                setReopenItemId(item.id);
-                                setIsReopenDialogOpen(true);
-                              }}
-                              className="text-xs"
-                            >
-                              <RotateCcw className="w-3 h-3 mr-1" /> Reopen
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </Card>
-          )}
-
-          {/* Tab 2: Blockers */}
-          {activeTab === "blockers" && (
-            <Card className="p-0 overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Affected Work Item</TableHead>
-                    <TableHead>Blocker Reason</TableHead>
-                    <TableHead>Severity</TableHead>
-                    <TableHead>Raised At</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {allActiveBlockers.map((blk) => (
-                    <TableRow key={blk.id}>
-                      <TableCell className="font-semibold text-xs text-blue-600">
-                        {blk.taskKey} - {blk.taskTitle}
-                      </TableCell>
-                      <TableCell className="text-xs text-app-text-primary">{blk.reason}</TableCell>
-                      <TableCell>
-                        <Badge variant={blk.severity === "CRITICAL" ? "danger" : "warning"}>
-                          {blk.severity}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-app-text-muted">
-                        {new Date(blk.createdAt).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => {
-                            resolveBlocker(blk.workItemId, blk.id);
-                            toast.success(`Blocker on ${blk.taskKey} resolved.`);
-                          }}
-                        >
-                          Resolve Blocker
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {allActiveBlockers.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="py-8 text-center text-xs text-app-text-muted">
-                        No active blockers. Engineering pipeline is unhindered.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </Card>
-          )}
-
-          {/* Tab 3: Workload & Capacity */}
-          {activeTab === "workload" && (
-            <Card className="p-5 space-y-4">
-              <CardTitle className="text-sm">Weekly Squad Workload &amp; Capacity</CardTitle>
-              <CardDescription>
-                Blueprint Rule: Workload tracks planned vs available hours only. No automatic equivalence between story points and hours.
-              </CardDescription>
-
-              <div className="space-y-3 pt-2">
-                {[
-                  { name: "Alex Rivera (Developer)", planned: 36, capacity: 40, status: "Normal" },
-                  { name: "David Kim (Team Lead)", planned: 32, capacity: 40, status: "Normal" },
-                  { name: "Priya Patel (QA / Reviewer)", planned: 28, capacity: 35, status: "Normal" },
-                ].map((m, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3.5 rounded-lg border border-app-border bg-app-sidebar/40 flex items-center justify-between text-xs"
-                  >
-                    <div>
-                      <span className="font-semibold text-app-text-primary">{m.name}</span>
-                      <div className="text-app-text-secondary mt-0.5">
-                        Planned Hours: {m.planned}h / {m.capacity}h Available
-                      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 min-w-0">
+        <Panel className="xl:col-span-2" title="Today's focus" description="Overdue and due-today tasks for the team" icon={CalendarDays} iconTone="amber" action={{ label: "Today & overdue", href: href("today") }}>
+          {focus.length === 0 ? (
+            <p className="py-8 text-center text-xs text-[var(--color-text-muted)]">Nothing due today. Enjoy the calm.</p>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6">
+              {focus.map((x) => {
+                const d = dueLabel(x.dueDate);
+                return (
+                  <LinkRow key={x.id} href={href(`work-items/${x.id}`)}>
+                    <Avatar person={lk.person(x.assigneeId)} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold truncate">{x.key} · {x.title}</p>
+                      <p className="text-[11px] text-[var(--color-text-muted)] truncate">{lk.person(x.assigneeId)?.name ?? "Unassigned"} · {x.progress}%</p>
                     </div>
-                    <Badge variant="success">{m.status}</Badge>
-                  </div>
-                ))}
-              </div>
-            </Card>
+                    <StatusBadge label={d.label} tone={d.tone} />
+                  </LinkRow>
+                );
+              })}
+            </div>
           )}
-        </div>
+        </Panel>
+        <Panel title="Tasks by status" description="All team work" icon={ListChecks} action={{ label: "Board", href: href("work-items") }}>
+          <DonutChart data={m.byStatus} centerLabel="tasks" />
+        </Panel>
       </div>
 
-      {/* Flag Blocker Dialog */}
-      <Dialog
-        isOpen={isBlockerDialogOpen}
-        onClose={() => setIsBlockerDialogOpen(false)}
-        title="Flag Work Item Blocker"
-        description="Blocker is an explicit separate condition that surfaces upstream risk without silently altering approved target dates."
-      >
-        <form onSubmit={handleAddBlocker} className="space-y-4 pt-2">
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-app-text-secondary">
-              Affected Work Item
-            </label>
-            <select
-              value={selectedWorkItemId}
-              onChange={(e) => setSelectedWorkItemId(e.target.value)}
-              className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-            >
-              {workItems.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.key} — {w.title}
-                </option>
-              ))}
-            </select>
+      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 min-w-0">
+        <Panel title="Member workload" description="Assigned vs weekly capacity" icon={Users} iconTone="violet" action={{ label: "Workload", href: href("workload") }}>
+          <HorizontalBarChart valueLabel="Load" data={t.members.map((x) => ({ name: x.name.split(" ")[0], value: x.pct, color: utilisationTone(x.pct).color }))} />
+        </Panel>
+        <Panel title="Blockers" description="Open impediments on team tasks" icon={OctagonAlert} iconTone="rose" action={{ label: "All", href: href("blockers") }}>
+          <div className="space-y-0.5">
+            {m.openBlockers.length === 0 && <p className="py-6 text-center text-xs text-[var(--color-text-muted)]">No blockers.</p>}
+            {m.openBlockers.map((b) => (
+              <LinkRow key={b.id} href={href(`blockers/${b.id}`)}>
+                <Avatar person={lk.person(b.raisedById)} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold truncate">{b.title}</p>
+                  <p className="text-[11px] text-[var(--color-text-muted)] truncate">{lk.task(b.taskId)?.key} · {Math.abs(daysFromToday(b.raisedAt))}d open</p>
+                </div>
+                <SeverityBadge severity={b.severity} />
+              </LinkRow>
+            ))}
           </div>
-
-          <Textarea
-            label="Specific Blocker Reason"
-            value={blockerReason}
-            onChange={(e) => setBlockerReason(e.target.value)}
-            placeholder="e.g. Staging database credentials revoked; awaiting security key rotation"
-            required
-          />
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-app-text-secondary">Severity</label>
-            <select
-              value={blockerSeverity}
-              onChange={(e) => setBlockerSeverity(e.target.value as Priority)}
-              className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-            >
-              <option value="MEDIUM">Medium</option>
-              <option value="HIGH">High</option>
-              <option value="CRITICAL">Critical (Triggers At-Risk Health Signal)</option>
-            </select>
+        </Panel>
+        <Panel title="Check-ins due" description="Daily updates from the team" icon={MessageSquareText} iconTone="teal" action={{ label: "All", href: href("check-ins") }} className="lg:col-span-2 2xl:col-span-1">
+          <div className="space-y-0.5">
+            {m.due.length === 0 && <p className="py-6 text-center text-xs text-[var(--color-text-muted)]">Everyone has checked in.</p>}
+            {m.due.map((c) => (
+              <LinkRow key={c.id} href={href(`team/${c.memberId}`)}>
+                <Avatar person={lk.person(c.memberId)} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold truncate">{lk.person(c.memberId)?.name}</p>
+                  <p className="text-[11px] text-[var(--color-text-muted)] truncate">Last: {c.lastSummary}</p>
+                </div>
+                <StatusBadge label={c.status === "OVERDUE" ? "Late" : `Due ${formatDateTime(c.dueAt).split(", ")[1] ?? ""}`} tone={c.status === "OVERDUE" ? "danger" : "warning"} />
+              </LinkRow>
+            ))}
           </div>
+        </Panel>
+      </div>
 
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-app-border">
-            <Button type="button" variant="outline" onClick={() => setIsBlockerDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">Log Blocker</Button>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 min-w-0">
+        <Panel title="Dependencies" description="Open links that can stall the team" icon={GitBranch} iconTone="cyan" action={{ label: "All", href: href("dependencies") }}>
+          <div className="space-y-0.5">
+            {m.deps.length === 0 && <p className="py-6 text-center text-xs text-[var(--color-text-muted)]">No open dependencies.</p>}
+            {m.deps.map((d) => (
+              <LinkRow key={d.id} href={href(`work-items/${d.toTaskId}`)}>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold truncate">{lk.task(d.fromTaskId)?.key} → {lk.task(d.toTaskId)?.key}</p>
+                  <p className="text-[11px] text-[var(--color-text-muted)] truncate">{d.note}</p>
+                </div>
+                <StatusBadge label={d.status === "AT_RISK" ? "At risk" : "Open"} tone={d.status === "AT_RISK" ? "danger" : "warning"} />
+              </LinkRow>
+            ))}
           </div>
-        </form>
-      </Dialog>
-
-      {/* Reopen Work Item Dialog */}
-      <Dialog
-        isOpen={isReopenDialogOpen}
-        onClose={() => setIsReopenDialogOpen(false)}
-        title="Reopen Completed Work Item"
-        description="Blueprint Rule: Reopening a completed leaf immediately revokes its completion credit from calculated project progress."
-      >
-        <form onSubmit={handleReopen} className="space-y-4 pt-2">
-          <Textarea
-            label="Mandatory Reason for Reopening"
-            value={reopenReason}
-            onChange={(e) => setReopenReason(e.target.value)}
-            placeholder="e.g. Post-deployment regression discovered in prescription validation rules"
-            required
-          />
-
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-app-border">
-            <Button type="button" variant="outline" onClick={() => setIsReopenDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="danger">
-              Confirm Reopen &amp; Revoke Credit
-            </Button>
-          </div>
-        </form>
-      </Dialog>
-
-      {/* New Work Item Dialog */}
-      <Dialog
-        isOpen={isTaskDialogOpen}
-        onClose={() => setIsTaskDialogOpen(false)}
-        title="Create Team Work Item"
-        description="Add a task to the squad backlog."
-      >
-        <form onSubmit={handleCreateTask} className="space-y-4 pt-2">
-          <Input
-            label="Task Title"
-            value={taskTitle}
-            onChange={(e) => setTaskTitle(e.target.value)}
-            placeholder="e.g. Implement HL7 message dead letter queue"
-            required
-          />
-
-          <Input
-            label="Weight (Points)"
-            type="number"
-            value={taskWeight}
-            onChange={(e) => setTaskWeight(parseInt(e.target.value) || 10)}
-            required
-          />
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-app-text-secondary">
-              Assignee
-            </label>
-            <select
-              value={taskAssignee}
-              onChange={(e) => setTaskAssignee(e.target.value)}
-              className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-            >
-              <option value="usr-developer">Alex Rivera (Developer)</option>
-              <option value="usr-lead">David Kim (Team Lead)</option>
-            </select>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-app-border">
-            <Button type="button" variant="outline" onClick={() => setIsTaskDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">Create Work Item</Button>
-          </div>
-        </form>
-      </Dialog>
-    </PanelLayout>
+        </Panel>
+        <Panel title="This week" description="Tasks finished vs reopened per day" icon={Activity} iconTone="emerald">
+          <GroupedBarChart data={LEAD_DAILY_COMPLETION} primaryLabel="Finished" secondaryLabel="Reopened" primaryColor="#8B5CF6" secondaryColor="#F43F5E" height={210} />
+        </Panel>
+        <Panel title="Team activity" icon={Activity} iconTone="blue">
+          <ol className="space-y-3">
+            {LEAD_ACTIVITY.map((a) => (
+              <li key={a.id} className="flex items-start gap-3">
+                <Avatar person={lk.person(a.actorId)} size="sm" />
+                <div className="min-w-0 text-xs">
+                  <p className="leading-snug"><span className="font-semibold">{lk.person(a.actorId)?.name}</span> <span className="text-[var(--color-text-secondary)]">{a.action}</span> <span className="font-medium">{a.target}</span></p>
+                  <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">{formatDateTime(a.at)}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </Panel>
+      </div>
+    </PageFrame>
   );
 }

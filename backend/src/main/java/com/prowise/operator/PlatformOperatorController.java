@@ -32,7 +32,7 @@ public class PlatformOperatorController {
 
     // 1. List Operators
     @GetMapping({"/v1/operators", "/api/v1/operators", "/v1/admin/operators", "/api/v1/admin/operators"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List all platform operators with optional department and status filters")
     public List<OperatorDTOs.OperatorResponse> listOperators(
             @RequestParam(required = false) String search,
@@ -45,7 +45,7 @@ public class PlatformOperatorController {
 
     // 2. Get Single Operator
     @GetMapping({"/v1/operators/{id}", "/api/v1/operators/{id}", "/v1/admin/operators/{id}", "/api/v1/admin/operators/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Get single operator details")
     public OperatorDTOs.OperatorResponse getOperator(@PathVariable String id) {
         return operatorService.getOperator(id);
@@ -53,7 +53,7 @@ public class PlatformOperatorController {
 
     // 3. Create Operator
     @PostMapping({"/v1/operators", "/api/v1/operators", "/v1/admin/operators", "/api/v1/admin/operators"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Provision a new platform operator")
     public ResponseEntity<OperatorDTOs.OperatorResponse> createOperator(
             @RequestBody OperatorDTOs.CreateOperatorRequest request,
@@ -66,7 +66,7 @@ public class PlatformOperatorController {
 
     // 4. Update Operator
     @PatchMapping({"/v1/operators/{id}", "/api/v1/operators/{id}", "/v1/admin/operators/{id}", "/api/v1/admin/operators/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Update an operator profile or shift assignment")
     public OperatorDTOs.OperatorResponse updateOperator(
             @PathVariable String id,
@@ -79,7 +79,7 @@ public class PlatformOperatorController {
 
     // 5. Delete Operator (With protection against deleting last super admin)
     @DeleteMapping({"/v1/operators/{id}", "/api/v1/operators/{id}", "/v1/admin/operators/{id}", "/api/v1/admin/operators/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Delete an operator account")
     public ResponseEntity<Void> deleteOperator(
             @PathVariable String id,
@@ -92,7 +92,7 @@ public class PlatformOperatorController {
 
     // 6. Toggle or Update Status
     @PostMapping({"/v1/operators/{id}/toggle-status", "/api/v1/operators/{id}/toggle-status", "/v1/admin/operators/{id}/toggle-status", "/api/v1/admin/operators/{id}/toggle-status"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Toggle operator active or suspended status")
     public OperatorDTOs.OperatorResponse toggleStatus(
             @PathVariable String id,
@@ -103,7 +103,7 @@ public class PlatformOperatorController {
     }
 
     @PatchMapping({"/v1/operators/{id}/status", "/api/v1/operators/{id}/status", "/v1/admin/operators/{id}/status", "/api/v1/admin/operators/{id}/status"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Explicitly set operator status (ACTIVE, INACTIVE, SUSPENDED, INVITED)")
     public OperatorDTOs.OperatorResponse updateStatus(
             @PathVariable String id,
@@ -117,7 +117,7 @@ public class PlatformOperatorController {
 
     // 6b. Update Access Level
     @PatchMapping({"/v1/operators/{id}/access-level", "/api/v1/operators/{id}/access-level", "/v1/admin/operators/{id}/access-level", "/api/v1/admin/operators/{id}/access-level"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Update operator access level (MAIN_PLATFORM_OPERATOR vs DEPARTMENT_OPERATOR)")
     public OperatorDTOs.OperatorResponse updateAccessLevel(
             @PathVariable String id,
@@ -130,7 +130,7 @@ public class PlatformOperatorController {
 
     // 6c. Update Department
     @PatchMapping({"/v1/operators/{id}/department", "/api/v1/operators/{id}/department", "/v1/admin/operators/{id}/department", "/api/v1/admin/operators/{id}/department"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Update operator assigned department")
     public OperatorDTOs.OperatorResponse updateDepartment(
             @PathVariable String id,
@@ -143,7 +143,7 @@ public class PlatformOperatorController {
 
     // 7. Get Effective Permissions
     @GetMapping({"/v1/operators/{id}/permissions", "/api/v1/operators/{id}/permissions", "/v1/admin/operators/{id}/permissions", "/api/v1/admin/operators/{id}/permissions"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Get resolved effective permissions for an operator")
     public OperatorDTOs.EffectivePermissionsResponse getEffectivePermissions(@PathVariable String id) {
         return operatorService.getEffectivePermissions(id);
@@ -151,7 +151,7 @@ public class PlatformOperatorController {
 
     // 8. Update / Override Permissions
     @PutMapping({"/v1/operators/{id}/permissions", "/api/v1/operators/{id}/permissions", "/v1/admin/operators/{id}/permissions", "/api/v1/admin/operators/{id}/permissions"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Set explicit permission overrides for an operator")
     public OperatorDTOs.EffectivePermissionsResponse updatePermissions(
             @PathVariable String id,
@@ -164,7 +164,7 @@ public class PlatformOperatorController {
 
     // 9. Revoke Active Sessions
     @PostMapping({"/v1/operators/{id}/revoke-sessions", "/api/v1/operators/{id}/revoke-sessions", "/v1/admin/operators/{id}/revoke-sessions", "/api/v1/admin/operators/{id}/revoke-sessions"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Revoke all active sessions for an operator")
     public ResponseEntity<Void> revokeSessions(
             @PathVariable String id,
@@ -177,7 +177,7 @@ public class PlatformOperatorController {
 
     // 10. Resend Invitation
     @PostMapping({"/v1/operators/{id}/resend-invite", "/api/v1/operators/{id}/resend-invite", "/v1/admin/operators/{id}/resend-invite", "/api/v1/admin/operators/{id}/resend-invite"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Resend invite link to an operator")
     public ResponseEntity<Void> resendInvite(
             @PathVariable String id,
@@ -190,7 +190,7 @@ public class PlatformOperatorController {
 
     // 11. List Departments
     @GetMapping({"/v1/departments", "/api/v1/departments", "/v1/admin/departments", "/api/v1/admin/departments", "/v1/admin/operator-departments", "/api/v1/admin/operator-departments", "/v1/operator-departments", "/api/v1/operator-departments"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List all platform operator departments")
     public List<OperatorDTOs.DepartmentResponse> listDepartments() {
         return operatorService.listDepartments();
@@ -198,7 +198,7 @@ public class PlatformOperatorController {
 
     // 11b. List Operator Roles
     @GetMapping({"/v1/admin/operator-roles", "/api/v1/admin/operator-roles", "/v1/operator-roles", "/api/v1/operator-roles"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List standard platform operator roles")
     public List<OperatorDTOs.RoleResponse> listRoles() {
         return operatorService.listRoles();
@@ -206,7 +206,7 @@ public class PlatformOperatorController {
 
     // 11c. List Operator Permissions Catalog
     @GetMapping({"/v1/admin/operator-permissions", "/api/v1/admin/operator-permissions", "/v1/operator-permissions", "/api/v1/operator-permissions"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List all platform operator modules and permission actions")
     public List<OperatorDTOs.PermissionCatalogItem> listPermissionsCatalog() {
         return operatorService.listPermissionCatalog();
@@ -214,7 +214,7 @@ public class PlatformOperatorController {
 
     // 12. Current Operator Profile
     @GetMapping({"/v1/operator/me", "/api/v1/operator/me"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Get current logged-in operator profile")
     public OperatorDTOs.OperatorResponse getCurrentOperator(Authentication authentication) {
         String email = (authentication != null) ? authentication.getName() : "operator@prowise.io";
@@ -223,7 +223,7 @@ public class PlatformOperatorController {
 
     // 13. Current Operator Effective Permissions
     @GetMapping({"/v1/operator/me/permissions", "/api/v1/operator/me/permissions"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Get current operator effective permissions")
     public OperatorDTOs.EffectivePermissionsResponse getCurrentOperatorPermissions(Authentication authentication) {
         String email = (authentication != null) ? authentication.getName() : "operator@prowise.io";
@@ -233,7 +233,7 @@ public class PlatformOperatorController {
 
     // 14. Dynamic Navigation Routes by Department
     @GetMapping({"/v1/operator/navigation", "/api/v1/operator/navigation"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Get authorized navigation sidebar sections for logged-in operator")
     public OperatorDTOs.OperatorNavigationResponse getNavigation(Authentication authentication) {
         String email = (authentication != null) ? authentication.getName() : "operator@prowise.io";
@@ -242,7 +242,7 @@ public class PlatformOperatorController {
 
     // 15. Personalized Department Dashboard Data
     @GetMapping({"/v1/operator/dashboard", "/api/v1/operator/dashboard"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Get personalized department telemetry for operator dashboard")
     public OperatorDTOs.OperatorDashboardResponse getDashboard(Authentication authentication) {
         String email = (authentication != null) ? authentication.getName() : "operator@prowise.io";

@@ -7,9 +7,20 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.prowise.authz.PermissionKey;
+import com.prowise.authz.PermissionService;
+import com.prowise.developer.DeveloperAccess.Actor;
+
+/**
+ * Developer workspace. Task 1.3 rules apply to every method:
+ * the organization comes from the caller's org-bound token ({@link Actor}), every lookup is org-scoped,
+ * objects outside readable projects are 404, and actions need the key plus the object relationship.
+ * Business behaviour is unchanged from the original panel; its domain rules belong to phases 2-5.
+ */
 @Service
 @Transactional
 public class DeveloperService {
@@ -31,6 +42,7 @@ public class DeveloperService {
     private final FileMetadataRepository fileMetadataRepository;
     private final DeveloperNotificationRepository developerNotificationRepository;
     private final DeveloperPreferenceRepository developerPreferenceRepository;
+    private final DeveloperAccess access;
 
     public DeveloperService(
             ProjectRepository projectRepository,
@@ -49,7 +61,8 @@ public class DeveloperService {
             DiscussionMessageRepository discussionMessageRepository,
             FileMetadataRepository fileMetadataRepository,
             DeveloperNotificationRepository developerNotificationRepository,
-            DeveloperPreferenceRepository developerPreferenceRepository) {
+            DeveloperPreferenceRepository developerPreferenceRepository,
+            DeveloperAccess access) {
         this.projectRepository = projectRepository;
         this.workItemRepository = workItemRepository;
         this.sprintRepository = sprintRepository;
@@ -67,23 +80,62 @@ public class DeveloperService {
         this.fileMetadataRepository = fileMetadataRepository;
         this.developerNotificationRepository = developerNotificationRepository;
         this.developerPreferenceRepository = developerPreferenceRepository;
+        this.access = access;
+    }
+
+    // ==========================================
+    // Access helpers
+    // ==========================================
+
+    /** Projects the actor is assigned to AND may read, in the actor's organization only. */
+    private List<ProjectEntity> readableAssignedProjects(Actor actor) {
+        return projectRepository.findAssignedProjectsInOrg(actor.orgId(), actor.userId()).stream()
+                .filter(p -> access.canRead(actor, p.getId()))
+                .toList();
+    }
+
+    private List<String> readableProjectIds(Actor actor) {
+        return readableAssignedProjects(actor).stream().map(ProjectEntity::getId).toList();
+    }
+
+    private ProjectEntity visibleProject(Actor actor, String projectId) {
+        ProjectEntity project = projectId == null ? null
+                : projectRepository.findByIdAndOrgId(projectId, actor.orgId()).orElse(null);
+        if (project == null) throw access.notFound(actor, "PROJECT", projectId);
+        access.requireVisible(actor, "PROJECT", projectId, project.getId());
+        return project;
+    }
+
+    private WorkItemEntity visibleTask(Actor actor, String taskId) {
+        WorkItemEntity item = taskId == null ? null
+                : workItemRepository.findByIdAndOrgId(taskId, actor.orgId()).orElse(null);
+        if (item == null) throw access.notFound(actor, "TASK", taskId);
+        access.requireVisible(actor, "TASK", taskId, item.getProjectId());
+        return item;
+    }
+
+    /** task.update on the project, and the caller is the assignee or may assign work there. */
+    private void requireTaskEdit(Actor actor, WorkItemEntity item) {
+        access.requireAction(actor, item.getProjectId(), PermissionKey.TASK_UPDATE);
+        boolean assignee = actor.userId().equals(item.getPrimaryAssigneeId());
+        if (!assignee && !access.can(actor, item.getProjectId(), PermissionKey.TASK_ASSIGN)) {
+            throw PermissionService.forbidden();
+        }
     }
 
     // ==========================================
     // 1. DASHBOARD SUMMARY
     // ==========================================
     @Transactional(readOnly = true)
-    public DeveloperDTOs.DashboardSummaryDTO getDashboardSummary(String userId, UUID orgId) {
-        List<ProjectEntity> projects = projectRepository.findAssignedProjectsByOrg(userId, orgId);
-        if (projects.isEmpty() && orgId != null) {
-            projects = projectRepository.findAssignedProjects(userId);
-        }
+    public DeveloperDTOs.DashboardSummaryDTO getDashboardSummary(Actor actor) {
+        List<ProjectEntity> projects = readableAssignedProjects(actor);
+        List<String> readable = projects.stream().map(ProjectEntity::getId).toList();
 
         long activeProjectsCount = projects.stream()
                 .filter(p -> "ACTIVE".equalsIgnoreCase(p.getStatus()) || "IN_PROGRESS".equalsIgnoreCase(p.getStatus()))
                 .count();
 
-        List<WorkItemEntity> myWorkItems = workItemRepository.findByPrimaryAssigneeId(userId);
+        List<WorkItemEntity> myWorkItems = myTasksIn(actor, readable);
 
         long completedTasks = myWorkItems.stream().filter(w -> "DONE".equalsIgnoreCase(w.getState())).count();
         long pendingTasks = myWorkItems.size() - completedTasks;
@@ -93,9 +145,9 @@ public class DeveloperService {
                 .filter(w -> !"DONE".equalsIgnoreCase(w.getState()) && w.getDueDate() != null && w.getDueDate().isBefore(now))
                 .count();
 
-        long openBugs = bugRepository.countByAssignedToAndStatusNot(userId, "RESOLVED");
-        long pendingReviews = codeReviewRepository.countByReviewerIdAndStatus(userId, "PENDING");
-        long unreadNotifications = developerNotificationRepository.countByUserIdAndReadFalse(userId);
+        long openBugs = bugRepository.countOpenAssigned(actor.orgId(), actor.userId(), "RESOLVED");
+        long pendingReviews = codeReviewRepository.countByOrgIdAndReviewerIdAndStatus(actor.orgId(), actor.userId(), "PENDING");
+        long unreadNotifications = developerNotificationRepository.countByOrgIdAndUserIdAndReadFalse(actor.orgId(), actor.userId());
 
         List<DeveloperDTOs.WorkItemDTO> todayTasks = myWorkItems.stream()
                 .filter(w -> !"DONE".equalsIgnoreCase(w.getState()))
@@ -119,129 +171,70 @@ public class DeveloperService {
                 .sorted((a, b) -> a.getDueDate().compareTo(b.getDueDate()))
                 .limit(6)
                 .map(w -> new DeveloperDTOs.DeadlineItemDTO(
-                        w.getId(),
-                        w.getTitle(),
-                        w.getKey(),
-                        w.getProjectId(),
-                        w.getDueDate(),
-                        w.getPriority(),
-                        w.getState()
-                ))
+                        w.getId(), w.getTitle(), w.getKey(), w.getProjectId(), w.getDueDate(), w.getPriority(), w.getState()))
                 .toList();
 
-        List<GitHubActivityEntity> recentGit = gitHubActivityRepository.findAllByOrderByCreatedAtDesc().stream()
-                .limit(8)
-                .toList();
+        List<GitHubActivityEntity> recentGit = access.canAtOrg(actor, PermissionKey.REPO_READ)
+                ? gitHubActivityRepository.findByOrgIdOrderByCreatedAtDesc(actor.orgId()).stream().limit(8).toList()
+                : List.of();
 
         return new DeveloperDTOs.DashboardSummaryDTO(
-                projects.size(),
-                activeProjectsCount,
-                myWorkItems.size(),
-                completedTasks,
-                pendingTasks,
-                overdueTasks,
-                openBugs,
-                pendingReviews,
-                unreadNotifications,
-                todayTasks,
-                priorityTasks,
-                blockedTasks,
-                upcomingDeadlines,
-                recentGit
-        );
+                projects.size(), activeProjectsCount, myWorkItems.size(), completedTasks, pendingTasks, overdueTasks,
+                openBugs, pendingReviews, unreadNotifications, todayTasks, priorityTasks, blockedTasks,
+                upcomingDeadlines, recentGit);
+    }
+
+    private List<WorkItemEntity> myTasksIn(Actor actor, List<String> readableProjectIds) {
+        return workItemRepository.findByOrgIdAndPrimaryAssigneeId(actor.orgId(), actor.userId()).stream()
+                .filter(t -> readableProjectIds.contains(t.getProjectId()))
+                .toList();
     }
 
     // ==========================================
     // 2. ASSIGNED PROJECTS & PROGRESS TRACKER
     // ==========================================
     @Transactional(readOnly = true)
-    public List<DeveloperDTOs.ProjectDTO> getAssignedProjects(String userId, UUID orgId) {
-        List<ProjectEntity> projects = projectRepository.findAssignedProjectsByOrg(userId, orgId);
-        if (projects.isEmpty() && orgId != null) {
-            projects = projectRepository.findAssignedProjects(userId);
-        }
-
+    public List<DeveloperDTOs.ProjectDTO> getAssignedProjects(Actor actor) {
         List<DeveloperDTOs.ProjectDTO> dtoList = new ArrayList<>();
-        Instant now = Instant.now();
-
-        for (ProjectEntity p : projects) {
-            List<WorkItemEntity> pTasks = workItemRepository.findByProjectId(p.getId());
-            long blockedCount = pTasks.stream().filter(t -> t.isBlocked() || "BLOCKED".equalsIgnoreCase(t.getState())).count();
-            long overdueCount = pTasks.stream().filter(t -> t.getDueDate() != null && t.getDueDate().isBefore(now) && !"DONE".equalsIgnoreCase(t.getState())).count();
-
-            Optional<ProjectCheckInEntity> latestCheckIn = projectCheckInRepository.findTop1ByProjectIdOrderByCreatedAtDesc(p.getId());
-
-            BigDecimal progressPercent = p.getLastProgressPercent();
-            if ("STRUCTURED".equalsIgnoreCase(p.getMode())) {
-                progressPercent = calculateStructuredProgress(p.getId());
-            }
-
-            dtoList.add(new DeveloperDTOs.ProjectDTO(
-                    p.getId(),
-                    p.getOrgId(),
-                    p.getName(),
-                    p.getCode(),
-                    p.getDescription(),
-                    p.getMode(),
-                    p.getStatus(),
-                    progressPercent != null ? progressPercent : BigDecimal.ZERO,
-                    p.getTargetCompletionDate(),
-                    p.getAccountableOwnerId(),
-                    p.getMemberIds(),
-                    p.getTotalWeight(),
-                    p.getCompletedWeight(),
-                    blockedCount,
-                    overdueCount,
-                    latestCheckIn.orElse(null)
-            ));
+        for (ProjectEntity p : readableAssignedProjects(actor)) {
+            dtoList.add(toProjectDTO(actor, p));
         }
-
         return dtoList;
     }
 
     @Transactional(readOnly = true)
-    public Optional<DeveloperDTOs.ProjectDTO> getProjectDetails(String projectId, String userId) {
-        return projectRepository.findById(projectId).map(p -> {
-            List<WorkItemEntity> pTasks = workItemRepository.findByProjectId(p.getId());
-            long blockedCount = pTasks.stream().filter(t -> t.isBlocked() || "BLOCKED".equalsIgnoreCase(t.getState())).count();
-            long overdueCount = pTasks.stream().filter(t -> t.getDueDate() != null && t.getDueDate().isBefore(Instant.now()) && !"DONE".equalsIgnoreCase(t.getState())).count();
-            Optional<ProjectCheckInEntity> latestCheckIn = projectCheckInRepository.findTop1ByProjectIdOrderByCreatedAtDesc(p.getId());
-
-            BigDecimal progressPercent = p.getLastProgressPercent();
-            if ("STRUCTURED".equalsIgnoreCase(p.getMode())) {
-                progressPercent = calculateStructuredProgress(p.getId());
-            }
-
-            return new DeveloperDTOs.ProjectDTO(
-                    p.getId(),
-                    p.getOrgId(),
-                    p.getName(),
-                    p.getCode(),
-                    p.getDescription(),
-                    p.getMode(),
-                    p.getStatus(),
-                    progressPercent != null ? progressPercent : BigDecimal.ZERO,
-                    p.getTargetCompletionDate(),
-                    p.getAccountableOwnerId(),
-                    p.getMemberIds(),
-                    p.getTotalWeight(),
-                    p.getCompletedWeight(),
-                    blockedCount,
-                    overdueCount,
-                    latestCheckIn.orElse(null)
-            );
-        });
+    public DeveloperDTOs.ProjectDTO getProjectDetails(Actor actor, String projectId) {
+        return toProjectDTO(actor, visibleProject(actor, projectId));
     }
 
-    public BigDecimal calculateStructuredProgress(String projectId) {
-        List<WorkItemEntity> workItems = workItemRepository.findByProjectId(projectId);
+    private DeveloperDTOs.ProjectDTO toProjectDTO(Actor actor, ProjectEntity p) {
+        Instant now = Instant.now();
+        List<WorkItemEntity> pTasks = workItemRepository.findByOrgIdAndProjectId(actor.orgId(), p.getId());
+        long blockedCount = pTasks.stream().filter(t -> t.isBlocked() || "BLOCKED".equalsIgnoreCase(t.getState())).count();
+        long overdueCount = pTasks.stream().filter(t -> t.getDueDate() != null && t.getDueDate().isBefore(now) && !"DONE".equalsIgnoreCase(t.getState())).count();
+        Optional<ProjectCheckInEntity> latestCheckIn = projectCheckInRepository.findTop1ByOrgIdAndProjectIdOrderByCreatedAtDesc(actor.orgId(), p.getId());
+
+        BigDecimal progressPercent = p.getLastProgressPercent();
+        if ("STRUCTURED".equalsIgnoreCase(p.getMode())) {
+            progressPercent = structuredProgress(pTasks);
+        }
+        return new DeveloperDTOs.ProjectDTO(
+                p.getId(), p.getOrgId(), p.getName(), p.getCode(), p.getDescription(), p.getMode(), p.getStatus(),
+                progressPercent != null ? progressPercent : BigDecimal.ZERO, p.getTargetCompletionDate(),
+                p.getAccountableOwnerId(), p.getMemberIds(), p.getTotalWeight(), p.getCompletedWeight(),
+                blockedCount, overdueCount, latestCheckIn.orElse(null));
+    }
+
+    public BigDecimal calculateStructuredProgress(UUID orgId, String projectId) {
+        return structuredProgress(workItemRepository.findByOrgIdAndProjectId(orgId, projectId));
+    }
+
+    private static BigDecimal structuredProgress(List<WorkItemEntity> workItems) {
         if (workItems.isEmpty()) {
             return BigDecimal.ZERO;
         }
-
         BigDecimal totalWeight = BigDecimal.ZERO;
         BigDecimal completedWeight = BigDecimal.ZERO;
-
         for (WorkItemEntity item : workItems) {
             BigDecimal w = item.getWeight() != null ? item.getWeight() : BigDecimal.ONE;
             totalWeight = totalWeight.add(w);
@@ -249,23 +242,18 @@ public class DeveloperService {
                 completedWeight = completedWeight.add(w);
             }
         }
-
         if (totalWeight.compareTo(BigDecimal.ZERO) == 0) {
             return BigDecimal.ZERO;
         }
-
-        return completedWeight.multiply(BigDecimal.valueOf(100))
-                .divide(totalWeight, 2, RoundingMode.HALF_UP);
+        return completedWeight.multiply(BigDecimal.valueOf(100)).divide(totalWeight, 2, RoundingMode.HALF_UP);
     }
 
     // ==========================================
     // 3. TASKS & WORK ITEMS
     // ==========================================
     @Transactional(readOnly = true)
-    public List<DeveloperDTOs.WorkItemDTO> getMyTasks(String userId, String status, String priority, String projectId) {
-        List<WorkItemEntity> tasks = workItemRepository.findByPrimaryAssigneeId(userId);
-
-        return tasks.stream()
+    public List<DeveloperDTOs.WorkItemDTO> getMyTasks(Actor actor, String status, String priority, String projectId) {
+        return myTasksIn(actor, readableProjectIds(actor)).stream()
                 .filter(t -> status == null || status.isBlank() || status.equalsIgnoreCase("ALL") || status.equalsIgnoreCase(t.getState()))
                 .filter(t -> priority == null || priority.isBlank() || priority.equalsIgnoreCase("ALL") || priority.equalsIgnoreCase(t.getPriority()))
                 .filter(t -> projectId == null || projectId.isBlank() || projectId.equalsIgnoreCase("ALL") || projectId.equalsIgnoreCase(t.getProjectId()))
@@ -273,52 +261,47 @@ public class DeveloperService {
                 .toList();
     }
 
-    public DeveloperDTOs.WorkItemDTO updateTaskStatus(String taskId, String userId, DeveloperDTOs.TaskStatusUpdateRequest req) {
-        WorkItemEntity item = workItemRepository.findById(taskId)
-                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+    public DeveloperDTOs.WorkItemDTO updateTaskStatus(Actor actor, String taskId, DeveloperDTOs.TaskStatusUpdateRequest req) {
+        WorkItemEntity item = visibleTask(actor, taskId);
+        requireTaskEdit(actor, item);
 
         String oldState = item.getState();
         String newState = req.state().toUpperCase();
         item.setState(newState);
-
         if ("IN_REVIEW".equalsIgnoreCase(newState)) {
             item.setSubmittedRevision(item.getCurrentRevision());
         }
-
         if ("DONE".equalsIgnoreCase(newState)) {
             item.setBlocked(false);
         }
-
         item.setUpdatedAt(Instant.now());
         WorkItemEntity saved = workItemRepository.save(item);
 
         if (req.note() != null && !req.note().isBlank()) {
             TaskCommentEntity comment = new TaskCommentEntity();
             comment.setId("cm-" + UUID.randomUUID().toString().substring(0, 8));
-            comment.setTaskId(taskId);
-            comment.setAuthorId(userId);
+            comment.setOrgId(actor.orgId());
+            comment.setTaskId(item.getId());
+            comment.setAuthorId(actor.userId());
             comment.setAuthorName("Developer");
             comment.setComment("Status changed from " + oldState + " to " + newState + ": " + req.note());
             comment.setCreatedAt(Instant.now());
             taskCommentRepository.save(comment);
         }
 
-        // Recalculate Structured Project progress if applicable
-        projectRepository.findById(item.getProjectId()).ifPresent(p -> {
+        projectRepository.findByIdAndOrgId(item.getProjectId(), actor.orgId()).ifPresent(p -> {
             if ("STRUCTURED".equalsIgnoreCase(p.getMode())) {
-                BigDecimal progress = calculateStructuredProgress(p.getId());
-                p.setLastProgressPercent(progress);
+                p.setLastProgressPercent(calculateStructuredProgress(actor.orgId(), p.getId()));
                 p.setUpdatedAt(Instant.now());
                 projectRepository.save(p);
             }
         });
-
         return mapWorkItemToDTO(saved);
     }
 
-    public TaskBlockerEntity submitTaskBlocker(String taskId, String userId, DeveloperDTOs.TaskBlockerRequest req) {
-        WorkItemEntity item = workItemRepository.findById(taskId)
-                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+    public TaskBlockerEntity submitTaskBlocker(Actor actor, String taskId, DeveloperDTOs.TaskBlockerRequest req) {
+        WorkItemEntity item = visibleTask(actor, taskId);
+        requireTaskEdit(actor, item);
 
         item.setBlocked(true);
         item.setState("BLOCKED");
@@ -327,44 +310,45 @@ public class DeveloperService {
 
         TaskBlockerEntity blocker = new TaskBlockerEntity();
         blocker.setId("blk-" + UUID.randomUUID().toString().substring(0, 8));
-        blocker.setTaskId(taskId);
+        blocker.setOrgId(actor.orgId());
+        blocker.setTaskId(item.getId());
         blocker.setReason(req.reason());
         blocker.setSeverity(req.severity() != null ? req.severity().toUpperCase() : "HIGH");
         blocker.setResolved(false);
         blocker.setCreatedAt(Instant.now());
-
         return taskBlockerRepository.save(blocker);
     }
 
-    public TaskBlockerEntity resolveTaskBlocker(String blockerId, String userId) {
-        TaskBlockerEntity blocker = taskBlockerRepository.findById(blockerId)
-                .orElseThrow(() -> new IllegalArgumentException("Blocker not found: " + blockerId));
+    public TaskBlockerEntity resolveTaskBlocker(Actor actor, String blockerId) {
+        TaskBlockerEntity blocker = blockerId == null ? null
+                : taskBlockerRepository.findByIdAndOrgId(blockerId, actor.orgId()).orElse(null);
+        if (blocker == null) throw access.notFound(actor, "BLOCKER", blockerId);
+        WorkItemEntity item = visibleTask(actor, blocker.getTaskId());
+        requireTaskEdit(actor, item);
 
         blocker.setResolved(true);
         blocker.setResolvedAt(Instant.now());
-        blocker.setResolvedBy(userId);
+        blocker.setResolvedBy(actor.userId());
         TaskBlockerEntity saved = taskBlockerRepository.save(blocker);
 
-        List<TaskBlockerEntity> unresolved = taskBlockerRepository.findByTaskIdAndResolvedFalse(blocker.getTaskId());
-        if (unresolved.isEmpty()) {
-            workItemRepository.findById(blocker.getTaskId()).ifPresent(item -> {
-                item.setBlocked(false);
-                if ("BLOCKED".equalsIgnoreCase(item.getState())) {
-                    item.setState("IN_PROGRESS");
-                }
-                item.setUpdatedAt(Instant.now());
-                workItemRepository.save(item);
-            });
+        if (taskBlockerRepository.findByOrgIdAndTaskIdAndResolvedFalse(actor.orgId(), item.getId()).isEmpty()) {
+            item.setBlocked(false);
+            if ("BLOCKED".equalsIgnoreCase(item.getState())) {
+                item.setState("IN_PROGRESS");
+            }
+            item.setUpdatedAt(Instant.now());
+            workItemRepository.save(item);
         }
-
         return saved;
     }
 
-    public TaskCommentEntity addTaskComment(String taskId, String userId, String authorName, DeveloperDTOs.TaskCommentRequest req) {
+    public TaskCommentEntity addTaskComment(Actor actor, String taskId, String authorName, DeveloperDTOs.TaskCommentRequest req) {
+        WorkItemEntity item = visibleTask(actor, taskId);
         TaskCommentEntity comment = new TaskCommentEntity();
         comment.setId("cm-" + UUID.randomUUID().toString().substring(0, 8));
-        comment.setTaskId(taskId);
-        comment.setAuthorId(userId);
+        comment.setOrgId(actor.orgId());
+        comment.setTaskId(item.getId());
+        comment.setAuthorId(actor.userId());
         comment.setAuthorName(authorName != null ? authorName : "Developer");
         comment.setComment(req.comment());
         comment.setCreatedAt(Instant.now());
@@ -372,34 +356,38 @@ public class DeveloperService {
     }
 
     @Transactional(readOnly = true)
-    public List<TaskCommentEntity> getTaskComments(String taskId) {
-        return taskCommentRepository.findByTaskIdOrderByCreatedAtAsc(taskId);
+    public List<TaskCommentEntity> getTaskComments(Actor actor, String taskId) {
+        WorkItemEntity item = visibleTask(actor, taskId);
+        return taskCommentRepository.findByOrgIdAndTaskIdOrderByCreatedAtAsc(actor.orgId(), item.getId());
     }
 
     @Transactional(readOnly = true)
-    public List<TaskBlockerEntity> getTaskBlockers(String taskId) {
-        return taskBlockerRepository.findByTaskIdOrderByCreatedAtDesc(taskId);
+    public List<TaskBlockerEntity> getTaskBlockers(Actor actor, String taskId) {
+        WorkItemEntity item = visibleTask(actor, taskId);
+        return taskBlockerRepository.findByOrgIdAndTaskIdOrderByCreatedAtDesc(actor.orgId(), item.getId());
     }
 
     // ==========================================
     // 4. CHECK-INS (INDIVIDUAL MODE)
     // ==========================================
-    public ProjectCheckInEntity submitCheckIn(String userId, String authorName, DeveloperDTOs.CheckInSubmissionRequest req) {
-        ProjectEntity project = projectRepository.findById(req.projectId())
-                .orElseThrow(() -> new IllegalArgumentException("Project not found: " + req.projectId()));
-
+    public ProjectCheckInEntity submitCheckIn(Actor actor, String authorName, DeveloperDTOs.CheckInSubmissionRequest req) {
+        ProjectEntity project = visibleProject(actor, req.projectId());
+        access.requireAction(actor, project.getId(), PermissionKey.PROJECT_PROGRESS_REPORT);
+        if (!actor.userId().equals(project.getAccountableOwnerId())) {
+            throw PermissionService.forbidden(); // only the accountable developer reports progress
+        }
         if ("STRUCTURED".equalsIgnoreCase(project.getMode())) {
             throw new IllegalStateException("Direct percentage check-ins are restricted for Structured Mode projects. Progress is calculated from work items.");
         }
-
         if (req.percent() == null || req.percent().compareTo(BigDecimal.ZERO) < 0 || req.percent().compareTo(BigDecimal.valueOf(100)) > 0) {
             throw new IllegalArgumentException("Completion percentage must be between 0 and 100.");
         }
 
         ProjectCheckInEntity checkIn = new ProjectCheckInEntity();
         checkIn.setId("chk-" + UUID.randomUUID().toString().substring(0, 8));
-        checkIn.setProjectId(req.projectId());
-        checkIn.setAuthorId(userId);
+        checkIn.setOrgId(actor.orgId());
+        checkIn.setProjectId(project.getId());
+        checkIn.setAuthorId(actor.userId());
         checkIn.setAuthorName(authorName != null ? authorName : "Developer");
         checkIn.setPercent(req.percent().setScale(2, RoundingMode.HALF_UP));
         checkIn.setAccomplished(req.accomplished());
@@ -407,43 +395,35 @@ public class DeveloperService {
         checkIn.setBlockers(req.blockers());
         checkIn.setRisks(req.risks());
         checkIn.setCreatedAt(Instant.now());
-
         ProjectCheckInEntity saved = projectCheckInRepository.save(checkIn);
 
         project.setLastProgressPercent(checkIn.getPercent());
         project.setUpdatedAt(Instant.now());
         projectRepository.save(project);
-
         return saved;
     }
 
     @Transactional(readOnly = true)
-    public List<ProjectCheckInEntity> getProjectCheckIns(String projectId) {
-        return projectCheckInRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+    public List<ProjectCheckInEntity> getProjectCheckIns(Actor actor, String projectId) {
+        ProjectEntity project = visibleProject(actor, projectId);
+        return projectCheckInRepository.findByOrgIdAndProjectIdOrderByCreatedAtDesc(actor.orgId(), project.getId());
     }
 
     // ==========================================
     // 5. SPRINTS & KANBAN
     // ==========================================
     @Transactional(readOnly = true)
-    public List<DeveloperDTOs.SprintDTO> getSprints(String projectId) {
+    public List<DeveloperDTOs.SprintDTO> getSprints(Actor actor, String projectId) {
         List<SprintEntity> sprints = projectId != null && !projectId.isBlank()
-                ? sprintRepository.findByProjectId(projectId)
-                : sprintRepository.findAll();
+                ? sprintRepository.findByOrgIdAndProjectId(actor.orgId(), visibleProject(actor, projectId).getId())
+                : sprintRepository.findByOrgIdAndProjectIdIn(actor.orgId(), readableProjectIds(actor));
 
         List<DeveloperDTOs.SprintDTO> result = new ArrayList<>();
         for (SprintEntity s : sprints) {
-            List<WorkItemEntity> tasks = workItemRepository.findBySprintId(s.getId());
+            List<WorkItemEntity> tasks = workItemRepository.findByOrgIdAndSprintId(actor.orgId(), s.getId());
             result.add(new DeveloperDTOs.SprintDTO(
-                    s.getId(),
-                    s.getProjectId(),
-                    s.getName(),
-                    s.getGoal(),
-                    s.getStatus(),
-                    s.getStartDate(),
-                    s.getEndDate(),
-                    tasks.stream().map(this::mapWorkItemToDTO).toList()
-            ));
+                    s.getId(), s.getProjectId(), s.getName(), s.getGoal(), s.getStatus(), s.getStartDate(), s.getEndDate(),
+                    tasks.stream().map(this::mapWorkItemToDTO).toList()));
         }
         return result;
     }
@@ -452,33 +432,46 @@ public class DeveloperService {
     // 6. BUGS & ISSUES
     // ==========================================
     @Transactional(readOnly = true)
-    public List<BugEntity> getBugs(String userId, String projectId) {
+    public List<BugEntity> getBugs(Actor actor, String projectId) {
         if (projectId != null && !projectId.isBlank()) {
-            return bugRepository.findByProjectId(projectId);
+            return bugRepository.findByOrgIdAndProjectId(actor.orgId(), visibleProject(actor, projectId).getId());
         }
-        return bugRepository.findByAssignedTo(userId);
+        List<String> readable = readableProjectIds(actor);
+        return bugRepository.findByOrgIdAndAssignedTo(actor.orgId(), actor.userId()).stream()
+                .filter(b -> readable.contains(b.getProjectId()))
+                .toList();
     }
 
-    public BugEntity createBug(String userId, DeveloperDTOs.CreateBugRequest req) {
+    public BugEntity createBug(Actor actor, DeveloperDTOs.CreateBugRequest req) {
+        ProjectEntity project = visibleProject(actor, req.projectId());
+        if (!access.can(actor, project.getId(), PermissionKey.TASK_UPDATE)
+                && !access.can(actor, project.getId(), PermissionKey.TASK_REVIEW)) {
+            throw PermissionService.forbidden();
+        }
         BugEntity bug = new BugEntity();
         bug.setId("bug-" + UUID.randomUUID().toString().substring(0, 8));
-        bug.setProjectId(req.projectId());
+        bug.setOrgId(actor.orgId());
+        bug.setProjectId(project.getId());
         bug.setTitle(req.title());
         bug.setDescription(req.description());
         bug.setSeverity(req.severity() != null ? req.severity().toUpperCase() : "MEDIUM");
         bug.setStatus("OPEN");
-        bug.setReportedBy(userId);
-        bug.setAssignedTo(req.assignedTo() != null ? req.assignedTo() : userId);
+        bug.setReportedBy(actor.userId());
+        bug.setAssignedTo(req.assignedTo() != null ? req.assignedTo() : actor.userId());
         bug.setReproductionSteps(req.reproductionSteps());
         bug.setEnvironment(req.environment());
         bug.setCreatedAt(Instant.now());
         return bugRepository.save(bug);
     }
 
-    public BugEntity updateBugStatus(String bugId, String userId, DeveloperDTOs.UpdateBugStatusRequest req) {
-        BugEntity bug = bugRepository.findById(bugId)
-                .orElseThrow(() -> new IllegalArgumentException("Bug not found: " + bugId));
-
+    public BugEntity updateBugStatus(Actor actor, String bugId, DeveloperDTOs.UpdateBugStatusRequest req) {
+        BugEntity bug = bugId == null ? null : bugRepository.findByIdAndOrgId(bugId, actor.orgId()).orElse(null);
+        if (bug == null) throw access.notFound(actor, "BUG", bugId);
+        access.requireVisible(actor, "BUG", bugId, bug.getProjectId());
+        access.requireAction(actor, bug.getProjectId(), PermissionKey.TASK_UPDATE);
+        if (!actor.userId().equals(bug.getAssignedTo()) && !access.can(actor, bug.getProjectId(), PermissionKey.TASK_ASSIGN)) {
+            throw PermissionService.forbidden();
+        }
         bug.setStatus(req.status().toUpperCase());
         if (req.resolution() != null) {
             bug.setResolution(req.resolution());
@@ -493,21 +486,26 @@ public class DeveloperService {
     // 7. CODE REVIEWS
     // ==========================================
     @Transactional(readOnly = true)
-    public List<CodeReviewEntity> getCodeReviews(String userId, String type) {
-        if ("authored".equalsIgnoreCase(type)) {
-            return codeReviewRepository.findByAuthorId(userId);
-        } else if ("assigned".equalsIgnoreCase(type)) {
-            return codeReviewRepository.findByReviewerId(userId);
-        }
+    public List<CodeReviewEntity> getCodeReviews(Actor actor, String type) {
         List<CodeReviewEntity> combined = new ArrayList<>();
-        combined.addAll(codeReviewRepository.findByReviewerId(userId));
-        combined.addAll(codeReviewRepository.findByAuthorId(userId));
-        return combined.stream().distinct().toList();
+        if (!"authored".equalsIgnoreCase(type)) {
+            combined.addAll(codeReviewRepository.findByOrgIdAndReviewerId(actor.orgId(), actor.userId()));
+        }
+        if (!"assigned".equalsIgnoreCase(type)) {
+            combined.addAll(codeReviewRepository.findByOrgIdAndAuthorId(actor.orgId(), actor.userId()));
+        }
+        return combined.stream().distinct().filter(r -> access.canRead(actor, r.getProjectId())).toList();
     }
 
-    public CodeReviewEntity submitReviewDecision(String reviewId, String userId, DeveloperDTOs.CodeReviewDecisionRequest req) {
-        CodeReviewEntity review = codeReviewRepository.findById(reviewId)
-                .orElseThrow(() -> new IllegalArgumentException("Review not found: " + reviewId));
+    public CodeReviewEntity submitReviewDecision(Actor actor, String reviewId, DeveloperDTOs.CodeReviewDecisionRequest req) {
+        CodeReviewEntity review = reviewId == null ? null
+                : codeReviewRepository.findByIdAndOrgId(reviewId, actor.orgId()).orElse(null);
+        if (review == null) throw access.notFound(actor, "REVIEW", reviewId);
+        access.requireVisible(actor, "REVIEW", reviewId, review.getProjectId());
+        access.requireAction(actor, review.getProjectId(), PermissionKey.TASK_REVIEW);
+        if (!actor.userId().equals(review.getReviewerId())) {
+            throw PermissionService.forbidden(); // only the assigned reviewer decides
+        }
 
         review.setStatus(req.decision().toUpperCase());
         review.setUpdatedAt(Instant.now());
@@ -515,52 +513,55 @@ public class DeveloperService {
         if (req.feedback() != null && !req.feedback().isBlank()) {
             CodeReviewCommentEntity comment = new CodeReviewCommentEntity();
             comment.setId("crc-" + UUID.randomUUID().toString().substring(0, 8));
-            comment.setReviewId(reviewId);
-            comment.setAuthorId(userId);
+            comment.setOrgId(actor.orgId());
+            comment.setReviewId(review.getId());
+            comment.setAuthorId(actor.userId());
             comment.setAuthorName("Reviewer");
             comment.setComment(req.feedback());
             comment.setCreatedAt(Instant.now());
             codeReviewCommentRepository.save(comment);
         }
 
-        // If approved and linked task exists, transition work item to DONE
         if ("APPROVED".equalsIgnoreCase(req.decision()) && review.getWorkItemId() != null) {
-            workItemRepository.findById(review.getWorkItemId()).ifPresent(item -> {
+            workItemRepository.findByIdAndOrgId(review.getWorkItemId(), actor.orgId()).ifPresent(item -> {
                 item.setState("DONE");
                 item.setUpdatedAt(Instant.now());
                 workItemRepository.save(item);
             });
         }
-
         return codeReviewRepository.save(review);
     }
 
     // ==========================================
-    // 8. GITHUB ACTIVITY
+    // 8. GITHUB ACTIVITY (evidence only; requires repo.read in the organization)
     // ==========================================
     @Transactional(readOnly = true)
-    public List<GitHubActivityEntity> getGitHubActivity(String repo, String actor) {
+    public List<GitHubActivityEntity> getGitHubActivity(Actor actor, String repo, String gitActor) {
+        access.requireAtOrg(actor, PermissionKey.REPO_READ);
         if (repo != null && !repo.isBlank()) {
-            return gitHubActivityRepository.findByRepositoryNameOrderByCreatedAtDesc(repo);
-        } else if (actor != null && !actor.isBlank()) {
-            return gitHubActivityRepository.findByActorOrderByCreatedAtDesc(actor);
+            return gitHubActivityRepository.findByOrgIdAndRepositoryNameOrderByCreatedAtDesc(actor.orgId(), repo);
+        } else if (gitActor != null && !gitActor.isBlank()) {
+            return gitHubActivityRepository.findByOrgIdAndActorOrderByCreatedAtDesc(actor.orgId(), gitActor);
         }
-        return gitHubActivityRepository.findAllByOrderByCreatedAtDesc();
+        return gitHubActivityRepository.findByOrgIdOrderByCreatedAtDesc(actor.orgId());
     }
 
     // ==========================================
-    // 9. CALENDAR & DEADLINES
+    // 9. CALENDAR & DEADLINES (own events in the selected organization)
     // ==========================================
     @Transactional(readOnly = true)
-    public List<CalendarEventEntity> getCalendarEvents(String userId) {
-        return calendarEventRepository.findByUserIdOrderByStartTimeAsc(userId);
+    public List<CalendarEventEntity> getCalendarEvents(Actor actor) {
+        return calendarEventRepository.findByOrgIdAndUserIdOrderByStartTimeAsc(actor.orgId(), actor.userId());
     }
 
-    public CalendarEventEntity createCalendarEvent(String userId, DeveloperDTOs.CalendarEventRequest req) {
+    public CalendarEventEntity createCalendarEvent(Actor actor, DeveloperDTOs.CalendarEventRequest req) {
+        String projectId = req.projectId() == null || req.projectId().isBlank() ? null
+                : visibleProject(actor, req.projectId()).getId();
         CalendarEventEntity event = new CalendarEventEntity();
         event.setId("evt-" + UUID.randomUUID().toString().substring(0, 8));
-        event.setUserId(userId);
-        event.setProjectId(req.projectId());
+        event.setOrgId(actor.orgId());
+        event.setUserId(actor.userId());
+        event.setProjectId(projectId);
         event.setTitle(req.title());
         event.setDescription(req.description());
         event.setEventType(req.eventType() != null ? req.eventType().toUpperCase() : "TASK_DUE");
@@ -576,109 +577,131 @@ public class DeveloperService {
     // 10. DISCUSSIONS & MESSAGES
     // ==========================================
     @Transactional(readOnly = true)
-    public List<DiscussionEntity> getDiscussions(String projectId) {
+    public List<DiscussionEntity> getDiscussions(Actor actor, String projectId) {
         if (projectId != null && !projectId.isBlank()) {
-            return discussionRepository.findByProjectIdOrderByUpdatedAtDesc(projectId);
+            return discussionRepository.findByOrgIdAndProjectIdOrderByUpdatedAtDesc(actor.orgId(),
+                    visibleProject(actor, projectId).getId());
         }
-        return discussionRepository.findAllByOrderByUpdatedAtDesc();
+        return discussionRepository.findByOrgIdAndProjectIdInOrderByUpdatedAtDesc(actor.orgId(), readableProjectIds(actor));
     }
 
-    public DiscussionEntity createDiscussion(String userId, String authorName, DeveloperDTOs.DiscussionPostRequest req) {
+    public DiscussionEntity createDiscussion(Actor actor, String authorName, DeveloperDTOs.DiscussionPostRequest req) {
+        ProjectEntity project = visibleProject(actor, req.projectId());
         DiscussionEntity disc = new DiscussionEntity();
         disc.setId("dsc-" + UUID.randomUUID().toString().substring(0, 8));
-        disc.setProjectId(req.projectId());
+        disc.setOrgId(actor.orgId());
+        disc.setProjectId(project.getId());
         disc.setTitle(req.title());
         disc.setCategory(req.category() != null ? req.category() : "GENERAL");
-        disc.setAuthorId(userId);
+        disc.setAuthorId(actor.userId());
         disc.setCreatedAt(Instant.now());
         disc.setUpdatedAt(Instant.now());
         DiscussionEntity saved = discussionRepository.save(disc);
 
         if (req.initialMessage() != null && !req.initialMessage().isBlank()) {
-            DiscussionMessageEntity msg = new DiscussionMessageEntity();
-            msg.setId("msg-" + UUID.randomUUID().toString().substring(0, 8));
-            msg.setDiscussionId(saved.getId());
-            msg.setAuthorId(userId);
-            msg.setAuthorName(authorName != null ? authorName : "Developer");
-            msg.setMessage(req.initialMessage());
-            msg.setCreatedAt(Instant.now());
-            discussionMessageRepository.save(msg);
+            discussionMessageRepository.save(newMessage(actor, saved.getId(), authorName, req.initialMessage()));
         }
-
         return saved;
     }
 
-    @Transactional(readOnly = true)
-    public List<DiscussionMessageEntity> getDiscussionMessages(String discussionId) {
-        return discussionMessageRepository.findByDiscussionIdOrderByCreatedAtAsc(discussionId);
+    private DiscussionEntity visibleDiscussion(Actor actor, String discussionId) {
+        DiscussionEntity discussion = discussionId == null ? null
+                : discussionRepository.findByIdAndOrgId(discussionId, actor.orgId()).orElse(null);
+        if (discussion == null) throw access.notFound(actor, "DISCUSSION", discussionId);
+        access.requireVisible(actor, "DISCUSSION", discussionId, discussion.getProjectId());
+        return discussion;
     }
 
-    public DiscussionMessageEntity addDiscussionMessage(String discussionId, String userId, String authorName, String message) {
+    @Transactional(readOnly = true)
+    public List<DiscussionMessageEntity> getDiscussionMessages(Actor actor, String discussionId) {
+        DiscussionEntity discussion = visibleDiscussion(actor, discussionId);
+        return discussionMessageRepository.findByOrgIdAndDiscussionIdOrderByCreatedAtAsc(actor.orgId(), discussion.getId());
+    }
+
+    public DiscussionMessageEntity addDiscussionMessage(Actor actor, String discussionId, String authorName, String message) {
+        DiscussionEntity discussion = visibleDiscussion(actor, discussionId);
+        discussion.setUpdatedAt(Instant.now());
+        discussionRepository.save(discussion);
+        return discussionMessageRepository.save(newMessage(actor, discussion.getId(), authorName, message));
+    }
+
+    private DiscussionMessageEntity newMessage(Actor actor, String discussionId, String authorName, String message) {
         DiscussionMessageEntity msg = new DiscussionMessageEntity();
         msg.setId("msg-" + UUID.randomUUID().toString().substring(0, 8));
+        msg.setOrgId(actor.orgId());
         msg.setDiscussionId(discussionId);
-        msg.setAuthorId(userId);
+        msg.setAuthorId(actor.userId());
         msg.setAuthorName(authorName != null ? authorName : "Developer");
         msg.setMessage(message);
         msg.setCreatedAt(Instant.now());
-
-        discussionRepository.findById(discussionId).ifPresent(d -> {
-            d.setUpdatedAt(Instant.now());
-            discussionRepository.save(d);
-        });
-
-        return discussionMessageRepository.save(msg);
+        return msg;
     }
 
     // ==========================================
-    // 11. FILES & DOCUMENTS
+    // 11. FILES & DOCUMENTS (metadata; TODO(4.4): scanning and signed, re-authorized downloads)
     // ==========================================
     @Transactional(readOnly = true)
-    public List<FileMetadataEntity> getFiles(String projectId, String workItemId) {
+    public List<FileMetadataEntity> getFiles(Actor actor, String projectId, String workItemId) {
         if (projectId != null && !projectId.isBlank()) {
-            return fileMetadataRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
-        } else if (workItemId != null && !workItemId.isBlank()) {
-            return fileMetadataRepository.findByWorkItemIdOrderByCreatedAtDesc(workItemId);
+            return fileMetadataRepository.findByOrgIdAndProjectIdOrderByCreatedAtDesc(actor.orgId(),
+                    visibleProject(actor, projectId).getId());
         }
-        return fileMetadataRepository.findAll();
+        if (workItemId != null && !workItemId.isBlank()) {
+            WorkItemEntity item = visibleTask(actor, workItemId);
+            return fileMetadataRepository.findByOrgIdAndProjectIdOrderByCreatedAtDesc(actor.orgId(), item.getProjectId())
+                    .stream().filter(f -> item.getId().equals(f.getWorkItemId())).toList();
+        }
+        return fileMetadataRepository.findByOrgIdAndProjectIdInOrderByCreatedAtDesc(actor.orgId(), readableProjectIds(actor));
     }
 
-    public FileMetadataEntity saveFileRecord(String userId, DeveloperDTOs.FileUploadRecordRequest req) {
+    public FileMetadataEntity saveFileRecord(Actor actor, DeveloperDTOs.FileUploadRecordRequest req) {
+        ProjectEntity project = visibleProject(actor, req.projectId());
+        access.requireAction(actor, project.getId(), PermissionKey.TASK_UPDATE);
+        String workItemId = null;
+        if (req.workItemId() != null && !req.workItemId().isBlank()) {
+            WorkItemEntity item = visibleTask(actor, req.workItemId());
+            if (!project.getId().equals(item.getProjectId())) {
+                throw access.notFound(actor, "TASK", req.workItemId());
+            }
+            workItemId = item.getId();
+        }
         FileMetadataEntity file = new FileMetadataEntity();
         file.setId("fil-" + UUID.randomUUID().toString().substring(0, 8));
-        file.setProjectId(req.projectId());
-        file.setWorkItemId(req.workItemId());
+        file.setOrgId(actor.orgId());
+        file.setProjectId(project.getId());
+        file.setWorkItemId(workItemId);
         file.setFileName(req.fileName());
         file.setFileUrl(req.fileUrl());
         file.setFileSize(req.fileSize() != null ? req.fileSize() : 1024L);
         file.setContentType(req.contentType() != null ? req.contentType() : "application/octet-stream");
-        file.setUploadedBy(userId);
+        file.setUploadedBy(actor.userId());
         file.setCreatedAt(Instant.now());
         return fileMetadataRepository.save(file);
     }
 
     // ==========================================
-    // 12. NOTIFICATIONS
+    // 12. NOTIFICATIONS (recipient + selected organization only)
     // ==========================================
     @Transactional(readOnly = true)
-    public List<DeveloperNotificationEntity> getNotifications(String userId, Boolean unreadOnly) {
+    public List<DeveloperNotificationEntity> getNotifications(Actor actor, Boolean unreadOnly) {
         if (Boolean.TRUE.equals(unreadOnly)) {
-            return developerNotificationRepository.findByUserIdAndReadFalseOrderByCreatedAtDesc(userId);
+            return developerNotificationRepository.findByOrgIdAndUserIdAndReadFalseOrderByCreatedAtDesc(actor.orgId(), actor.userId());
         }
-        return developerNotificationRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        return developerNotificationRepository.findByOrgIdAndUserIdOrderByCreatedAtDesc(actor.orgId(), actor.userId());
     }
 
-    public void markNotificationRead(String notificationId, String userId) {
-        developerNotificationRepository.findById(notificationId).ifPresent(n -> {
-            if (userId.equals(n.getUserId())) {
-                n.setRead(true);
-                developerNotificationRepository.save(n);
-            }
-        });
+    public void markNotificationRead(Actor actor, String notificationId) {
+        DeveloperNotificationEntity notification = notificationId == null ? null
+                : developerNotificationRepository.findByIdAndOrgIdAndUserId(notificationId, actor.orgId(), actor.userId())
+                        .orElse(null);
+        if (notification == null) throw access.notFound(actor, "NOTIFICATION", notificationId);
+        notification.setRead(true);
+        developerNotificationRepository.save(notification);
     }
 
-    public void markAllNotificationsRead(String userId) {
-        List<DeveloperNotificationEntity> unread = developerNotificationRepository.findByUserIdAndReadFalseOrderByCreatedAtDesc(userId);
+    public void markAllNotificationsRead(Actor actor) {
+        List<DeveloperNotificationEntity> unread =
+                developerNotificationRepository.findByOrgIdAndUserIdAndReadFalseOrderByCreatedAtDesc(actor.orgId(), actor.userId());
         for (DeveloperNotificationEntity n : unread) {
             n.setRead(true);
         }
@@ -686,11 +709,13 @@ public class DeveloperService {
     }
 
     // ==========================================
-    // 13. REPORTS & ANALYTICS
+    // 13. REPORTS & ANALYTICS (own work in readable projects)
     // ==========================================
     @Transactional(readOnly = true)
-    public DeveloperDTOs.DeveloperReportsSummaryDTO getReportsSummary(String userId, UUID orgId) {
-        List<WorkItemEntity> tasks = workItemRepository.findByPrimaryAssigneeId(userId);
+    public DeveloperDTOs.DeveloperReportsSummaryDTO getReportsSummary(Actor actor) {
+        List<ProjectEntity> projects = readableAssignedProjects(actor);
+        List<String> readable = projects.stream().map(ProjectEntity::getId).toList();
+        List<WorkItemEntity> tasks = myTasksIn(actor, readable);
 
         long totalTasks = tasks.size();
         long completed = tasks.stream().filter(t -> "DONE".equalsIgnoreCase(t.getState())).count();
@@ -701,68 +726,46 @@ public class DeveloperService {
         BigDecimal actualHours = tasks.stream()
                 .map(t -> t.getActualHours() != null ? t.getActualHours() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-
         BigDecimal estimatedHours = tasks.stream()
                 .map(t -> t.getEstimatedHours() != null ? t.getEstimatedHours() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        long openBugs = bugRepository.countByAssignedToAndStatusNot(userId, "RESOLVED");
-        List<BugEntity> myBugs = bugRepository.findByAssignedTo(userId);
+        List<BugEntity> myBugs = bugRepository.findByOrgIdAndAssignedTo(actor.orgId(), actor.userId()).stream()
+                .filter(b -> readable.contains(b.getProjectId())).toList();
+        long openBugs = myBugs.stream().filter(b -> !"RESOLVED".equalsIgnoreCase(b.getStatus())).count();
         long resolvedBugs = myBugs.stream().filter(b -> "RESOLVED".equalsIgnoreCase(b.getStatus())).count();
 
-        List<CodeReviewEntity> reviewsAuthored = codeReviewRepository.findByAuthorId(userId);
-        List<CodeReviewEntity> reviewsDone = codeReviewRepository.findByReviewerId(userId).stream()
+        List<CodeReviewEntity> reviewsAuthored = codeReviewRepository.findByOrgIdAndAuthorId(actor.orgId(), actor.userId())
+                .stream().filter(r -> readable.contains(r.getProjectId())).toList();
+        List<CodeReviewEntity> reviewsDone = codeReviewRepository.findByOrgIdAndReviewerId(actor.orgId(), actor.userId()).stream()
+                .filter(r -> readable.contains(r.getProjectId()))
                 .filter(r -> "APPROVED".equalsIgnoreCase(r.getStatus()) || "MERGED".equalsIgnoreCase(r.getStatus()))
                 .toList();
-
-        List<ProjectEntity> projects = projectRepository.findAssignedProjectsByOrg(userId, orgId);
-        if (projects.isEmpty() && orgId != null) {
-            projects = projectRepository.findAssignedProjects(userId);
-        }
 
         List<DeveloperDTOs.ProjectContributionDTO> contributions = new ArrayList<>();
         for (ProjectEntity p : projects) {
             List<WorkItemEntity> pTasks = tasks.stream().filter(t -> p.getId().equals(t.getProjectId())).toList();
             long pCompleted = pTasks.stream().filter(t -> "DONE".equalsIgnoreCase(t.getState())).count();
             BigDecimal prog = "STRUCTURED".equalsIgnoreCase(p.getMode())
-                    ? calculateStructuredProgress(p.getId())
+                    ? calculateStructuredProgress(actor.orgId(), p.getId())
                     : (p.getLastProgressPercent() != null ? p.getLastProgressPercent() : BigDecimal.ZERO);
-
             contributions.add(new DeveloperDTOs.ProjectContributionDTO(
-                    p.getId(),
-                    p.getName(),
-                    p.getCode(),
-                    p.getMode(),
-                    pTasks.size(),
-                    pCompleted,
-                    prog
-            ));
+                    p.getId(), p.getName(), p.getCode(), p.getMode(), pTasks.size(), pCompleted, prog));
         }
 
         return new DeveloperDTOs.DeveloperReportsSummaryDTO(
-                totalTasks,
-                completed,
-                inProgress,
-                inReview,
-                blocked,
-                actualHours,
-                estimatedHours,
-                openBugs,
-                resolvedBugs,
-                reviewsAuthored.size(),
-                reviewsDone.size(),
-                contributions
-        );
+                totalTasks, completed, inProgress, inReview, blocked, actualHours, estimatedHours, openBugs,
+                resolvedBugs, reviewsAuthored.size(), reviewsDone.size(), contributions);
     }
 
     // ==========================================
-    // 14. SETTINGS & PREFERENCES
+    // 14. SETTINGS & PREFERENCES (per person, not tenant data)
     // ==========================================
     @Transactional(readOnly = true)
-    public DeveloperPreferenceEntity getPreferences(String userId) {
-        return developerPreferenceRepository.findById(userId).orElseGet(() -> {
+    public DeveloperPreferenceEntity getPreferences(Actor actor) {
+        return developerPreferenceRepository.findById(actor.userId()).orElseGet(() -> {
             DeveloperPreferenceEntity pref = new DeveloperPreferenceEntity();
-            pref.setUserId(userId);
+            pref.setUserId(actor.userId());
             pref.setEmailNotifications(true);
             pref.setSlackNotifications(false);
             pref.setTheme("system");
@@ -772,20 +775,18 @@ public class DeveloperService {
         });
     }
 
-    public DeveloperPreferenceEntity updatePreferences(String userId, DeveloperDTOs.PreferenceUpdateRequest req) {
-        DeveloperPreferenceEntity pref = developerPreferenceRepository.findById(userId).orElseGet(() -> {
+    public DeveloperPreferenceEntity updatePreferences(Actor actor, DeveloperDTOs.PreferenceUpdateRequest req) {
+        DeveloperPreferenceEntity pref = developerPreferenceRepository.findById(actor.userId()).orElseGet(() -> {
             DeveloperPreferenceEntity p = new DeveloperPreferenceEntity();
-            p.setUserId(userId);
+            p.setUserId(actor.userId());
             return p;
         });
-
         pref.setEmailNotifications(req.emailNotifications());
         pref.setSlackNotifications(req.slackNotifications());
         pref.setTheme(req.theme() != null ? req.theme() : "system");
         pref.setGithubUsername(req.githubUsername());
         pref.setTimezone(req.timezone() != null ? req.timezone() : "America/New_York");
         pref.setUpdatedAt(Instant.now());
-
         return developerPreferenceRepository.save(pref);
     }
 
@@ -794,31 +795,19 @@ public class DeveloperService {
     // ==========================================
     private DeveloperDTOs.WorkItemDTO mapWorkItemToDTO(WorkItemEntity item) {
         return new DeveloperDTOs.WorkItemDTO(
-                item.getId(),
-                item.getProjectId(),
-                item.getOrgId(),
-                item.getParentId(),
-                item.getType(),
-                item.getKey(),
-                item.getTitle(),
-                item.getDescription(),
-                item.getPrimaryAssigneeId(),
-                item.getReviewerId(),
-                item.getState(),
-                item.isBlocked(),
-                item.getWeight(),
-                item.getWeightUnit(),
-                item.getCriteria(),
-                item.getCurrentRevision(),
-                item.getSubmittedRevision(),
-                item.getDueDate(),
-                item.getStartDate(),
-                item.getEstimatedHours(),
-                item.getActualHours(),
-                item.getPriority(),
-                item.getSprintId(),
-                item.getCreatedAt(),
-                item.getUpdatedAt()
-        );
+                item.getId(), item.getProjectId(), item.getOrgId(), item.getParentId(), item.getType(), item.getKey(),
+                item.getTitle(), item.getDescription(), item.getPrimaryAssigneeId(), item.getReviewerId(), item.getState(),
+                item.isBlocked(), item.getWeight(), item.getWeightUnit(), item.getCriteria(), item.getCurrentRevision(),
+                item.getSubmittedRevision(), item.getDueDate(), item.getStartDate(), item.getEstimatedHours(),
+                item.getActualHours(), item.getPriority(), item.getSprintId(), item.getCreatedAt(), item.getUpdatedAt());
+    }
+
+    /** Bug comments of a visible bug (kept org-scoped for when the bug detail API lands). */
+    @Transactional(readOnly = true)
+    public List<BugCommentEntity> getBugComments(Actor actor, String bugId) {
+        BugEntity bug = bugId == null ? null : bugRepository.findByIdAndOrgId(bugId, actor.orgId()).orElse(null);
+        if (bug == null) throw access.notFound(actor, "BUG", bugId);
+        access.requireVisible(actor, "BUG", bugId, bug.getProjectId());
+        return bugCommentRepository.findByOrgIdAndBugIdOrderByCreatedAtAsc(actor.orgId(), bug.getId());
     }
 }

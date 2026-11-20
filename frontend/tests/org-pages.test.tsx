@@ -12,7 +12,7 @@ const ROUTES = resolve(__dirname, "../src/app/(workspace)/org/[orgId]");
 const read = (path: string) => readFileSync(resolve(ROUTES, path), "utf8");
 
 describe("Admin page wrappers", () => {
-  it.each(["dashboard", "members", "roles-permissions", "access", "invitations", "teams", "projects", "health"])(
+  it.each(["dashboard", "members", "roles-permissions", "invitations", "teams", "projects"])(
     "admin/%s has its own wrapper and does not re-export an owner page",
     (route) => {
       const source = read(`admin/${route}/page.tsx`);
@@ -24,7 +24,7 @@ describe("Admin page wrappers", () => {
     },
   );
 
-  it.each(["dashboard", "members", "roles-permissions", "access", "invitations", "teams", "projects", "health"])(
+  it.each(["dashboard", "members", "roles-permissions", "invitations", "teams", "projects", "health"])(
     "owner/%s uses the owner family",
     (route) => {
       expect(read(`owner/${route}/page.tsx`)).toContain('family="owner"');
@@ -82,7 +82,7 @@ describe("Dashboard additions", () => {
 });
 
 describe("Batch 4b routes, redirects and sidebar coverage", () => {
-  it.each(["integrations", "reports", "notifications", "audit-logs"])("admin/%s has its own admin wrapper", (route) => {
+  it.each(["integrations", "reports", "audit-logs"])("admin/%s has its own admin wrapper", (route) => {
     const source = read(`admin/${route}/page.tsx`);
     expect(source).not.toMatch(/export \{ default \} from/);
     expect(source).toContain('family="admin"');
@@ -102,7 +102,13 @@ describe("Batch 4b routes, redirects and sidebar coverage", () => {
     ["owner/settings/page.tsx", "owner/organization"],
     ["admin/repositories/page.tsx", "admin/integrations"],
     ["admin/activity/page.tsx", "admin/audit-logs"],
-    ["admin/settings/page.tsx", "admin/access"],
+    ["admin/settings/page.tsx", "admin/roles-permissions"],
+    // Access Map was removed from both families; old links land on Roles & permissions.
+    ["owner/access/page.tsx", "owner/roles-permissions"],
+    ["admin/access/page.tsx", "admin/roles-permissions"],
+    // Health and notifications are not part of the admin family; they redirect into it.
+    ["admin/health/page.tsx", "admin/projects"],
+    ["admin/notifications/page.tsx", "admin/audit-logs"],
   ];
 
   it.each(REDIRECTS)("%s redirects to an existing page (%s)", (file, target) => {

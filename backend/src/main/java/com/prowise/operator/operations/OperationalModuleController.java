@@ -36,7 +36,7 @@ public class OperationalModuleController {
     // ==================== DASHBOARD STATS ====================
 
     @GetMapping({"/v1/operator/dashboard/stats", "/api/v1/operator/dashboard/stats"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Get aggregated operational health score and incident/job telemetry")
     public Map<String, Object> getDashboardStats(HttpServletRequest request) {
         AuthPrincipal principal = AuthPrincipal.require(request);
@@ -46,7 +46,7 @@ public class OperationalModuleController {
     // ==================== INCIDENTS & COORDINATION ====================
 
     @GetMapping({"/v1/operator/incidents", "/api/v1/operator/incidents"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List incidents scoped by operator access profile or department filter")
     public List<OperatorDTOs.IncidentResponse> listIncidents(
             @RequestParam(required = false) String department,
@@ -59,7 +59,7 @@ public class OperationalModuleController {
     }
 
     @GetMapping({"/v1/operator/incidents/{id}", "/api/v1/operator/incidents/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Get single incident detail")
     public OperatorDTOs.IncidentResponse getIncident(@PathVariable String id, HttpServletRequest request) {
         AuthPrincipal principal = AuthPrincipal.require(request);
@@ -67,7 +67,7 @@ public class OperationalModuleController {
     }
 
     @PostMapping({"/v1/operator/incidents", "/api/v1/operator/incidents"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Create a platform incident")
     public ResponseEntity<OperatorDTOs.IncidentResponse> createIncident(
             @RequestBody OperatorDTOs.CreateIncidentRequest req,
@@ -79,7 +79,7 @@ public class OperationalModuleController {
     }
 
     @PatchMapping({"/v1/operator/incidents/{id}", "/api/v1/operator/incidents/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Update incident details or severity")
     public OperatorDTOs.IncidentResponse updateIncident(
             @PathVariable String id,
@@ -91,7 +91,7 @@ public class OperationalModuleController {
     }
 
     @PostMapping({"/v1/operator/incidents/{id}/assign", "/api/v1/operator/incidents/{id}/assign"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Assign incident to a department operator (Coordination action)")
     public OperatorDTOs.IncidentResponse assignIncident(
             @PathVariable String id,
@@ -103,7 +103,7 @@ public class OperationalModuleController {
     }
 
     @PostMapping({"/v1/operator/incidents/{id}/resolve", "/api/v1/operator/incidents/{id}/resolve"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Resolve platform incident with root cause & mitigation")
     public OperatorDTOs.IncidentResponse resolveIncident(
             @PathVariable String id,
@@ -115,7 +115,7 @@ public class OperationalModuleController {
     }
 
     @GetMapping({"/v1/operator/incidents/{id}/assignments", "/api/v1/operator/incidents/{id}/assignments"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List assignment coordination history for an incident")
     public List<OperatorDTOs.IncidentAssignmentResponse> listIncidentAssignments(
             @PathVariable String id,
@@ -128,7 +128,7 @@ public class OperationalModuleController {
     // ==================== SUPPORT OPERATIONS ====================
 
     @GetMapping({"/v1/operator/support/tickets", "/api/v1/operator/support/tickets"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List customer support tickets")
     public List<OperatorDTOs.SupportTicketResponse> listSupportTickets(
             @RequestParam(required = false) String department,
@@ -141,7 +141,7 @@ public class OperationalModuleController {
     }
 
     @GetMapping({"/v1/operator/support/tickets/{id}", "/api/v1/operator/support/tickets/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Get single support ticket")
     public OperatorDTOs.SupportTicketResponse getSupportTicket(@PathVariable String id, HttpServletRequest request) {
         AuthPrincipal principal = AuthPrincipal.require(request);
@@ -149,7 +149,7 @@ public class OperationalModuleController {
     }
 
     @PostMapping({"/v1/operator/support/tickets/{id}/assign", "/api/v1/operator/support/tickets/{id}/assign"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Assign support ticket to a department operator")
     public OperatorDTOs.SupportTicketResponse assignSupportTicket(
             @PathVariable String id,
@@ -161,7 +161,7 @@ public class OperationalModuleController {
     }
 
     @PatchMapping({"/v1/operator/support/tickets/{id}", "/api/v1/operator/support/tickets/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Update support ticket priority or state")
     public OperatorDTOs.SupportTicketResponse updateSupportTicket(
             @PathVariable String id,
@@ -173,7 +173,7 @@ public class OperationalModuleController {
     }
 
     @GetMapping({"/v1/operator/support/access-requests", "/api/v1/operator/support/access-requests"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List tenant diagnostic support access requests")
     public List<OperatorDTOs.SupportAccessRequestResponse> listSupportAccessRequests(
             @RequestParam(required = false) String status,
@@ -184,7 +184,7 @@ public class OperationalModuleController {
     }
 
     @PostMapping({"/v1/operator/support/access-requests/{id}/approve", "/api/v1/operator/support/access-requests/{id}/approve"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Approve break-glass support access request")
     public OperatorDTOs.SupportAccessRequestResponse approveAccessRequest(@PathVariable String id, HttpServletRequest request) {
         AuthPrincipal principal = AuthPrincipal.require(request);
@@ -192,7 +192,7 @@ public class OperationalModuleController {
     }
 
     @PostMapping({"/v1/operator/support/access-requests/{id}/reject", "/api/v1/operator/support/access-requests/{id}/reject"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Reject support access request")
     public OperatorDTOs.SupportAccessRequestResponse rejectAccessRequest(@PathVariable String id, HttpServletRequest request) {
         AuthPrincipal principal = AuthPrincipal.require(request);
@@ -202,7 +202,7 @@ public class OperationalModuleController {
     // ==================== INTEGRATIONS, GITHUB & WEBHOOKS ====================
 
     @GetMapping({"/v1/operator/integrations", "/api/v1/operator/integrations"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List external service integration installations")
     public List<OperatorDTOs.IntegrationInstallationResponse> listIntegrations(HttpServletRequest request) {
         AuthPrincipal principal = AuthPrincipal.require(request);
@@ -210,7 +210,7 @@ public class OperationalModuleController {
     }
 
     @GetMapping({"/v1/operator/github/repositories", "/api/v1/operator/github/repositories"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List GitHub repositories linked to platform sync")
     public List<OperatorDTOs.GitHubRepositoryLinkResponse> listGitHubRepositories(
             @RequestParam(required = false) String installationId,
@@ -221,7 +221,7 @@ public class OperationalModuleController {
     }
 
     @GetMapping({"/v1/operator/webhooks", "/api/v1/operator/webhooks"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List incoming webhook receipt log")
     public List<OperatorDTOs.WebhookReceiptResponse> listWebhooks(
             @RequestParam(required = false) String source,
@@ -233,7 +233,7 @@ public class OperationalModuleController {
     }
 
     @PostMapping({"/v1/operator/webhooks/{id}/retry", "/api/v1/operator/webhooks/{id}/retry"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Trigger manual retry for a failed webhook event")
     public OperatorDTOs.WebhookReceiptResponse retryWebhook(@PathVariable String id, HttpServletRequest request) {
         AuthPrincipal principal = AuthPrincipal.require(request);
@@ -243,7 +243,7 @@ public class OperationalModuleController {
     // ==================== BACKGROUND JOBS ====================
 
     @GetMapping({"/v1/operator/jobs", "/api/v1/operator/jobs"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List queued and executing background jobs")
     public List<OperatorDTOs.BackgroundJobResponse> listJobs(
             @RequestParam(required = false) String queue,
@@ -255,7 +255,7 @@ public class OperationalModuleController {
     }
 
     @PostMapping({"/v1/operator/jobs/{id}/retry", "/api/v1/operator/jobs/{id}/retry"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Requeue a failed background worker job")
     public OperatorDTOs.BackgroundJobResponse retryJob(@PathVariable String id, HttpServletRequest request) {
         AuthPrincipal principal = AuthPrincipal.require(request);
@@ -265,7 +265,7 @@ public class OperationalModuleController {
     // ==================== MAINTENANCE ====================
 
     @GetMapping({"/v1/operator/maintenance", "/api/v1/operator/maintenance"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List scheduled and active maintenance windows")
     public List<OperatorDTOs.MaintenanceWindowResponse> listMaintenanceWindows(
             @RequestParam(required = false) String department,
@@ -277,7 +277,7 @@ public class OperationalModuleController {
     }
 
     @PostMapping({"/v1/operator/maintenance", "/api/v1/operator/maintenance"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Schedule a new platform maintenance window")
     public ResponseEntity<OperatorDTOs.MaintenanceWindowResponse> createMaintenance(
             @RequestBody OperatorDTOs.CreateMaintenanceWindowRequest req,
@@ -289,7 +289,7 @@ public class OperationalModuleController {
     }
 
     @PatchMapping({"/v1/operator/maintenance/{id}", "/api/v1/operator/maintenance/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Update maintenance window schedule or completion status")
     public OperatorDTOs.MaintenanceWindowResponse updateMaintenance(
             @PathVariable String id,
@@ -303,7 +303,7 @@ public class OperationalModuleController {
     // ==================== EMAIL & COMMUNICATIONS ====================
 
     @GetMapping({"/v1/operator/email/delivery", "/api/v1/operator/email/delivery"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List email delivery and bounce telemetry logs")
     public List<OperatorDTOs.EmailDeliveryLogResponse> listEmailLogs(
             @RequestParam(required = false) String status,
@@ -314,7 +314,7 @@ public class OperationalModuleController {
     }
 
     @PostMapping({"/v1/operator/email/{id}/retry", "/api/v1/operator/email/{id}/retry"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Retry dropped or bounced email delivery")
     public OperatorDTOs.EmailDeliveryLogResponse retryEmail(@PathVariable String id, HttpServletRequest request) {
         AuthPrincipal principal = AuthPrincipal.require(request);
@@ -324,7 +324,7 @@ public class OperationalModuleController {
     // ==================== ALERTS ====================
 
     @GetMapping({"/v1/operator/monitoring/alerts", "/api/v1/operator/monitoring/alerts"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List active operational alarms")
     public List<OperatorDTOs.OperationalAlertResponse> listAlerts(
             @RequestParam(required = false) Boolean acknowledged,
@@ -335,7 +335,7 @@ public class OperationalModuleController {
     }
 
     @PostMapping({"/v1/operator/monitoring/alerts/{id}/ack", "/api/v1/operator/monitoring/alerts/{id}/ack"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Acknowledge active operational alert")
     public OperatorDTOs.OperationalAlertResponse acknowledgeAlert(@PathVariable String id, HttpServletRequest request) {
         AuthPrincipal principal = AuthPrincipal.require(request);
@@ -345,7 +345,7 @@ public class OperationalModuleController {
     // ==================== TEAM WORKLOAD & COORDINATION ====================
 
     @GetMapping({"/v1/operator/team/workload", "/api/v1/operator/team/workload"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Get operational workload and shift balance across operators")
     public List<OperatorDTOs.OperatorWorkloadResponse> getTeamWorkload(HttpServletRequest request) {
         AuthPrincipal principal = AuthPrincipal.require(request);

@@ -1,147 +1,128 @@
 "use client";
 
-import React from "react";
-import { useParams } from "next/navigation";
-import { CalendarDays } from "lucide-react";
-
-import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
-import { OwnerPageState } from "@/components/owner/OwnerPageState";
-import { OwnerPanel } from "@/components/owner/OwnerPanel";
-import { OwnerTable } from "@/components/owner/OwnerTable";
-import { PageHeader, StatusBadge } from "@/components/owner/primitives";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { HealthBadge } from "@/components/ui/health-badge";
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { deadlineStatus, formatDateOnly, formatUtcTimestamp } from "@/components/owner/project-format";
-import { mockApiHealth, mockApiProjects, mockApiWorkItemsForOrg } from "@/lib/prowise-mock-adapters";
-import { useManagerResource } from "@/hooks/useManagerResource";
-import { ManagerResourceNotice } from "../_components/ManagerResourceNotice";
-
-const loadDeliveryHealth = (
-  orgId: string,
-  grants: Parameters<typeof mockApiProjects>[1],
-) => ({
-  projects: mockApiProjects(orgId, grants).items,
-  health: mockApiHealth(orgId, grants).items,
-  workItems: mockApiWorkItemsForOrg(orgId, grants).items,
-});
+import React, { useMemo } from "react";
+import { AlarmClockOff, CalendarCheck2, CalendarClock, Flag } from "lucide-react";
+import { useDeliveryStore } from "@/store/delivery-store";
+import { VIEWERS } from "@/mocks/delivery-dashboards";
+import {
+  Avatar,
+  KpiGrid,
+  KpiTile,
+  LinkRow,
+  PageFrame,
+  Panel,
+  StatusBadge,
+  TaskStatusBadge,
+  daysFromToday,
+  dueLabel,
+  formatDate,
+  useDemoLoad,
+  useLookups,
+  useRoleHref,
+} from "@/components/delivery/DeliveryUI";
+import { GroupedBarChart } from "@/components/delivery/DeliveryCharts";
 
 export default function ManagerDeadlinesPage() {
-  const params = useParams<{ orgId: string }>();
-  const orgId = params?.orgId ?? "";
-  const resource = useManagerResource({
-    routeOrgId: orgId,
-    name: "project-manager-deadlines-health",
-    permission: "project.read",
-    fixture: loadDeliveryHealth,
-  });
-  const data = resource.state.status === "ready" ? resource.state.data : null;
-  const healthByProject = new Map((data?.health ?? []).map((health) => [health.projectId, health]));
+  const href = useRoleHref("manager");
+  const { status, retry, forceEmpty } = useDemoLoad();
+  const lk = useLookups();
+  const allProjects = useDeliveryStore((s) => s.projects);
+  const allTasks = useDeliveryStore((s) => s.tasks);
+
+  const { overdue, week, later, milestones, buckets } = useMemo(() => {
+    const projects = forceEmpty ? [] : allProjects.filter((p) => p.managerId === VIEWERS.manager.id);
+    const ids = new Set(projects.map((p) => p.id));
+    const open = allTasks.filter((t) => ids.has(t.projectId) && t.status !== "DONE").sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    const ms = projects
+      .flatMap((p) => p.milestones.filter((m) => m.status !== "DONE").map((m) => ({ ...m, project: p })))
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    const weeks = ["This week", "Next week", "In 2 weeks", "Later"];
+    const bucketOf = (d: number) => (d <= 6 ? 0 : d <= 13 ? 1 : d <= 20 ? 2 : 3);
+    return {
+      overdue: open.filter((t) => daysFromToday(t.dueDate) < 0),
+      week: open.filter((t) => { const d = daysFromToday(t.dueDate); return d >= 0 && d <= 7; }),
+      later: open.filter((t) => daysFromToday(t.dueDate) > 7),
+      milestones: ms,
+      buckets: weeks.map((label, i) => ({
+        label,
+        primary: open.filter((t) => daysFromToday(t.dueDate) >= 0 && bucketOf(daysFromToday(t.dueDate)) === i).length,
+        secondary: ms.filter((m) => daysFromToday(m.dueDate) >= 0 && bucketOf(daysFromToday(m.dueDate)) === i).length,
+      })),
+    };
+  }, [allProjects, allTasks, forceEmpty]);
+
+  const TaskList = ({ items, empty }: { items: typeof overdue; empty: string }) => (
+    <div className="space-y-0.5">
+      {items.length === 0 && <p className="py-6 text-center text-xs text-[var(--color-text-muted)]">{empty}</p>}
+      {items.map((t) => {
+        const d = dueLabel(t.dueDate);
+        return (
+          <LinkRow key={t.id} href={href(`work-items/${t.id}`)}>
+            <Avatar person={lk.person(t.assigneeId)} size="sm" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold truncate">{t.key} · {t.title}</p>
+              <p className="text-[11px] text-[var(--color-text-muted)] truncate">{lk.project(t.projectId)?.name} · {lk.person(t.assigneeId)?.name ?? "Unassigned"}</p>
+            </div>
+            <span className="hidden sm:inline-flex"><TaskStatusBadge status={t.status} /></span>
+            <StatusBadge label={d.label} tone={d.tone} />
+          </LinkRow>
+        );
+      })}
+    </div>
+  );
 
   return (
-    <PanelLayout
-      title="Deadlines & health"
-      breadcrumb={[{ label: "Project Manager", href: `/org/${orgId}/manager` }, { label: "Deadlines & health" }]}
+    <PageFrame
+      crumbs={[{ label: "Manager", href: href() }, { label: "Delivery" }, { label: "Deadlines" }]}
+      back={{ href: href(), label: "Back to dashboard" }}
+      title="Deadlines & overdue work"
+      description="Dates are local calendar days; overdue means past the due date and not done."
+      status={status}
+      onRetry={retry}
     >
-      <div className="space-y-4 sm:space-y-6">
-        <PageHeader
-          title="Schedule and delivery health"
-          description="Date-only deadlines retain each project’s IANA timezone. Health is shown with its recorded reasons and affected items."
-          simulationLabel={data ? "Sample data" : undefined}
-          actions={<OwnerLaterBadge task="2.3" />}
-        />
-        {data ? (
-          data.projects.length === 0 ? (
-            <OwnerPageState
-              state="empty"
-              title="No readable project schedules"
-              description="Schedule records for projects you can read will appear here."
-              icon={CalendarDays}
-            />
-          ) : (
-            <>
-              {resource.partialVisibility && (
-                <p role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-app-text-secondary">
-                  Partial visibility — only readable projects are included in this schedule view.
-                </p>
-              )}
-              <OwnerPanel
-                title="Delivery schedule"
-                description={`Scope: readable projects · health calculated at the timestamp shown · unit: projects`}
-              >
-                <OwnerTable label="Project Manager deadlines and health">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Project</TableHead>
-                      <TableHead>Target date</TableHead>
-                      <TableHead>Deadline state</TableHead>
-                      <TableHead>Health and reasons</TableHead>
-                      <TableHead>Affected work</TableHead>
-                      <TableHead>Reporting cadence</TableHead>
-                      <TableHead>Permitted action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.projects.map((project) => {
-                      const health = healthByProject.get(project.id);
-                      const affectedIds = health?.affectedItemIds ?? [];
-                      const affected = affectedIds
-                        .map((id) => data.workItems.find((item) => item.id === id))
-                        .filter((item) => item !== undefined);
-                      return (
-                        <TableRow key={project.id}>
-                          <TableCell>{project.key} · {project.name}</TableCell>
-                          <TableCell>{formatDateOnly(project.targetDate, project.timezone)}</TableCell>
-                          <TableCell>
-                            <StatusBadge label={deadlineStatus(project, undefined).replace("-", " ")} tone="neutral" />
-                          </TableCell>
-                          <TableCell>
-                            <HealthBadge health={health?.status ?? project.health} />
-                            <span className="mt-1 block max-w-sm whitespace-normal text-xs text-app-text-muted">
-                              {(health?.reasons ?? project.healthReasons).join(" · ") || "No reason recorded"}
-                            </span>
-                            <span className="mt-1 block text-xs text-app-text-muted">
-                              {health?.calculatedAt ? `${formatUtcTimestamp(health.calculatedAt)} UTC` : "Health time not recorded"}
-                              {health?.timeBasis ? ` · ${health.timeBasis}` : ""}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            {affected.length
-                              ? affected.map((item) => `${item.key} · ${item.title}`).join(", ")
-                              : "No affected item recorded"}
-                          </TableCell>
-                          <TableCell>{project.cadence} · {project.timezone}</TableCell>
-                          <TableCell>
-                            {resource.can("project.deadline.edit", { projectId: project.id }) ? (
-                              <span className="inline-flex flex-wrap items-center gap-1">
-                                <LaterActionButton title="Deadline and cadence changes ship with task 2.3">Change dates</LaterActionButton>
-                                <OwnerLaterBadge task="2.3" />
-                              </span>
-                            ) : (
-                              <span className="text-xs text-app-text-muted">No project.deadline.edit grant</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </OwnerTable>
-              </OwnerPanel>
-            </>
-          )
-        ) : (
-          <ManagerResourceNotice
-            orgMatches={resource.orgMatches}
-            permissionStatus={resource.permissionStatus}
-            resourceStatus={resource.state.status}
-            permission={resource.permission}
-            permissionName="project.read"
-            laterTask="2.3"
-            retry={resource.retry}
-            retryPermissions={resource.permissionRetry}
-          />
-        )}
+      <KpiGrid>
+        <KpiTile label="Overdue tasks" value={overdue.length} icon={AlarmClockOff} tone="rose" chip={{ label: overdue.length ? "Chase today" : "Clear", tone: overdue.length ? "danger" : "success" }} footer="See below" href="#overdue" />
+        <KpiTile label="Due in 7 days" value={week.length} icon={CalendarClock} tone="amber" footer="This week" href="#week" />
+        <KpiTile label="Later" value={later.length} icon={CalendarCheck2} tone="blue" footer="Planned" href="#later" />
+        <KpiTile label="Open milestones" value={milestones.length} icon={Flag} tone="violet" footer="Milestones" href="#milestones" />
+      </KpiGrid>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <Panel className="xl:col-span-2" title="Overdue" description="Past due and not done" icon={AlarmClockOff} iconTone="rose">
+          <div id="overdue" className="scroll-mt-20"><TaskList items={overdue} empty="Nothing overdue." /></div>
+        </Panel>
+        <Panel title="Due ahead" description="Tasks vs milestones per week" icon={CalendarClock} iconTone="amber">
+          <GroupedBarChart data={buckets} primaryLabel="Tasks" secondaryLabel="Milestones" primaryColor="#3B82F6" secondaryColor="#8B5CF6" height={220} />
+        </Panel>
       </div>
-    </PanelLayout>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Panel title="Due in the next 7 days" icon={CalendarClock} iconTone="amber">
+          <div id="week" className="scroll-mt-20"><TaskList items={week} empty="Nothing due this week." /></div>
+        </Panel>
+        <Panel title="Milestones" icon={Flag} iconTone="violet">
+          <div id="milestones" className="scroll-mt-20 space-y-0.5">
+            {milestones.length === 0 && <p className="py-6 text-center text-xs text-[var(--color-text-muted)]">No open milestones.</p>}
+            {milestones.map((m) => {
+              const d = dueLabel(m.dueDate);
+              return (
+                <LinkRow key={m.id} href={href(`projects/${m.project.id}`)}>
+                  <span className="h-8 w-1 rounded-full shrink-0" style={{ backgroundColor: m.project.color }} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold truncate">{m.name}</p>
+                    <p className="text-[11px] text-[var(--color-text-muted)] truncate">{m.project.name} · {formatDate(m.dueDate, true)} · {m.progress}%</p>
+                  </div>
+                  <StatusBadge label={m.status === "LATE" ? "Late" : d.label} tone={m.status === "LATE" ? "danger" : d.tone} />
+                </LinkRow>
+              );
+            })}
+          </div>
+        </Panel>
+      </div>
+
+      <Panel title="Later" description="More than a week away" icon={CalendarCheck2}>
+        <div id="later" className="scroll-mt-20"><TaskList items={later} empty="Nothing scheduled later." /></div>
+      </Panel>
+    </PageFrame>
   );
 }

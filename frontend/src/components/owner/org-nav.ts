@@ -6,7 +6,6 @@ import {
   FolderGit2,
   GitPullRequest,
   HeartPulse,
-  KeyRound,
   LayoutDashboard,
   Lock,
   Mail,
@@ -57,11 +56,8 @@ export function buildOrgNav(family: OrgNavFamily, orgId: string): OrgNavGroup[] 
   return [
     {
       title: "Overview",
-      items: [
-        { label: "Dashboard", href: `${base}/dashboard`, icon: LayoutDashboard },
-        // Everyone may see what they can do; the page lists only their own permissions.
-        { label: "Access Map", href: `${base}/access`, icon: KeyRound },
-      ],
+      // Access Map was removed; Roles & permissions (People group) replaces it.
+      items: [{ label: "Dashboard", href: `${base}/dashboard`, icon: LayoutDashboard }],
     },
     {
       title: "People",

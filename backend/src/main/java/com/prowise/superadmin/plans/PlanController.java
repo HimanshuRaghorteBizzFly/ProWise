@@ -24,26 +24,26 @@ public class PlanController {
     }
 
     @GetMapping({"/v1/admin/plans", "/api/v1/admin/plans"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('plans.manage')")
     public List<PlanDTOs.PlanResponse> listPlans() {
         return planService.listPlans();
     }
 
     @GetMapping({"/v1/admin/plans/{id}", "/api/v1/admin/plans/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('plans.manage')")
     public PlanDTOs.PlanResponse getPlan(@PathVariable String id) {
         return planService.getPlan(id);
     }
 
     @PostMapping({"/v1/admin/plans", "/api/v1/admin/plans"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('plans.manage')")
     public ResponseEntity<PlanDTOs.PlanResponse> createPlan(@RequestBody PlanDTOs.CreatePlanRequest request) {
         PlanDTOs.PlanResponse created = planService.createPlan(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     @PatchMapping({"/v1/admin/plans/{id}", "/api/v1/admin/plans/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('plans.manage')")
     public PlanDTOs.PlanResponse updatePlan(
             @PathVariable String id,
             @RequestBody PlanDTOs.UpdatePlanRequest request
@@ -52,13 +52,13 @@ public class PlanController {
     }
 
     @PostMapping({"/v1/admin/plans/{id}/archive", "/api/v1/admin/plans/{id}/archive"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('plans.manage')")
     public PlanDTOs.PlanResponse toggleArchive(@PathVariable String id) {
         return planService.togglePlanArchive(id);
     }
 
     @DeleteMapping({"/v1/admin/plans/{id}", "/api/v1/admin/plans/{id}"})
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('plans.manage')")
     public ResponseEntity<Void> deletePlan(@PathVariable String id) {
         planService.deletePlan(id);
         return ResponseEntity.noContent().build();

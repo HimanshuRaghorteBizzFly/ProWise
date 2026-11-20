@@ -79,10 +79,8 @@ export function getRoleDashboardPath(role: SystemRole, orgId = ""): string {
     case "QA_REVIEWER":
       return hasOrg ? `${workspacePath}/reviewer/dashboard` : workspacePath;
 
-    case "VIEWER": {
-      const viewerOrgId = hasOrg ? orgId : "org-acme";
-      return `/org/${viewerOrgId}/viewer/dashboard`;
-    }
+    case "VIEWER":
+      return hasOrg ? `${workspacePath}/viewer/dashboard` : workspacePath;
 
     default:
       return workspacePath;

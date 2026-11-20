@@ -7,7 +7,7 @@ import {
   LayoutDashboard,
   Building2,
   Users,
-  Bell,
+  
   FolderGit2,
   GitPullRequest,
   CheckSquare,

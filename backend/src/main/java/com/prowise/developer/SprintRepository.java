@@ -1,11 +1,16 @@
 package com.prowise.developer;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+/** Every query is scoped by org_id (task 1.3). Never call findById: use the org-scoped finder. */
 @Repository
 public interface SprintRepository extends JpaRepository<SprintEntity, String> {
-    List<SprintEntity> findByProjectId(String projectId);
-    List<SprintEntity> findByProjectIdAndStatus(String projectId, String status);
+    List<SprintEntity> findByOrgIdAndProjectId(UUID orgId, String projectId);
+    List<SprintEntity> findByOrgIdAndProjectIdIn(UUID orgId, List<String> projectIds);
 }

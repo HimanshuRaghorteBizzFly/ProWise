@@ -23,11 +23,11 @@ describe("org nav config", () => {
     expect(hrefs.some((href) => /billing|subscriptions|workspaces/.test(href))).toBe(false);
   });
 
-  it("gates every link except the dashboard, Access Map and Notifications by permission keys", () => {
+  it("gates every link except the dashboard and Notifications by permission keys", () => {
     for (const family of ["owner", "admin"] as const) {
       for (const item of flat(buildOrgNav(family, ORG))) {
-        // Ungated by design: dashboard (widgets gate themselves), Access Map, Notifications (membership only).
-        if (["/dashboard", "/access", "/notifications"].some((suffix) => item.href.endsWith(suffix))) continue;
+        // Ungated by design: dashboard (widgets gate themselves), Notifications (membership only).
+        if (["/dashboard", "/notifications"].some((suffix) => item.href.endsWith(suffix))) continue;
         expect(item.requiredAny?.length ?? 0).toBeGreaterThan(0);
       }
     }
@@ -39,6 +39,10 @@ describe("org nav config", () => {
       const page = resolve(__dirname, "../src/app/(workspace)/org/[orgId]", route, "page.tsx");
       expect(existsSync(page), `${item.href} has no page`).toBe(true);
     }
+  });
+
+  it.each(["owner", "admin"] as const)("no longer links an Access Map in the %s family", (family) => {
+    expect(flat(buildOrgNav(family, ORG)).some((item) => item.href.endsWith("/access") || item.label === "Access Map")).toBe(false);
   });
 
   it("does not offer organization settings in the admin family", () => {
@@ -60,7 +64,7 @@ describe("filterOrgNav", () => {
 
   it("shows only the ungated links and drops empty groups when nothing is granted", () => {
     const groups = filterOrgNav(buildOrgNav("admin", ORG), () => false);
-    expect(flat(groups).map((item) => item.label)).toEqual(["Dashboard", "Access Map", "Notifications"]);
+    expect(flat(groups).map((item) => item.label)).toEqual(["Dashboard", "Notifications"]);
     expect(groups.every((group) => group.items.length > 0)).toBe(true);
   });
 });

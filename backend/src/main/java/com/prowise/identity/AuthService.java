@@ -90,7 +90,7 @@ public class AuthService {
     public TokenPair refresh(String refreshToken) {
         String hash = hash(refreshToken);
         List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT id, user_id, family_id, revoked_at, (expires_at <= now()) AS expired "
+                "SELECT id, user_id, family_id, org_id, revoked_at, (expires_at <= now()) AS expired "
                         + "FROM sessions WHERE refresh_token_hash = ?",
                 hash);
         if (rows.isEmpty()) {
@@ -106,7 +106,12 @@ public class AuthService {
         UUID userId = (UUID) row.get("user_id");
         jdbc.update("UPDATE sessions SET revoked_at = now() WHERE id = ?", row.get("id"));
         String email = jdbc.queryForObject("SELECT email FROM users WHERE id = ?", String.class, userId);
-        return issueSession(userId, email, familyId);
+        // Keep the organization binding only while the membership is still active.
+        UUID organizationId = (UUID) row.get("org_id");
+        if (organizationId != null && !hasActiveMembership(userId, organizationId)) {
+            organizationId = null;
+        }
+        return issueSession(userId, email, familyId, organizationId);
     }
 
     @Transactional
@@ -115,16 +120,30 @@ public class AuthService {
                 principal.sessionId());
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * Issues an access token bound to {@code organizationId} (task 1.3, T06). The current session is revoked in
+     * the same transaction, so the previous organization's access token and refresh token stop working on their
+     * next use; the new session continues the same refresh family and remembers the organization.
+     */
+    @Transactional
     public TokenPair switchOrganization(AuthPrincipal principal, UUID organizationId) {
+        if (principal.isOperator() || !hasActiveMembership(principal.userId(), organizationId)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "The requested resource was not found.");
+        }
+        UUID familyId = jdbc.query("SELECT family_id FROM sessions WHERE id = ? AND user_id = ?",
+                rs -> rs.next() ? rs.getObject("family_id", UUID.class) : null,
+                principal.sessionId(), principal.userId());
+        jdbc.update("UPDATE sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE id = ?", principal.sessionId());
+        return issueSession(principal.userId(), principal.email(), familyId == null ? UUID.randomUUID() : familyId,
+                organizationId);
+    }
+
+    private boolean hasActiveMembership(UUID userId, UUID organizationId) {
         Integer membership = jdbc.queryForObject("""
                 SELECT count(*) FROM memberships
                 WHERE org_id = ? AND user_id = ? AND status = 'ACTIVE'
-                """, Integer.class, organizationId, principal.userId());
-        if (membership == null || membership != 1) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "The requested resource was not found.");
-        }
-        return issueSession(principal.userId(), principal.email(), UUID.randomUUID(), organizationId);
+                """, Integer.class, organizationId, userId);
+        return membership != null && membership == 1;
     }
 
     public MeResponse me(UUID userId) {
@@ -181,9 +200,9 @@ public class AuthService {
     private TokenPair issueSession(UUID userId, String email, UUID familyId, UUID organizationId) {
         String refreshToken = randomToken();
         UUID sessionId = UUID.randomUUID();
-        jdbc.update("INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, expires_at) "
-                        + "VALUES (?, ?, ?, ?, now() + (? * interval '1 day'))",
-                sessionId, userId, hash(refreshToken), familyId, refreshTokenDays);
+        jdbc.update("INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, org_id, expires_at) "
+                        + "VALUES (?, ?, ?, ?, ?, now() + (? * interval '1 day'))",
+                sessionId, userId, hash(refreshToken), familyId, organizationId, refreshTokenDays);
         String accessToken = jwtService.issueAccessToken(new AuthPrincipal(userId, sessionId, email, organizationId));
         return new TokenPair(accessToken, refreshToken);
     }

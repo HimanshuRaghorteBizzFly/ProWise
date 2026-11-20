@@ -4,7 +4,7 @@ import { apiClient } from "@/lib/api";
 import { FIXTURE_GRANTS } from "@/lib/fixtures/permissions";
 import {
   classifyFailure,
-  grantsFromApi,
+  grantsFromPermissionsResponse,
   mocksRequested,
   readPermissionEnv,
   type PermissionEnv,
@@ -26,6 +26,8 @@ export interface PermissionState {
   scopeReported: boolean;
   grants: PermissionGrant[];
   load: (orgId: string, role: SystemRole, options?: { force?: boolean; preview?: boolean }) => Promise<void>;
+  /** Forget everything loaded for the previous workspace (organization switch). */
+  reset: () => void;
 }
 
 export interface PermissionStoreDeps {
@@ -60,13 +62,14 @@ export function createPermissionStore(deps: PermissionStoreDeps): StoreApi<Permi
       try {
         const response = await deps.fetchPermissions(orgId);
         if (seq !== requestSeq) return;
+        const { grants, scopeReported } = grantsFromPermissionsResponse(response);
         set({
           role,
           preview,
           status: "ready",
           source: "api",
-          scopeReported: false,
-          grants: grantsFromApi(response.permissions),
+          scopeReported,
+          grants,
         });
       } catch (error) {
         if (seq !== requestSeq) return;
@@ -106,6 +109,12 @@ export function createPermissionStore(deps: PermissionStoreDeps): StoreApi<Permi
         });
         inflight = { key, promise };
         return promise;
+      },
+      reset: () => {
+        requestSeq += 1;
+        inflight = null;
+        loadedKey = "";
+        set({ orgId: "", role: null, preview: false, status: "idle", ...EMPTY });
       },
     };
   });

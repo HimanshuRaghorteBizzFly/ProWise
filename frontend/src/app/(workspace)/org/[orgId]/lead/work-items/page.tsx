@@ -1,96 +1,111 @@
 "use client";
 
-import React, { useState } from "react";
-import { useParams } from "next/navigation";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { RotateCcw } from "lucide-react";
-import { toast } from "sonner";
+import React, { useMemo, useState } from "react";
+import Link from "next/link";
+import { ListChecks, UserPlus } from "lucide-react";
+import type { TaskStatus } from "@/mocks/delivery-dashboards";
+import {
+  AdminSelect,
+  Avatar,
+  ButtonLink,
+  EmptyStateView,
+  FilterBar,
+  PageFrame,
+  PriorityBadge,
+  ProgressBar,
+  StatusBadge,
+  SurfaceCard,
+  TASK_STATUS_COLOR,
+  TASK_STATUS_LABEL,
+  dueLabel,
+  useDemoLoad,
+  useLookups,
+  useRoleHref,
+} from "@/components/delivery/DeliveryUI";
+import { useLeadTeam } from "@/components/delivery/useLeadTeam";
 
-export default function LeadWorkItemsPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { currentOrg } = useAuthStore();
-  const { workItems, reopenWorkItem } = useProjectStore();
+const COLUMNS: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "IN_REVIEW", "DONE"];
+
+export default function TeamLeadBoardPage() {
+  const href = useRoleHref("lead");
+  const { status, retry, forceEmpty } = useDemoLoad();
+  const lk = useLookups();
+  const t = useLeadTeam(forceEmpty);
+  const [search, setSearch] = useState("");
+  const [member, setMember] = useState("ALL");
+
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return t.tasks
+      .filter((x) => member === "ALL" || (member === "NONE" ? !x.assigneeId : x.assigneeId === member))
+      .filter((x) => !q || x.title.toLowerCase().includes(q) || x.key.toLowerCase().includes(q))
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  }, [t.tasks, search, member]);
 
   return (
-    <PanelLayout
-      title="Squad Work Items"
-      breadcrumb={[
-        { label: "Team Lead", href: `/org/${orgId}/lead` },
-        { label: "Work Items" },
-      ]}
+    <PageFrame
+      crumbs={[{ label: "Lead", href: href() }, { label: "Team work" }, { label: "Tasks by status" }]}
+      back={{ href: href(), label: "Back to dashboard" }}
+      title="Tasks by status"
+      description="Your team's work grouped by state. Open a card to update or reassign it."
+      status={status}
+      onRetry={retry}
+      skeleton="list"
+      actions={<ButtonLink href={href("assignments")}><UserPlus className="w-3.5 h-3.5" /> Assign work</ButtonLink>}
     >
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-base font-bold text-app-text-primary">Squad Work Items &amp; Hierarchy</h2>
-          <p className="text-xs text-app-text-secondary mt-0.5">
-            Module M04: Manage priorities, reassignments, and state transitions.
-          </p>
-        </div>
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search task or key"
+        filters={
+          <div className="w-full sm:w-52">
+            <AdminSelect aria-label="Member" value={member} onChange={(e) => setMember(e.target.value)} options={[{ label: "Everyone", value: "ALL" }, { label: "Unassigned", value: "NONE" }, ...t.members.map((m) => ({ label: m.name, value: m.id }))]} />
+          </div>
+        }
+        hasActiveFilters={Boolean(search) || member !== "ALL"}
+        onResetFilters={() => { setSearch(""); setMember("ALL"); }}
+      />
 
-        <Card className="p-0 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Key</TableHead>
-                <TableHead>Title</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Weight</TableHead>
-                <TableHead>Revision</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {workItems.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="font-mono font-bold text-xs text-blue-600">{item.key}</TableCell>
-                  <TableCell className="font-semibold text-xs text-app-text-primary">{item.title}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{item.type}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        item.state === "DONE"
-                          ? "success"
-                          : item.state === "IN_REVIEW"
-                          ? "warning"
-                          : "secondary"
-                      }
-                    >
-                      {item.state}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-semibold text-xs">{item.weight} pts</TableCell>
-                  <TableCell className="font-mono text-xs text-app-text-muted">rev {item.currentRevision}</TableCell>
-                  <TableCell className="text-right">
-                    {item.state === "DONE" && (
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        onClick={() => {
-                          reopenWorkItem(item.id, "Lead inspection found regression", "usr-lead");
-                          toast.warning(`Reopened ${item.key}. Completion credit revoked.`);
-                        }}
-                      >
-                        <RotateCcw className="w-3 h-3 mr-1" /> Reopen
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      </div>
-    </PanelLayout>
+      {rows.length === 0 ? (
+        <SurfaceCard><EmptyStateView icon={ListChecks} title={t.tasks.length ? "No tasks match" : "No team work yet"} description={t.tasks.length ? "Try a different filter." : "Assign work to get the board going."} /></SurfaceCard>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3.5 items-start">
+          {COLUMNS.map((col) => {
+            const items = rows.filter((x) => x.status === col);
+            return (
+              <section key={col} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-2.5 space-y-2 min-w-0">
+                <header className="flex items-center justify-between px-1">
+                  <span className="flex items-center gap-2 text-xs font-semibold">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: TASK_STATUS_COLOR[col] }} />
+                    {TASK_STATUS_LABEL[col]}
+                  </span>
+                  <span className="rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] px-2 text-[10px] font-semibold">{items.length}</span>
+                </header>
+                {items.length === 0 && <p className="py-4 text-center text-[11px] text-[var(--color-text-muted)]">Empty</p>}
+                {items.map((x) => {
+                  const d = dueLabel(x.dueDate, x.status === "DONE");
+                  return (
+                    <Link key={x.id} href={href(`work-items/${x.id}`)} className="block rounded-lg">
+                      <SurfaceCard className="p-3 space-y-2 border-l-[3px] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md" style={{ borderLeftColor: TASK_STATUS_COLOR[col] }}>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs font-semibold leading-snug">{x.title}</p>
+                          <Avatar person={lk.person(x.assigneeId)} size="sm" />
+                        </div>
+                        <p className="text-[10px] text-[var(--color-text-muted)]">{x.key} · {lk.project(x.projectId)?.name}</p>
+                        {x.status !== "DONE" && <ProgressBar value={x.progress} size="sm" color={TASK_STATUS_COLOR[col]} />}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <PriorityBadge priority={x.priority} />
+                          <StatusBadge label={d.label} tone={d.tone} />
+                        </div>
+                      </SurfaceCard>
+                    </Link>
+                  );
+                })}
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </PageFrame>
   );
 }
-
