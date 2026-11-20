@@ -11,6 +11,12 @@ import { OwnerPanel } from "@/components/owner/OwnerPanel";
 import { OwnerTable } from "@/components/owner/OwnerTable";
 import { PageHeader, StatusBadge } from "@/components/owner/primitives";
 import { PanelLayout } from "@/components/layouts/panel-layout";
+<<<<<<< HEAD
+=======
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+>>>>>>> 616e528e6f65ef6de66dd7269ed38b36fb90c447
 import { HealthBadge } from "@/components/ui/health-badge";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDateOnly, formatUtcTimestamp } from "@/components/owner/project-format";
@@ -98,6 +104,7 @@ export default function ProjectManagerDashboard() {
       title="Project Manager"
       breadcrumb={[{ label: "Project Manager" }, { label: "Dashboard" }]}
     >
+<<<<<<< HEAD
       <div className="space-y-4 sm:space-y-6">
         {pageHeader}
         {data ? (
@@ -288,6 +295,268 @@ export default function ProjectManagerDashboard() {
             retryPermissions={resource.permissionRetry}
           />
         )}
+=======
+      <div className="space-y-8">
+        {/* ── NEW: Visual Dashboard ── */}
+
+        {/* ── EXISTING: Detailed Portfolio Table ── */}
+        <div className="space-y-6">
+          {/* Header Action Bar */}
+          <div className="p-4 rounded-xl bg-app-surface border border-app-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-subtle">
+            <div>
+              <h2 className="text-base font-bold text-app-text-primary">Portfolio Master Table</h2>
+              <p className="text-xs text-app-text-secondary mt-0.5">
+                Governing individual and structured delivery lifecycles, baselines, and health signals.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setIsScopeModalOpen(true)}
+                className="text-xs"
+              >
+                <PlusCircle className="w-3.5 h-3.5 mr-1 text-blue-600" /> Approve Scope Change
+              </Button>
+              <Button size="sm" variant="secondary" onClick={handleExportCsv} className="text-xs">
+                <Download className="w-3.5 h-3.5 mr-1" /> Export Portfolio CSV
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => router.push(`/org/${orgId}/manager/create-project`)}
+                className="text-xs"
+              >
+                <Sparkles className="w-3.5 h-3.5 mr-1" /> Create Project Wizard
+              </Button>
+            </div>
+          </div>
+
+          {/* Filters Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs bg-app-sidebar/60 p-3 rounded-lg border border-app-border">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 font-medium text-app-text-secondary">
+                <Filter className="w-3.5 h-3.5" />
+                <span>Filters:</span>
+              </div>
+              <select
+                value={modeFilter}
+                onChange={(e) => setModeFilter(e.target.value)}
+                className="bg-app-surface border border-app-border rounded-md px-2.5 py-1 text-xs text-app-text-primary"
+              >
+                <option value="ALL">All Modes</option>
+                <option value="INDIVIDUAL">Individual Mode</option>
+                <option value="STRUCTURED">Structured Mode</option>
+              </select>
+
+              <select
+                value={healthFilter}
+                onChange={(e) => setHealthFilter(e.target.value)}
+                className="bg-app-surface border border-app-border rounded-md px-2.5 py-1 text-xs text-app-text-primary"
+              >
+                <option value="ALL">All Health Signals</option>
+                <option value="ON_TRACK">On Track</option>
+                <option value="AT_RISK">At Risk</option>
+                <option value="DELAYED">Delayed</option>
+                <option value="UNKNOWN">Unknown</option>
+              </select>
+            </div>
+
+            <div className="text-app-text-muted">
+              Showing {filteredProjects.length} of {projects.length} initiatives
+            </div>
+          </div>
+
+          {/* Projects Master Table */}
+          <Card className="p-0 overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Key</TableHead>
+                  <TableHead>Project Name</TableHead>
+                  <TableHead>Mode</TableHead>
+                  <TableHead>Lifecycle</TableHead>
+                  <TableHead>Progress Calculation</TableHead>
+                  <TableHead>Health &amp; Reasons</TableHead>
+                  <TableHead>Target Date</TableHead>
+                  <TableHead className="text-right">Lifecycle Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredProjects.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="font-mono font-bold text-blue-600 text-xs">
+                      {p.key}
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-semibold text-xs text-app-text-primary">{p.name}</div>
+                      <div className="text-[11px] text-app-text-muted line-clamp-1">
+                        {p.description}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={p.mode === "INDIVIDUAL" ? "default" : "secondary"}>
+                        {p.mode}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          p.lifecycle === "ACTIVE"
+                            ? "success"
+                            : p.lifecycle === "ON_HOLD"
+                            ? "warning"
+                            : p.lifecycle === "DELIVERED"
+                            ? "info"
+                            : "outline"
+                        }
+                      >
+                        {p.lifecycle}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-app-text-primary">
+                          {p.lastProgressPercent >= 0
+                            ? `${Math.round(p.lastProgressPercent)}%`
+                            : "Not Reported"}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setHistoryProjectId(p.id);
+                            setIsHistoryModalOpen(true);
+                          }}
+                          className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"
+                        >
+                          <Clock className="w-3 h-3" /> History
+                        </button>
+                      </div>
+                      <span className="text-[10px] text-app-text-muted block">
+                        Method: {p.lastProgressMethod.replace("_", " ")}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <HealthBadge health={p.health} reasons={p.healthReasons} />
+                    </TableCell>
+                    <TableCell className="text-xs text-app-text-secondary whitespace-nowrap">
+                      {p.targetDate}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {p.lifecycle === "ACTIVE" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleToggleLifecycle(p)}
+                            title="Pause project (On Hold)"
+                          >
+                            <Pause className="w-3 h-3 mr-1 text-amber-500" /> Pause
+                          </Button>
+                        )}
+                        {p.lifecycle === "ON_HOLD" && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleToggleLifecycle(p)}
+                            title="Resume project"
+                          >
+                            <Play className="w-3 h-3 mr-1 text-green-500" /> Resume
+                          </Button>
+                        )}
+                        {p.lifecycle === "DELIVERED" && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleToggleLifecycle(p)}
+                            title="Close delivered project"
+                          >
+                            <CheckCircle2 className="w-3 h-3 mr-1 text-blue-600" /> Close
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="subtle"
+                          onClick={() =>
+                            router.push(
+                              p.mode === "INDIVIDUAL"
+                                ? `/org/${orgId}/developer/projects/${p.id}/individual`
+                                : `/org/${orgId}/developer/projects/${p.id}/structured`
+                            )
+                          }
+                        >
+                          Open Workspace
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+
+          {/* Pending Delivery Acceptance Reviews */}
+          {acceptanceRequests.length > 0 && (
+            <Card className="p-5 border-blue-200 dark:border-blue-900/60">
+              <CardHeader className="px-0 pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                  Delivery Acceptance Gate (M11)
+                </CardTitle>
+                <CardDescription>
+                  Formal verification required before a 100% completed project can advance to Delivered lifecycle.
+                </CardDescription>
+              </CardHeader>
+
+              <div className="space-y-3">
+                {acceptanceRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    className="p-3.5 rounded-xl border border-app-border bg-app-sidebar/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                  >
+                    <div>
+                      <div className="font-bold text-app-text-primary text-sm">
+                        {req.projectName} ({req.projectKey})
+                      </div>
+                      <div className="text-app-text-secondary mt-0.5">
+                        Requested by Lead • Baseline Version: {req.scopeBaselineVersion || 1} • Checklist: {req.checklist.filter((c) => c.checked).length}/{req.checklist.length} verified
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {req.status === "PENDING" ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              decideDeliveryAcceptance(req.id, "CHANGES_REQUESTED", "usr-manager", "Checklist verification incomplete");
+                              toast.error("Changes requested. Delivery returned to development.");
+                            }}
+                          >
+                            Request Changes
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700"
+                            onClick={() => {
+                              decideDeliveryAcceptance(req.id, "ACCEPTED", "usr-manager");
+                              toast.success("Delivery formally accepted! Project moved to DELIVERED lifecycle.");
+                            }}
+                          >
+                            Accept Delivery
+                          </Button>
+                        </>
+                      ) : (
+                        <Badge variant="success">Decision: {req.status}</Badge>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
+>>>>>>> 616e528e6f65ef6de66dd7269ed38b36fb90c447
       </div>
     </PanelLayout>
   );

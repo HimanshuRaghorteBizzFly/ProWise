@@ -9,13 +9,19 @@ import { useThemeStore } from "@/store/theme-store";
 import { useAuthStore } from "@/store/auth-store";
 import { SystemRole } from "@/types";
 import { usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
+import { useSuperAdminStore } from "../../super-admin/_store/useSuperAdminStore";
 import { formatDateTime } from "../_services/operator-service";
+import {
+  OPERATOR_DEPARTMENTS,
+  isRouteAuthorized,
+} from "../_services/operator-permission-service";
 import {
   Activity,
   AlertTriangle,
   ArrowLeftRight,
   Bell,
   Building2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -40,6 +46,8 @@ import {
   Search,
   Server,
   Settings,
+  Shield,
+  ShieldAlert,
   ShieldCheck,
   Sun,
   Webhook,
@@ -173,6 +181,8 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
   const activityLogs = usePlatformOperatorStore((s) => s.activityLogs);
   const orgHealth = usePlatformOperatorStore((s) => s.orgHealth);
   const accountSettings = usePlatformOperatorStore((s) => s.accountSettings);
+  const setOperatorDepartment = usePlatformOperatorStore((s) => s.setOperatorDepartment);
+  const setActiveOperatorProfile = usePlatformOperatorStore((s) => s.setActiveOperatorProfile);
   const sidebarCollapsed = usePlatformOperatorStore((s) => s.sidebarCollapsed);
   const setSidebarCollapsed = usePlatformOperatorStore((s) => s.setSidebarCollapsed);
   const resetOperatorDemoData = usePlatformOperatorStore((s) => s.resetOperatorDemoData);
@@ -182,6 +192,7 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [notifOpen, setNotifOpen] = useState(false);
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
+  const [deptMenuOpen, setDeptMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -199,6 +210,7 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
     setMobileOpen(false);
     setNotifOpen(false);
     setRoleMenuOpen(false);
+    setDeptMenuOpen(false);
     setProfileMenuOpen(false);
   }, [pathname]);
 
@@ -212,6 +224,7 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
         setSearchOpen(false);
         setNotifOpen(false);
         setRoleMenuOpen(false);
+        setDeptMenuOpen(false);
         setProfileMenuOpen(false);
       }
     };
@@ -228,7 +241,7 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
   ).length;
   const pendingAccessCount = accessRequests.filter((r) => r.status === "Pending Approval").length;
 
-  const sections: NavSection[] = useMemo(
+  const rawSections: NavSection[] = useMemo(
     () => [
       {
         id: "overview",
@@ -433,6 +446,42 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
       activeAlertsCount,
     ]
   );
+
+  const activeDepartment = accountSettings.department || "Site Reliability";
+  const superAdminOperators = useSuperAdminStore((s) => s.operators);
+
+  const activeOperator = useMemo(() => {
+    const byId = superAdminOperators.find((o) => o.id === accountSettings.activeOperatorId);
+    if (byId) return byId;
+    const byDept = superAdminOperators.find((o) => o.department === activeDepartment);
+    if (byDept) return byDept;
+    return {
+      id: "op-current",
+      name: accountSettings.name,
+      email: accountSettings.email,
+      department: activeDepartment,
+      roleId: "role-platform-operator",
+      status: "ACTIVE" as const,
+      mfaEnabled: accountSettings.mfaEnabled,
+      onCall: true,
+      shiftName: accountSettings.shiftName,
+      lastActiveAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+  }, [superAdminOperators, accountSettings, activeDepartment]);
+
+  const sections: NavSection[] = useMemo(() => {
+    return rawSections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => isRouteAuthorized(activeOperator, item.href)),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [rawSections, activeOperator]);
+
+  const isCurrentPathAuthorized = useMemo(() => {
+    return isRouteAuthorized(activeOperator, pathname);
+  }, [activeOperator, pathname]);
 
   const routeMeta = ROUTE_TITLES[pathname] || {
     section: "Platform Operator",
@@ -696,11 +745,124 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
               </kbd>
             </button>
 
+            {/* Operator Department Switcher */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeptMenuOpen((v) => !v);
+                  setRoleMenuOpen(false);
+                  setNotifOpen(false);
+                  setProfileMenuOpen(false);
+                }}
+                className="flex items-center gap-1.5 h-8 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 text-xs font-semibold text-teal-700 dark:text-teal-300 hover:bg-teal-500/20 transition-colors"
+                title="Switch active operator department"
+              >
+                <Shield className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                <span className="hidden sm:inline truncate max-w-[150px]">
+                  {activeOperator?.accessLevel === "MAIN_PLATFORM_OPERATOR" ? "Main Operator (Global)" : activeDepartment}
+                </span>
+                <ChevronDown className="w-3 h-3 text-teal-600 dark:text-teal-400" />
+              </button>
+
+              {deptMenuOpen && (
+                <div className="absolute right-0 mt-2 w-72 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-2xl z-40 space-y-1">
+                  <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)] pb-1.5 flex items-center justify-between">
+                    <span>Department Context</span>
+                    <span className="text-[9px] font-bold text-teal-600 dark:text-teal-400">7 Departments</span>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto space-y-1 pr-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeptMenuOpen(false);
+                        const mainOp = superAdminOperators.find((o) => o.accessLevel === "MAIN_PLATFORM_OPERATOR" || o.id === "op-main-1");
+                        if (mainOp) {
+                          setActiveOperatorProfile({
+                            id: mainOp.id,
+                            name: mainOp.name,
+                            email: mainOp.email,
+                            department: "Platform Operations",
+                            shiftName: mainOp.shiftName,
+                            mfaEnabled: mainOp.mfaEnabled,
+                          });
+                        } else {
+                          setOperatorDepartment("Platform Operations");
+                        }
+                        toast.success("Switched to Main Platform Operator (Global Operational Scope)");
+                      }}
+                      className={cn(
+                        "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs text-left transition-colors border-b border-[var(--color-border)] mb-1 pb-2",
+                        activeOperator?.accessLevel === "MAIN_PLATFORM_OPERATOR"
+                          ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 font-semibold"
+                          : "text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
+                      )}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
+                        <div>
+                          <div className="font-semibold text-[11px]">Main Platform Operator</div>
+                          <div className="text-[10px] text-[var(--color-text-muted)]">Global Scope (All 7 Departments)</div>
+                        </div>
+                      </div>
+                    </button>
+                    {OPERATOR_DEPARTMENTS.map((dept) => {
+                      const sampleOp = superAdminOperators.find((o) => o.department === dept);
+                      const isCurrent = dept === activeDepartment;
+                      return (
+                        <button
+                          key={dept}
+                          type="button"
+                          onClick={() => {
+                            setDeptMenuOpen(false);
+                            if (sampleOp) {
+                              setActiveOperatorProfile({
+                                id: sampleOp.id,
+                                name: sampleOp.name,
+                                email: sampleOp.email,
+                                department: sampleOp.department,
+                                shiftName: sampleOp.shiftName,
+                                mfaEnabled: sampleOp.mfaEnabled,
+                              });
+                            } else {
+                              setOperatorDepartment(dept);
+                            }
+                            toast.success(`Active context switched to ${dept}`);
+                          }}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs text-left transition-colors",
+                            isCurrent
+                              ? "bg-teal-500/15 text-teal-700 dark:text-teal-300 font-semibold"
+                              : "text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
+                          )}
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="font-semibold truncate">{dept}</div>
+                            {sampleOp && (
+                              <div className="text-[10px] text-[var(--color-text-muted)] truncate">
+                                {sampleOp.name} • {sampleOp.shiftName?.split(" ")[0] || "Shift"}
+                              </div>
+                            )}
+                          </div>
+                          {isCurrent && (
+                            <span className="rounded bg-teal-500/20 px-1.5 py-0.5 text-[9px] font-bold text-teal-700 dark:text-teal-300 shrink-0">
+                              Active
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="relative">
               <button
                 type="button"
                 onClick={() => {
                   setRoleMenuOpen((v) => !v);
+                  setDeptMenuOpen(false);
                   setNotifOpen(false);
                   setProfileMenuOpen(false);
                 }}
@@ -888,7 +1050,36 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1 w-full min-w-0 px-3 py-4 sm:px-5 sm:py-5 lg:px-7 lg:py-6 max-w-[2200px] mx-auto">
-          {children}
+          {isCurrentPathAuthorized ? (
+            children
+          ) : (
+            <div className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-8 text-center max-w-xl mx-auto my-12 space-y-4">
+              <div className="h-14 w-14 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-600 dark:text-rose-400 mx-auto flex items-center justify-center">
+                <ShieldAlert className="w-7 h-7" />
+              </div>
+              <div className="space-y-1.5">
+                <span className="rounded-full bg-rose-500/15 border border-rose-500/30 px-3 py-0.5 text-xs font-bold text-rose-700 dark:text-rose-300">
+                  403 ACCESS RESTRICTED
+                </span>
+                <h2 className="text-xl font-bold text-[var(--color-text-primary)]">
+                  Module Not Authorized
+                </h2>
+                <p className="text-xs text-[var(--color-text-secondary)] max-w-md mx-auto">
+                  Your active department (<strong>{activeDepartment}</strong>) does not have authorization to view <strong>{routeMeta.label}</strong>.
+                  Individual permission overrides can be granted by a Super Administrator in Platform Operator Management.
+                </p>
+              </div>
+              <div className="pt-2">
+                <Link
+                  href="/platform-operator/dashboard"
+                  className="inline-flex items-center gap-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs px-4 py-2.5 transition-colors shadow-sm"
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  Return to Authorized Operations Dashboard
+                </Link>
+              </div>
+            </div>
+          )}
         </main>
       </div>
 

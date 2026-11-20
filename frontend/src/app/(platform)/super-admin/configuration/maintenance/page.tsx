@@ -7,7 +7,7 @@ export default function MaintenanceRedirectPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/super-admin/configuration?tab=maintenance");
+    router.replace("/super-admin/maintenance");
   }, [router]);
 
   return (

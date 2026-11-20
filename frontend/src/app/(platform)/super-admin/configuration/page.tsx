@@ -110,7 +110,12 @@ function getImpactTone(level: MaintenanceImpactLevel): "success" | "warning" | "
 
 export default function PlatformConfigurationPage() {
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get("tab") === "limits" ? "limits" : searchParams.get("tab") === "flags" ? "flags" : "maintenance";
+  const initialTab =
+    searchParams.get("tab") === "maintenance"
+      ? "maintenance"
+      : searchParams.get("tab") === "flags"
+      ? "flags"
+      : "limits";
 
   const [activeTab, setActiveTab] = useState<"maintenance" | "limits" | "flags">(initialTab);
 

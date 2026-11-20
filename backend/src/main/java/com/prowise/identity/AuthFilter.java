@@ -2,9 +2,12 @@ package com.prowise.identity;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -12,6 +15,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -49,18 +54,58 @@ public class AuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(
             HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        String token = null;
         String header = request.getHeader(ApiHeaders.AUTHORIZATION);
-        if (header == null || !header.startsWith("Bearer ")) {
+        if (header != null && header.startsWith("Bearer ")) {
+            token = header.substring("Bearer ".length()).trim();
+        } else if (request.getCookies() != null) {
+            for (Cookie c : request.getCookies()) {
+                if ("prowise_access_token".equals(c.getName()) || "prowise_operator_access_token".equals(c.getName())) {
+                    token = c.getValue();
+                    break;
+                }
+            }
+        }
+
+        if (token == null || token.isBlank()) {
             filterChain.doFilter(request, response);
             return;
         }
+
         try {
-            AuthPrincipal principal = jwtService.parse(header.substring("Bearer ".length()));
+            AuthPrincipal principal = jwtService.parse(token);
             JdbcTemplate jdbcTemplate = jdbc.getIfAvailable();
             if (jdbcTemplate == null) {
                 filterChain.doFilter(request, response);
                 return;
             }
+
+            if (principal.isOperator()) {
+                Integer active = jdbcTemplate.queryForObject(
+                        "SELECT count(*) FROM operator_sessions s JOIN platform_operators o ON o.id = s.operator_id "
+                                + "WHERE s.id = ? AND s.operator_id = ? AND s.revoked = false "
+                                + "AND s.expires_at > now() AND o.status = 'ACTIVE'",
+                        Integer.class, principal.sessionId(), principal.operatorId());
+                if (active == null || active != 1) {
+                    writeUnauthorized(request, response);
+                    return;
+                }
+                List<GrantedAuthority> authorities = new ArrayList<>();
+                authorities.add(new SimpleGrantedAuthority("ROLE_PLATFORM_OPERATOR"));
+                authorities.add(new SimpleGrantedAuthority("PLATFORM_OPERATOR"));
+                if (principal.role() != null && !principal.role().isBlank()) {
+                    authorities.add(new SimpleGrantedAuthority("ROLE_" + principal.role().toUpperCase().replace("-", "_")));
+                }
+                if (principal.departmentId() != null && !principal.departmentId().isBlank()) {
+                    authorities.add(new SimpleGrantedAuthority("DEPT_" + principal.departmentId().toUpperCase().replace("-", "_").replace(" ", "_")));
+                }
+                request.setAttribute(PRINCIPAL_ATTRIBUTE, principal);
+                SecurityContextHolder.getContext().setAuthentication(
+                        new UsernamePasswordAuthenticationToken(principal, null, authorities));
+                filterChain.doFilter(request, response);
+                return;
+            }
+
             Integer active = jdbcTemplate.queryForObject(
                     "SELECT count(*) FROM sessions s JOIN users u ON u.id = s.user_id "
                             + "WHERE s.id = ? AND s.user_id = ? AND s.revoked_at IS NULL "

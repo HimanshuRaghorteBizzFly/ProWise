@@ -7,7 +7,7 @@ import { OrgAuditContent, OrgPage } from "@/components/owner/OrgPages";
 export default function AdminAuditLogsPage() {
   return (
     <OrgPage family="admin" title="Audit & security">
-      <OrgAuditContent />
+      <OrgAuditContent family="admin" />
     </OrgPage>
   );
 }

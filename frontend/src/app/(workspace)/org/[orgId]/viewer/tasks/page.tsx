@@ -402,10 +402,17 @@ export default function ViewerTasksPage() {
           /* Grouped Kanban View Mode */
           <div className="p-4 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
             {(["OPEN", "IN_PROGRESS", "IN_REVIEW", "DONE", "BLOCKED"] as const).map((columnState) => {
+<<<<<<< HEAD
               const stateTasks = allTasks.filter((task) => {
                 if (columnState === "BLOCKED") return task.isBlocked;
                 if (columnState === "OPEN") return task.state === "TODO";
                 return task.state === columnState;
+=======
+              const stateTasks = allTasks.filter((t) => {
+                if (columnState === "BLOCKED") return t.isBlocked;
+                if (columnState === "OPEN") return t.state === "TODO";
+                return t.state === columnState;
+>>>>>>> 616e528e6f65ef6de66dd7269ed38b36fb90c447
               });
               return (
                 <div

@@ -7,7 +7,7 @@ import { OrgTeamsContent, OrgPage } from "@/components/owner/OrgPages";
 export default function OwnerTeamsPage() {
   return (
     <OrgPage family="owner" title="Teams">
-      <OrgTeamsContent />
+      <OrgTeamsContent family="owner" />
     </OrgPage>
   );
 }

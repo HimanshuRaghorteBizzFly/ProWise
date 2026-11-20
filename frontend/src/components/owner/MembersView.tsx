@@ -61,18 +61,17 @@ export function MembersView({ family, orgId, members, source, can, isCurrentOwne
       simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={
         canInvite ? (
-          <>
-            <LaterActionButton>
-              Invite member
-            </LaterActionButton>
-            <OwnerLaterBadge task="1.2" />
+          family === "owner" ? (
             <Link
-              href={`/org/${orgId}/${family}/invitations`}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-blue-700 hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:text-blue-300"
+              href={`/org/${orgId}/${family}/invitations/new`}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#1A73E8] px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#1557B0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
             >
-              <Mail aria-hidden="true" className="h-3.5 w-3.5" /> Invitations
+              <Mail aria-hidden="true" className="h-3.5 w-3.5" />
+              Invite member
             </Link>
-          </>
+          ) : (
+            <LaterActionButton>Invite member</LaterActionButton>
+          )
         ) : undefined
       }
     />
@@ -90,6 +89,12 @@ export function MembersView({ family, orgId, members, source, can, isCurrentOwne
       </div>
     );
   }
+
+  const memberName = (member: OrgMember) => family === "owner" ? (
+    <Link href={`/org/${orgId}/${family}/members/${member.id}`} className="rounded-sm hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">
+      {member.displayName}
+    </Link>
+  ) : member.displayName;
 
   const rowActions = canDisable ? (
     <span className="flex items-center gap-2">
@@ -149,13 +154,12 @@ export function MembersView({ family, orgId, members, source, can, isCurrentOwne
               <OwnerPageState state="empty" title="No members match your filters" description="Change the search or status filter." />
             ) : (
               <>
-                {/* Cards below md, table from md up */}
                 <ul className="space-y-2 md:hidden">
                   {visible.map((member) => (
                     <li key={member.id} className="rounded-lg border border-app-border p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-app-text-primary">{member.displayName}</p>
+                          <p className="truncate text-sm font-semibold text-app-text-primary">{memberName(member)}</p>
                           <p className="truncate text-caption text-app-text-secondary">{member.email}</p>
                           {member.roleLabel && <p className="mt-1 text-caption text-app-text-muted">{member.roleLabel}</p>}
                         </div>
@@ -179,7 +183,7 @@ export function MembersView({ family, orgId, members, source, can, isCurrentOwne
                     <TableBody>
                       {visible.map((member) => (
                         <TableRow key={member.id}>
-                          <TableCell className="font-medium text-app-text-primary">{member.displayName}</TableCell>
+                          <TableCell className="font-medium text-app-text-primary">{memberName(member)}</TableCell>
                           <TableCell className="break-all">{member.email}</TableCell>
                           {showRole && <TableCell>{member.roleLabel ?? "Not reported"}</TableCell>}
                           <TableCell>

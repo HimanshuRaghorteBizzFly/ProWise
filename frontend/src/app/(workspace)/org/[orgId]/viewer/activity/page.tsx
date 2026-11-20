@@ -249,9 +249,13 @@ export default function ViewerActivityPage() {
                           {act.actor}
                         </div>
                         <div className="text-[10px] text-[var(--color-text-muted,#80868B)]">
+<<<<<<< HEAD
                           {act.actorEmail
                             ? members.find((member) => member.email === act.actorEmail)?.roleLabel ?? "Unknown member"
                             : "System"}
+=======
+                          {act.actorEmail || "Contributor"}
+>>>>>>> 616e528e6f65ef6de66dd7269ed38b36fb90c447
                         </div>
                       </td>
 

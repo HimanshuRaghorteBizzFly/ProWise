@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
+import { useAuthStore } from "@/store/auth-store";
 import { useProjectStore } from "@/store/project-store";
 import { SystemRole } from "@/types";
 import {
+  Loader2,
   Sparkles,
   ChevronDown,
   ChevronUp,
@@ -20,22 +21,23 @@ import { cn } from "@/lib/utils";
 
 export function RoleTestBanner() {
   const router = useRouter();
-  const { currentRole, currentOrg, switchRoleAndNavigate } = useAuthStore();
+  const { currentRole, currentOrg, isRolePreview, switchRoleAndNavigate } = useAuthStore();
   const { approveScopeAddition, reopenWorkItem, resetToInitialFixtures } = useProjectStore();
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isPending, startTransition] = useTransition();
 
   const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
 
-  const panels: { role: SystemRole; label: string; route: string }[] = [
-    { role: "SUPER_ADMIN", label: "1. Super Admin", route: "/super-admin" },
-    { role: "PLATFORM_OPERATOR", label: "2. Platform Operator", route: "/platform-operator" },
-    { role: "ORGANIZATION_OWNER", label: "3. Org Owner", route: `/org/${currentOrg.id}/owner/dashboard` },
-    { role: "ORGANIZATION_ADMIN", label: "4. Org Admin", route: `/org/${currentOrg.id}/admin` },
-    { role: "PROJECT_MANAGER", label: "5. Project Manager", route: `/org/${currentOrg.id}/manager` },
-    { role: "TEAM_LEAD", label: "6. Team Lead", route: `/org/${currentOrg.id}/lead` },
-    { role: "DEVELOPER", label: "7. Developer", route: `/org/${currentOrg.id}/developer` },
-    { role: "QA_REVIEWER", label: "8. QA / Reviewer", route: `/org/${currentOrg.id}/reviewer` },
-    { role: "VIEWER", label: "9. Viewer", route: `/org/${currentOrg.id}/viewer` },
+  const panels: { role: SystemRole; label: string }[] = [
+    { role: "SUPER_ADMIN", label: "1. Super Admin" },
+    { role: "PLATFORM_OPERATOR", label: "2. Platform Operator" },
+    { role: "ORGANIZATION_OWNER", label: "3. Org Owner" },
+    { role: "ORGANIZATION_ADMIN", label: "4. Org Admin" },
+    { role: "PROJECT_MANAGER", label: "5. Project Manager" },
+    { role: "TEAM_LEAD", label: "6. Team Lead" },
+    { role: "DEVELOPER", label: "7. Developer" },
+    { role: "QA_REVIEWER", label: "8. QA / Reviewer" },
+    { role: "VIEWER", label: "9. Viewer" },
   ];
 
   // Test Scenario 8 trigger: Approve 25-point scope addition to CRM-100 (50/100 -> 50/125 = 40%)
@@ -71,14 +73,19 @@ export function RoleTestBanner() {
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1 font-bold text-amber-400 bg-amber-950/60 border border-amber-800/80 px-2 py-0.5 rounded text-[10px] tracking-wide uppercase">
             <Sparkles className="w-3 h-3" />
-            Blueprint V1.1 Quick Navigator
+            Role Preview
           </span>
           <span className="text-slate-300 hidden sm:inline text-[11px]">
-            Switch between all 9 panels or run verification scenarios:
+            Switch dashboards without signing in again; previews use sample data only.
           </span>
         </div>
 
         <div className="flex items-center gap-2">
+          {isRolePreview && (
+            <span className="rounded-full border border-amber-700/70 bg-amber-950/60 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+              API actions disabled
+            </span>
+          )}
           <button
             onClick={() => setIsExpanded(!isExpanded)}
             className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white px-1.5 py-0.5 rounded hover:bg-slate-800 transition-colors"
@@ -107,14 +114,16 @@ export function RoleTestBanner() {
               return (
                 <button
                   key={p.role}
-                  onClick={() => switchRoleAndNavigate(p.role, router.push)}
+                  disabled={isPending}
+                  onClick={() => startTransition(() => switchRoleAndNavigate(p.role, router.replace))}
                   className={cn(
-                    "px-2.5 py-1 rounded text-[11px] font-medium transition-all",
+                    "px-2.5 py-1 rounded text-[11px] font-medium transition-all disabled:cursor-wait disabled:opacity-60",
                     isCurrent
                       ? "bg-blue-600 text-white font-semibold shadow-xs ring-1 ring-blue-400"
                       : "bg-slate-800 hover:bg-slate-700 text-slate-300"
                   )}
                 >
+                  {isPending && isCurrent ? <Loader2 className="inline h-3 w-3 animate-spin mr-1" aria-hidden="true" /> : null}
                   {p.label}
                 </button>
               );
@@ -155,4 +164,3 @@ export function RoleTestBanner() {
     </div>
   );
 }
-

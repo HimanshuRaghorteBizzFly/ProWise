@@ -315,6 +315,9 @@ export interface OperatorAccountSettings {
   name: string;
   roleTitle: string;
   email: string;
+  department?: string;
+  shiftName?: string;
+  activeOperatorId?: string;
   timezone: string;
   autoRefreshSeconds: 0 | 10 | 30 | 60;
   mfaEnabled: boolean;

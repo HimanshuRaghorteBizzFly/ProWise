@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import { AlertTriangle, CircleCheck, CircleHelp, Clock3, ShieldCheck } from "lucide-react";
 
 import { OwnerKpiCard } from "@/components/owner/OwnerKpiCard";
@@ -22,6 +23,7 @@ export interface HealthRisksViewProps {
   users: User[];
   source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
+  basePath?: string;
   now?: string;
 }
 
@@ -32,7 +34,7 @@ const KPIS: { health: ProjectHealth; label: string; icon: React.ReactNode }[] = 
   { health: "UNKNOWN", label: "Unknown", icon: <CircleHelp className="h-5 w-5" /> },
 ];
 
-export function HealthRisksView({ projects, users, source, can, now }: HealthRisksViewProps) {
+export function HealthRisksView({ projects, users, source, can, basePath, now }: HealthRisksViewProps) {
   const header = (
     <PageHeader
       title="Health & risks"
@@ -91,7 +93,9 @@ export function HealthRisksView({ projects, users, source, can, now }: HealthRis
                       <span className="text-caption font-semibold text-app-text-secondary">{project.key}</span>
                       {status === "overdue" && <StatusBadge label={DEADLINE_LABELS.overdue} tone="danger" />}
                     </div>
-                    <h3 className="mt-2 text-sm font-semibold text-app-text-primary">{project.name}</h3>
+                    <h3 className="mt-2 text-sm font-semibold text-app-text-primary">
+                      {basePath ? <Link href={`${basePath}/projects/${project.id}`} className="rounded-sm hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">{project.name}</Link> : project.name}
+                    </h3>
                     {project.healthReasons.length > 0 ? (
                       <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-app-text-secondary">
                         {project.healthReasons.map((reason) => (
@@ -133,7 +137,7 @@ export function HealthRisksView({ projects, users, source, can, now }: HealthRis
               {unreported.map((project) => (
                 <li key={project.id} className="rounded-lg border border-app-border px-3 py-2 text-sm">
                   <span className="block text-caption font-semibold text-app-text-secondary">{project.key}</span>
-                  <span className="text-app-text-primary">{project.name}</span>
+                  {basePath ? <Link href={`${basePath}/projects/${project.id}`} className="text-app-text-primary hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">{project.name}</Link> : <span className="text-app-text-primary">{project.name}</span>}
                   <span className="block text-caption text-app-text-muted">Owner: {getOwnerName(project, users)}</span>
                 </li>
               ))}

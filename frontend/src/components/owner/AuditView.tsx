@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import Link from "next/link";
 import { ScrollText } from "lucide-react";
 
 import { OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
@@ -16,6 +17,7 @@ export interface AuditViewProps {
   records: AuditRecord[];
   source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
+  basePath?: string;
 }
 
 const actionLabel = (action: string) => action.charAt(0) + action.slice(1).toLowerCase().replace(/_/g, " ");
@@ -32,7 +34,7 @@ function formatUtc(timestamp: string): string {
   }).format(new Date(timestamp))} UTC`;
 }
 
-export function AuditView({ records, source, can }: AuditViewProps) {
+export function AuditView({ records, source, can, basePath }: AuditViewProps) {
   const [search, setSearch] = useState("");
   const [action, setAction] = useState("ALL");
   const actions = useMemo(() => Array.from(new Set(records.map((record) => record.action))).sort(), [records]);
@@ -104,7 +106,7 @@ export function AuditView({ records, source, can }: AuditViewProps) {
                 <ul className="space-y-2 md:hidden">
                   {visible.map((record) => (
                     <li key={record.id} className="rounded-lg border border-app-border p-3 text-sm">
-                      <p className="font-semibold text-app-text-primary">{actionLabel(record.action)}</p>
+                      <p className="font-semibold text-app-text-primary">{basePath ? <Link href={`${basePath}/audit-logs/${record.id}`} className="rounded-sm hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">{actionLabel(record.action)}</Link> : actionLabel(record.action)}</p>
                       <p className="break-all text-caption text-app-text-secondary">{record.actorEmail}</p>
                       <p className="mt-1 text-app-text-secondary">{record.details}</p>
                       <p className="mt-1 text-caption text-app-text-muted">
@@ -132,7 +134,7 @@ export function AuditView({ records, source, can }: AuditViewProps) {
                             {record.actorEmail}
                             <span className="block text-caption text-app-text-muted">{record.actorRole}</span>
                           </TableCell>
-                          <TableCell>{actionLabel(record.action)}</TableCell>
+                          <TableCell>{basePath ? <Link href={`${basePath}/audit-logs/${record.id}`} className="rounded-sm hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">{actionLabel(record.action)}</Link> : actionLabel(record.action)}</TableCell>
                           <TableCell>{record.targetType}</TableCell>
                           <TableCell>{record.details}</TableCell>
                         </TableRow>

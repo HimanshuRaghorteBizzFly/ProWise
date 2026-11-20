@@ -39,6 +39,7 @@ class IdentityOrganizationIntegrationTest {
     void cleanDatabase() {
         jdbc.update("DELETE FROM password_reset_tokens");
         jdbc.update("DELETE FROM sessions");
+        jdbc.update("DELETE FROM grants");
         jdbc.update("DELETE FROM memberships");
         jdbc.update("DELETE FROM organizations");
         jdbc.update("DELETE FROM users");

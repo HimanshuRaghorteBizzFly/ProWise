@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useParams } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -106,220 +106,197 @@ export default function ReviewerDashboard() {
       title="QA &amp; Verification Hub"
       breadcrumb={[{ label: currentOrg.name }, { label: "Priya Patel (Reviewer)" }]}
     >
-      <div className="space-y-6">
-        {/* Reviewer Header */}
-        <div className="p-4 rounded-xl bg-app-surface border border-app-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-subtle">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-app-text-primary">Review Queue</h2>
-              <Badge variant="default">{reviewQueue.length} Pending Inspection</Badge>
-            </div>
-            <p className="text-xs text-app-text-secondary mt-0.5">
-              Blueprint V1.1 Definition of Done: Approvals bind to the exact submitted revision and acceptance criteria.
-            </p>
-          </div>
+      <div className="space-y-8">
+        {/* ── NEW: Visual Dashboard ── */}
+    
 
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant={simulateStaleRevision ? "danger" : "outline"}
-              onClick={() => {
-                setSimulateStaleRevision(!simulateStaleRevision);
-                toast.info(
-                  !simulateStaleRevision
-                    ? "Stale Review simulation enabled: next decision will send rev-1 to test 409 conflict detection."
-                    : "Stale Review simulation disabled."
-                );
-              }}
-              title="Test 409 STALE_REVIEW conflict handling"
-            >
-              <RotateCcw className="w-3.5 h-3.5 mr-1" />
-              {simulateStaleRevision ? "Simulating Stale Rev (Active)" : "Simulate Stale Conflict"}
-            </Button>
-          </div>
-        </div>
-
-        {/* Reviewer Metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Assigned Queue</div>
-            <div className="text-2xl font-bold text-amber-600 mt-1">{reviewQueue.length}</div>
-            <div className="text-[10px] text-amber-600 font-medium mt-0.5">Requires verification</div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Approved Releases</div>
-            <div className="text-2xl font-bold text-green-600 mt-1">
-              {workItems.filter((w) => w.state === "DONE").length}
-            </div>
-            <div className="text-[10px] text-green-600 font-medium mt-0.5">Verified &amp; Done</div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Active Blockers</div>
-            <div className="text-2xl font-bold text-app-text-primary mt-1">1</div>
-            <div className="text-[10px] text-app-text-muted mt-0.5">Documented upstream</div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Turnaround SLA</div>
-            <div className="text-2xl font-bold text-blue-600 mt-1">&lt; 4 hrs</div>
-            <div className="text-[10px] text-blue-600 font-medium mt-0.5">Within benchmark</div>
-          </Card>
-        </div>
-
-        {/* Tab Buttons */}
-        <div className="flex border-b border-app-border space-x-4">
-          <button
-            onClick={() => setActiveTab("queue")}
-            className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === "queue"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-app-text-muted hover:text-app-text-primary"
-            }`}
-          >
-            Pending Review Queue ({reviewQueue.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("checklists")}
-            className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === "checklists"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-app-text-muted hover:text-app-text-primary"
-            }`}
-          >
-            Quality Checklists &amp; Standards
-          </button>
-          <button
-            onClick={() => setActiveTab("history")}
-            className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === "history"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-app-text-muted hover:text-app-text-primary"
-            }`}
-          >
-            QA Decision Audit Trail
-          </button>
-        </div>
-
-        {/* Tab 1: Pending Queue */}
-        {activeTab === "queue" && (
-          <Card className="p-0 overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Work Item</TableHead>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Weight</TableHead>
-                  <TableHead>Submitted Revision</TableHead>
-                  <TableHead>Due Date</TableHead>
-                  <TableHead>Criticality</TableHead>
-                  <TableHead className="text-right">Inspection</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reviewQueue.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-mono font-bold text-xs text-blue-600">
-                      {item.key}
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-semibold text-xs text-app-text-primary">{item.title}</div>
-                      <div className="text-[11px] text-app-text-muted line-clamp-1">
-                        Criteria: {item.criteria}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs font-semibold">{item.weight} pts</TableCell>
-                    <TableCell className="font-mono text-xs">
-                      Revision {item.submittedRevision || item.currentRevision}
-                    </TableCell>
-                    <TableCell className="text-xs text-app-text-secondary">{item.dueDate}</TableCell>
-                    <TableCell>
-                      <Badge variant={item.criticality === "CRITICAL" ? "danger" : "warning"}>
-                        {item.criticality}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button size="sm" onClick={() => setSelectedItem(item)}>
-                        Inspect &amp; Decide
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {reviewQueue.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="py-10 text-center text-xs text-app-text-muted">
-                      Review queue is empty. All submitted work revisions have been resolved!
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </Card>
-        )}
-
-        {/* Tab 2: Quality Checklists */}
-        {activeTab === "checklists" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className="p-5 space-y-3">
-              <CardTitle className="text-sm">Mandatory Pre-Approval Checklist</CardTitle>
-              <div className="space-y-2 text-xs text-app-text-secondary">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  <span>Automated unit and integration tests passing in CI</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  <span>Zero Sev-1 / Sev-2 security vulnerabilities reported</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  <span>OpenAPI schemas match approved contract models</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  <span>Staging environment canary deployment verification clean</span>
-                </div>
+        {/* ── EXISTING: Detailed Queue Controls ── */}
+        <div className="space-y-6">
+          {/* Reviewer Header */}
+          <div className="p-4 rounded-xl bg-app-surface border border-app-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-subtle">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-app-text-primary">Review Queue</h2>
+                <Badge variant="default">{reviewQueue.length} Pending Inspection</Badge>
               </div>
-            </Card>
-
-            <Card className="p-5 space-y-3">
-              <CardTitle className="text-sm">Blueprint V1.1 Decision Rules</CardTitle>
-              <p className="text-xs text-app-text-secondary leading-relaxed">
-                Approve advances the item to <strong>DONE</strong> and commits calculated progress credit.
-                Request Changes mandates an explanatory reason and returns the item to <strong>IN_PROGRESS</strong>.
+              <p className="text-xs text-app-text-secondary mt-0.5">
+                Blueprint V1.1 Definition of Done: Approvals bind to the exact submitted revision and acceptance criteria.
               </p>
-            </Card>
-          </div>
-        )}
+            </div>
 
-        {/* Tab 3: QA Decision Audit Trail */}
-        {activeTab === "history" && (
-          <Card className="p-5 space-y-3">
-            <CardTitle className="text-sm">Audit Log of Review Decisions</CardTitle>
-            <div className="space-y-3 pt-2">
-              {auditLogs
-                .filter((l) => l.action.includes("WORK_ITEM") || l.action.includes("APPROVED"))
-                .map((log) => (
-                  <div
-                    key={log.id}
-                    className="p-3 rounded-lg border border-app-border bg-app-sidebar/40 text-xs flex items-start justify-between"
-                  >
-                    <div>
-                      <span className="font-semibold text-app-text-primary">{log.action}</span>
-                      <p className="text-app-text-secondary mt-0.5">{log.details}</p>
-                      <span className="text-[10px] text-app-text-muted mt-1 block">
-                        By {log.actorEmail} ({log.actorRole})
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant={simulateStaleRevision ? "danger" : "outline"}
+                onClick={() => {
+                  setSimulateStaleRevision(!simulateStaleRevision);
+                  toast.info(
+                    !simulateStaleRevision
+                      ? "Stale Review simulation enabled: next decision will send rev-1 to test 409 conflict detection."
+                      : "Stale Review simulation disabled."
+                  );
+                }}
+                title="Test 409 STALE_REVIEW conflict handling"
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                {simulateStaleRevision ? "Simulating Stale Rev (Active)" : "Simulate Stale Conflict"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Tab Buttons */}
+          <div className="flex border-b border-app-border space-x-4">
+            <button
+              onClick={() => setActiveTab("queue")}
+              className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                activeTab === "queue"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-app-text-muted hover:text-app-text-primary"
+              }`}
+            >
+              Pending Review Queue ({reviewQueue.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("checklists")}
+              className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                activeTab === "checklists"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-app-text-muted hover:text-app-text-primary"
+              }`}
+            >
+              Quality Checklists &amp; Standards
+            </button>
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                activeTab === "history"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-app-text-muted hover:text-app-text-primary"
+              }`}
+            >
+              QA Decision Audit Trail
+            </button>
+          </div>
+
+          {/* Tab 1: Pending Queue */}
+          {activeTab === "queue" && (
+            <Card className="p-0 overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Work Item</TableHead>
+                    <TableHead>Title</TableHead>
+                    <TableHead>Weight</TableHead>
+                    <TableHead>Submitted Revision</TableHead>
+                    <TableHead>Due Date</TableHead>
+                    <TableHead>Criticality</TableHead>
+                    <TableHead className="text-right">Inspection</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reviewQueue.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-mono font-bold text-xs text-blue-600">
+                        {item.key}
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-semibold text-xs text-app-text-primary">{item.title}</div>
+                        <div className="text-[11px] text-app-text-muted line-clamp-1">
+                          Criteria: {item.criteria}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs font-semibold">{item.weight} pts</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        Revision {item.submittedRevision || item.currentRevision}
+                      </TableCell>
+                      <TableCell className="text-xs text-app-text-secondary">{item.dueDate}</TableCell>
+                      <TableCell>
+                        <Badge variant={item.criticality === "CRITICAL" ? "danger" : "warning"}>
+                          {item.criticality}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button size="sm" onClick={() => setSelectedItem(item)}>
+                          Inspect &amp; Decide
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {reviewQueue.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="py-10 text-center text-xs text-app-text-muted">
+                        Review queue is empty. All submitted work revisions have been resolved!
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </Card>
+          )}
+
+          {/* Tab 2: Quality Checklists */}
+          {activeTab === "checklists" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card className="p-5 space-y-3">
+                <CardTitle className="text-sm">Mandatory Pre-Approval Checklist</CardTitle>
+                <div className="space-y-2 text-xs text-app-text-secondary">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <span>Automated unit and integration tests passing in CI</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <span>Zero Sev-1 / Sev-2 security vulnerabilities reported</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <span>OpenAPI schemas match approved contract models</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <span>Staging environment canary deployment verification clean</span>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-5 space-y-3">
+                <CardTitle className="text-sm">Blueprint V1.1 Decision Rules</CardTitle>
+                <p className="text-xs text-app-text-secondary leading-relaxed">
+                  Approve advances the item to <strong>DONE</strong> and commits calculated progress credit.
+                  Request Changes mandates an explanatory reason and returns the item to <strong>IN_PROGRESS</strong>.
+                </p>
+              </Card>
+            </div>
+          )}
+
+          {/* Tab 3: QA Decision Audit Trail */}
+          {activeTab === "history" && (
+            <Card className="p-5 space-y-3">
+              <CardTitle className="text-sm">Audit Log of Review Decisions</CardTitle>
+              <div className="space-y-3 pt-2">
+                {auditLogs
+                  .filter((l) => l.action.includes("WORK_ITEM") || l.action.includes("APPROVED"))
+                  .map((log) => (
+                    <div
+                      key={log.id}
+                      className="p-3 rounded-lg border border-app-border bg-app-sidebar/40 text-xs flex items-start justify-between"
+                    >
+                      <div>
+                        <span className="font-semibold text-app-text-primary">{log.action}</span>
+                        <p className="text-app-text-secondary mt-0.5">{log.details}</p>
+                        <span className="text-[10px] text-app-text-muted mt-1 block">
+                          By {log.actorEmail} ({log.actorRole})
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-app-text-muted shrink-0 ml-4">
+                        {new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </span>
                     </div>
-                    <span className="text-[10px] text-app-text-muted shrink-0 ml-4">
-                      {new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                  </div>
-                ))}
-            </div>
-          </Card>
-        )}
+                  ))}
+              </div>
+            </Card>
+          )}
+        </div>
       </div>
 
       {/* Inspect & Decide Dialog */}
@@ -421,4 +398,3 @@ export default function ReviewerDashboard() {
     </PanelLayout>
   );
 }
-

@@ -20,6 +20,7 @@ import {
   PaymentMethodType,
   PaymentTransaction,
   PermissionKey,
+  PermissionOverrideItem,
   PlatformBrandingPreferences,
   PlatformIntegration,
   PlatformOperator,
@@ -148,7 +149,11 @@ interface SuperAdminStoreState {
   createOperator: (input: Omit<PlatformOperator, "id" | "createdAt" | "lastActiveAt">) => { ok: boolean; error?: string };
   updateOperator: (id: string, updates: Partial<PlatformOperator>) => { ok: boolean; error?: string };
   toggleOperatorStatus: (id: string) => { ok: boolean; error?: string };
+  setOperatorStatus: (id: string, status: PlatformOperator["status"], reason?: string) => { ok: boolean; error?: string };
   deleteOperator: (id: string) => { ok: boolean; error?: string };
+  revokeOperatorSessions: (id: string) => { ok: boolean; count: number; error?: string };
+  updateOperatorPermissions: (id: string, overrides: PermissionOverrideItem[]) => { ok: boolean; error?: string };
+  resendOperatorInvite: (id: string) => { ok: boolean; error?: string };
 
   // Roles
   createRole: (input: Omit<AdminRole, "id" | "createdAt" | "updatedAt" | "isSystem" | "slug">) => { ok: boolean; error?: string; role?: AdminRole };
@@ -732,6 +737,85 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         }
         set((s) => ({ operators: s.operators.filter((o) => o.id !== id) }));
         get().logActivity("OPERATOR", "OPERATOR_REMOVED", `Removed operator ${target.name}`, "WARNING", target.email);
+        return { ok: true };
+      },
+
+      revokeOperatorSessions: (id) => {
+        const state = get();
+        const target = state.operators.find((o) => o.id === id);
+        if (!target) return { ok: false, count: 0, error: "Operator not found." };
+        const count = target.activeSessionsCount || 1;
+        set((s) => ({
+          operators: s.operators.map((op) =>
+            op.id === id ? { ...op, activeSessionsCount: 0 } : op
+          ),
+        }));
+        get().logActivity(
+          "OPERATOR",
+          "OPERATOR_UPDATED",
+          `Revoked ${count} active session(s) for ${target.name} (${target.email})`,
+          "WARNING",
+          target.email
+        );
+        return { ok: true, count };
+      },
+
+      updateOperatorPermissions: (id, overrides) => {
+        const state = get();
+        const target = state.operators.find((o) => o.id === id);
+        if (!target) return { ok: false, error: "Operator not found." };
+        set((s) => ({
+          operators: s.operators.map((op) =>
+            op.id === id ? { ...op, permissionOverrides: overrides } : op
+          ),
+        }));
+        get().logActivity(
+          "OPERATOR",
+          "OPERATOR_UPDATED",
+          `Updated permission overrides (${overrides.length} rules) for ${target.name}`,
+          "INFO",
+          target.email
+        );
+        return { ok: true };
+      },
+
+      setOperatorStatus: (id, newStatus, reason) => {
+        const state = get();
+        const target = state.operators.find((o) => o.id === id);
+        if (!target) return { ok: false, error: "Operator not found." };
+        if (target.id === state.activeOperatorId && newStatus !== "ACTIVE") {
+          return { ok: false, error: "You cannot change status of your own active session operator." };
+        }
+        const activeSuperAdmins = state.operators.filter(
+          (o) => o.roleId === "role-super-admin" && o.status === "ACTIVE"
+        );
+        if (target.roleId === "role-super-admin" && newStatus !== "ACTIVE" && activeSuperAdmins.length <= 1) {
+          return { ok: false, error: "At least one active Super Administrator is required." };
+        }
+        set((s) => ({
+          operators: s.operators.map((op) => (op.id === id ? { ...op, status: newStatus } : op)),
+        }));
+        get().logActivity(
+          "OPERATOR",
+          newStatus === "SUSPENDED" ? "OPERATOR_DEACTIVATED" : "OPERATOR_UPDATED",
+          `Operator ${target.name} status changed to ${newStatus}${reason ? `: ${reason}` : ""}`,
+          newStatus === "SUSPENDED" ? "WARNING" : "INFO",
+          target.email
+        );
+        return { ok: true };
+      },
+
+      resendOperatorInvite: (id) => {
+        const state = get();
+        const target = state.operators.find((o) => o.id === id);
+        if (!target) return { ok: false, error: "Operator not found." };
+        get().logActivity(
+          "OPERATOR",
+          "OPERATOR_CREATED",
+          `Resent platform operator invitation email to ${target.email}`,
+          "INFO",
+          target.email
+        );
         return { ok: true };
       },
 

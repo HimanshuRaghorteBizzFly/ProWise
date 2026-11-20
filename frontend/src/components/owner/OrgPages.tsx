@@ -40,6 +40,11 @@ interface FamilyProps {
   family: OrgNavFamily;
 }
 
+function useFamilyBasePath(family: OrgNavFamily): string | undefined {
+  const { orgId } = useParams<{ orgId: string }>();
+  return family === "owner" ? `/org/${orgId}/owner` : undefined;
+}
+
 /** Shell + breadcrumb for an Owner/Admin page. Renders nothing org-specific if the route org is not active. */
 export function OrgPage({ family, title, children }: FamilyProps & { title: string; children: React.ReactNode }) {
   const { orgId } = useParams<{ orgId: string }>();
@@ -114,7 +119,7 @@ function ResourceStates<T>({
 export function OrgDashboardContent({ family }: FamilyProps) {
   const { orgId } = useParams<{ orgId: string }>();
   const orgName = useAuthStore((state) => state.currentOrg.name);
-  const { can, grants, scopeReported } = usePermissions();
+  const { can, canAny, grants, scopeReported } = usePermissions();
   const canViewProjects = can("project.read");
   const { state, retry } = useOwnerDashboard(canViewProjects ? orgId : "");
 
@@ -143,6 +148,8 @@ export function OrgDashboardContent({ family }: FamilyProps) {
   if (state.status === "error") {
     return <OwnerPageState state="error" title="Unable to load the dashboard" description={state.message} onRetry={retry} />;
   }
+  
+
   return (
     <OwnerDashboardView
       orgId={orgId}
@@ -191,9 +198,10 @@ export function OrgMembersContent({ family }: FamilyProps) {
   );
 }
 
-export function OrgRolesContent() {
+export function OrgRolesContent({ family }: FamilyProps) {
   const { orgId } = useParams<{ orgId: string }>();
   const { can, grants } = usePermissions();
+  const basePath = useFamilyBasePath(family);
   const canManageRoles = can("role.manage");
   const { state, retry } = useOrgResource({
     name: "roles",
@@ -204,39 +212,41 @@ export function OrgRolesContent() {
   });
 
   if (!canManageRoles) {
-    return <RolesView roles={[]} source="api" canManageRoles={false} heldGrants={grants} />;
+    return <RolesView roles={[]} source="api" canManageRoles={false} heldGrants={grants} basePath={basePath} />;
   }
   return (
     <ResourceStates state={state} retry={retry} requiredPermission="role.manage" label="roles">
-      {(ready) => <RolesView roles={ready.data} source={ready.source} canManageRoles heldGrants={grants} />}
+      {(ready) => <RolesView roles={ready.data} source={ready.source} canManageRoles heldGrants={grants} basePath={basePath} />}
     </ResourceStates>
   );
 }
 
-export function OrgInvitationsContent() {
+export function OrgInvitationsContent({ family }: FamilyProps) {
   const { orgId } = useParams<{ orgId: string }>();
   const { can } = usePermissions();
+  const basePath = useFamilyBasePath(family);
   const enabled = can("member.invite");
   const { state, retry } = useFixtureResource({ name: "invitations", orgId, enabled, fixture: FIXTURE_INVITATIONS });
 
-  if (!enabled) return <InvitationsView invitations={[]} source="api" can={can} />;
+  if (!enabled) return <InvitationsView invitations={[]} source="api" can={can} basePath={basePath} />;
   return (
     <ResourceStates state={state} retry={retry} requiredPermission="member.invite" label="invitations" laterTask="1.2">
-      {(ready) => <InvitationsView invitations={ready.data} source={ready.source} can={can} />}
+      {(ready) => <InvitationsView invitations={ready.data} source={ready.source} can={can} basePath={basePath} />}
     </ResourceStates>
   );
 }
 
-export function OrgTeamsContent() {
+export function OrgTeamsContent({ family }: FamilyProps) {
   const { orgId } = useParams<{ orgId: string }>();
   const { can } = usePermissions();
+  const basePath = useFamilyBasePath(family);
   const enabled = can("team.manage");
   const { state, retry } = useFixtureResource({ name: "teams", orgId, enabled, fixture: FIXTURE_TEAMS });
 
-  if (!enabled) return <TeamsView teams={[]} source="api" can={can} />;
+  if (!enabled) return <TeamsView teams={[]} source="api" can={can} basePath={basePath} />;
   return (
     <ResourceStates state={state} retry={retry} requiredPermission="team.manage" label="teams" laterTask="1.2">
-      {(ready) => <TeamsView teams={ready.data} source={ready.source} can={can} />}
+      {(ready) => <TeamsView teams={ready.data} source={ready.source} can={can} basePath={basePath} />}
     </ResourceStates>
   );
 }
@@ -249,22 +259,24 @@ function usePortfolio(name: string) {
   return { ...resource, can, enabled };
 }
 
-export function OrgProjectsContent() {
+export function OrgProjectsContent({ family }: FamilyProps) {
   const { state, retry, can, enabled } = usePortfolio("projects");
-  if (!enabled) return <ProjectsPortfolioView projects={[]} users={[]} teams={[]} source="api" can={can} />;
+  const basePath = useFamilyBasePath(family);
+  if (!enabled) return <ProjectsPortfolioView projects={[]} users={[]} teams={[]} source="api" can={can} basePath={basePath} />;
   return (
     <ResourceStates state={state} retry={retry} requiredPermission="project.read" label="projects" laterTask="2.1">
-      {(ready) => <ProjectsPortfolioView {...ready.data} source={ready.source} can={can} />}
+      {(ready) => <ProjectsPortfolioView {...ready.data} source={ready.source} can={can} basePath={basePath} />}
     </ResourceStates>
   );
 }
 
-export function OrgHealthContent() {
+export function OrgHealthContent({ family }: FamilyProps) {
   const { state, retry, can, enabled } = usePortfolio("health");
-  if (!enabled) return <HealthRisksView projects={[]} users={[]} source="api" can={can} />;
+  const basePath = useFamilyBasePath(family);
+  if (!enabled) return <HealthRisksView projects={[]} users={[]} source="api" can={can} basePath={basePath} />;
   return (
     <ResourceStates state={state} retry={retry} requiredPermission="project.read" label="health records" laterTask="5.1">
-      {(ready) => <HealthRisksView projects={ready.data.projects} users={ready.data.users} source={ready.source} can={can} />}
+      {(ready) => <HealthRisksView projects={ready.data.projects} users={ready.data.users} source={ready.source} can={can} basePath={basePath} />}
     </ResourceStates>
   );
 }
@@ -272,23 +284,25 @@ export function OrgHealthContent() {
 export function OrgIntegrationsContent({ family }: FamilyProps) {
   const { orgId } = useParams<{ orgId: string }>();
   const { can } = usePermissions();
+  const basePath = useFamilyBasePath(family);
   const enabled = can("repo.read");
   const { state, retry } = useFixtureResource({ name: "integrations", orgId, enabled, fixture: FIXTURE_REPOSITORIES });
 
-  if (!enabled) return <IntegrationsView family={family} repositories={[]} source="api" can={can} />;
+  if (!enabled) return <IntegrationsView family={family} repositories={[]} source="api" can={can} basePath={basePath} />;
   return (
     <ResourceStates state={state} retry={retry} requiredPermission="repo.read" label="repositories" laterTask="4.1">
-      {(ready) => <IntegrationsView family={family} repositories={ready.data} source={ready.source} can={can} />}
+      {(ready) => <IntegrationsView family={family} repositories={ready.data} source={ready.source} can={can} basePath={basePath} />}
     </ResourceStates>
   );
 }
 
-export function OrgReportsContent() {
+export function OrgReportsContent({ family }: FamilyProps) {
   const { state, retry, can, enabled } = usePortfolio("reports");
-  if (!enabled) return <ReportsView projects={[]} source="api" can={can} />;
+  const basePath = useFamilyBasePath(family);
+  if (!enabled) return <ReportsView projects={[]} source="api" can={can} basePath={basePath} />;
   return (
     <ResourceStates state={state} retry={retry} requiredPermission="project.read" label="reports" laterTask="5.5">
-      {(ready) => <ReportsView projects={ready.data.projects} source={ready.source} can={can} />}
+      {(ready) => <ReportsView projects={ready.data.projects} source={ready.source} can={can} basePath={basePath} />}
     </ResourceStates>
   );
 }
@@ -312,16 +326,17 @@ export function OrgNotificationsContent({ family }: FamilyProps) {
   );
 }
 
-export function OrgAuditContent() {
+export function OrgAuditContent({ family }: FamilyProps) {
   const { orgId } = useParams<{ orgId: string }>();
   const { can } = usePermissions();
+  const basePath = useFamilyBasePath(family);
   const enabled = can("audit.read");
   const { state, retry } = useFixtureResource({ name: "audit", orgId, enabled, fixture: FIXTURE_AUDIT });
 
-  if (!enabled) return <AuditView records={[]} source="api" can={can} />;
+  if (!enabled) return <AuditView records={[]} source="api" can={can} basePath={basePath} />;
   return (
     <ResourceStates state={state} retry={retry} requiredPermission="audit.read" label="audit records" laterTask="1.4">
-      {(ready) => <AuditView records={ready.data} source={ready.source} can={can} />}
+      {(ready) => <AuditView records={ready.data} source={ready.source} can={can} basePath={basePath} />}
     </ResourceStates>
   );
 }

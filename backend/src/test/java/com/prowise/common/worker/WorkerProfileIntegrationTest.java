@@ -30,7 +30,17 @@ class WorkerProfileIntegrationTest {
         ConfigurableApplicationContext context = new SpringApplicationBuilder(ProwiseApplication.class)
                 .profiles("worker")
                 .web(WebApplicationType.NONE)
-                .properties("prowise.worker.outbox-delay-ms=100")
+                .properties(
+                        "prowise.worker.outbox-delay-ms=100",
+                        "spring.datasource.url=" + System.getProperty("spring.datasource.url",
+                                System.getenv().getOrDefault("DB_URL", "jdbc:postgresql://localhost:5432/prowise")),
+                        "spring.datasource.username=" + System.getProperty("spring.datasource.username",
+                                System.getenv().getOrDefault("DB_USERNAME", "prowise")),
+                        "spring.datasource.password=" + System.getProperty("spring.datasource.password",
+                                System.getenv().getOrDefault("DB_PASSWORD", "ci-password")),
+                        "prowise.auth.jwt-signing-key=" + System.getProperty("prowise.auth.jwt-signing-key",
+                                System.getenv().getOrDefault("JWT_SIGNING_KEY", "test-signing-key-that-is-at-least-32-bytes-long"))
+                )
                 .run();
         OutboxPoller poller;
         try {

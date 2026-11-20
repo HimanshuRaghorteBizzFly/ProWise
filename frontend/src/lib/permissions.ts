@@ -76,8 +76,8 @@ export function mocksAllowed(env: PermissionEnv): boolean {
 }
 
 /** Fixture is used without calling the API only when explicitly requested outside production. */
-export function mocksRequested(env: PermissionEnv): boolean {
-  return mocksAllowed(env) && env.useMocks === "true";
+export function mocksRequested(env: PermissionEnv, rolePreview = false): boolean {
+  return mocksAllowed(env) && (env.useMocks === "true" || rolePreview);
 }
 
 /** Status 0 (network failure) or a gateway error from the Next.js /api proxy. 500 is a normal error. */

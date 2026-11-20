@@ -63,7 +63,7 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
   const rawOrgId = params?.orgId as string;
   const orgId = !rawOrgId || rawOrgId === "viewer" ? "org-acme" : rawOrgId;
 
-  const { currentUser, currentOrg, setCurrentRole, switchRoleAndNavigate, logout } = useAuthStore();
+  const { currentUser, currentRole, currentOrg, switchRoleAndNavigate, logout } = useAuthStore();
   const { theme, resolvedTheme, toggleTheme, setTheme } = useThemeStore();
   const {
     notifications,
@@ -787,7 +787,7 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center justify-between pb-2 border-b border-app-border">
               <div className="flex items-center gap-2">
                 <Shield className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-sm text-app-text-primary">Role Access Switcher</h3>
+                <h3 className="font-bold text-sm text-app-text-primary">Role Dashboard Preview</h3>
               </div>
               <button
                 onClick={() => setIsRoleSwitcherOpen(false)}
@@ -798,7 +798,7 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
             </div>
 
             <p className="text-xs text-app-text-secondary">
-              Switch role view to test permissions, navigation, and security boundaries.
+              Preview sample dashboards for each role. Real API data and actions remain protected by your account permissions.
             </p>
 
             <div className="space-y-1.5 max-h-72 overflow-y-auto">
@@ -806,20 +806,20 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
                 <button
                   key={r.role}
                   onClick={() => {
-                    setCurrentRole(r.role);
                     switchRoleAndNavigate(r.role, (p) => router.push(p));
                     setIsRoleSwitcherOpen(false);
                     toast.info(`Switched role to ${r.label}`);
                   }}
+                  aria-current={r.role === currentRole ? "page" : undefined}
                   className={cn(
                     "flex w-full items-center justify-between p-2.5 rounded-lg text-xs font-medium transition-colors border",
-                    r.role === "VIEWER"
+                    r.role === currentRole
                       ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-bold"
                       : "border-transparent hover:bg-app-hover text-app-text-secondary"
                   )}
                 >
                   <span>{r.label}</span>
-                  {r.role === "VIEWER" && <Check className="w-4 h-4 text-blue-600" />}
+                  {r.role === currentRole && <Check className="w-4 h-4 text-blue-600" />}
                 </button>
               ))}
             </div>

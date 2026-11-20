@@ -60,7 +60,7 @@ export function PanelLayout({ children, title, breadcrumb }: PanelLayoutProps) {
           <main
             id="main-content"
             tabIndex={-1}
-            className="mx-auto w-full min-w-0 max-w-[1960px] flex-1 px-page-gutter py-4 focus:outline-none sm:py-6"
+            className="mx-auto w-full min-w-0 max-w-[2560px] flex-1 px-page-gutter py-4 focus:outline-none sm:py-6"
           >
             {children}
           </main>

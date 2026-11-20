@@ -203,6 +203,16 @@ interface PlatformOperatorStoreState {
 
   // Account & Settings
   updateAccountSettings: (updates: Partial<OperatorAccountSettings>) => void;
+  setOperatorDepartment: (department: string) => void;
+  setActiveOperatorProfile: (operator: {
+    id: string;
+    name: string;
+    email: string;
+    department: string;
+    shiftName?: string;
+    mfaEnabled?: boolean;
+    roleTitle?: string;
+  }) => void;
   changeOperatorPassword: () => void;
   toggleOperatorMfa: (method?: OperatorAccountSettings["mfaMethod"]) => void;
   resetOperatorDemoData: () => void;
@@ -1745,6 +1755,37 @@ export const usePlatformOperatorStore = create<PlatformOperatorStoreState>()(
             action: "Updated Operator Preferences",
             summary: "Updated profile or alert/refresh preferences.",
             actorName: updates.name || state.accountSettings.name,
+          }),
+        })),
+
+      setOperatorDepartment: (department) =>
+        set((state) => ({
+          accountSettings: { ...state.accountSettings, department },
+          activityLogs: appendLog(state.activityLogs, {
+            category: "Account",
+            action: "Changed Operational Department",
+            summary: `Shifted active operator department context to ${department}.`,
+            actorName: state.accountSettings.name,
+          }),
+        })),
+
+      setActiveOperatorProfile: (operator) =>
+        set((state) => ({
+          accountSettings: {
+            ...state.accountSettings,
+            activeOperatorId: operator.id,
+            name: operator.name,
+            email: operator.email,
+            department: operator.department,
+            shiftName: operator.shiftName || state.accountSettings.shiftName,
+            mfaEnabled: operator.mfaEnabled ?? state.accountSettings.mfaEnabled,
+            roleTitle: operator.roleTitle || `${operator.department} Operator`,
+          },
+          activityLogs: appendLog(state.activityLogs, {
+            category: "Account",
+            action: "Switched Operator Account Context",
+            summary: `Signed in as ${operator.name} (${operator.department}).`,
+            actorName: operator.name,
           }),
         })),
 

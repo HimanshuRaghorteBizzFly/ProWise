@@ -96,6 +96,7 @@ const ROUTE_TITLES: Record<string, { section: string; label: string }> = {
   "/super-admin/email-templates": { section: "Communication", label: "Email Templates" },
   "/super-admin/announcements": { section: "Communication", label: "Announcements" },
   "/super-admin/configuration": { section: "Platform Management", label: "Platform Configuration" },
+  "/super-admin/maintenance": { section: "Platform Management", label: "Maintenance Mode" },
   "/super-admin/configuration/maintenance": { section: "Platform Management", label: "Maintenance Mode" },
   "/super-admin/reports": { section: "Platform Management", label: "Reports & Analytics" },
   "/super-admin/settings": { section: "Platform Management", label: "Settings" },
@@ -400,8 +401,12 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
           },
           {
             title: "Maintenance Mode",
-            href: "/super-admin/configuration?tab=maintenance",
-            matchPaths: ["/super-admin/configuration/maintenance"],
+            href: "/super-admin/maintenance",
+            matchPaths: [
+              "/super-admin/maintenance",
+              "/super-admin/configuration/maintenance",
+              "/super-admin/configuration?tab=maintenance",
+            ],
             icon: Wrench,
             requiredAny: ["config.manage"],
             badgeCount: pendingMaintenanceCount > 0 ? pendingMaintenanceCount : undefined,
@@ -447,6 +452,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
       openIncidentsCount,
       publishedAnnouncementsCount,
       escalatedSupportCount,
+      pendingMaintenanceCount,
     ]
   );
 

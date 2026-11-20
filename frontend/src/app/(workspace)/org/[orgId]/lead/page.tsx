@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useParams } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -111,250 +111,224 @@ export default function TeamLeadDashboard() {
       title="Team Lead Dashboard"
       breadcrumb={[{ label: currentOrg.name }, { label: "Core Clinical Squad" }, { label: "Lead Panel" }]}
     >
-      <div className="space-y-6">
-        {/* Squad Header */}
-        <div className="p-4 rounded-xl bg-app-surface border border-app-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-subtle">
-          <div>
+      <div className="space-y-8">
+        {/* ── NEW: Visual Dashboard ── */}
+
+        {/* ── EXISTING: Detailed Controls ── */}
+        <div className="space-y-6">
+          {/* Squad Header */}
+          <div className="p-4 rounded-xl bg-app-surface border border-app-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-subtle">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-app-text-primary">
+                  Core Clinical Engineering Squad
+                </h2>
+                <Badge variant="default">Sprint 42</Badge>
+              </div>
+              <p className="text-xs text-app-text-secondary mt-0.5">
+                Assigned Projects: Clinical Decision Support API (CRM-100), FHIR Patient Intake (SOLO-10)
+              </p>
+            </div>
+
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-app-text-primary">
-                Core Clinical Engineering Squad
-              </h2>
-              <Badge variant="default">Sprint 42</Badge>
+              <Button size="sm" variant="outline" onClick={() => setIsBlockerDialogOpen(true)}>
+                <AlertTriangle className="w-3.5 h-3.5 mr-1 text-amber-500" /> Flag Blocker
+              </Button>
+              <Button size="sm" onClick={() => setIsTaskDialogOpen(true)}>
+                <Plus className="w-3.5 h-3.5 mr-1" /> New Task
+              </Button>
             </div>
-            <p className="text-xs text-app-text-secondary mt-0.5">
-              Assigned Projects: Clinical Decision Support API (CRM-100), FHIR Patient Intake (SOLO-10)
-            </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => setIsBlockerDialogOpen(true)}>
-              <AlertTriangle className="w-3.5 h-3.5 mr-1 text-amber-500" /> Flag Blocker
-            </Button>
-            <Button size="sm" onClick={() => setIsTaskDialogOpen(true)}>
-              <Plus className="w-3.5 h-3.5 mr-1" /> New Task
-            </Button>
+          {/* Tab Buttons */}
+          <div className="flex border-b border-app-border space-x-4">
+            <button
+              onClick={() => setActiveTab("work")}
+              className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                activeTab === "work"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-app-text-muted hover:text-app-text-primary"
+              }`}
+            >
+              Work Items &amp; State ({workItems.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("blockers")}
+              className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                activeTab === "blockers"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-app-text-muted hover:text-app-text-primary"
+              }`}
+            >
+              Blockers ({allActiveBlockers.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("workload")}
+              className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                activeTab === "workload"
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-app-text-muted hover:text-app-text-primary"
+              }`}
+            >
+              Planned Capacity vs Hours
+            </button>
           </div>
-        </div>
 
-        {/* Lead Metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Assigned Work Items</div>
-            <div className="text-2xl font-bold text-app-text-primary mt-1">{workItems.length}</div>
-            <div className="text-[10px] text-app-text-muted mt-0.5">
-              {workItems.filter((w) => w.state === "DONE").length} Done / {workItems.filter((w) => w.state === "IN_REVIEW").length} In Review
-            </div>
-          </Card>
+          {/* Tab 1: Work Items */}
+          {activeTab === "work" && (
+            <Card className="p-0 overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Key</TableHead>
+                    <TableHead>Title</TableHead>
+                    <TableHead>Assignee</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Weight</TableHead>
+                    <TableHead>Revision</TableHead>
+                    <TableHead className="text-right">Lead Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {workItems.map((item) => {
+                    const assignee = SEEDED_USERS.find((u) => u.id === item.primaryAssigneeId);
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-mono font-bold text-xs text-blue-600">
+                          {item.key}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-semibold text-xs text-app-text-primary">{item.title}</div>
+                          <div className="text-[11px] text-app-text-muted">{item.criteria}</div>
+                        </TableCell>
+                        <TableCell className="text-xs text-app-text-secondary">
+                          {assignee?.name || "Unassigned"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              item.state === "DONE"
+                                ? "success"
+                                : item.state === "IN_REVIEW"
+                                ? "warning"
+                                : "secondary"
+                            }
+                          >
+                            {item.state}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs font-semibold">{item.weight} pts</TableCell>
+                        <TableCell className="font-mono text-xs text-app-text-muted">
+                          rev {item.currentRevision}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {item.state === "DONE" && (
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onClick={() => {
+                                setReopenItemId(item.id);
+                                setIsReopenDialogOpen(true);
+                              }}
+                              className="text-xs"
+                            >
+                              <RotateCcw className="w-3 h-3 mr-1" /> Reopen
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </Card>
+          )}
 
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Active Blockers</div>
-            <div className="text-2xl font-bold text-amber-600 mt-1">
-              {allActiveBlockers.length}
-            </div>
-            <div className="text-[10px] text-amber-600 font-medium mt-0.5">Separate risk condition</div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Team Members</div>
-            <div className="text-2xl font-bold text-blue-600 mt-1">3 Engineers</div>
-            <div className="text-[10px] text-blue-600 font-medium mt-0.5">100% capacity committed</div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Calculated Progress</div>
-            <div className="text-2xl font-bold text-green-600 mt-1">50%</div>
-            <div className="text-[10px] text-green-600 font-medium mt-0.5">50 / 100 points Done</div>
-          </Card>
-        </div>
-
-        {/* Tab Buttons */}
-        <div className="flex border-b border-app-border space-x-4">
-          <button
-            onClick={() => setActiveTab("work")}
-            className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === "work"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-app-text-muted hover:text-app-text-primary"
-            }`}
-          >
-            Work Items &amp; State ({workItems.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("blockers")}
-            className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === "blockers"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-app-text-muted hover:text-app-text-primary"
-            }`}
-          >
-            Blockers ({allActiveBlockers.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("workload")}
-            className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
-              activeTab === "workload"
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
-                : "border-transparent text-app-text-muted hover:text-app-text-primary"
-            }`}
-          >
-            Planned Capacity vs Hours
-          </button>
-        </div>
-
-        {/* Tab 1: Work Items */}
-        {activeTab === "work" && (
-          <Card className="p-0 overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Key</TableHead>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Assignee</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Weight</TableHead>
-                  <TableHead>Revision</TableHead>
-                  <TableHead className="text-right">Lead Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {workItems.map((item) => {
-                  const assignee = SEEDED_USERS.find((u) => u.id === item.primaryAssigneeId);
-                  return (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-mono font-bold text-xs text-blue-600">
-                        {item.key}
+          {/* Tab 2: Blockers */}
+          {activeTab === "blockers" && (
+            <Card className="p-0 overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Affected Work Item</TableHead>
+                    <TableHead>Blocker Reason</TableHead>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>Raised At</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {allActiveBlockers.map((blk) => (
+                    <TableRow key={blk.id}>
+                      <TableCell className="font-semibold text-xs text-blue-600">
+                        {blk.taskKey} - {blk.taskTitle}
                       </TableCell>
+                      <TableCell className="text-xs text-app-text-primary">{blk.reason}</TableCell>
                       <TableCell>
-                        <div className="font-semibold text-xs text-app-text-primary">{item.title}</div>
-                        <div className="text-[11px] text-app-text-muted">{item.criteria}</div>
-                      </TableCell>
-                      <TableCell className="text-xs text-app-text-secondary">
-                        {assignee?.name || "Unassigned"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            item.state === "DONE"
-                              ? "success"
-                              : item.state === "IN_REVIEW"
-                              ? "warning"
-                              : "secondary"
-                          }
-                        >
-                          {item.state}
+                        <Badge variant={blk.severity === "CRITICAL" ? "danger" : "warning"}>
+                          {blk.severity}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs font-semibold">{item.weight} pts</TableCell>
-                      <TableCell className="font-mono text-xs text-app-text-muted">
-                        rev {item.currentRevision}
+                      <TableCell className="text-xs text-app-text-muted">
+                        {new Date(blk.createdAt).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
-                        {item.state === "DONE" && (
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            onClick={() => {
-                              setReopenItemId(item.id);
-                              setIsReopenDialogOpen(true);
-                            }}
-                            className="text-xs"
-                          >
-                            <RotateCcw className="w-3 h-3 mr-1" /> Reopen
-                          </Button>
-                        )}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            resolveBlocker(blk.workItemId, blk.id);
+                            toast.success(`Blocker on ${blk.taskKey} resolved.`);
+                          }}
+                        >
+                          Resolve Blocker
+                        </Button>
                       </TableCell>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </Card>
-        )}
+                  ))}
+                  {allActiveBlockers.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-8 text-center text-xs text-app-text-muted">
+                        No active blockers. Engineering pipeline is unhindered.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </Card>
+          )}
 
-        {/* Tab 2: Blockers */}
-        {activeTab === "blockers" && (
-          <Card className="p-0 overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Affected Work Item</TableHead>
-                  <TableHead>Blocker Reason</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Raised At</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {allActiveBlockers.map((blk) => (
-                  <TableRow key={blk.id}>
-                    <TableCell className="font-semibold text-xs text-blue-600">
-                      {blk.taskKey} - {blk.taskTitle}
-                    </TableCell>
-                    <TableCell className="text-xs text-app-text-primary">{blk.reason}</TableCell>
-                    <TableCell>
-                      <Badge variant={blk.severity === "CRITICAL" ? "danger" : "warning"}>
-                        {blk.severity}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-app-text-muted">
-                      {new Date(blk.createdAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => {
-                          resolveBlocker(blk.workItemId, blk.id);
-                          toast.success(`Blocker on ${blk.taskKey} resolved.`);
-                        }}
-                      >
-                        Resolve Blocker
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {allActiveBlockers.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-xs text-app-text-muted">
-                      No active blockers. Engineering pipeline is unhindered.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </Card>
-        )}
+          {/* Tab 3: Workload & Capacity */}
+          {activeTab === "workload" && (
+            <Card className="p-5 space-y-4">
+              <CardTitle className="text-sm">Weekly Squad Workload &amp; Capacity</CardTitle>
+              <CardDescription>
+                Blueprint Rule: Workload tracks planned vs available hours only. No automatic equivalence between story points and hours.
+              </CardDescription>
 
-        {/* Tab 3: Workload & Capacity */}
-        {activeTab === "workload" && (
-          <Card className="p-5 space-y-4">
-            <CardTitle className="text-sm">Weekly Squad Workload &amp; Capacity</CardTitle>
-            <CardDescription>
-              Blueprint Rule: Workload tracks planned vs available hours only. No automatic equivalence between story points and hours.
-            </CardDescription>
-
-            <div className="space-y-3 pt-2">
-              {[
-                { name: "Alex Rivera (Developer)", planned: 36, capacity: 40, status: "Normal" },
-                { name: "David Kim (Team Lead)", planned: 32, capacity: 40, status: "Normal" },
-                { name: "Priya Patel (QA / Reviewer)", planned: 28, capacity: 35, status: "Normal" },
-              ].map((m, idx) => (
-                <div
-                  key={idx}
-                  className="p-3.5 rounded-lg border border-app-border bg-app-sidebar/40 flex items-center justify-between text-xs"
-                >
-                  <div>
-                    <span className="font-semibold text-app-text-primary">{m.name}</span>
-                    <div className="text-app-text-secondary mt-0.5">
-                      Planned Hours: {m.planned}h / {m.capacity}h Available
+              <div className="space-y-3 pt-2">
+                {[
+                  { name: "Alex Rivera (Developer)", planned: 36, capacity: 40, status: "Normal" },
+                  { name: "David Kim (Team Lead)", planned: 32, capacity: 40, status: "Normal" },
+                  { name: "Priya Patel (QA / Reviewer)", planned: 28, capacity: 35, status: "Normal" },
+                ].map((m, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3.5 rounded-lg border border-app-border bg-app-sidebar/40 flex items-center justify-between text-xs"
+                  >
+                    <div>
+                      <span className="font-semibold text-app-text-primary">{m.name}</span>
+                      <div className="text-app-text-secondary mt-0.5">
+                        Planned Hours: {m.planned}h / {m.capacity}h Available
+                      </div>
                     </div>
+                    <Badge variant="success">{m.status}</Badge>
                   </div>
-                  <Badge variant="success">{m.status}</Badge>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
       </div>
 
       {/* Flag Blocker Dialog */}
@@ -394,7 +368,7 @@ export default function TeamLeadDashboard() {
             <label className="block text-xs font-semibold text-app-text-secondary">Severity</label>
             <select
               value={blockerSeverity}
-              onChange={(e) => setBlockerSeverity(e.target.value as any)}
+              onChange={(e) => setBlockerSeverity(e.target.value as Priority)}
               className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
             >
               <option value="MEDIUM">Medium</option>
@@ -488,4 +462,3 @@ export default function TeamLeadDashboard() {
     </PanelLayout>
   );
 }
-

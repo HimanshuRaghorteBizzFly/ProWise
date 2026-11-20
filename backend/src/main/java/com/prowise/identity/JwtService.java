@@ -38,6 +38,13 @@ public class JwtService {
                 .claim("email", principal.email())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTokenLifetime)));
+        if (principal.isOperator()) {
+            builder.claim("type", "OPERATOR");
+            builder.claim("opid", principal.operatorId());
+            if (principal.role() != null) builder.claim("role", principal.role());
+            if (principal.departmentId() != null) builder.claim("dept", principal.departmentId());
+            if (principal.accessLevel() != null) builder.claim("accessLevel", principal.accessLevel());
+        }
         if (principal.organizationId() != null) {
             builder.claim("org", principal.organizationId().toString());
         }
@@ -46,6 +53,21 @@ public class JwtService {
 
     public AuthPrincipal parse(String token) {
         Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
+        String type = claims.get("type", String.class);
+        if ("OPERATOR".equalsIgnoreCase(type)) {
+            String opid = claims.get("opid", String.class);
+            String role = claims.get("role", String.class);
+            String dept = claims.get("dept", String.class);
+            String accessLevel = claims.get("accessLevel", String.class);
+            return AuthPrincipal.forOperator(
+                    opid,
+                    UUID.fromString(claims.get("sid", String.class)),
+                    claims.get("email", String.class),
+                    role,
+                    dept,
+                    accessLevel != null ? accessLevel : "DEPARTMENT_OPERATOR"
+            );
+        }
         String organization = claims.get("org", String.class);
         return new AuthPrincipal(
                 UUID.fromString(claims.getSubject()),

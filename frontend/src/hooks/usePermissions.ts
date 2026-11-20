@@ -17,16 +17,20 @@ export function usePermissions() {
   const orgId = useAuthStore((state) => state.currentOrg.id);
   // The role template only selects the dev fixture response; it never grants anything.
   const roleTemplate = useAuthStore((state) => state.currentRole);
+  const isRolePreview = useAuthStore((state) => state.isRolePreview);
   const state = useStore(permissionStore);
   const { load } = state;
 
   useEffect(() => {
-    void load(orgId, roleTemplate);
-  }, [load, orgId, roleTemplate]);
+    void load(orgId, roleTemplate, { preview: isRolePreview });
+  }, [load, orgId, roleTemplate, isRolePreview]);
 
   // Grants loaded for another organization are never used.
-  const grants = state.orgId === orgId && state.status === "ready" ? state.grants : NO_GRANTS;
-  const status = state.orgId === orgId || !orgId ? state.status : "loading";
+  const stateMatchesRole =
+    state.role === roleTemplate && state.preview === isRolePreview;
+  const stateMatchesRequest = state.orgId === orgId && stateMatchesRole;
+  const grants = stateMatchesRequest && state.status === "ready" ? state.grants : NO_GRANTS;
+  const status = stateMatchesRequest || !orgId ? state.status : "loading";
 
   const can = useCallback(
     (key: PermissionKey, target?: PermissionTarget) => canWithGrants(grants, key, target),
@@ -36,7 +40,10 @@ export function usePermissions() {
     (keys: readonly PermissionKey[], target?: PermissionTarget) => canAnyWithGrants(grants, keys, target),
     [grants],
   );
-  const retry = useCallback(() => void load(orgId, roleTemplate, { force: true }), [load, orgId, roleTemplate]);
+  const retry = useCallback(
+    () => void load(orgId, roleTemplate, { force: true, preview: isRolePreview }),
+    [load, orgId, roleTemplate, isRolePreview],
+  );
 
   return {
     status: status === "idle" ? ("loading" as const) : status,

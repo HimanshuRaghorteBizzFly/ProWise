@@ -389,12 +389,21 @@ export default function ViewerTeamPage() {
                   Assigned Initiatives ({selectedMember.assignedProjects.length})
                 </div>
                 <div className="flex flex-wrap gap-1.5">
+<<<<<<< HEAD
                   {selectedMember.assignedProjects.map((project) => (
                     <span
                       key={project.id}
                       className="px-2.5 py-1 rounded-md bg-[var(--color-app-bg,#F8FAFD)] border border-[var(--color-border,#E2E8F0)] font-mono font-bold text-blue-600 dark:text-blue-400"
                     >
                       {project.key}
+=======
+                  {selectedMember.assignedProjects.map((p) => (
+                    <span
+                      key={p.id || p.key}
+                      className="px-2.5 py-1 rounded-md bg-[var(--color-app-bg,#F8FAFD)] border border-[var(--color-border,#E2E8F0)] font-mono font-bold text-blue-600 dark:text-blue-400"
+                    >
+                      {p.key}
+>>>>>>> 616e528e6f65ef6de66dd7269ed38b36fb90c447
                     </span>
                   ))}
                 </div>

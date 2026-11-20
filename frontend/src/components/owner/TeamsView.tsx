@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { UsersRound } from "lucide-react";
 
 import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
@@ -13,11 +14,12 @@ export interface TeamsViewProps {
   teams: TeamRow[];
   source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
+  basePath?: string;
 }
 
 const MAX_NAMES = 4;
 
-export function TeamsView({ teams, source, can }: TeamsViewProps) {
+export function TeamsView({ teams, source, can, basePath }: TeamsViewProps) {
   const [showArchived, setShowArchived] = useState(false);
   const canManage = can("team.manage");
   const visible = teams.filter((team) => showArchived || !team.archived);
@@ -30,10 +32,14 @@ export function TeamsView({ teams, source, can }: TeamsViewProps) {
       simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={
         canManage ? (
-          <>
-            <LaterActionButton>Create team</LaterActionButton>
-            <OwnerLaterBadge task="1.2" />
-          </>
+          basePath ? (
+            <Link
+              href={`${basePath}/teams/new`}
+              className="inline-flex min-h-9 items-center rounded-lg bg-[#1A73E8] px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#1557B0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
+            >
+              Create team
+            </Link>
+          ) : <><LaterActionButton>Create team</LaterActionButton><OwnerLaterBadge task="1.2" /></>
         ) : undefined
       }
     />
@@ -76,7 +82,7 @@ export function TeamsView({ teams, source, can }: TeamsViewProps) {
                   <li key={team.id} className="min-w-0">
                     <SurfaceCard className="flex h-full flex-col gap-3 p-4 transition-shadow hover:shadow-floating motion-reduce:transition-none">
                       <div className="flex items-start justify-between gap-2">
-                        <h2 className="min-w-0 text-sm font-semibold text-app-text-primary">{team.name}</h2>
+                        {basePath ? <Link href={`${basePath}/teams/${team.id}`} className="min-w-0 truncate rounded-sm text-sm font-semibold text-app-text-primary hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">{team.name}</Link> : <h2 className="min-w-0 truncate text-sm font-semibold text-app-text-primary">{team.name}</h2>}
                         {team.archived && <StatusBadge label="Archived" tone="neutral" />}
                       </div>
                       {team.description && <p className="text-caption text-app-text-secondary">{team.description}</p>}
@@ -93,7 +99,7 @@ export function TeamsView({ teams, source, can }: TeamsViewProps) {
                         {extra > 0 ? ` and ${extra} more` : ""}
                       </p>
                       <div className="mt-auto flex flex-wrap gap-2 pt-1">
-                        <LaterActionButton>Edit</LaterActionButton>
+                        {basePath ? <Link href={`${basePath}/teams/${team.id}/edit`} className="inline-flex min-h-8 items-center rounded-lg border border-app-border px-3 text-xs font-medium text-app-text-secondary hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent">Edit team</Link> : <LaterActionButton>Edit</LaterActionButton>}
                         {!team.archived && <LaterActionButton>Archive</LaterActionButton>}
                       </div>
                     </SurfaceCard>

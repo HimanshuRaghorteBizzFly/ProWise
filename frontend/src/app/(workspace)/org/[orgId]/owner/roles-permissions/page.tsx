@@ -7,7 +7,7 @@ import { OrgRolesContent, OrgPage } from "@/components/owner/OrgPages";
 export default function OwnerRolesPermissionsPage() {
   return (
     <OrgPage family="owner" title="Roles & permissions">
-      <OrgRolesContent />
+      <OrgRolesContent family="owner" />
     </OrgPage>
   );
 }
