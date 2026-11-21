@@ -101,3 +101,9 @@ body {
   background: var(--color-text-muted);
 }
 
+/* Suppress Next.js development portal overlay badge/toast */
+nextjs-portal {
+  display: none !important;
+}
+
+

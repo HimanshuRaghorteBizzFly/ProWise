@@ -53,15 +53,18 @@ export default function DeveloperDashboard() {
     };
   }, [orgId]);
 
-  // Fallback to local store if backend call pending or offline
+  // Active developer assignment matching (Alex Rivera / database developer / mock developer persona)
+  const devIds = new Set(["p-alex", "usr-developer", "00000000-0000-0000-0000-000000000003", "alex.rivera@acmehealth.com"]);
   const projectStoreMatches = projects.filter(
-    (p) => p.accountableOwnerId === "usr-developer" || p.memberIds.includes("usr-developer")
+    (p) => devIds.has(p.accountableOwnerId || "") || (p.memberIds && p.memberIds.some((m) => devIds.has(m)))
   );
   const deliveryMatches = deliveryProjects.filter((p) =>
-    p.memberIds.some((m) => m === "p-aisha" || m === "p-diego" || m === "p-sofia" || m === "usr-developer")
+    (p.accountableDeveloperId && devIds.has(p.accountableDeveloperId)) ||
+    (p.memberIds && p.memberIds.some((m) => devIds.has(m))) ||
+    p.mode === "INDIVIDUAL"
   );
   const myProjects = [...projectStoreMatches, ...deliveryMatches.filter(d => !projectStoreMatches.some(p => p.key.toLowerCase() === d.code.toLowerCase()))];
-  const myTasks = workItems.filter((w) => w.primaryAssigneeId === "usr-developer");
+  const myTasks = workItems.filter((w) => devIds.has(w.primaryAssigneeId || ""));
   const completedCount = myTasks.filter((w) => w.state === "DONE").length;
   const pendingCount = myTasks.filter((w) => w.state !== "DONE").length;
   const overdueCount = myTasks.filter((w) => w.dueDate && new Date(w.dueDate) < new Date() && w.state !== "DONE").length;
@@ -197,13 +200,16 @@ export default function DeveloperDashboard() {
 
         {/* Dual Mode Feature Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Individual Mode Card */}
-          <Card className="p-5 border-l-4 border-l-blue-600 space-y-3">
+          {/* Individual Mode Card - Emerald / Teal Theme */}
+          <Card className="relative overflow-hidden p-5 border border-emerald-500/30 border-l-4 border-l-emerald-500 bg-gradient-to-br from-emerald-500/10 via-app-surface to-teal-500/5 hover:border-emerald-500/60 shadow-sm hover:shadow-lg hover:shadow-emerald-500/10 transition-all duration-200 space-y-3.5">
+            <span className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-400" />
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase text-blue-600 tracking-wide flex items-center gap-1.5">
-                <FileCheck className="w-4 h-4" /> Mode A — Individual Ownership
+              <span className="text-xs font-bold uppercase tracking-wide flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 shadow-xs">
+                <FileCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Mode A — Individual Ownership
               </span>
-              <Badge variant="default">Weekly Grace Active</Badge>
+              <Badge variant="default" className="bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30">
+                Weekly Grace Active
+              </Badge>
             </div>
             <h3 className="text-base font-bold text-app-text-primary">
               FHIR Patient Intake Service (SOLO-10)
@@ -212,9 +218,12 @@ export default function DeveloperDashboard() {
               Direct developer check-in model. No mandatory task boards. Authors directly update percentage progress and delivery milestones weekly.
             </p>
             <div className="pt-2 flex items-center justify-between">
-              <span className="text-xs text-app-text-muted">Target: 2026-11-20</span>
+              <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                Target: 2026-11-20
+              </span>
               <Button
                 size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm hover:shadow-emerald-600/25 transition-all"
                 onClick={() => router.push(`/org/${orgId}/developer/projects/proj-individual-solo/individual`)}
               >
                 <span>Open Solo Check-in</span>
@@ -223,13 +232,16 @@ export default function DeveloperDashboard() {
             </div>
           </Card>
 
-          {/* Structured Mode Card */}
-          <Card className="p-5 border-l-4 border-l-indigo-600 space-y-3">
+          {/* Structured Mode Card - Violet / Purple Theme */}
+          <Card className="relative overflow-hidden p-5 border border-violet-500/30 border-l-4 border-l-violet-500 bg-gradient-to-br from-violet-500/10 via-app-surface to-indigo-500/5 hover:border-violet-500/60 shadow-sm hover:shadow-lg hover:shadow-violet-500/10 transition-all duration-200 space-y-3.5">
+            <span className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-violet-500 to-indigo-500" />
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase text-indigo-600 tracking-wide flex items-center gap-1.5">
-                <GitPullRequest className="w-4 h-4" /> Mode B — Structured Delivery
+              <span className="text-xs font-bold uppercase tracking-wide flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/15 text-violet-700 dark:text-violet-300 border border-violet-500/30 shadow-xs">
+                <GitPullRequest className="w-4 h-4 text-violet-600 dark:text-violet-400" /> Mode B — Structured Delivery
               </span>
-              <Badge variant="success">50% Calculated</Badge>
+              <Badge variant="success" className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                50% Calculated
+              </Badge>
             </div>
             <h3 className="text-base font-bold text-app-text-primary">
               Clinical Decision Support API (CRM-100)
@@ -238,10 +250,12 @@ export default function DeveloperDashboard() {
               Approved baseline weights (50/100 points). Interactive Sprint board, task state transitions, leaf evidence reviews, and dependency tracking.
             </p>
             <div className="pt-2 flex items-center justify-between">
-              <span className="text-xs text-app-text-muted">Target: 2026-12-15</span>
+              <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-violet-500/10 text-violet-700 dark:text-violet-300 border border-violet-500/20">
+                Target: 2026-12-15
+              </span>
               <Button
                 size="sm"
-                variant="secondary"
+                className="bg-violet-600 hover:bg-violet-700 text-white font-medium shadow-sm hover:shadow-violet-600/25 transition-all"
                 onClick={() => router.push(`/org/${orgId}/developer/projects/proj-structured-cds/structured`)}
               >
                 <span>Open Sprint Board</span>

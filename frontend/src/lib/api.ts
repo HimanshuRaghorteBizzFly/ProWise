@@ -304,6 +304,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
     },
     createProject: (orgId: string, body: import("@/types/api").CreateProjectRequestDto) =>
       json<import("@/types/api").ProjectDto>(`${orgPath(orgId)}/projects`, { method: "POST", body }),
+    eligibleProjectMembers: (orgId: string) =>
+      json<import("@/types/api").EligibleMembersResponseDto>(`${orgPath(orgId)}/projects/eligible-members`),
     updateProject: (projectId: string, body: import("@/types/api").UpdateProjectRequestDto, orgId?: string) => {
       const path = orgId ? `${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}` : `/v1/projects/${encodeURIComponent(projectId)}`;
       return json<import("@/types/api").ProjectDto>(path, { method: "PATCH", body });

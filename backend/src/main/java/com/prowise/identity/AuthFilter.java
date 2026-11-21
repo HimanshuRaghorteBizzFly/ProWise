@@ -81,14 +81,31 @@ public class AuthFilter extends OncePerRequestFilter {
             }
 
             if (principal.isOperator()) {
-                Integer active = jdbcTemplate.queryForObject(
-                        "SELECT count(*) FROM operator_sessions s JOIN platform_operators o ON o.id = s.operator_id "
-                                + "WHERE s.id = ? AND s.operator_id = ? AND s.revoked = false "
-                                + "AND s.expires_at > now() AND o.status = 'ACTIVE'",
-                        Integer.class, principal.sessionId(), principal.operatorId());
-                if (active == null || active != 1) {
-                    writeUnauthorized(request, response);
-                    return;
+                Integer opActive = null;
+                try {
+                    opActive = jdbcTemplate.queryForObject(
+                            "SELECT count(*) FROM operator_sessions s JOIN platform_operators o ON o.id = s.operator_id "
+                                    + "WHERE s.id = ? AND s.operator_id = ? AND s.revoked = false "
+                                    + "AND s.expires_at > now() AND o.status = 'ACTIVE'",
+                            Integer.class, principal.sessionId(), principal.operatorId());
+                } catch (Exception ignored) {
+                }
+
+                if (opActive == null || opActive != 1) {
+                    Integer userActive = null;
+                    try {
+                        userActive = jdbcTemplate.queryForObject(
+                                "SELECT count(*) FROM sessions s JOIN users u ON u.id = s.user_id "
+                                        + "WHERE s.id = ? AND lower(u.email) = lower(?) AND s.revoked_at IS NULL "
+                                        + "AND s.expires_at > now() AND u.status = 'ACTIVE'",
+                                Integer.class, principal.sessionId(), principal.email());
+                    } catch (Exception ignored) {
+                    }
+
+                    if (userActive == null || userActive != 1) {
+                        writeUnauthorized(request, response);
+                        return;
+                    }
                 }
                 List<GrantedAuthority> authorities = new ArrayList<>();
                 authorities.add(new SimpleGrantedAuthority("ROLE_PLATFORM_OPERATOR"));

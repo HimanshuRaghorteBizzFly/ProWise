@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { safeJSONStorage } from "@/lib/safe-storage";
 import {
   AccessApprovalRequest,
   ActivityCategory,
@@ -3064,6 +3065,7 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
     }),
     {
       name: "prowise-super-admin-store-v4",
+      storage: safeJSONStorage,
       skipHydration: true,
       onRehydrateStorage: () => (state) => {
         if (state) {

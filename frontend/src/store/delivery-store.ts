@@ -36,12 +36,15 @@ import {
 
 export interface NewProjectInput {
   name: string;
+  code?: string;
   client: string;
   mode: Project["mode"];
   teamId: string;
   startDate: string;
   dueDate: string;
   description: string;
+  accountableDeveloperId?: string;
+  memberIds?: string[];
 }
 
 export interface NewTaskInput {
@@ -101,21 +104,23 @@ export const useDeliveryStore = create<DeliveryState>((set, get) => ({
   createProject: (input, managerId) => {
     const count = get().projects.length;
     const team = get().people.filter((p) => p.teamId === input.teamId).map((p) => p.id);
+    const assignedDev = input.accountableDeveloperId || "p-alex";
     const project: Project = {
       id: `prj-new-${Date.now()}`,
-      code: slugCode(input.name),
+      code: input.code ? input.code.toUpperCase() : slugCode(input.name),
       name: input.name,
       client: input.client,
       mode: input.mode,
-      status: "PLANNING",
+      status: "ACTIVE",
       health: "ON_TRACK",
       progress: 0,
       plannedProgress: 0,
       startDate: input.startDate,
       dueDate: input.dueDate,
       managerId,
+      accountableDeveloperId: input.mode === "INDIVIDUAL" ? assignedDev : undefined,
       teamId: input.teamId,
-      memberIds: input.mode === "INDIVIDUAL" ? team.slice(0, 1) : team,
+      memberIds: input.mode === "INDIVIDUAL" ? [assignedDev] : (input.memberIds && input.memberIds.length > 0 ? input.memberIds : team),
       budgetUsed: 0,
       description: input.description,
       milestones: [],

@@ -8,6 +8,7 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -384,7 +385,27 @@ public class AuthService {
         jdbc.update("INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, expires_at) "
                         + "VALUES (?, ?, ?, ?, now() + (? * interval '1 day'))",
                 sessionId, userId, hash(refreshToken), familyId, refreshTokenDays);
-        String accessToken = jwtService.issueAccessToken(new AuthPrincipal(userId, sessionId, email, organizationId));
+
+        String opId = null;
+        String dept = null;
+        if ("PLATFORM_OPERATOR".equalsIgnoreCase(role)) {
+            List<Map<String, Object>> ops = jdbc.queryForList(
+                    "SELECT id, department_id FROM platform_operators WHERE user_id = ? OR lower(email) = lower(?)",
+                    userId, email);
+            if (!ops.isEmpty()) {
+                opId = Objects.toString(ops.get(0).get("id"), null);
+                dept = Objects.toString(ops.get(0).get("department_id"), null);
+            } else {
+                opId = "op-unified";
+            }
+        }
+
+        AuthPrincipal principal = new AuthPrincipal(
+                userId, sessionId, email, organizationId, opId, role, dept,
+                opId != null ? "MAIN_PLATFORM_OPERATOR" : null, mustChangePassword, name
+        );
+
+        String accessToken = jwtService.issueAccessToken(principal);
         return new TokenPair(accessToken, refreshToken);
     }
 

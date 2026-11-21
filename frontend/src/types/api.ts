@@ -214,6 +214,21 @@ export interface CreateProjectRequestDto {
   timezone?: string;
 }
 
+export interface EligibleMemberDto {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  title?: string;
+}
+
+export interface EligibleMembersResponseDto {
+  owners: EligibleMemberDto[];
+  managers: EligibleMemberDto[];
+  developers: EligibleMemberDto[];
+  allMembers: EligibleMemberDto[];
+}
+
 export interface UpdateProjectRequestDto {
   name?: string;
   description?: string;

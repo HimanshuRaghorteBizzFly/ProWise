@@ -127,4 +127,19 @@ public final class ProjectDTOs {
             boolean hasMore,
             long totalCount
     ) {}
+
+    public record EligibleMemberDTO(
+            String id,
+            String name,
+            String email,
+            String role,
+            String title
+    ) {}
+
+    public record EligibleMembersResponse(
+            List<EligibleMemberDTO> owners,
+            List<EligibleMemberDTO> managers,
+            List<EligibleMemberDTO> developers,
+            List<EligibleMemberDTO> allMembers
+    ) {}
 }

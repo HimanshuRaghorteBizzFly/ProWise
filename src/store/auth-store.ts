@@ -24,6 +24,72 @@ const DEFAULT_USER: User = {
 const EMPTY_USER: User = DEFAULT_USER;
 const EMPTY_ORG: Organization = DEFAULT_ORG;
 
+export const ROLE_PERSONAS: Record<SystemRole, User> = {
+  SUPER_ADMIN: {
+    id: "00000000-0000-0000-0000-000000000001",
+    email: "superadmin@prowise.com",
+    name: "Super Admin",
+    timezone: "America/New_York",
+    createdAt: "2026-01-01T00:00:00Z",
+  },
+  PLATFORM_OPERATOR: {
+    id: "00000000-0000-0000-0000-000000000002",
+    email: "operator@prowise.io",
+    name: "Platform Operator",
+    timezone: "America/New_York",
+    createdAt: "2026-01-01T00:00:00Z",
+  },
+  ORGANIZATION_OWNER: {
+    id: "usr-owner",
+    email: "dr.sarah.lin@acmehealth.com",
+    name: "Dr. Sarah Lin",
+    timezone: "America/New_York",
+    createdAt: "2026-02-01T00:00:00Z",
+  },
+  ORGANIZATION_ADMIN: {
+    id: "usr-admin",
+    email: "david.kim@acmehealth.com",
+    name: "David Kim",
+    timezone: "America/New_York",
+    createdAt: "2026-02-01T00:00:00Z",
+  },
+  PROJECT_MANAGER: {
+    id: "usr-manager",
+    email: "priya.raman@acmehealth.com",
+    name: "Priya Raman",
+    timezone: "America/New_York",
+    createdAt: "2026-02-01T00:00:00Z",
+  },
+  TEAM_LEAD: {
+    id: "usr-lead",
+    email: "marcus.chen@acmehealth.com",
+    name: "Marcus Chen",
+    timezone: "America/New_York",
+    createdAt: "2026-02-01T00:00:00Z",
+  },
+  DEVELOPER: {
+    id: "00000000-0000-0000-0000-000000000003",
+    email: "alex.rivera@acmehealth.com",
+    name: "Alex Rivera",
+    timezone: "America/New_York",
+    createdAt: "2026-02-01T00:00:00Z",
+  },
+  QA_REVIEWER: {
+    id: "usr-qa",
+    email: "elena.ruiz@acmehealth.com",
+    name: "Elena Ruiz",
+    timezone: "America/New_York",
+    createdAt: "2026-02-01T00:00:00Z",
+  },
+  VIEWER: {
+    id: "usr-viewer",
+    email: "jordan.lee@acmehealth.com",
+    name: "Jordan Lee",
+    timezone: "America/New_York",
+    createdAt: "2026-02-01T00:00:00Z",
+  },
+};
+
 export function getRoleDashboardPath(role: SystemRole, orgId = ""): string {
   const safeOrgId = orgId && orgId.trim() !== "" ? orgId : "org-acme";
   switch (role) {
@@ -83,7 +149,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setCurrentRole: (role) => set({ currentRole: role, activeRole: role }),
   setCurrentOrg: (org) => set({ currentOrg: org, activeOrgId: org.id }),
 
-  switchRole: (role) => set({ currentRole: role, activeRole: role }),
+  switchRole: (role) => {
+    const persona = ROLE_PERSONAS[role] || DEFAULT_USER;
+    set({ currentUser: persona, currentRole: role, activeRole: role });
+  },
 
   switchOrg: (orgId) => {
     if (get().currentOrg.id === orgId) return;
@@ -94,7 +163,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   switchRoleAndNavigate: (role, routerPush) => {
     const { currentOrg } = get();
     const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
-    set({ currentRole: role, activeRole: role });
+    const persona = ROLE_PERSONAS[role] || DEFAULT_USER;
+    set({ currentUser: persona, currentRole: role, activeRole: role });
     const targetUrl = getRoleDashboardPath(role, safeOrgId);
     routerPush(targetUrl);
   },

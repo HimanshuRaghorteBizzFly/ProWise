@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { safeJSONStorage } from "@/lib/safe-storage";
 import { useAuthStore } from "@/store/auth-store";
 import {
   ViewerProject,
@@ -197,6 +198,8 @@ export const useViewerStore = create<ViewerState>()(
     }),
     {
       name: "prowise-viewer-storage",
+      storage: safeJSONStorage,
+      skipHydration: true,
       partialize: (state) => ({
         userSettings: state.userSettings,
       }),

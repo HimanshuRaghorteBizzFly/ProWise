@@ -181,4 +181,15 @@ public class ProjectController {
         List<ProjectDTOs.ProjectMemberResponse> response = projectService.listMembers(effectiveOrgId, projectId, auth);
         return ResponseEntity.ok(response);
     }
+
+    // 10. Get Eligible Project Members
+    @GetMapping({"/v1/organizations/{orgId}/projects/eligible-members", "/api/v1/organizations/{orgId}/projects/eligible-members"})
+    @PreAuthorize("@permissionService.authorize(authentication, #orgId, 'project.read')")
+    @Operation(summary = "Get eligible owners, managers, developers, and members for project creation")
+    public ResponseEntity<ProjectDTOs.EligibleMembersResponse> getEligibleMembers(
+            @PathVariable UUID orgId,
+            Authentication auth) {
+        ProjectDTOs.EligibleMembersResponse response = projectService.getEligibleMembers(orgId, auth);
+        return ResponseEntity.ok(response);
+    }
 }

@@ -764,4 +764,56 @@ public class ProjectService {
                 m.getCreatedAt()
         );
     }
+
+    /* ------------------------------------------------------------------
+     * 10. Get Eligible Members for Project Roles
+     * ------------------------------------------------------------------ */
+
+    @Transactional(readOnly = true)
+    public ProjectDTOs.EligibleMembersResponse getEligibleMembers(UUID orgId, Authentication auth) {
+        permissionService.require(auth, orgId, PermissionKey.PROJECT_READ.value());
+
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT m.user_id, u.name, u.email, COALESCE(r.name, m.role_template, u.role, 'Member') as role_name
+                FROM memberships m
+                JOIN users u ON u.id = m.user_id
+                LEFT JOIN roles r ON r.id = m.role_id
+                WHERE m.org_id = ? AND m.status = 'ACTIVE'
+                ORDER BY u.name ASC
+                """, orgId);
+
+        List<ProjectDTOs.EligibleMemberDTO> owners = new ArrayList<>();
+        List<ProjectDTOs.EligibleMemberDTO> managers = new ArrayList<>();
+        List<ProjectDTOs.EligibleMemberDTO> developers = new ArrayList<>();
+        List<ProjectDTOs.EligibleMemberDTO> allMembers = new ArrayList<>();
+
+        for (Map<String, Object> row : rows) {
+            String userId = row.get("user_id") != null ? row.get("user_id").toString() : "";
+            String name = (String) row.get("name");
+            String email = (String) row.get("email");
+            String roleName = row.get("role_name") != null ? (String) row.get("role_name") : "Member";
+
+            ProjectDTOs.EligibleMemberDTO dto = new ProjectDTOs.EligibleMemberDTO(userId, name, email, roleName, roleName);
+            allMembers.add(dto);
+
+            String lowerRole = roleName.toLowerCase(Locale.ROOT);
+            if (lowerRole.contains("owner") || lowerRole.contains("admin")) {
+                owners.add(dto);
+                managers.add(dto);
+            } else if (lowerRole.contains("manager") || lowerRole.contains("lead")) {
+                managers.add(dto);
+            } else if (lowerRole.contains("developer") || lowerRole.contains("engineer")) {
+                developers.add(dto);
+            } else {
+                developers.add(dto);
+                managers.add(dto);
+            }
+        }
+
+        if (owners.isEmpty()) owners.addAll(allMembers);
+        if (managers.isEmpty()) managers.addAll(allMembers);
+        if (developers.isEmpty()) developers.addAll(allMembers);
+
+        return new ProjectDTOs.EligibleMembersResponse(owners, managers, developers, allMembers);
+    }
 }

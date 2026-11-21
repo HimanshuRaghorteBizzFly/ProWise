@@ -72,6 +72,7 @@ export interface Project {
   startDate: string;
   dueDate: string;
   managerId: string;
+  accountableDeveloperId?: string;
   teamId: string;
   memberIds: string[];
   budgetUsed: number;
@@ -213,6 +214,8 @@ export const VIEWERS = {
   manager: { id: "p-priya", name: "Priya Raman", title: "Senior Project Manager" },
   lead: { id: "p-marcus", name: "Marcus Chen", title: "Team Lead · Platform Squad", teamId: "t-platform" },
   reviewer: { id: "p-elena", name: "Elena Ruiz", title: "QA Reviewer" },
+  developer: { id: "p-alex", name: "Alex Rivera", title: "Software Engineer", teamId: "t-platform" },
+  viewer: { id: "p-jordan", name: "Jordan Lee", title: "Product / Executive Viewer" },
 } as const;
 
 /* ----------------------------------------------------------------------------
@@ -220,12 +223,13 @@ export const VIEWERS = {
  * ------------------------------------------------------------------------- */
 
 export const TEAMS: Team[] = [
-  { id: "t-platform", name: "Platform Squad", leadId: "p-marcus", focus: "APIs, billing and integrations", memberIds: ["p-marcus", "p-aisha", "p-diego", "p-sofia", "p-liam", "p-yuki"] },
+  { id: "t-platform", name: "Platform Squad", leadId: "p-marcus", focus: "APIs, billing and integrations", memberIds: ["p-marcus", "p-alex", "p-aisha", "p-diego", "p-sofia", "p-liam", "p-yuki"] },
   { id: "t-mobile", name: "Mobile Crew", leadId: "p-hana", focus: "iOS and Android apps", memberIds: ["p-hana", "p-noah", "p-zara"] },
   { id: "t-data", name: "Data Guild", leadId: "p-omar", focus: "Analytics and reporting pipelines", memberIds: ["p-omar", "p-mei"] },
 ];
 
 export const PEOPLE: Person[] = [
+  { id: "p-alex", name: "Alex Rivera", initials: "AR", title: "Software Engineer", teamId: "t-platform", email: "alex.rivera@acmehealth.com", location: "San Francisco", capacityHours: 40, assignedHours: 32, skills: ["TypeScript", "Spring Boot", "PostgreSQL"], color: "#2563EB" },
   { id: "p-priya", name: "Priya Raman", initials: "PR", title: "Senior Project Manager", teamId: "t-platform", email: "priya.raman@acme.dev", location: "London", capacityHours: 40, assignedHours: 34, skills: ["Planning", "Stakeholders"], color: "#3B82F6" },
   { id: "p-marcus", name: "Marcus Chen", initials: "MC", title: "Team Lead", teamId: "t-platform", email: "marcus.chen@acme.dev", location: "Toronto", capacityHours: 32, assignedHours: 30, skills: ["Java", "Architecture"], color: "#8B5CF6" },
   { id: "p-elena", name: "Elena Ruiz", initials: "ER", title: "QA Reviewer", teamId: "t-platform", email: "elena.ruiz@acme.dev", location: "Madrid", capacityHours: 40, assignedHours: 36, skills: ["Test design", "Accessibility"], color: "#EC4899" },

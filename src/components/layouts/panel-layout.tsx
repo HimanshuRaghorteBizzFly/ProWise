@@ -27,18 +27,18 @@ export function PanelLayout({ children, title, breadcrumb }: PanelLayoutProps) {
   }, [setTheme]);
 
   return (
-    <div className="flex flex-col min-h-screen bg-app-bg text-app-text-primary antialiased">
+    <div className="flex flex-col h-screen h-[100dvh] overflow-hidden bg-app-bg text-app-text-primary antialiased">
       {/* Test Scenario Quick Navigator Banner */}
       <RoleTestBanner />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 w-full overflow-hidden">
         {/* Left Sidebar */}
         <Sidebar />
 
         {/* Main Content Area */}
-        <div className="flex flex-1 flex-col overflow-y-auto">
+        <div className="flex flex-1 min-w-0 flex-col h-full overflow-y-auto overflow-x-hidden">
           <TopNav title={title} breadcrumb={breadcrumb} />
-          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 w-full min-w-0">
             {children}
           </main>
         </div>
