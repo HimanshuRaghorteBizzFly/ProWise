@@ -261,6 +261,9 @@ public class AuthService {
     }
 
     private boolean hasActiveMembership(UUID userId, UUID organizationId) {
+        if (userId == null || organizationId == null) {
+            return false;
+        }
         Integer membership = jdbc.queryForObject("""
                 SELECT count(*) FROM memberships
                 WHERE org_id = ? AND user_id = ? AND status = 'ACTIVE'
