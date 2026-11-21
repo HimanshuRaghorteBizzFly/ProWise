@@ -143,7 +143,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
   async function request(
     path: string,
-    requestOptions: { method?: string; body?: unknown; retryOnUnauthorized?: boolean } = {},
+    requestOptions: { method?: string; body?: unknown; headers?: Record<string, string>; retryOnUnauthorized?: boolean } = {},
   ): Promise<Response> {
     const previewAllowed = path === "/v1/health" || path === "/v1/auth/signout";
     if (isRolePreview() && mocksAllowed(readPermissionEnv()) && !previewAllowed) {
@@ -153,6 +153,9 @@ export function createApiClient(options: ApiClientOptions = {}) {
     let response: Response;
     try {
       const headers = new Headers({ Accept: "application/json" });
+      if (requestOptions.headers) {
+        Object.entries(requestOptions.headers).forEach(([k, v]) => headers.set(k, v));
+      }
       if (requestOptions.body !== undefined) headers.set("Content-Type", "application/json");
       if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
       response = await fetcher(`${resolveApiBaseUrl(options.baseUrl)}${path}`, {
@@ -177,7 +180,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
     return response;
   }
 
-  async function json<T>(path: string, requestOptions: { method?: string; body?: unknown } = {}): Promise<T> {
+  async function json<T>(
+    path: string,
+    requestOptions: { method?: string; body?: unknown; headers?: Record<string, string> } = {}
+  ): Promise<T> {
     const response = await request(path, requestOptions);
     return (await response.json()) as T;
   }
@@ -232,7 +238,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }),
     refresh: refreshAccessToken,
     signout: async () => {
-      await request("/api/auth/logout", { method: "POST" });
+      await request("/v1/auth/signout", { method: "POST" });
       accessToken = null;
     },
     me: () => json<import("@/types/api").MeResponse>("/v1/me"),
@@ -264,6 +270,162 @@ export function createApiClient(options: ApiClientOptions = {}) {
       json<import("@/types/api").GrantDto>(`${orgPath(orgId)}/grants`, { method: "POST", body }),
     revokeGrant: (orgId: string, grantId: string, expectedVersion: number) =>
       request(`${orgPath(orgId)}/grants/${encodeURIComponent(grantId)}?expectedVersion=${expectedVersion}`, { method: "DELETE" }),
+    /* Projects (Task 2.1) */
+    projects: (
+      orgId: string,
+      params?: {
+        search?: string;
+        owner?: string;
+        team?: string;
+        health?: string;
+        status?: string;
+        mode?: string;
+        archived?: boolean;
+        cursor?: string;
+        limit?: number;
+      },
+    ) => {
+      const query = new URLSearchParams();
+      if (params?.search) query.set("search", params.search);
+      if (params?.owner) query.set("owner", params.owner);
+      if (params?.team) query.set("team", params.team);
+      if (params?.health) query.set("health", params.health);
+      if (params?.status) query.set("status", params.status);
+      if (params?.mode) query.set("mode", params.mode);
+      if (params?.archived !== undefined) query.set("archived", String(params.archived));
+      if (params?.cursor) query.set("cursor", params.cursor);
+      if (params?.limit !== undefined) query.set("limit", String(params.limit));
+      const qs = query.toString() ? `?${query.toString()}` : "";
+      return json<import("@/types/api").ProjectListResponseDto>(`${orgPath(orgId)}/projects${qs}`);
+    },
+    project: (projectId: string, orgId?: string) => {
+      const path = orgId ? `${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}` : `/v1/projects/${encodeURIComponent(projectId)}`;
+      return json<import("@/types/api").ProjectDto>(path);
+    },
+    createProject: (orgId: string, body: import("@/types/api").CreateProjectRequestDto) =>
+      json<import("@/types/api").ProjectDto>(`${orgPath(orgId)}/projects`, { method: "POST", body }),
+    updateProject: (projectId: string, body: import("@/types/api").UpdateProjectRequestDto, orgId?: string) => {
+      const path = orgId ? `${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}` : `/v1/projects/${encodeURIComponent(projectId)}`;
+      return json<import("@/types/api").ProjectDto>(path, { method: "PATCH", body });
+    },
+    archiveProject: (projectId: string, expectedVersion: number, orgId?: string) => {
+      const path = orgId ? `${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/archive` : `/v1/projects/${encodeURIComponent(projectId)}/archive`;
+      return json<import("@/types/api").ProjectDto>(path, { method: "POST", body: { expectedVersion } });
+    },
+    restoreProject: (projectId: string, expectedVersion: number, orgId?: string) => {
+      const path = orgId ? `${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/restore` : `/v1/projects/${encodeURIComponent(projectId)}/restore`;
+      return json<import("@/types/api").ProjectDto>(path, { method: "POST", body: { expectedVersion } });
+    },
+    projectMembers: (projectId: string, orgId?: string) => {
+      const path = orgId ? `${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/members` : `/v1/projects/${encodeURIComponent(projectId)}/members`;
+      return json<import("@/types/api").ProjectMemberDto[]>(path);
+    },
+    addProjectMember: (projectId: string, body: import("@/types/api").ProjectMemberRequestDto, orgId?: string) => {
+      const path = orgId ? `${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/members` : `/v1/projects/${encodeURIComponent(projectId)}/members`;
+      return json<import("@/types/api").ProjectMemberDto>(path, { method: "POST", body });
+    },
+    removeProjectMember: (projectId: string, membershipId: string, orgId?: string) => {
+      const path = orgId
+        ? `${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(membershipId)}`
+        : `/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(membershipId)}`;
+      return request(path, { method: "DELETE" });
+    },
+    /* ---- Task 2.2: Developer Progress & Team Lead Verification ---- */
+    projectCheckIns: (projectId: string) =>
+      json<import("@/types/api").CheckInDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/checkins`),
+    projectProgressSummary: (projectId: string) =>
+      json<import("@/types/api").ProgressSummaryDto>(`/v1/projects/${encodeURIComponent(projectId)}/checkins/summary`),
+    submitCheckIn: (
+      projectId: string,
+      body: import("@/types/api").CheckInSubmissionRequestDto,
+      idempotencyKey?: string,
+    ) => {
+      const headers: Record<string, string> = {};
+      if (idempotencyKey) {
+        headers[IDEMPOTENCY_KEY_HEADER] = idempotencyKey;
+      }
+      return json<import("@/types/api").CheckInDto>(
+        `/v1/projects/${encodeURIComponent(projectId)}/checkins`,
+        { method: "POST", body, headers },
+      );
+    },
+    verifyCheckIn: (
+      checkinId: string,
+      body: import("@/types/api").VerificationDecisionRequestDto,
+    ) =>
+      json<import("@/types/api").CheckInDto>(
+        `/v1/checkins/${encodeURIComponent(checkinId)}/verify`,
+        { method: "POST", body },
+      ),
+    pendingReviews: (orgId: string) =>
+      json<import("@/types/api").PendingReviewDto[]>(
+        `/v1/organizations/${encodeURIComponent(orgId)}/reviews/pending`,
+      ),
+    projectGitHubActivity: (projectId: string) =>
+      json<import("@/types/api").GitHubActivityItemDto[]>(
+        `/v1/projects/${encodeURIComponent(projectId)}/github-activity`,
+      ),
+    setProjectVerificationSetting: (projectId: string, requireVerification: boolean) =>
+      json<import("@/types/api").ProjectDto>(
+        `/v1/projects/${encodeURIComponent(projectId)}/settings/verification`,
+        { method: "PUT", body: { require_verification: requireVerification } },
+      ),
+    attachRepositoryLink: (projectId: string, repoName: string, defaultBranch?: string) =>
+      json<{ id: string; project_id: string; repo_name: string; default_branch: string }>(
+        `/v1/projects/${encodeURIComponent(projectId)}/repositories`,
+        { method: "POST", body: { repo_name: repoName, default_branch: defaultBranch } },
+      ),
+    /* ---- Task 2.4: Deliver, Close, Archive & Restore ---- */
+    deliveryStatus: (projectId: string) =>
+      json<import("@/types/api").ProjectDeliveryStatusDto>(`/v1/projects/${encodeURIComponent(projectId)}/delivery-status`),
+    acceptanceRequests: (projectId: string) =>
+      json<import("@/types/api").AcceptanceRequestDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/acceptance-requests`),
+    requestDeliveryAcceptance: (projectId: string, body: import("@/types/api").AcceptanceSubmissionRequestDto) =>
+      json<import("@/types/api").AcceptanceRequestDto>(`/v1/projects/${encodeURIComponent(projectId)}/acceptance-requests`, {
+        method: "POST",
+        body,
+      }),
+    decideDeliveryAcceptance: (requestId: string, body: import("@/types/api").AcceptanceDecisionRequestDto) =>
+      json<import("@/types/api").AcceptanceDecisionDto>(`/v1/acceptance-requests/${encodeURIComponent(requestId)}/decisions`, {
+        method: "POST",
+        body,
+      }),
+    closeProjectLifecycle: (projectId: string, body: import("@/types/api").CloseProjectRequestDto) =>
+      json<import("@/types/api").ProjectClosureDto>(`/v1/projects/${encodeURIComponent(projectId)}/close`, {
+        method: "POST",
+        body,
+      }),
+    reopenProjectLifecycle: (projectId: string, body: import("@/types/api").ReopenProjectRequestDto) =>
+      json<import("@/types/api").ProjectDeliveryStatusDto>(`/v1/projects/${encodeURIComponent(projectId)}/reopen`, {
+        method: "POST",
+        body,
+      }),
+    transitionProjectLifecycle: (projectId: string, body: import("@/types/api").TransitionLifecycleRequestDto) =>
+      json<import("@/types/api").ProjectDeliveryStatusDto>(`/v1/projects/${encodeURIComponent(projectId)}/lifecycle`, {
+        method: "POST",
+        body,
+      }),
+    projectBlockers: (projectId: string) =>
+      json<import("@/types/api").ProjectBlockerDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/blockers`),
+    createProjectBlocker: (projectId: string, body: import("@/types/api").CreateBlockerRequestDto) =>
+      json<import("@/types/api").ProjectBlockerDto>(`/v1/projects/${encodeURIComponent(projectId)}/blockers`, {
+        method: "POST",
+        body,
+      }),
+    waiveProjectBlocker: (projectId: string, blockerId: string, body: import("@/types/api").CreateWaiverRequestDto) =>
+      json<import("@/types/api").ProjectBlockerDto>(
+        `/v1/projects/${encodeURIComponent(projectId)}/blockers/${encodeURIComponent(blockerId)}/waiver`,
+        { method: "POST", body },
+      ),
+    resolveProjectBlocker: (projectId: string, blockerId: string) =>
+      json<import("@/types/api").ProjectBlockerDto>(
+        `/v1/projects/${encodeURIComponent(projectId)}/blockers/${encodeURIComponent(blockerId)}/resolve`,
+        { method: "POST" },
+      ),
+    projectLifecycleHistory: (projectId: string) =>
+      json<import("@/types/api").ProjectLifecycleHistoryDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/lifecycle-history`),
+    projectClosures: (projectId: string) =>
+      json<import("@/types/api").ProjectClosureDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/closures`),
     /** Selects the active workspace; the old token is revoked server-side and replaced here. */
     switchOrganization: (orgId: string) =>
       json<{ access_token: string }>(`/v1/me/organizations/${encodeURIComponent(orgId)}/switch`, { method: "POST" }).then(

@@ -155,3 +155,339 @@ export interface OrgRoleResponse {
   version: number;
   permissionKeys: string[];
 }
+
+
+/* ---------------- Projects (Task 2.1) ---------------- */
+
+export type ProjectMode = "INDIVIDUAL" | "STRUCTURED";
+export type ProjectPriority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type ProjectLifecycle = "PLANNED" | "ACTIVE" | "ON_HOLD" | "AWAITING_ACCEPTANCE" | "DELIVERED" | "CLOSED" | "CANCELLED";
+export type ProjectHealth = "ON_TRACK" | "AT_RISK" | "DELAYED" | "OFF_TRACK" | "UNKNOWN";
+
+export interface ProjectDateHistoryDto {
+  id: string;
+  oldTargetDate: string | null;
+  newTargetDate: string;
+  reason: string;
+  actorId: string;
+  changedAt: string;
+}
+
+export interface ProjectDto {
+  id: string;
+  orgId: string;
+  key: string;
+  name: string;
+  description: string | null;
+  mode: ProjectMode;
+  lifecycle: ProjectLifecycle;
+  priority: ProjectPriority;
+  projectManagerId: string | null;
+  accountableDeveloperId: string | null;
+  teamIds: string[];
+  memberIds: string[];
+  startDate: string;
+  targetDate: string | null;
+  timezone: string;
+  lastProgressPercent: number;
+  health: ProjectHealth;
+  archived: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  dateHistory?: ProjectDateHistoryDto[];
+}
+
+export interface CreateProjectRequestDto {
+  name: string;
+  key: string;
+  description?: string;
+  mode?: ProjectMode;
+  priority?: ProjectPriority;
+  lifecycle?: ProjectLifecycle;
+  projectManagerId?: string;
+  accountableDeveloperId?: string;
+  memberIds?: string[];
+  teamIds?: string[];
+  startDate?: string;
+  targetDate?: string;
+  timezone?: string;
+}
+
+export interface UpdateProjectRequestDto {
+  name?: string;
+  description?: string;
+  mode?: ProjectMode;
+  priority?: ProjectPriority;
+  lifecycle?: ProjectLifecycle;
+  projectManagerId?: string;
+  accountableDeveloperId?: string;
+  memberIds?: string[];
+  teamIds?: string[];
+  startDate?: string;
+  targetDate?: string;
+  targetDateReason?: string;
+  timezone?: string;
+  expectedVersion: number;
+}
+
+export interface ProjectMemberDto {
+  id: string;
+  projectId: string;
+  membershipId: string;
+  userId: string | null;
+  name: string;
+  email: string;
+  role: string;
+  createdAt: string;
+}
+
+export interface ProjectMemberRequestDto {
+  membershipId: string;
+  role?: string;
+}
+
+export interface ProjectListResponseDto {
+  projects: ProjectDto[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  totalCount: number;
+}
+
+/* ---------------- Task 2.2: Developer Progress & Verification (snake_case wire format) ---------------- */
+
+export interface EvidenceItemDto {
+  type: "COMMIT" | "PULL_REQUEST" | "DOCUMENT" | "OTHER" | string;
+  sha?: string;
+  title?: string;
+  url?: string;
+  repo_name?: string;
+}
+
+export interface CheckInSubmissionRequestDto {
+  percent: number;
+  accomplished: string;
+  next_steps: string;
+  blockers?: string;
+  projected_finish?: string;
+  evidence?: string;
+  evidence_items?: EvidenceItemDto[];
+  downward_reason?: string;
+}
+
+export interface VerificationDecisionRequestDto {
+  decision: "APPROVE" | "REQUEST_CHANGES" | "REJECT" | string;
+  comment?: string;
+}
+
+export interface CheckInDto {
+  id: string;
+  project_id: string;
+  project_key: string;
+  project_name: string;
+  author_id: string;
+  author_name: string;
+  revision_of: string | null;
+  revision_seq: number;
+  percent: number;
+  accomplished: string;
+  next_steps: string;
+  blockers: string | null;
+  projected_finish: string | null;
+  evidence_summary: string | null;
+  evidence_items: EvidenceItemDto[];
+  downward_reason: string | null;
+  status: "PENDING" | "PENDING_VERIFICATION" | "ACCEPTED" | "REJECTED" | "CHANGES_REQUESTED" | string;
+  method: string;
+  verified_by: string | null;
+  verified_by_name: string | null;
+  review_comment: string | null;
+  reviewed_at: string | null;
+  captured_at: string;
+  created_at: string;
+}
+
+export interface ProgressSummaryDto {
+  project_id: string;
+  project_key: string;
+  project_name: string;
+  mode: string;
+  current_percent: number;
+  current_method: string;
+  last_reported_at: string | null;
+  require_verification: boolean;
+  latest_accepted_checkin: CheckInDto | null;
+  pending_checkin: CheckInDto | null;
+  history: CheckInDto[];
+}
+
+export interface PendingReviewDto {
+  checkin: CheckInDto;
+  project_id: string;
+  project_key: string;
+  project_name: string;
+  mode: string;
+  author_name: string;
+  author_email: string | null;
+  current_project_percent: number;
+  submitted_at: string;
+}
+
+export interface GitHubActivityItemDto {
+  id: string;
+  org_id: string;
+  project_id: string | null;
+  repository_name: string;
+  event_type: string;
+  actor: string;
+  title: string;
+  sha: string | null;
+  url: string | null;
+  created_at: string;
+}
+
+/* ---------------- Task 2.4: Deliver, Close, Archive & Restore (Lifecycle) ---------------- */
+
+export interface DeliveryChecklistItem {
+  id: string;
+  label: string;
+  checked: boolean;
+  notes?: string;
+}
+
+export interface DeliveryEvidenceItem {
+  type: string;
+  title: string;
+  url: string;
+  reference?: string;
+}
+
+export interface AcceptanceSubmissionRequestDto {
+  bound_checkin_id?: string;
+  checklist: DeliveryChecklistItem[];
+  evidence_summary?: string;
+  evidence_items?: DeliveryEvidenceItem[];
+}
+
+export interface AcceptanceDecisionRequestDto {
+  decision: "ACCEPTED" | "REJECTED" | "CHANGES_REQUESTED";
+  reason: string;
+  expected_project_version: number;
+}
+
+export interface AcceptanceDecisionDto {
+  id: string;
+  request_id: string;
+  project_id: string;
+  decision: string;
+  actor_id: string;
+  actor_name: string | null;
+  reason: string | null;
+  decided_at: string;
+}
+
+export interface AcceptanceRequestDto {
+  id: string;
+  org_id: string;
+  project_id: string;
+  bound_checkin_id: string | null;
+  checklist: DeliveryChecklistItem[];
+  evidence_summary: string | null;
+  evidence_items: DeliveryEvidenceItem[];
+  status: "PENDING" | "ACCEPTED" | "REJECTED" | "CHANGES_REQUESTED" | string;
+  version: number;
+  created_by: string;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+  decisions: AcceptanceDecisionDto[];
+}
+
+export interface ProjectBlockerWaiverDto {
+  id: string;
+  project_id: string;
+  blocker_ref: string;
+  actor_id: string;
+  actor_name: string | null;
+  reason: string;
+  waived_at: string;
+}
+
+export interface ProjectBlockerDto {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  severity: "NORMAL" | "CRITICAL";
+  status: "OPEN" | "RESOLVED" | "WAIVED";
+  created_by: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  waiver: ProjectBlockerWaiverDto | null;
+}
+
+export interface ProjectClosureDto {
+  id: string;
+  project_id: string;
+  actor_id: string;
+  actor_name: string | null;
+  handover_note: string;
+  reason: string;
+  closed_at: string;
+}
+
+export interface ProjectLifecycleHistoryDto {
+  id: string;
+  project_id: string;
+  previous_lifecycle: string | null;
+  new_lifecycle: string;
+  reason: string | null;
+  actor_id: string;
+  actor_name: string | null;
+  created_at: string;
+}
+
+export interface ProjectDeliveryStatusDto {
+  project_id: string;
+  lifecycle: ProjectLifecycle;
+  previous_lifecycle: string | null;
+  archived: boolean;
+  progress_percent: number;
+  version: number;
+  latest_acceptance_request: AcceptanceRequestDto | null;
+  latest_closure: ProjectClosureDto | null;
+  open_critical_blockers_count: number;
+  open_unwaived_critical_blockers_count: number;
+  can_submit_delivery: boolean;
+  can_approve_delivery: boolean;
+  can_close: boolean;
+  can_archive: boolean;
+  can_restore: boolean;
+}
+
+export interface CreateBlockerRequestDto {
+  title: string;
+  description?: string;
+  severity: "NORMAL" | "CRITICAL";
+}
+
+export interface CreateWaiverRequestDto {
+  reason: string;
+}
+
+export interface CloseProjectRequestDto {
+  handover_note: string;
+  reason: string;
+  expected_project_version: number;
+}
+
+export interface ReopenProjectRequestDto {
+  reason: string;
+  expected_project_version: number;
+}
+
+export interface TransitionLifecycleRequestDto {
+  target_lifecycle: "ON_HOLD" | "ACTIVE";
+  reason: string;
+  expected_project_version: number;
+}

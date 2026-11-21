@@ -104,6 +104,7 @@ export const DELIVERY_ROLES: Record<DeliveryRole, DeliveryRoleConfig> = {
         title: "Overview",
         items: [
           { title: "Dashboard", path: "", icon: LayoutDashboard },
+          { title: "Projects", path: "projects", icon: FolderKanban },
           { title: "Today & Overdue", path: "today", icon: CalendarDays, badgeKey: "today" },
         ],
       },

@@ -8,6 +8,8 @@ import {
   generateProgressCsv,
   generateMilestonesJson,
 } from "../src/app/(workspace)/org/[orgId]/viewer/_services/viewer-service";
+import { useViewerStore } from "../src/app/(workspace)/org/[orgId]/viewer/_store/useViewerStore";
+import { useAuthStore } from "../src/store/auth-store";
 
 describe("Viewer Panel RBAC & Scoping Security Contract", () => {
   it("enforces read-only RBAC by throwing 403 error on any mutation attempt", () => {
@@ -70,5 +72,15 @@ describe("Viewer Panel RBAC & Scoping Security Contract", () => {
     expect(parsed.exportType).toBe("MILESTONE_COMPLIANCE_AUDIT");
     expect(parsed.governanceScope).toBe("READ_ONLY_VIEWER");
     expect(Array.isArray(parsed.milestones)).toBe(true);
+  });
+
+  it("updates userSettings and syncs displayName with auth store for top-right header display", () => {
+    const store = useViewerStore.getState();
+    expect(store.userSettings.displayName).toBeDefined();
+
+    store.updateUserSettings({ displayName: "saloni" });
+
+    expect(useViewerStore.getState().userSettings.displayName).toBe("saloni");
+    expect(useAuthStore.getState().currentUser.name).toBe("saloni");
   });
 });

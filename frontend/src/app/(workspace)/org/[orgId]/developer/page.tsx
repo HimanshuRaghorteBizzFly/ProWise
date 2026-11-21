@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth-store";
 import { useProjectStore } from "@/store/project-store";
+import { useDeliveryStore } from "@/store/delivery-store";
 import { developerApi, DeveloperDashboardSummary } from "@/lib/developer-api";
 
 export default function DeveloperDashboard() {
@@ -34,6 +35,7 @@ export default function DeveloperDashboard() {
   const orgId = (params?.orgId as string) || "org-acme";
   const { currentOrg, currentUser } = useAuthStore();
   const { projects, workItems, gitEvents } = useProjectStore();
+  const deliveryProjects = useDeliveryStore((s) => s.projects);
 
   const [apiData, setApiData] = useState<DeveloperDashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,9 +54,13 @@ export default function DeveloperDashboard() {
   }, [orgId]);
 
   // Fallback to local store if backend call pending or offline
-  const myProjects = projects.filter(
+  const projectStoreMatches = projects.filter(
     (p) => p.accountableOwnerId === "usr-developer" || p.memberIds.includes("usr-developer")
   );
+  const deliveryMatches = deliveryProjects.filter((p) =>
+    p.memberIds.some((m) => m === "p-aisha" || m === "p-diego" || m === "p-sofia" || m === "usr-developer")
+  );
+  const myProjects = [...projectStoreMatches, ...deliveryMatches.filter(d => !projectStoreMatches.some(p => p.key.toLowerCase() === d.code.toLowerCase()))];
   const myTasks = workItems.filter((w) => w.primaryAssigneeId === "usr-developer");
   const completedCount = myTasks.filter((w) => w.state === "DONE").length;
   const pendingCount = myTasks.filter((w) => w.state !== "DONE").length;
@@ -62,7 +68,7 @@ export default function DeveloperDashboard() {
   const blockedCount = myTasks.filter((w) => w.isBlocked).length;
 
   const totalAssignedProjects = apiData ? apiData.assignedProjectsCount : myProjects.length;
-  const activeProjects = apiData ? apiData.activeProjectsCount : myProjects.filter((p) => p.lifecycle === "ACTIVE").length;
+  const activeProjects = apiData ? apiData.activeProjectsCount : myProjects.filter((p) => (p as any).lifecycle === "ACTIVE" || (p as any).status === "ACTIVE" || (p as any).status === "PLANNING").length;
   const assignedTasks = apiData ? apiData.assignedTasksCount : myTasks.length;
   const completedTasks = apiData ? apiData.completedTasksCount : completedCount;
   const pendingTasks = apiData ? apiData.pendingTasksCount : pendingCount;

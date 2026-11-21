@@ -25,6 +25,7 @@ next-env.d.ts
 Thumbs.db
 
 .test_pgdata/
+.pg_test_data/
 backend/target/
 frontend/.next/
 frontend/node_modules/

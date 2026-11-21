@@ -57,6 +57,9 @@ management:
       show-details: when-authorized
       probes:
         enabled: true
+  health:
+    mail:
+      enabled: false
 
 springdoc:
   api-docs:

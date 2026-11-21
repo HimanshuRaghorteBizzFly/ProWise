@@ -1,396 +1,266 @@
 "use client";
 
 import React, { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input, Textarea } from "@/components/ui/input";
-import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { SEEDED_USERS } from "@/lib/mock-data";
-import { ProjectMode, Priority, ReportingCadence } from "@/types";
+import { useRouter, useParams } from "next/navigation";
+import { FolderPlus, Info, Layers, User } from "lucide-react";
 import { toast } from "sonner";
-import { Check, ArrowRight, ArrowLeft, Sparkles, User, Calendar, Layers, ShieldCheck } from "lucide-react";
+import { apiClient, ApiError } from "@/lib/api";
+import { useDeliveryStore } from "@/store/delivery-store";
+import { useProjectStore } from "@/store/project-store";
+import { DEMO_TODAY, VIEWERS, type DeliveryMode } from "@/mocks/delivery-dashboards";
+import {
+  AdminButton,
+  AdminInput,
+  AdminSelect,
+  AdminTextarea,
+  PageFrame,
+  Panel,
+  useDemoLoad,
+  useRoleHref,
+} from "@/components/delivery/DeliveryUI";
+import { cn } from "@/lib/utils";
 
-export default function CreateProjectWizard() {
-  const params = useParams();
-  const router = useRouter();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { currentOrg, currentUser } = useAuthStore();
-  const { createProject } = useProjectStore();
-
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
-
-  // Step 1: Basic
-  const [name, setName] = useState("");
-  const [key, setKey] = useState("");
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState<Priority>("HIGH");
-
-  // Step 2: Mode
-  const [mode, setMode] = useState<ProjectMode>("STRUCTURED");
-
-  // Step 3: Ownership
-  const [pmId, setPmId] = useState("usr-manager");
-  const [accountableOwnerId, setAccountableOwnerId] = useState("usr-developer");
-
-  // Step 4: Schedule
-  const [startDate, setStartDate] = useState("2026-11-01");
-  const [targetDate, setTargetDate] = useState("2026-12-31");
-  const [cadence, setCadence] = useState<ReportingCadence>("WEEKLY");
-  const [timezone, setTimezone] = useState(currentOrg.timezone || "America/New_York");
-
-  const handleNext = () => {
-    if (step === 1) {
-      if (!name || !key) {
-        toast.error("Please enter a project name and unique project key.");
-        return;
-      }
-    }
-    if (step < 5) setStep((step + 1) as any);
-  };
-
-  const handleBack = () => {
-    if (step > 1) setStep((step - 1) as any);
-  };
-
-  const handleCreate = () => {
-    const project = createProject({
-      orgId,
-      key: key.toUpperCase(),
-      name,
-      description,
-      mode,
-      lifecycle: "ACTIVE",
-      archived: false,
-      priority,
-      projectManagerId: pmId,
-      accountableOwnerId,
-      teamIds: ["team-eng-core"],
-      memberIds: [pmId, accountableOwnerId],
-      startDate,
-      targetDate,
-      timezone,
-      cadence,
-      graceWorkingDays: 1,
-      repositoryIds: ["repo-1"],
-    });
-
-    toast.success(`Project ${project.name} (${project.key}) created in ${mode} mode!`);
-    router.push(`/org/${orgId}/manager`);
-  };
-
-  return (
-    <PanelLayout
-      title="Create New Project"
-      breadcrumb={[
-        { label: "Project Manager", href: `/org/${orgId}/manager` },
-        { label: "Create Project Wizard" },
-      ]}
-    >
-      <div className="max-w-3xl mx-auto space-y-6">
-        {/* Step Indicator Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-app-border text-xs">
-          {[
-            { num: 1, label: "Basics" },
-            { num: 2, label: "Mode" },
-            { num: 3, label: "Ownership" },
-            { num: 4, label: "Schedule" },
-            { num: 5, label: "Review" },
-          ].map((s) => (
-            <div
-              key={s.num}
-              className={`flex items-center gap-1.5 font-medium ${
-                step === s.num
-                  ? "text-blue-600 dark:text-blue-400 font-bold"
-                  : step > s.num
-                  ? "text-green-600"
-                  : "text-app-text-muted"
-              }`}
-            >
-              <div
-                className={`h-6 w-6 rounded-full flex items-center justify-center text-xs ${
-                  step === s.num
-                    ? "bg-blue-600 text-white font-bold"
-                    : step > s.num
-                    ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300"
-                    : "bg-slate-100 dark:bg-slate-800 text-app-text-muted"
-                }`}
-              >
-                {step > s.num ? <Check className="w-3.5 h-3.5" /> : s.num}
-              </div>
-              <span className="hidden sm:inline">{s.label}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Wizard Form Card */}
-        <Card className="p-6">
-          {/* Step 1: Basic project details */}
-          {step === 1 && (
-            <div className="space-y-4">
-              <CardTitle>Step 1: Project Details</CardTitle>
-              <CardDescription>
-                Provide the high-level identity and priority for this software delivery initiative.
-              </CardDescription>
-
-              <Input
-                label="Project Name"
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  if (!key) {
-                    setKey(e.target.value.slice(0, 4).toUpperCase());
-                  }
-                }}
-                placeholder="e.g. Telehealth Video Gateway"
-                required
-              />
-
-              <Input
-                label="Project Key (Unique identifier)"
-                value={key}
-                onChange={(e) => setKey(e.target.value.toUpperCase())}
-                placeholder="e.g. TELE"
-                helperText="Keys are immutable across tasks and git event linkages (e.g. TELE-101)."
-                required
-              />
-
-              <Textarea
-                label="Scope Description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe business outcomes, target deliverables, and acceptance standards..."
-                rows={3}
-              />
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-app-text-secondary">
-                  Priority
-                </label>
-                <select
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value as any)}
-                  className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-                >
-                  <option value="LOW">Low</option>
-                  <option value="MEDIUM">Medium</option>
-                  <option value="HIGH">High</option>
-                  <option value="CRITICAL">Critical</option>
-                </select>
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Choose project mode */}
-          {step === 2 && (
-            <div className="space-y-4">
-              <CardTitle>Step 2: Choose Delivery Mode</CardTitle>
-              <CardDescription>
-                Select the tracking philosophy that matches your engineering structure.
-              </CardDescription>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                <div
-                  onClick={() => setMode("INDIVIDUAL")}
-                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                    mode === "INDIVIDUAL"
-                      ? "border-blue-600 bg-blue-50/50 dark:bg-blue-950/30"
-                      : "border-app-border hover:border-slate-300 dark:hover:border-slate-700"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-sm text-app-text-primary">
-                      Mode A: Individual Ownership
-                    </span>
-                    {mode === "INDIVIDUAL" && <Check className="w-4 h-4 text-blue-600" />}
-                  </div>
-                  <p className="text-xs text-app-text-secondary leading-relaxed">
-                    Designed for one accountable developer. <strong>No compulsory tasks required</strong>.
-                    Weekly check-in reports progress percentage (0–100) with history.
-                  </p>
-                </div>
-
-                <div
-                  onClick={() => setMode("STRUCTURED")}
-                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                    mode === "STRUCTURED"
-                      ? "border-blue-600 bg-blue-50/50 dark:bg-blue-950/30"
-                      : "border-app-border hover:border-slate-300 dark:hover:border-slate-700"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-sm text-app-text-primary">
-                      Mode B: Structured Delivery
-                    </span>
-                    {mode === "STRUCTURED" && <Check className="w-4 h-4 text-blue-600" />}
-                  </div>
-                  <p className="text-xs text-app-text-secondary leading-relaxed">
-                    Designed for teams. Approved baseline scope with weighted leaves. Progress = Sum(Done Leaves) / Total Baseline.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Ownership */}
-          {step === 3 && (
-            <div className="space-y-4">
-              <CardTitle>Step 3: Ownership &amp; Accountability</CardTitle>
-              <CardDescription>
-                Appoint the Project Manager and the Accountable Developer or Lead.
-              </CardDescription>
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-app-text-secondary">
-                  Project Manager
-                </label>
-                <select
-                  value={pmId}
-                  onChange={(e) => setPmId(e.target.value)}
-                  className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-                >
-                  <option value="usr-manager">Elena Rostova (Project Manager)</option>
-                  <option value="usr-admin">Marcus Vance (Org Admin)</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-app-text-secondary">
-                  {mode === "INDIVIDUAL" ? "Accountable Solo Developer" : "Accountable Lead"}
-                </label>
-                <select
-                  value={accountableOwnerId}
-                  onChange={(e) => setAccountableOwnerId(e.target.value)}
-                  className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-                >
-                  <option value="usr-developer">Alex Rivera (Developer)</option>
-                  <option value="usr-lead">David Kim (Team Lead)</option>
-                </select>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Schedule */}
-          {step === 4 && (
-            <div className="space-y-4">
-              <CardTitle>Step 4: Schedule &amp; Cadence</CardTitle>
-              <CardDescription>
-                Configure target dates, working calendar, and check-in reporting frequency.
-              </CardDescription>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Input
-                  label="Start Date"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  required
-                />
-
-                <Input
-                  label="Target Delivery Date"
-                  type="date"
-                  value={targetDate}
-                  onChange={(e) => setTargetDate(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-app-text-secondary">
-                    Reporting Cadence
-                  </label>
-                  <select
-                    value={cadence}
-                    onChange={(e) => setCadence(e.target.value as any)}
-                    className="flex h-9 w-full rounded-lg border border-app-border bg-app-surface px-3 py-1 text-sm text-app-text-primary"
-                  >
-                    <option value="WEEKLY">Weekly (Default, 1 day grace)</option>
-                    <option value="DAILY">Daily</option>
-                    <option value="FORTNIGHTLY">Fortnightly</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-app-text-secondary">
-                    Project Timezone
-                  </label>
-                  <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 5: Review & Create */}
-          {step === 5 && (
-            <div className="space-y-4">
-              <CardTitle>Step 5: Review &amp; Launch</CardTitle>
-              <CardDescription>
-                Confirm your project parameters before activating the delivery workspace.
-              </CardDescription>
-
-              <div className="p-4 rounded-xl border border-app-border bg-app-sidebar/50 space-y-3 text-xs">
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">Project Name &amp; Key:</span>
-                  <span className="font-bold text-app-text-primary">
-                    {name} ({key})
-                  </span>
-                </div>
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">Delivery Mode:</span>
-                  <Badge variant="default">{mode}</Badge>
-                </div>
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">Accountable Owner:</span>
-                  <span className="font-semibold text-blue-600">
-                    {SEEDED_USERS.find((u) => u.id === accountableOwnerId)?.name}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between pb-2 border-b border-app-border">
-                  <span className="text-app-text-secondary">Schedule:</span>
-                  <span>
-                    {startDate} &rarr; {targetDate} ({cadence} Cadence)
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-app-text-secondary">Baseline Starting Tasks:</span>
-                  <span>
-                    {mode === "INDIVIDUAL"
-                      ? "Zero tasks required (Solo Check-in enabled)"
-                      : "Ready for baseline leaf creation"}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Wizard Controls */}
-          <div className="flex items-center justify-between pt-6 border-t border-app-border mt-6">
-            {step > 1 ? (
-              <Button variant="outline" size="sm" onClick={handleBack}>
-                <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Back
-              </Button>
-            ) : (
-              <div />
-            )}
-
-            {step < 5 ? (
-              <Button size="sm" onClick={handleNext}>
-                Next <ArrowRight className="w-3.5 h-3.5 ml-1" />
-              </Button>
-            ) : (
-              <Button size="sm" onClick={handleCreate} className="bg-green-600 hover:bg-green-700">
-                Launch Project Workspace
-              </Button>
-            )}
-          </div>
-        </Card>
-      </div>
-    </PanelLayout>
-  );
+interface FormState {
+  name: string;
+  client: string;
+  mode: DeliveryMode;
+  teamId: string;
+  startDate: string;
+  dueDate: string;
+  description: string;
 }
 
+export default function ManagerCreateProjectPage() {
+  const { orgId } = useParams<{ orgId: string }>();
+  const href = useRoleHref("manager");
+  const router = useRouter();
+  const { status, retry } = useDemoLoad(250);
+  const teams = useDeliveryStore((s) => s.teams);
+  const people = useDeliveryStore((s) => s.people);
+  const createProject = useDeliveryStore((s) => s.createProject);
+  const [form, setForm] = useState<FormState>({
+    name: "",
+    client: "",
+    mode: "STRUCTURED",
+    teamId: "t-platform",
+    startDate: DEMO_TODAY,
+    dueDate: "",
+    description: "",
+  });
+  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [saving, setSaving] = useState(false);
+
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    setForm((f) => ({ ...f, [key]: value }));
+    setErrors((e) => ({ ...e, [key]: undefined }));
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const next: typeof errors = {};
+    if (form.name.trim().length < 3) next.name = "Enter a project name (at least 3 characters).";
+    if (!form.client.trim()) next.client = "Enter the client or internal sponsor.";
+    if (!form.dueDate) next.dueDate = "Pick a delivery date.";
+    else if (form.dueDate <= form.startDate) next.dueDate = "Delivery date must be after the start date.";
+    setErrors(next);
+    if (Object.keys(next).length) {
+      toast.error("Please fix the highlighted fields.");
+      return;
+    }
+    setSaving(true);
+
+    const rawKey = form.name.trim().replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 6) || "PRJ";
+    const key = rawKey.length < 2 ? rawKey + "PR" : rawKey;
+    const safeOrgId = orgId || "org-acme";
+
+    let backendProject: any = null;
+    try {
+      backendProject = await apiClient.createProject(safeOrgId, {
+        name: form.name.trim(),
+        key,
+        description: form.description.trim(),
+        mode: form.mode as any,
+        startDate: form.startDate ? new Date(form.startDate).toISOString() : undefined,
+        targetDate: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
+      });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        // Genuine validation failure from real backend (duplicate key, date conflict)
+        if (err.status === 400 || err.status === 409 || err.status === 422) {
+          toast.error("Failed to create project", { description: err.message });
+          setSaving(false);
+          return;
+        }
+        // In role preview or network offline mode, proceed gracefully with reactive store sync
+      }
+    }
+
+    const finalProjectId = backendProject?.id || `prj-${Date.now()}`;
+    const finalKey = backendProject?.key || key;
+
+    // 1. Sync into Delivery Store (used by Manager & Team Lead views)
+    const deliveryProject = createProject(
+      {
+        ...form,
+        name: form.name.trim(),
+        client: form.client.trim(),
+        description: form.description.trim(),
+      },
+      VIEWERS.manager.id
+    );
+
+    // If Individual mode, register an active check-in so Team Lead sees it under Check-Ins
+    if (form.mode === "INDIVIDUAL") {
+      useDeliveryStore.setState((s) => ({
+        checkIns: [
+          {
+            id: `ci-${Date.now()}`,
+            memberId: deliveryProject.memberIds[0] || "p-aisha",
+            dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            status: "DUE",
+            lastSummary: `New Individual check-in scheduled for ${form.name.trim()}`,
+            confidence: 4,
+          },
+          ...s.checkIns,
+        ],
+      }));
+    } else {
+      // Structured mode: add starting work item so Team Lead sees it under Tasks by Status
+      useDeliveryStore.setState((s) => ({
+        tasks: [
+          {
+            id: `tk-${Date.now()}`,
+            key: `${deliveryProject.code}-101`,
+            title: `Initial scope & setup for ${form.name.trim()}`,
+            projectId: deliveryProject.id,
+            assigneeId: deliveryProject.memberIds[0] || "p-aisha",
+            teamId: form.teamId,
+            status: "TODO",
+            priority: "HIGH",
+            dueDate: form.dueDate,
+            estimateHours: 16,
+            weight: 10,
+            progress: 0,
+            description: form.description.trim() || `Setup initial deliverables for ${form.name.trim()}`,
+            updatedAt: new Date().toISOString(),
+          },
+          ...s.tasks,
+        ],
+      }));
+    }
+
+    // 2. Sync into Project Store (used by Developer assigned projects & dashboard)
+    useProjectStore.getState().createProject({
+      orgId: safeOrgId,
+      name: form.name.trim(),
+      key: finalKey,
+      description: form.description.trim(),
+      mode: form.mode as any,
+      lifecycle: "ACTIVE",
+      archived: false,
+      priority: "MEDIUM",
+      projectManagerId: VIEWERS.manager.id,
+      accountableOwnerId: "usr-developer",
+      teamIds: [form.teamId],
+      memberIds: ["usr-developer", "p-aisha", VIEWERS.manager.id, VIEWERS.lead.id],
+      startDate: form.startDate,
+      targetDate: form.dueDate,
+      timezone: "America/New_York",
+      cadence: "WEEKLY",
+      graceWorkingDays: 1,
+      repositoryIds: [],
+    });
+
+    toast.success(`${form.name.trim()} created`, {
+      description: `Project [${finalKey}] is now active and assigned across Developer and Team Lead sections.`,
+    });
+    router.push(href(`projects/${deliveryProject.id || finalProjectId}`));
+    setSaving(false);
+  };
+
+  const teamMembers = people.filter((p) => p.teamId === form.teamId);
+
+  return (
+    <PageFrame
+      crumbs={[{ label: "Manager", href: href() }, { label: "Portfolio", href: href("projects") }, { label: "Create project" }]}
+      back={{ href: href("projects"), label: "Back to portfolio" }}
+      title="Create project"
+      description="Set up the basics. You can add milestones and assign work right after."
+      status={status}
+      onRetry={retry}
+      skeleton="detail"
+    >
+      <form onSubmit={submit} noValidate className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <Panel className="xl:col-span-2" title="Project details" icon={FolderPlus}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <AdminInput label="Project name" placeholder="e.g. Gemini Checkout Redesign" value={form.name} onChange={(e) => set("name", e.target.value)} error={errors.name} />
+            <AdminInput label="Client / sponsor" placeholder="e.g. Northwind Retail" value={form.client} onChange={(e) => set("client", e.target.value)} error={errors.client} />
+            <AdminSelect
+              label="Delivery team"
+              value={form.teamId}
+              onChange={(e) => set("teamId", e.target.value)}
+              options={teams.map((t) => ({ label: `${t.name} — ${t.focus}`, value: t.id }))}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <AdminInput label="Start date" type="date" value={form.startDate} onChange={(e) => set("startDate", e.target.value)} />
+              <AdminInput label="Delivery date" type="date" value={form.dueDate} min={form.startDate} onChange={(e) => set("dueDate", e.target.value)} error={errors.dueDate} />
+            </div>
+            <div className="md:col-span-2">
+              <AdminTextarea label="Goal & scope" rows={4} placeholder="What will be delivered, for whom, and how will we know it is done?" value={form.description} onChange={(e) => set("description", e.target.value)} />
+            </div>
+          </div>
+          <div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-4 border-t border-[var(--color-border)]">
+            <AdminButton type="button" variant="outline" onClick={() => router.push(href("projects"))}>
+              Cancel
+            </AdminButton>
+            <AdminButton type="submit" isLoading={saving}>
+              <FolderPlus className="w-3.5 h-3.5" /> Create project
+            </AdminButton>
+          </div>
+        </Panel>
+
+        <div className="space-y-4">
+          <Panel title="Delivery mode" description="Decides how progress is reported" icon={Layers} iconTone="violet">
+            <div className="space-y-2.5" role="radiogroup" aria-label="Delivery mode">
+              {(
+                [
+                  { value: "STRUCTURED", title: "Structured", icon: Layers, text: "Weighted tasks, approvals and QA review. Best for teams." },
+                  { value: "INDIVIDUAL", title: "Individual", icon: User, text: "One accountable developer reports progress through check-ins." },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.mode === opt.value}
+                  onClick={() => set("mode", opt.value)}
+                  className={cn(
+                    "w-full text-left rounded-xl border p-3 transition-all duration-200 hover:-translate-y-0.5",
+                    form.mode === opt.value
+                      ? "border-blue-500/60 bg-blue-500/10 shadow-sm"
+                      : "border-[var(--color-border)] bg-[var(--color-app-bg)] hover:border-blue-500/30"
+                  )}
+                >
+                  <span className="flex items-center gap-2 text-xs font-semibold">
+                    <opt.icon className="w-4 h-4 text-blue-600 dark:text-blue-400" /> {opt.title}
+                  </span>
+                  <span className="mt-1 block text-[11px] text-[var(--color-text-secondary)]">{opt.text}</span>
+                </button>
+              ))}
+            </div>
+          </Panel>
+          <Panel title="Who joins" description={`${teamMembers.length} people in the selected team`} icon={Info} iconTone="cyan">
+            <ul className="space-y-1.5 text-xs">
+              {teamMembers.map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-2">
+                  <span className="truncate">{p.name}</span>
+                  <span className="text-[11px] text-[var(--color-text-muted)] truncate">{p.title}</span>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        </div>
+      </form>
+    </PageFrame>
+  );
+}

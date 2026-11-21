@@ -37,6 +37,12 @@ export function HealthBadge({
         "bg-red-100 text-red-800 border-red-300 dark:bg-red-950/70 dark:text-red-300 dark:border-red-800",
       icon: Clock,
     },
+    OFF_TRACK: {
+      label: "Delayed",
+      classes:
+        "bg-red-100 text-red-800 border-red-300 dark:bg-red-950/70 dark:text-red-300 dark:border-red-800",
+      icon: Clock,
+    },
     UNKNOWN: {
       label: "Unknown",
       classes:

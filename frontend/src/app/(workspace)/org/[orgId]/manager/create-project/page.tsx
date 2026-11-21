@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { FolderPlus, Info, Layers, User } from "lucide-react";
 import { toast } from "sonner";
+import { apiClient, ApiError } from "@/lib/api";
 import { useDeliveryStore } from "@/store/delivery-store";
+import { useProjectStore } from "@/store/project-store";
 import { DEMO_TODAY, VIEWERS, type DeliveryMode } from "@/mocks/delivery-dashboards";
 import {
   AdminButton,
@@ -29,6 +31,7 @@ interface FormState {
 }
 
 export default function ManagerCreateProjectPage() {
+  const { orgId } = useParams<{ orgId: string }>();
   const href = useRoleHref("manager");
   const router = useRouter();
   const { status, retry } = useDemoLoad(250);
@@ -52,7 +55,7 @@ export default function ManagerCreateProjectPage() {
     setErrors((e) => ({ ...e, [key]: undefined }));
   };
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const next: typeof errors = {};
     if (form.name.trim().length < 3) next.name = "Enter a project name (at least 3 characters).";
@@ -65,14 +68,114 @@ export default function ManagerCreateProjectPage() {
       return;
     }
     setSaving(true);
-    window.setTimeout(() => {
-      const project = createProject(
-        { ...form, name: form.name.trim(), client: form.client.trim(), description: form.description.trim() },
-        VIEWERS.manager.id
-      );
-      toast.success(`${project.name} created`, { description: "Next: assign the first pieces of work." });
-      router.push(href(`projects/${project.id}`));
-    }, 600);
+
+    const rawKey = form.name.trim().replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 6) || "PRJ";
+    const key = rawKey.length < 2 ? rawKey + "PR" : rawKey;
+    const safeOrgId = orgId || "org-acme";
+
+    let backendProject: any = null;
+    try {
+      backendProject = await apiClient.createProject(safeOrgId, {
+        name: form.name.trim(),
+        key,
+        description: form.description.trim(),
+        mode: form.mode as any,
+        startDate: form.startDate ? new Date(form.startDate).toISOString() : undefined,
+        targetDate: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
+      });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        // Genuine validation failure from real backend (duplicate key, date conflict)
+        if (err.status === 400 || err.status === 409 || err.status === 422) {
+          toast.error("Failed to create project", { description: err.message });
+          setSaving(false);
+          return;
+        }
+        // In role preview or network offline mode, proceed gracefully with reactive store sync
+      }
+    }
+
+    const finalProjectId = backendProject?.id || `prj-${Date.now()}`;
+    const finalKey = backendProject?.key || key;
+
+    // 1. Sync into Delivery Store (used by Manager & Team Lead views)
+    const deliveryProject = createProject(
+      {
+        ...form,
+        name: form.name.trim(),
+        client: form.client.trim(),
+        description: form.description.trim(),
+      },
+      VIEWERS.manager.id
+    );
+
+    // If Individual mode, register an active check-in so Team Lead sees it under Check-Ins
+    if (form.mode === "INDIVIDUAL") {
+      useDeliveryStore.setState((s) => ({
+        checkIns: [
+          {
+            id: `ci-${Date.now()}`,
+            memberId: deliveryProject.memberIds[0] || "p-aisha",
+            dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            status: "DUE",
+            lastSummary: `New Individual check-in scheduled for ${form.name.trim()}`,
+            confidence: 4,
+          },
+          ...s.checkIns,
+        ],
+      }));
+    } else {
+      // Structured mode: add starting work item so Team Lead sees it under Tasks by Status
+      useDeliveryStore.setState((s) => ({
+        tasks: [
+          {
+            id: `tk-${Date.now()}`,
+            key: `${deliveryProject.code}-101`,
+            title: `Initial scope & setup for ${form.name.trim()}`,
+            projectId: deliveryProject.id,
+            assigneeId: deliveryProject.memberIds[0] || "p-aisha",
+            teamId: form.teamId,
+            status: "TODO",
+            priority: "HIGH",
+            dueDate: form.dueDate,
+            estimateHours: 16,
+            weight: 10,
+            progress: 0,
+            description: form.description.trim() || `Setup initial deliverables for ${form.name.trim()}`,
+            updatedAt: new Date().toISOString(),
+          },
+          ...s.tasks,
+        ],
+      }));
+    }
+
+    // 2. Sync into Project Store (used by Developer assigned projects & dashboard)
+    useProjectStore.getState().createProject({
+      orgId: safeOrgId,
+      name: form.name.trim(),
+      key: finalKey,
+      description: form.description.trim(),
+      mode: form.mode as any,
+      lifecycle: "ACTIVE",
+      archived: false,
+      priority: "MEDIUM",
+      projectManagerId: VIEWERS.manager.id,
+      accountableOwnerId: "usr-developer",
+      teamIds: [form.teamId],
+      memberIds: ["usr-developer", "p-aisha", VIEWERS.manager.id, VIEWERS.lead.id],
+      startDate: form.startDate,
+      targetDate: form.dueDate,
+      timezone: "America/New_York",
+      cadence: "WEEKLY",
+      graceWorkingDays: 1,
+      repositoryIds: [],
+    });
+
+    toast.success(`${form.name.trim()} created`, {
+      description: `Project [${finalKey}] is now active and assigned across Developer and Team Lead sections.`,
+    });
+    router.push(href(`projects/${deliveryProject.id || finalProjectId}`));
+    setSaving(false);
   };
 
   const teamMembers = people.filter((p) => p.teamId === form.teamId);

@@ -20,6 +20,7 @@ import {
   Layers,
 } from "lucide-react";
 import { useProjects } from "@/hooks/useProjects";
+import { useDeliveryStore } from "@/store/delivery-store";
 import { developerApi, DeveloperProject } from "@/lib/developer-api";
 
 export default function DeveloperProjectsPage() {
@@ -27,6 +28,7 @@ export default function DeveloperProjectsPage() {
   const router = useRouter();
   const orgId = (params?.orgId as string) || "org-acme";
   const { projects: storeProjects } = useProjects(orgId);
+  const deliveryProjects = useDeliveryStore((s) => s.projects);
 
   const [projects, setProjects] = useState<DeveloperProject[]>([]);
   const [search, setSearch] = useState("");
@@ -36,31 +38,46 @@ export default function DeveloperProjectsPage() {
     let mounted = true;
     developerApi.getProjects(orgId).then((data) => {
       if (mounted) {
-        if (data && data.length > 0) {
-          setProjects(data);
-        } else {
-          // Map store projects
-          const mapped: DeveloperProject[] = storeProjects.map((p) => ({
+        const storeMapped: DeveloperProject[] = storeProjects.map((p) => ({
+          id: p.id,
+          orgId: p.orgId,
+          name: p.name,
+          code: p.key,
+          description: p.description,
+          mode: p.mode,
+          status: p.lifecycle,
+          completionPercent: p.lastProgressPercent >= 0 ? p.lastProgressPercent : 0,
+          targetCompletionDate: p.targetDate,
+          blockedTasksCount: 0,
+          overdueTasksCount: 0,
+        }));
+
+        const existingCodes = new Set(storeMapped.map((p) => p.code.toLowerCase()));
+
+        const deliveryMapped: DeveloperProject[] = deliveryProjects
+          .filter((p) => !existingCodes.has(p.code.toLowerCase()))
+          .map((p) => ({
             id: p.id,
-            orgId: p.orgId,
+            orgId: orgId,
             name: p.name,
-            code: p.key,
+            code: p.code,
             description: p.description,
             mode: p.mode,
-            status: p.lifecycle,
-            completionPercent: p.lastProgressPercent || 0,
-            targetCompletionDate: p.targetDate,
+            status: p.status === "ACTIVE" ? "ACTIVE" : "PLANNED",
+            completionPercent: p.progress || 0,
+            targetCompletionDate: p.dueDate,
             blockedTasksCount: 0,
             overdueTasksCount: 0,
           }));
-          setProjects(mapped);
-        }
+
+        const combined = [...storeMapped, ...deliveryMapped];
+        setProjects(combined);
       }
     });
     return () => {
       mounted = false;
     };
-  }, [orgId, storeProjects]);
+  }, [orgId, storeProjects, deliveryProjects]);
 
   const filtered = projects.filter((p) => {
     const matchesSearch =

@@ -24,6 +24,7 @@ import {
   ViewerStatusBadge,
 } from "../_components/ViewerPrimitives";
 import { useViewerStore } from "../_store/useViewerStore";
+import { useAuthStore } from "@/store/auth-store";
 import { useThemeStore } from "@/store/theme-store";
 import { toast } from "sonner";
 
@@ -33,15 +34,25 @@ export default function ViewerSettingsPage() {
   const orgId = !rawOrgId || rawOrgId === "viewer" ? "org-acme" : rawOrgId;
 
   const { userSettings, updateUserSettings } = useViewerStore();
+  const { currentUser, setCurrentUser } = useAuthStore();
   const { theme, setTheme, resolvedTheme } = useThemeStore();
 
-  const [displayName, setDisplayName] = useState(userSettings.displayName);
+  const [displayName, setDisplayName] = useState(
+    userSettings.displayName || currentUser?.name || "Jordan Lee"
+  );
   const [timezone, setTimezone] = useState(userSettings.timezone);
   const [dateFormat, setDateFormat] = useState(userSettings.dateFormat);
   const [emailDigests, setEmailDigests] = useState(userSettings.emailDigests);
   const [notifyMilestones, setNotifyMilestones] = useState(userSettings.notifyOnMilestones);
   const [notifyHealth, setNotifyHealth] = useState(userSettings.notifyOnHealthChange);
   const [notifyReports, setNotifyReports] = useState(userSettings.notifyOnReports);
+
+  // Sync state if userSettings updates or hydrates
+  React.useEffect(() => {
+    if (userSettings?.displayName) {
+      setDisplayName(userSettings.displayName);
+    }
+  }, [userSettings?.displayName]);
 
   // Password change state
   const [currentPassword, setCurrentPassword] = useState("");
@@ -50,11 +61,22 @@ export default function ViewerSettingsPage() {
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmed = displayName.trim();
+    if (!trimmed) {
+      toast.error("Please enter a valid display name.");
+      return;
+    }
     updateUserSettings({
-      displayName,
+      displayName: trimmed,
       timezone,
       dateFormat,
     });
+    if (currentUser) {
+      setCurrentUser({
+        ...currentUser,
+        name: trimmed,
+      });
+    }
     toast.success("Profile preferences saved successfully.");
   };
 
@@ -253,8 +275,8 @@ export default function ViewerSettingsPage() {
                 <label className="flex items-start gap-2.5 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={emailDigests}
-                    onChange={(e) => setEmailDigests(e.target.checked)}
+                    checked={emailDigests !== "OFF"}
+                    onChange={(e) => setEmailDigests(e.target.checked ? "WEEKLY" : "OFF")}
                     className="mt-0.5 rounded border-[var(--color-border,#E2E8F0)] text-blue-600 accent-blue-600"
                   />
                   <div>

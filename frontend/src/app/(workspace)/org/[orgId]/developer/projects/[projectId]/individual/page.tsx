@@ -1,15 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import React, { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProgressBar } from "@/components/ui/progress";
 import { HealthBadge } from "@/components/ui/health-badge";
-import { Dialog } from "@/components/ui/dialog";
-import { Input, Textarea } from "@/components/ui/input";
 import {
   FolderGit2,
   Calendar,
@@ -23,192 +21,348 @@ import {
   FileCheck,
   ShieldCheck,
   ExternalLink,
+  GitCommit,
+  Info,
+  Archive,
+  Lock,
+  PackageCheck,
+  RotateCcw,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { validateIndividualCheckIn } from "@/lib/progress";
+import { apiClient } from "@/lib/api";
+import {
+  useProgressApi,
+  CheckInSubmissionModal,
+  CheckInAuditTrail,
+  useDeliveryApi,
+  DeliveryAcceptanceModal,
+  DeliveryReviewModal,
+  ProjectClosureModal,
+  BlockerManagementModal,
+} from "@/features/projects";
+import type { ProjectDto } from "@/types/api";
 import { toast } from "sonner";
 
 export default function IndividualModeWorkspace() {
   const params = useParams();
-  const router = useRouter();
   const orgId = (params?.orgId as string) || "org-acme";
   const projectId = (params?.projectId as string) || "proj-individual-solo";
 
-  const { currentOrg, currentUser } = useAuthStore();
-  const { projects, checkIns, submitCheckIn, requestDeliveryAcceptance } = useProjectStore();
+  const { currentUser } = useAuthStore();
+  const [project, setProject] = useState<ProjectDto | null>(null);
+  const [isProjectLoading, setIsProjectLoading] = useState(true);
 
-  const project = projects.find((p) => p.id === projectId) || projects[0];
-  const projectCheckIns = checkIns
-    .filter((c) => c.projectId === project.id)
-    .sort((a, b) => b.version - a.version);
+  const {
+    summary,
+    checkIns,
+    gitHubActivity,
+    isLoading: isProgressLoading,
+    refresh: refreshProgress,
+  } = useProgressApi(projectId, orgId);
 
-  const latestCheckIn = projectCheckIns[0];
+  const {
+    status: deliveryStatus,
+    requests: acceptanceRequests,
+    blockers,
+    history: lifecycleHistory,
+    closures,
+    refresh: refreshDelivery,
+    requestAcceptance,
+    decideAcceptance,
+    closeProject,
+    reopenProject,
+    createBlocker,
+    waiveBlocker,
+    resolveBlocker,
+  } = useDeliveryApi(projectId);
 
   const [activeTab, setActiveTab] = useState<"overview" | "history" | "evidence" | "delivery">("overview");
+  const [isCheckInModalOpen, setIsCheckInModalOpen] = useState(false);
+  const [isAcceptanceModalOpen, setIsAcceptanceModalOpen] = useState(false);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isClosureModalOpen, setIsClosureModalOpen] = useState(false);
+  const [isBlockersModalOpen, setIsBlockersModalOpen] = useState(false);
 
-  // New Check-in Dialog state
-  const [isCheckInDialogOpen, setIsCheckInDialogOpen] = useState(false);
-  const [percent, setPercent] = useState<number>(latestCheckIn ? latestCheckIn.percent + 10 : 45);
-  const [accomplished, setAccomplished] = useState("");
-  const [nextSteps, setNextSteps] = useState("");
-  const [blockersText, setBlockersText] = useState("");
-  const [projectedFinish, setProjectedFinish] = useState(project.targetDate || "2026-11-20");
-  const [evidenceUrl, setEvidenceUrl] = useState("");
-  const [downwardReason, setDownwardReason] = useState("");
-
-  const isDownward = latestCheckIn && percent < latestCheckIn.percent;
-
-  const handleSubmitCheckIn = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const validation = validateIndividualCheckIn(
-      percent,
-      latestCheckIn ? latestCheckIn.percent : null,
-      downwardReason
-    );
-
-    if (!validation.valid) {
-      toast.error(validation.error);
-      return;
-    }
-
-    const blockersList = blockersText
-      ? blockersText.split("\n").filter((b) => b.trim().length > 0)
-      : [];
-
-    const res = submitCheckIn(
-      project.id,
-      currentUser.id,
-      percent,
-      accomplished,
-      nextSteps,
-      blockersList,
-      projectedFinish,
-      evidenceUrl,
-      downwardReason
-    );
-
-    if (res.success) {
-      toast.success(`Check-in v${(latestCheckIn?.version || 0) + 1} recorded successfully!`);
-      setIsCheckInDialogOpen(false);
-      setAccomplished("");
-      setNextSteps("");
-      setBlockersText("");
-      setDownwardReason("");
-    } else {
-      toast.error(res.error || "Failed to record check-in");
+  const loadProject = async () => {
+    if (!projectId) return;
+    try {
+      const p = await apiClient.project(projectId, orgId);
+      setProject(p);
+    } catch {
+      // Fallback or preview
+    } finally {
+      setIsProjectLoading(false);
     }
   };
 
-  const handleRequestDeliveryAcceptance = () => {
-    requestDeliveryAcceptance(project.id, currentUser.id);
-    toast.success("Delivery acceptance review requested from Project Manager.");
+  useEffect(() => {
+    loadProject();
+  }, [projectId, orgId]);
+
+  const handleRefreshAll = async () => {
+    await Promise.all([loadProject(), refreshProgress(), refreshDelivery()]);
   };
+
+  const currentPercent = summary?.current_percent ?? project?.lastProgressPercent ?? 0;
+  const currentMethod = summary?.current_method ?? "DEVELOPER_REPORTED";
+  const lastReportedAt = summary?.last_reported_at;
+  const pendingCheckIn = summary?.pending_checkin;
+  const latestAccepted = summary?.latest_accepted_checkin;
+  const latestRequest = acceptanceRequests[0];
+  const isArchived = project?.archived || false;
+  const currentLifecycle = project?.lifecycle || "ACTIVE";
+
+  const criticalOpenBlockers = blockers.filter(
+    (b) => b.severity === "CRITICAL" && b.status === "OPEN" && !b.waiver
+  );
 
   return (
     <PanelLayout
-      title={`Individual Workspace — ${project.name}`}
+      title={`Individual Workspace — ${project?.name || "Project"}`}
       breadcrumb={[
         { label: "Developer", href: `/org/${orgId}/developer` },
-        { label: project.key },
+        { label: project?.key || "Project" },
         { label: "Individual Mode" },
       ]}
     >
       <div className="space-y-6">
-        {/* Solo Workspace Header */}
+        {/* Archived Banner (T14) */}
+        {isArchived && (
+          <div className="rounded-xl border border-rose-800/80 bg-rose-950/40 p-4 shadow-sm flex items-center justify-between gap-3 text-rose-200 text-sm">
+            <div className="flex items-center gap-2">
+              <Archive className="w-5 h-5 text-rose-400" />
+              <span>
+                <strong>Project Archived (Read-Only):</strong> Modifications, check-ins, and delivery requests are disabled until restored.
+              </span>
+            </div>
+            <Badge variant="outline" className="border-rose-700 text-rose-300">
+              Archived
+            </Badge>
+          </div>
+        )}
+
+        {/* Workspace Header */}
         <div className="p-4 rounded-xl bg-app-surface border border-app-border flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-subtle">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">
-                {project.key}
+                {project?.key || "KEY"}
               </span>
-              <h2 className="text-base font-bold text-app-text-primary">{project.name}</h2>
+              <h2 className="text-base font-bold text-app-text-primary">{project?.name || "Loading..."}</h2>
               <Badge variant="default">Mode A: Individual Ownership</Badge>
+
+              {/* Lifecycle badge */}
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${
+                  currentLifecycle === "DELIVERED"
+                    ? "bg-teal-950 text-teal-300 border-teal-800"
+                    : currentLifecycle === "CLOSED"
+                    ? "bg-purple-950 text-purple-300 border-purple-800"
+                    : currentLifecycle === "AWAITING_ACCEPTANCE"
+                    ? "bg-blue-950 text-blue-300 border-blue-800"
+                    : currentLifecycle === "ON_HOLD"
+                    ? "bg-amber-950 text-amber-300 border-amber-800"
+                    : "bg-emerald-950 text-emerald-300 border-emerald-800"
+                }`}
+              >
+                {currentLifecycle.replace("_", " ")}
+              </span>
+
+              {summary?.require_verification && (
+                <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" /> TL Verification Required
+                </span>
+              )}
             </div>
             <p className="text-xs text-app-text-secondary mt-1 max-w-2xl">
-              {project.description}
+              {project?.description || "Single accountable developer delivery mode with zero mandatory task breakdown."}
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => setIsCheckInDialogOpen(true)}>
-              <Plus className="w-3.5 h-3.5 mr-1" /> Submit New Check-In
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Blocker button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsBlockersModalOpen(true)}
+              className={criticalOpenBlockers.length > 0 ? "border-red-500 text-red-400" : ""}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 mr-1" />
+              Blockers ({blockers.filter((b) => b.status === "OPEN").length})
             </Button>
+
+            {/* Submit progress checkin */}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isArchived || currentLifecycle === "CLOSED"}
+              onClick={() => setIsCheckInModalOpen(true)}
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" /> Progress Check-In
+            </Button>
+
+            {/* Request Delivery Acceptance (T15, AS-02) */}
+            {currentPercent >= 100 && currentLifecycle === "ACTIVE" && !isArchived && (
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-900/30"
+                onClick={() => setIsAcceptanceModalOpen(true)}
+              >
+                <PackageCheck className="w-3.5 h-3.5 mr-1" /> Request Delivery Acceptance
+              </Button>
+            )}
+
+            {/* Review Delivery Request button (for leads/reviewers) */}
+            {currentLifecycle === "AWAITING_ACCEPTANCE" && latestRequest && (
+              <Button
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-500 text-white font-semibold"
+                onClick={() => setIsReviewModalOpen(true)}
+              >
+                <FileCheck className="w-3.5 h-3.5 mr-1" /> Review Delivery Request
+              </Button>
+            )}
+
+            {/* Close Project button */}
+            {currentLifecycle === "DELIVERED" && !isArchived && (
+              <Button
+                size="sm"
+                className="bg-purple-600 hover:bg-purple-500 text-white font-semibold"
+                onClick={() => setIsClosureModalOpen(true)}
+              >
+                <Lock className="w-3.5 h-3.5 mr-1" /> Close Project
+              </Button>
+            )}
+
+            {/* Reopen button */}
+            {currentLifecycle === "CLOSED" && !isArchived && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  const reason = prompt("Enter reason for reopening project:");
+                  if (reason && project) {
+                    await reopenProject({ reason, expected_project_version: project.version });
+                    await handleRefreshAll();
+                    toast.success("Project reopened to ACTIVE state.");
+                  }
+                }}
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1" /> Reopen Project
+              </Button>
+            )}
           </div>
         </div>
 
-        {/* Current Progress & Cadence Metric Cards */}
+        {/* Pending Verification Banner if any */}
+        {pendingCheckIn && (
+          <div className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/40 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-amber-900 dark:text-amber-200">
+                    Pending Verification: {pendingCheckIn.percent}%
+                  </h4>
+                  <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/60 px-1.5 py-0.5 rounded">
+                    Awaiting Team Lead Review
+                  </span>
+                </div>
+                <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+                  Submitted {new Date(pendingCheckIn.created_at).toLocaleString()} by {pendingCheckIn.author_name}. Current accepted baseline remains {currentPercent.toFixed(1)}% until verified.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Awaiting Acceptance Banner (T15) */}
+        {currentLifecycle === "AWAITING_ACCEPTANCE" && (
+          <div className="rounded-xl border border-blue-500/50 bg-blue-950/30 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-blue-200">
+            <div className="flex items-start gap-3">
+              <PackageCheck className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  Delivery Acceptance Pending Review
+                </h4>
+                <p className="text-xs text-blue-300 mt-0.5">
+                  Delivery request submitted on {latestRequest ? new Date(latestRequest.created_at).toLocaleString() : "recently"}. Awaiting authorized team lead or project manager review.
+                </p>
+              </div>
+            </div>
+            {latestRequest && (
+              <Button size="sm" variant="outline" className="border-blue-400 text-blue-300" onClick={() => setIsReviewModalOpen(true)}>
+                Inspect Request
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Current Progress & Metric Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Progress Card */}
+          {/* Progress Card (Blueprint T28: "Developer reported") */}
           <Card className="p-5 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between text-xs text-app-text-muted">
-                <span>Latest Accepted Progress</span>
+                <span>Current Verified Progress</span>
                 <Badge variant="success">Developer Reported</Badge>
               </div>
               <div className="text-3xl font-extrabold text-app-text-primary mt-2">
-                {project.lastProgressPercent >= 0 ? `${project.lastProgressPercent}%` : "Not Reported"}
+                {currentPercent.toFixed(1)}%
               </div>
             </div>
             <div className="mt-4">
               <ProgressBar
-                value={project.lastProgressPercent}
+                value={currentPercent}
                 size="md"
-                isNotReported={project.lastProgressPercent < 0}
+                isNotReported={currentPercent < 0}
               />
               <span className="text-[10px] text-app-text-muted mt-1.5 block">
-                {latestCheckIn
-                  ? `Reported on ${new Date(latestCheckIn.createdAt).toLocaleDateString()} by Alex Rivera`
-                  : "No check-ins filed yet"}
+                {lastReportedAt
+                  ? `Developer reported on ${new Date(lastReportedAt).toLocaleString()}`
+                  : "No check-ins verified yet"}
               </span>
             </div>
           </Card>
 
-          {/* Schedule & Grace Card */}
+          {/* Schedule & Cadence Card */}
           <Card className="p-5 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between text-xs text-app-text-muted">
-                <span>Schedule &amp; Cadence</span>
+                <span>Schedule &amp; Dates</span>
                 <Clock className="w-4 h-4 text-blue-600" />
               </div>
               <div className="text-base font-bold text-app-text-primary mt-2">
-                Target: {project.targetDate}
+                Target: {project?.targetDate ? new Date(project.targetDate).toLocaleDateString() : "Not Specified"}
               </div>
               <div className="text-xs text-app-text-secondary mt-1">
-                Cadence: {project.cadence} ({project.graceWorkingDays} working day grace)
+                Started: {project?.startDate ? new Date(project.startDate).toLocaleDateString() : "Not Specified"}
               </div>
             </div>
             <div className="mt-4 text-[11px] text-app-text-muted pt-2 border-t border-app-border">
-              Next Due Date: <strong>Friday 17:00 ({project.timezone})</strong>
+              Timezone: <strong>{project?.timezone || "UTC"}</strong>
             </div>
           </Card>
 
-          {/* Health & Blocker Summary Card */}
+          {/* Health & Zero Tasks Notice Card */}
           <Card className="p-5 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between text-xs text-app-text-muted">
-                <span>Health Signal (V1.1)</span>
-                <HealthBadge health={project.health} reasons={project.healthReasons} />
+                <span>Individual Mode</span>
+                <HealthBadge health={project?.health || "ON_TRACK"} />
               </div>
               <div className="text-sm font-semibold text-app-text-primary mt-2">
-                Active Blockers: {latestCheckIn?.blockers.length || 0}
+                Zero Mandatory Tasks
               </div>
-              <p className="text-xs text-app-text-secondary mt-1 line-clamp-2">
-                {project.healthReasons[0] || "All schedule commitments are on track."}
+              <p className="text-xs text-app-text-secondary mt-1">
+                Tasks are optional. Progress is tracked exclusively via verified developer check-ins and GitHub code evidence.
               </p>
             </div>
-            {project.lastProgressPercent === 100 && !project.deliveryAcceptedAt && (
-              <div className="mt-3">
-                <Button
-                  size="sm"
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-xs"
-                  onClick={handleRequestDeliveryAcceptance}
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 mr-1" /> Request Delivery Acceptance
-                </Button>
-              </div>
-            )}
+            <div className="mt-3 text-[10px] text-app-text-muted pt-2 border-t border-app-border">
+              {currentPercent === 100
+                ? "100% progress recorded. Active until formal sign-off."
+                : `${(100 - currentPercent).toFixed(1)}% remaining to complete.`}
+            </div>
           </Card>
         </div>
 
@@ -222,7 +376,7 @@ export default function IndividualModeWorkspace() {
                 : "border-transparent text-app-text-muted hover:text-app-text-primary"
             }`}
           >
-            Latest Check-in Details
+            Latest Accepted Check-In
           </button>
           <button
             onClick={() => setActiveTab("history")}
@@ -232,7 +386,7 @@ export default function IndividualModeWorkspace() {
                 : "border-transparent text-app-text-muted hover:text-app-text-primary"
             }`}
           >
-            Append-Only History ({projectCheckIns.length} Revisions)
+            Audit Trail &amp; History ({checkIns.length})
           </button>
           <button
             onClick={() => setActiveTab("evidence")}
@@ -242,216 +396,373 @@ export default function IndividualModeWorkspace() {
                 : "border-transparent text-app-text-muted hover:text-app-text-primary"
             }`}
           >
-            Linked Evidence &amp; Repositories
+            GitHub Activity &amp; Repositories ({gitHubActivity.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("delivery")}
+            className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
+              activeTab === "delivery"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                : "border-transparent text-app-text-muted hover:text-app-text-primary"
+            }`}
+          >
+            Delivery &amp; Lifecycle ({acceptanceRequests.length})
           </button>
         </div>
 
-        {/* Tab 1: Latest Check-in Overview */}
-        {activeTab === "overview" && latestCheckIn && (
-          <Card className="p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-app-border">
-              <div>
-                <h3 className="text-sm font-bold text-app-text-primary">
-                  Check-in Revision {latestCheckIn.version} ({latestCheckIn.percent}%)
-                </h3>
-                <span className="text-xs text-app-text-muted">
-                  Submitted {new Date(latestCheckIn.createdAt).toLocaleString()}
-                </span>
-              </div>
-              <Badge variant="success">Accepted &amp; Verified</Badge>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div>
-                <span className="font-semibold text-app-text-primary block mb-1">
-                  Work Accomplished:
-                </span>
-                <p className="p-3 rounded-lg bg-app-sidebar/60 border border-app-border text-app-text-secondary leading-relaxed">
-                  {latestCheckIn.accomplished}
-                </p>
-              </div>
-
-              <div>
-                <span className="font-semibold text-app-text-primary block mb-1">
-                  Next Planned Steps:
-                </span>
-                <p className="p-3 rounded-lg bg-app-sidebar/60 border border-app-border text-app-text-secondary leading-relaxed">
-                  {latestCheckIn.nextSteps}
-                </p>
-              </div>
-
-              {latestCheckIn.downwardRevisionReason && (
-                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300">
-                  <span className="font-bold">Downward Revision Reason:</span>{" "}
-                  {latestCheckIn.downwardRevisionReason}
+        {/* Tab 1: Overview */}
+        {activeTab === "overview" && (
+          <div>
+            {latestAccepted ? (
+              <Card className="p-6 space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-app-border">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-app-text-primary">
+                        Revision v{latestAccepted.revision_seq} ({latestAccepted.percent}%)
+                      </h3>
+                      <Badge variant="success">Verified &amp; Accepted</Badge>
+                      <span className="text-[11px] text-blue-600 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-900">
+                        Developer reported
+                      </span>
+                    </div>
+                    <span className="text-xs text-app-text-muted">
+                      Submitted {new Date(latestAccepted.captured_at || latestAccepted.created_at).toLocaleString()} by {latestAccepted.author_name}
+                    </span>
+                  </div>
+                  {latestAccepted.verified_by_name && (
+                    <span className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">
+                      Verified by {latestAccepted.verified_by_name}
+                    </span>
+                  )}
                 </div>
-              )}
 
-              {latestCheckIn.optionalEvidence && (
-                <div>
-                  <span className="font-semibold text-app-text-primary block mb-1">
-                    Attached Evidence URL:
-                  </span>
-                  <a
-                    href={latestCheckIn.optionalEvidence}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue-600 hover:underline flex items-center gap-1 font-mono"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    {latestCheckIn.optionalEvidence}
-                  </a>
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <span className="font-semibold text-app-text-primary block mb-1">
+                      Work Accomplished:
+                    </span>
+                    <p className="p-3 rounded-lg bg-app-sidebar/60 border border-app-border text-app-text-secondary leading-relaxed whitespace-pre-wrap">
+                      {latestAccepted.accomplished}
+                    </p>
+                  </div>
+
+                  <div>
+                    <span className="font-semibold text-app-text-primary block mb-1">
+                      Next Planned Steps:
+                    </span>
+                    <p className="p-3 rounded-lg bg-app-sidebar/60 border border-app-border text-app-text-secondary leading-relaxed whitespace-pre-wrap">
+                      {latestAccepted.next_steps}
+                    </p>
+                  </div>
+
+                  {latestAccepted.downward_reason && (
+                    <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300">
+                      <span className="font-bold">Downward Revision Reason:</span>{" "}
+                      {latestAccepted.downward_reason}
+                    </div>
+                  )}
+
+                  {latestAccepted.review_comment && (
+                    <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300">
+                      <span className="font-bold">Reviewer Comment:</span>{" "}
+                      {latestAccepted.review_comment}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </Card>
+              </Card>
+            ) : (
+              <div className="rounded-xl border border-dashed border-app-border p-8 text-center bg-app-surface">
+                <Clock className="w-8 h-8 text-app-text-muted mx-auto mb-2 opacity-50" />
+                <h4 className="text-sm font-medium text-app-text-primary">
+                  No Accepted Progress Check-In
+                </h4>
+                <p className="text-xs text-app-text-secondary mt-1">
+                  Submit a check-in to establish the initial project progress baseline.
+                </p>
+                <Button size="sm" className="mt-4" disabled={isArchived} onClick={() => setIsCheckInModalOpen(true)}>
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Submit Check-In
+                </Button>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Tab 2: Append-Only History */}
         {activeTab === "history" && (
-          <div className="space-y-4">
-            <div className="text-xs text-app-text-muted">
-              Blueprint V1.1 Rule D02: Solo estimates are append-only. Corrections append a linked entry rather than overwriting history.
+          <CheckInAuditTrail
+            checkIns={checkIns}
+            currentProjectPercent={currentPercent}
+            canReview={false}
+            onRefresh={handleRefreshAll}
+          />
+        )}
+
+        {/* Tab 3: Evidence & Repositories */}
+        {activeTab === "evidence" && (
+          <Card className="p-5 space-y-4">
+            <div>
+              <CardTitle className="text-sm">Linked GitHub Commits &amp; Activity</CardTitle>
+              <CardDescription>
+                Recent git commits and pull request events linked to this project. GitHub commits serve as supporting evidence and do not automatically advance progress.
+              </CardDescription>
             </div>
 
-            <div className="space-y-3">
-              {projectCheckIns.map((chk) => (
-                <Card key={chk.id} className="p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-blue-600">{chk.percent}%</span>
-                      <span className="font-semibold text-xs text-app-text-primary">
-                        Revision {chk.version}
-                      </span>
-                      {chk.revisionOfId && (
-                        <span className="text-[10px] text-app-text-muted">(Correction of prior entry)</span>
+            {gitHubActivity.length > 0 ? (
+              <div className="space-y-2">
+                {gitHubActivity.map((act) => (
+                  <div
+                    key={act.id}
+                    className="p-3 rounded-lg border border-app-border bg-app-sidebar/40 flex items-center justify-between text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <GitCommit className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                      {act.sha && (
+                        <span className="font-mono text-[11px] bg-neutral-200 dark:bg-neutral-800 px-1.5 py-0.5 rounded">
+                          {act.sha.substring(0, 7)}
+                        </span>
                       )}
+                      <span className="font-medium text-app-text-primary truncate">{act.title}</span>
+                      <span className="text-[10px] text-app-text-muted">by {act.actor}</span>
                     </div>
-                    <span className="text-[10px] text-app-text-muted">
-                      {new Date(chk.createdAt).toLocaleString()}
+                    <span className="text-[10px] text-app-text-muted whitespace-nowrap ml-2">
+                      {new Date(act.created_at).toLocaleDateString()}
                     </span>
                   </div>
-
-                  <p className="text-xs text-app-text-secondary">{chk.accomplished}</p>
-
-                  {chk.downwardRevisionReason && (
-                    <div className="text-[11px] text-amber-600 bg-amber-50 dark:bg-amber-950/30 p-2 rounded">
-                      <strong>Downward correction note:</strong> {chk.downwardRevisionReason}
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Tab 3: Evidence */}
-        {activeTab === "evidence" && (
-          <Card className="p-5 space-y-3">
-            <CardTitle className="text-sm">Linked Repository &amp; Artifact Evidence</CardTitle>
-            <CardDescription>
-              Evidence from GitHub is displayed separately from completion. Commits and pull requests do not advance the reported percentage.
-            </CardDescription>
-
-            <div className="pt-2 space-y-2 text-xs">
-              <div className="p-3 rounded-lg border border-app-border bg-app-sidebar/40 flex items-center justify-between">
-                <span className="font-mono font-semibold text-blue-600">
-                  acme-health/fhir-intake
-                </span>
-                <Badge variant="success">Synced</Badge>
+                ))}
               </div>
-            </div>
+            ) : (
+              <p className="text-xs text-app-text-muted italic py-4 text-center">
+                No recent GitHub commits or PRs recorded.
+              </p>
+            )}
           </Card>
         )}
-      </div>
 
-      {/* New Check-in Dialog */}
-      <Dialog
-        isOpen={isCheckInDialogOpen}
-        onClose={() => setIsCheckInDialogOpen(false)}
-        title="Submit Weekly Solo Check-In"
-        description="Report your current delivery progress and forecast without the overhead of task boards."
-        maxWidth="lg"
-      >
-        <form onSubmit={handleSubmitCheckIn} className="space-y-4 pt-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Delivered Work Percentage (0–100)"
-              type="number"
-              min={0}
-              max={100}
-              value={percent}
-              onChange={(e) => setPercent(parseInt(e.target.value) || 0)}
-              required
-            />
+        {/* Tab 4: Delivery & Lifecycle (Task 2.4) */}
+        {activeTab === "delivery" && (
+          <div className="space-y-6">
+            {/* Delivery Requests Card */}
+            <Card className="p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm">Delivery Acceptance Requests ({acceptanceRequests.length})</CardTitle>
+                  <CardDescription>
+                    Formal delivery acceptance submissions with checklists and evidence.
+                  </CardDescription>
+                </div>
+                {currentPercent >= 100 && currentLifecycle === "ACTIVE" && !isArchived && (
+                  <Button size="sm" onClick={() => setIsAcceptanceModalOpen(true)}>
+                    <PackageCheck className="w-3.5 h-3.5 mr-1" /> New Delivery Request
+                  </Button>
+                )}
+              </div>
 
-            <Input
-              label="Projected Finish Date"
-              type="date"
-              value={projectedFinish}
-              onChange={(e) => setProjectedFinish(e.target.value)}
-              required
-            />
+              {acceptanceRequests.length > 0 ? (
+                <div className="space-y-4">
+                  {acceptanceRequests.map((req) => (
+                    <div
+                      key={req.id}
+                      className="p-4 rounded-lg border border-app-border bg-app-sidebar/30 space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-zinc-300">[{req.id}]</span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                              req.status === "ACCEPTED"
+                                ? "bg-emerald-950 text-emerald-300 border border-emerald-800"
+                                : req.status === "PENDING"
+                                ? "bg-blue-950 text-blue-300 border border-blue-800"
+                                : "bg-red-950 text-red-300 border border-red-800"
+                            }`}
+                          >
+                            {req.status}
+                          </span>
+                        </div>
+                        <span className="text-xs text-app-text-muted">
+                          {new Date(req.created_at).toLocaleString()} by {req.created_by_name || req.created_by}
+                        </span>
+                      </div>
+
+                      {/* Checklist */}
+                      <div className="bg-app-bg p-3 rounded border border-app-border text-xs space-y-1">
+                        <span className="font-semibold text-app-text-primary block mb-1">Checklist:</span>
+                        {req.checklist.map((item) => (
+                          <div key={item.id} className="flex items-center gap-2 text-zinc-300">
+                            <span className={item.checked ? "text-emerald-400" : "text-zinc-600"}>
+                              {item.checked ? "✓" : "○"}
+                            </span>
+                            <span>{item.label}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Evidence */}
+                      {req.evidence_summary && (
+                        <p className="text-xs text-app-text-secondary bg-app-bg p-2 rounded border border-app-border">
+                          {req.evidence_summary}
+                        </p>
+                      )}
+
+                      {/* Decisions */}
+                      {req.decisions && req.decisions.length > 0 && (
+                        <div className="space-y-1 text-xs">
+                          <span className="font-semibold text-app-text-primary block">Review Decisions:</span>
+                          {req.decisions.map((dec) => (
+                            <div key={dec.id} className="p-2 rounded bg-app-bg border border-app-border space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-blue-400">{dec.decision}</span>
+                                <span className="text-app-text-muted">
+                                  by {dec.actor_name || dec.actor_id} on {new Date(dec.decided_at).toLocaleString()}
+                                </span>
+                              </div>
+                              {dec.reason && <p className="text-zinc-300">&ldquo;{dec.reason}&rdquo;</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-app-text-muted italic py-4 text-center">
+                  No delivery acceptance requests submitted yet.
+                </p>
+              )}
+            </Card>
+
+            {/* Lifecycle Transition History */}
+            <Card className="p-5 space-y-3">
+              <CardTitle className="text-sm">Lifecycle History &amp; Audit Trail</CardTitle>
+              {lifecycleHistory.length > 0 ? (
+                <div className="space-y-2">
+                  {lifecycleHistory.map((h) => (
+                    <div
+                      key={h.id}
+                      className="p-3 rounded-lg border border-app-border bg-app-sidebar/20 flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <span className="text-zinc-400">{h.previous_lifecycle || "None"}</span>
+                        <span className="mx-2 text-zinc-600">→</span>
+                        <span className="font-bold text-app-text-primary">{h.new_lifecycle}</span>
+                        {h.reason && <span className="text-app-text-muted ml-2">({h.reason})</span>}
+                      </div>
+                      <span className="text-[10px] text-app-text-muted">
+                        {new Date(h.created_at).toLocaleString()} by {h.actor_name || h.actor_id}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-app-text-muted italic py-2 text-center">No lifecycle transitions recorded.</p>
+              )}
+            </Card>
+
+            {/* Closures */}
+            {closures.length > 0 && (
+              <Card className="p-5 space-y-3">
+                <CardTitle className="text-sm">Project Closures</CardTitle>
+                <div className="space-y-2">
+                  {closures.map((c) => (
+                    <div key={c.id} className="p-3 rounded-lg border border-app-border bg-purple-950/20 space-y-1 text-xs">
+                      <div className="flex items-center justify-between font-semibold text-purple-300">
+                        <span>Closed by {c.actor_name || c.actor_id}</span>
+                        <span className="text-app-text-muted">{new Date(c.closed_at).toLocaleString()}</span>
+                      </div>
+                      <p className="text-zinc-200"><strong>Handover Note:</strong> {c.handover_note}</p>
+                      <p className="text-zinc-400"><strong>Reason:</strong> {c.reason}</p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
           </div>
+        )}
 
-          {/* Downward Revision Explanation requirement */}
-          {isDownward && (
-            <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-xs space-y-2">
-              <span className="font-bold text-amber-900 dark:text-amber-200">
-                Downward Revision Detected ({latestCheckIn.percent}% &rarr; {percent}%):
-              </span>
-              <p className="text-amber-800 dark:text-amber-300">
-                Blueprint V1.1 Rule FR-018: A downward revision requires an explicit, explainable reason.
-              </p>
-              <Textarea
-                placeholder="Explain why progress was revised downward (e.g., unexpected architectural rework)..."
-                value={downwardReason}
-                onChange={(e) => setDownwardReason(e.target.value)}
-                required
+        {/* Modals */}
+        {project && (
+          <>
+            <CheckInSubmissionModal
+              isOpen={isCheckInModalOpen}
+              onClose={() => setIsCheckInModalOpen(false)}
+              projectId={projectId}
+              projectName={project.name}
+              projectKey={project.key}
+              currentPercent={currentPercent}
+              requireVerification={summary?.require_verification || false}
+              gitHubActivity={gitHubActivity}
+              onSubmitted={handleRefreshAll}
+            />
+
+            <DeliveryAcceptanceModal
+              isOpen={isAcceptanceModalOpen}
+              project={project}
+              checkins={checkIns}
+              onClose={() => setIsAcceptanceModalOpen(false)}
+              onSubmit={async (data) => {
+                await requestAcceptance(data);
+                await handleRefreshAll();
+                toast.success("Delivery acceptance request submitted.");
+              }}
+            />
+
+            {latestRequest && (
+              <DeliveryReviewModal
+                isOpen={isReviewModalOpen}
+                project={project}
+                request={latestRequest}
+                blockers={blockers}
+                currentUserId={currentUser?.id}
+                onClose={() => setIsReviewModalOpen(false)}
+                onDecide={async (data) => {
+                  await decideAcceptance(latestRequest.id, data);
+                  await handleRefreshAll();
+                  toast.success(`Delivery decision recorded: ${data.decision}`);
+                }}
+                onWaiveBlocker={async (blockerId, reason) => {
+                  await waiveBlocker(blockerId, { reason });
+                  await handleRefreshAll();
+                  toast.success("Blocker waiver approved.");
+                }}
               />
-            </div>
-          )}
+            )}
 
-          <Textarea
-            label="Work Accomplished During This Cadence"
-            value={accomplished}
-            onChange={(e) => setAccomplished(e.target.value)}
-            placeholder="e.g. Lead import and HL7 mapping complete. Test call routing passes 24 unit cases."
-            required
-          />
+            <ProjectClosureModal
+              isOpen={isClosureModalOpen}
+              project={project}
+              onClose={() => setIsClosureModalOpen(false)}
+              onCloseProject={async (data) => {
+                await closeProject(data);
+                await handleRefreshAll();
+                toast.success("Project formally closed.");
+              }}
+            />
 
-          <Textarea
-            label="Next Steps"
-            value={nextSteps}
-            onChange={(e) => setNextSteps(e.target.value)}
-            placeholder="e.g. Complete end-to-end integration with sandbox gateway and error recovery."
-            required
-          />
-
-          <Textarea
-            label="Active Blockers (One per line)"
-            value={blockersText}
-            onChange={(e) => setBlockersText(e.target.value)}
-            placeholder="Optional: Enter any impediments delaying progress..."
-            rows={2}
-          />
-
-          <Input
-            label="Optional Evidence Link (Pull Request, Release Tag, or Document)"
-            value={evidenceUrl}
-            onChange={(e) => setEvidenceUrl(e.target.value)}
-            placeholder="https://github.com/acme-health/fhir-intake/pull/4"
-          />
-
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-app-border">
-            <Button type="button" variant="outline" onClick={() => setIsCheckInDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">Submit Check-In</Button>
-          </div>
-        </form>
-      </Dialog>
+            <BlockerManagementModal
+              isOpen={isBlockersModalOpen}
+              project={project}
+              blockers={blockers}
+              onClose={() => setIsBlockersModalOpen(false)}
+              onCreateBlocker={async (data) => {
+                await createBlocker(data);
+                await handleRefreshAll();
+                toast.success("Blocker reported.");
+              }}
+              onWaiveBlocker={async (blockerId, reason) => {
+                await waiveBlocker(blockerId, { reason });
+                await handleRefreshAll();
+                toast.success("Blocker waived.");
+              }}
+              onResolveBlocker={async (blockerId) => {
+                await resolveBlocker(blockerId);
+                await handleRefreshAll();
+                toast.success("Blocker resolved.");
+              }}
+            />
+          </>
+        )}
+      </div>
     </PanelLayout>
   );
 }
-
