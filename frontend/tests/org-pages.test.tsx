@@ -70,7 +70,7 @@ describe("Dashboard additions", () => {
       access: { grants: FIXTURE_GRANTS.ORGANIZATION_ADMIN, scopeReported: true },
     });
     expect(markup).toContain("Your access");
-    expect(markup).toContain("10 of 22");
+    expect(markup).toContain("10 of 23");
     expect(markup).toContain("/org/org-acme/admin/access");
   });
 

@@ -28,6 +28,7 @@ import com.prowise.common.api.ApiException;
 import com.prowise.common.api.ErrorCodes;
 import com.prowise.notification.EmailMessage;
 import com.prowise.notification.EmailSender;
+import com.prowise.org.OrganizationService;
 
 @Service
 @Profile("!test")
@@ -43,6 +44,7 @@ public class AuthService {
     private final JdbcTemplate jdbc;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final OrganizationService organizationService;
     private final EmailSender emailSender;
     private final ObjectProvider<EmailCredentialService> emailCredentialServiceProvider;
     private final long refreshTokenDays;
@@ -52,6 +54,7 @@ public class AuthService {
             JdbcTemplate jdbc,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
+            OrganizationService organizationService,
             EmailSender emailSender,
             ObjectProvider<EmailCredentialService> emailCredentialServiceProvider,
             @Value("${prowise.auth.refresh-token-days:30}") long refreshTokenDays,
@@ -59,6 +62,7 @@ public class AuthService {
         this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.organizationService = organizationService;
         this.emailSender = emailSender;
         this.emailCredentialServiceProvider = emailCredentialServiceProvider;
         this.refreshTokenDays = refreshTokenDays;
@@ -66,16 +70,29 @@ public class AuthService {
     }
 
     @Transactional
-    public TokenPair signup(String email, String password) {
+    public TokenPair signup(String email, String password, String name,
+            OrganizationService.CreateOrganizationRequest organization) {
         validateCredentials(email, password);
         UUID userId = UUID.randomUUID();
+        String normalizedEmail = normalize(email);
+        String displayName = name == null || name.isBlank()
+                ? normalizedEmail.substring(0, normalizedEmail.indexOf('@'))
+                : name.trim();
         try {
             jdbc.update("INSERT INTO users (id, email, password_hash, name, role, status, must_change_password) VALUES (?, ?, ?, ?, 'VIEWER', 'ACTIVE', false)",
-                    userId, normalize(email), passwordEncoder.encode(password), email.split("@")[0]);
+                    userId, normalizedEmail, passwordEncoder.encode(password), displayName);
         } catch (DuplicateKeyException exception) {
             throw new ApiException(HttpStatus.CONFLICT, "EMAIL_IN_USE", "An account already exists for this email.");
         }
-        return issueSession(userId, normalize(email));
+
+        OrganizationService.CreateOrganizationRequest workspace = organization == null
+                ? defaultRegistrationOrganization(displayName, userId)
+                : organization;
+        OrganizationService.OrganizationResponse created = organizationService.createForRegistration(userId, workspace);
+        jdbc.update("UPDATE users SET role = 'ORGANIZATION_OWNER', organization_id = ? WHERE id = ?",
+                created.id(), userId);
+        return issueSession(userId, normalizedEmail, UUID.randomUUID(), created.id(),
+                "ORGANIZATION_OWNER", displayName, false);
     }
 
     @Transactional
@@ -83,7 +100,8 @@ public class AuthService {
         enforceRateLimit("signin:" + normalizeForRateLimit(email));
         Map<String, Object> user;
         try {
-            user = jdbc.queryForMap("SELECT id, email, password_hash, status FROM users WHERE lower(email) = lower(?)",
+            user = jdbc.queryForMap("SELECT id, email, password_hash, status, name, role, organization_id "
+                            + "FROM users WHERE lower(email) = lower(?)",
                     email);
         } catch (org.springframework.dao.EmptyResultDataAccessException exception) {
             throw invalidCredentials();
@@ -92,7 +110,25 @@ public class AuthService {
                 || !passwordEncoder.matches(password, (String) user.get("password_hash"))) {
             throw invalidCredentials();
         }
-        return issueSession((UUID) user.get("id"), (String) user.get("email"));
+        UUID userId = (UUID) user.get("id");
+        String role = (String) user.get("role");
+        UUID organizationId = (UUID) user.get("organization_id");
+        if ("SUPER_ADMIN".equalsIgnoreCase(role)) {
+            organizationId = null;
+        } else if (organizationId == null) {
+            List<UUID> memberships = jdbc.query(
+                    "SELECT org_id FROM memberships WHERE user_id = ? AND status = 'ACTIVE' ORDER BY created_at LIMIT 1",
+                    (rs, rowNum) -> rs.getObject("org_id", UUID.class), userId);
+            if (!memberships.isEmpty()) organizationId = memberships.get(0);
+        }
+        return issueSession(userId, (String) user.get("email"), UUID.randomUUID(), organizationId,
+                role == null || role.isBlank() ? "VIEWER" : role, (String) user.get("name"), false);
+    }
+
+    private OrganizationService.CreateOrganizationRequest defaultRegistrationOrganization(String name, UUID userId) {
+        String slug = "workspace-" + userId.toString().replace("-", "").substring(0, 16);
+        return new OrganizationService.CreateOrganizationRequest(name + " Workspace", slug, "UTC",
+                Map.of("workDays", List.of(1, 2, 3, 4, 5), "dailyHours", 8, "holidays", List.of()));
     }
 
     @Transactional

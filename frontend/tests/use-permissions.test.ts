@@ -15,8 +15,8 @@ import type { PermissionGrant } from "../src/types/permission";
 const ORG_A = "11111111-1111-1111-1111-111111111111";
 
 describe("permission keys", () => {
-  it("lists exactly the 22 documented dot-keys", () => {
-    expect(PERMISSION_KEYS).toHaveLength(22);
+  it("lists exactly the 23 documented dot-keys", () => {
+    expect(PERMISSION_KEYS).toHaveLength(23);
     expect(PERMISSION_KEYS.every((key) => /^[a-z]+(\.[a-z]+)+$/.test(key))).toBe(true);
     expect(PERMISSION_KEYS).toContain("org.manage");
     expect(PERMISSION_KEYS).not.toContain("org:update" as never);
@@ -65,9 +65,9 @@ describe("fixture grants follow the permission matrix", () => {
   const orgKeys = (role: keyof typeof FIXTURE_GRANTS) =>
     FIXTURE_GRANTS[role].filter((grant) => grant.scope === "ORG").map((grant) => grant.key).sort();
 
-  it("gives the owner every key except progress override", () => {
+  it("gives the owner every key except progress override and check-in approval (Team Lead only)", () => {
     expect(orgKeys("ORGANIZATION_OWNER")).toEqual(
-      PERMISSION_KEYS.filter((key) => key !== "project.progress.override").slice().sort(),
+      PERMISSION_KEYS.filter((key) => key !== "project.progress.override" && key !== "project.progress.verify").slice().sort(),
     );
   });
 

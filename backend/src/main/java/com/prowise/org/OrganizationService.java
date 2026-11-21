@@ -34,6 +34,15 @@ public class OrganizationService {
 
     @Transactional
     public OrganizationResponse create(AuthPrincipal principal, CreateOrganizationRequest request) {
+        return createForUser(principal.userId(), request);
+    }
+
+    @Transactional
+    public OrganizationResponse createForRegistration(UUID userId, CreateOrganizationRequest request) {
+        return createForUser(userId, request);
+    }
+
+    private OrganizationResponse createForUser(UUID userId, CreateOrganizationRequest request) {
         if (request.name() == null || request.name().isBlank()
                 || request.slug() == null || request.slug().isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "The request has invalid fields.");
@@ -50,23 +59,23 @@ public class OrganizationService {
                     orgId, request.name().trim(), request.slug().trim().toLowerCase(java.util.Locale.ROOT),
                     request.timezone(), json(request.calendar()));
             jdbc.update("INSERT INTO memberships (id, org_id, user_id, role_template) VALUES (?, ?, ?, 'ORGANIZATION_OWNER')",
-                    UUID.randomUUID(), orgId, principal.userId());
+                    UUID.randomUUID(), orgId, userId);
             jdbc.update("""
                     INSERT INTO grants (id, org_id, membership_id, template_role_id, scope, granted_by)
                     SELECT ?, ?, m.id, r.id, 'ORG', ?
                     FROM memberships m
                     JOIN roles r ON r.name = m.role_template AND r.is_template
                     WHERE m.org_id = ? AND m.user_id = ?
-                    """, UUID.randomUUID(), orgId, principal.userId(), orgId, principal.userId());
+                    """, UUID.randomUUID(), orgId, userId, orgId, userId);
             String slug = request.slug().trim().toLowerCase(java.util.Locale.ROOT);
             // Task 1.4: organization + owner membership + audit + OrganizationCreated commit together.
             changes.record(
-                    new ChangeRecorder.AuditEntry(orgId, principal.userId(), "organization.created", "ORGANIZATION", orgId,
+                    new ChangeRecorder.AuditEntry(orgId, userId, "organization.created", "ORGANIZATION", orgId,
                             null, null, java.util.Map.of("name", request.name().trim(), "slug", slug,
                                     "timezone", request.timezone())),
                     new ChangeRecorder.DomainEvent(orgId, "ORGANIZATION", orgId, 0L, "OrganizationCreated",
                             java.util.Map.of("name", request.name().trim(), "slug", slug, "timezone", request.timezone(),
-                                    "owner_user_id", principal.userId().toString())));
+                                    "owner_user_id", userId.toString())));
         } catch (DuplicateKeyException exception) {
             throw new ApiException(HttpStatus.CONFLICT, "DUPLICATE_SLUG", "That organization slug is already in use.");
         }

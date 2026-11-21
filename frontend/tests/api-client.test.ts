@@ -111,6 +111,49 @@ describe("typed API client", () => {
     expect(() => createApiClient({ fetch: vi.fn() })).not.toThrow();
   });
 
+  it("sends the organization with signup so registration can be atomic", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(201, { access_token: "access-1" }));
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
+    const signup = {
+      email: "owner@example.test",
+      password: "CorrectHorseBatteryStaple!",
+      name: "Test Owner",
+      organization: {
+        name: "Acme",
+        slug: "acme",
+        timezone: "America/New_York",
+        calendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
+      },
+    };
+
+    await expect(client.signup(signup)).resolves.toEqual({ access_token: "access-1" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual(signup);
+  });
+
+  it("loads assigned code reviews from the authenticated organization API", async () => {
+    const reviews = [{ id: "review-1", status: "PENDING" }];
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, reviews));
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
+
+    await expect(client.codeReviews("assigned")).resolves.toEqual(reviews);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("http://api.test/v1/developer/reviews?type=assigned");
+  });
+
+  it("encodes the member cursor in the organization-scoped request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, []));
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
+
+    await client.members("org-a", "cursor+value");
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://api.test/v1/organizations/org-a/members?cursor=cursor%2Bvalue",
+    );
+  });
+
   it("exposes the contract header and field names", () => {
     expect(IDEMPOTENCY_KEY_HEADER).toBe("Idempotency-Key");
     expect(EXPECTED_VERSION_FIELD).toBe("expectedVersion");

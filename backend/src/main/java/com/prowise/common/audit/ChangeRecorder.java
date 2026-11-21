@@ -18,7 +18,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * Atomic business change recorder: writes an audit row and an outbox event
  * inside the active @Transactional method (Rule 4).
  */
-@Component
+@Component("auditChangeRecorder")
 public class ChangeRecorder {
 
     private static final Logger log = LoggerFactory.getLogger(ChangeRecorder.class);

@@ -52,13 +52,17 @@ export default function SignupPage() {
 
     setIsLoading(true);
     try {
-      await apiClient.signup({ email: email.trim(), password, name: name.trim() });
       const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      await apiClient.createOrganization({
-        name: orgName.trim(),
-        slug,
-        timezone,
-        calendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
+      await apiClient.signup({
+        email: email.trim(),
+        password,
+        name: name.trim(),
+        organization: {
+          name: orgName.trim(),
+          slug,
+          timezone,
+          calendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
+        },
       });
       toast.success("Organization workspace registered successfully!");
       window.location.assign("/select-org");

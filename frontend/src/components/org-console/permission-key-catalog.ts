@@ -43,6 +43,7 @@ export const KEY_GROUPS: KeyGroup[] = [
     description: "Tasks, reviews and progress reporting",
     keys: [
       { key: "project.progress.report", label: "Report progress", description: "Accountable developer, Individual mode." },
+      { key: "project.progress.verify", label: "Approve check-ins", description: "Lead of the project's team; never own entries." },
       { key: "project.progress.override", label: "Override progress", description: "Separate correction entry." },
       { key: "task.create", label: "Create tasks", description: "Add work items." },
       { key: "task.assign", label: "Assign work", description: "Assign and reassign tasks." },

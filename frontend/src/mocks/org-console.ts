@@ -5,7 +5,6 @@
  * (through `src/store/org-console-store.ts`). Nothing here is typed inside components.
  */
 
-export const ORG_TODAY = "2026-11-20";
 export const ORG_NOW = "2026-11-20T10:30:00Z";
 
 /* ----------------------------------------------------------------------------
@@ -527,15 +526,6 @@ export const PRIVACY_SETTINGS: PrivacySettings = {
 /* ----------------------------------------------------------------------------
  * Chart series
  * ------------------------------------------------------------------------- */
-
-export const MEMBER_GROWTH = [
-  { month: "Jun", members: 13, invites: 3 },
-  { month: "Jul", members: 14, invites: 2 },
-  { month: "Aug", members: 15, invites: 3 },
-  { month: "Sep", members: 17, invites: 4 },
-  { month: "Oct", members: 18, invites: 2 },
-  { month: "Nov", members: 20, invites: 5 },
-];
 
 export const AUDIT_ACTIVITY = [
   { label: "W41", primary: 38, secondary: 2 },

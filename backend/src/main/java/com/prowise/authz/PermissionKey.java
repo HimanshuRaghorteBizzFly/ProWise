@@ -17,6 +17,7 @@ public enum PermissionKey {
     PROJECT_DEADLINE_EDIT("project.deadline.edit"),
     PROJECT_PROGRESS_REPORT("project.progress.report"),
     PROJECT_PROGRESS_OVERRIDE("project.progress.override"),
+    PROJECT_PROGRESS_VERIFY("project.progress.verify"),
     TASK_CREATE("task.create"),
     TASK_ASSIGN("task.assign"),
     TASK_UPDATE("task.update"),

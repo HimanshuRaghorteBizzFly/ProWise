@@ -170,6 +170,7 @@ export function PageFrame({
   actions,
   status = "ready",
   onRetry,
+  errorMessage,
   skeleton = "dashboard",
   children,
 }: {
@@ -181,6 +182,7 @@ export function PageFrame({
   actions?: React.ReactNode;
   status?: LoadStatus;
   onRetry?: () => void;
+  errorMessage?: string;
   skeleton?: "dashboard" | "list" | "detail";
   children: React.ReactNode;
 }) {
@@ -217,7 +219,7 @@ export function PageFrame({
 
       {status === "loading" && <PageSkeleton variant={skeleton} />}
       {status === "error" && (
-        <ErrorBanner message="The workspace service did not respond. Your data is safe — try again." onRetry={onRetry} />
+        <ErrorBanner message={errorMessage ?? "The workspace service did not respond. Your data is safe — try again."} onRetry={onRetry} />
       )}
       {status === "ready" && <div className="pw-rise space-y-5 min-w-0">{children}</div>}
     </div>

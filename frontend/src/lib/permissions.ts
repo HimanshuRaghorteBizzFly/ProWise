@@ -15,6 +15,7 @@ export const PERMISSION_KEYS: readonly PermissionKey[] = [
   "project.scope.change",
   "project.deadline.edit",
   "project.progress.report",
+  "project.progress.verify",
   "project.progress.override",
   "task.create",
   "task.assign",

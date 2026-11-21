@@ -372,39 +372,7 @@ public class DeveloperService {
     // ==========================================
     // 4. CHECK-INS (INDIVIDUAL MODE)
     // ==========================================
-    public ProjectCheckInEntity submitCheckIn(Actor actor, String authorName, DeveloperDTOs.CheckInSubmissionRequest req) {
-        ProjectEntity project = visibleProject(actor, req.projectId());
-        access.requireAction(actor, project.getId(), PermissionKey.PROJECT_PROGRESS_REPORT);
-        if (!actor.userId().equals(project.getAccountableOwnerId())) {
-            throw PermissionService.forbidden(); // only the accountable developer reports progress
-        }
-        if ("STRUCTURED".equalsIgnoreCase(project.getMode())) {
-            throw new IllegalStateException("Direct percentage check-ins are restricted for Structured Mode projects. Progress is calculated from work items.");
-        }
-        if (req.percent() == null || req.percent().compareTo(BigDecimal.ZERO) < 0 || req.percent().compareTo(BigDecimal.valueOf(100)) > 0) {
-            throw new IllegalArgumentException("Completion percentage must be between 0 and 100.");
-        }
-
-        ProjectCheckInEntity checkIn = new ProjectCheckInEntity();
-        checkIn.setId("chk-" + UUID.randomUUID().toString().substring(0, 8));
-        checkIn.setOrgId(actor.orgId());
-        checkIn.setProjectId(project.getId());
-        checkIn.setAuthorId(actor.userId());
-        checkIn.setAuthorName(authorName != null ? authorName : "Developer");
-        checkIn.setPercent(req.percent().setScale(2, RoundingMode.HALF_UP));
-        checkIn.setAccomplished(req.accomplished());
-        checkIn.setNextSteps(req.nextSteps());
-        checkIn.setBlockers(req.blockers());
-        checkIn.setRisks(req.risks());
-        checkIn.setCreatedAt(Instant.now());
-        ProjectCheckInEntity saved = projectCheckInRepository.save(checkIn);
-
-        project.setLastProgressPercent(checkIn.getPercent());
-        project.setUpdatedAt(Instant.now());
-        projectRepository.save(project);
-        return saved;
-    }
-
+    // Submitting is task 2.2 ProgressService.submit (one write path, starts PENDING); this service only reads.
     @Transactional(readOnly = true)
     public List<ProjectCheckInEntity> getProjectCheckIns(Actor actor, String projectId) {
         ProjectEntity project = visibleProject(actor, projectId);

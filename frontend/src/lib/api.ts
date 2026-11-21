@@ -15,6 +15,7 @@ type FetchLike = typeof globalThis.fetch;
 interface RequestOptions {
   method?: string;
   body?: unknown;
+  headers?: Record<string, string>;
   retryOnUnauthorized?: boolean;
   /** Reuse a key to make a user-level retry of the same change safe; otherwise one is generated per call. */
   idempotencyKey?: string;
@@ -245,7 +246,17 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
   return {
     health,
-    signup: (body: { email: string; password: string; name?: string }) =>
+    signup: (body: {
+      email: string;
+      password: string;
+      name: string;
+      organization: {
+        name: string;
+        slug: string;
+        timezone: string;
+        calendar: { workDays: number[]; dailyHours: number; holidays: string[] };
+      };
+    }) =>
       json<{ access_token: string }>("/v1/auth/signup", { method: "POST", body }).then((tokens) => {
         accessToken = tokens.access_token;
         return tokens;
@@ -300,7 +311,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
       json<import("@/types/api").RoleDto>(`${orgPath(orgId)}/roles/${encodeURIComponent(roleId)}`, { method: "PATCH", body }),
     deleteRole: (orgId: string, roleId: string, expectedVersion: number) =>
       request(`${orgPath(orgId)}/roles/${encodeURIComponent(roleId)}?expectedVersion=${expectedVersion}`, { method: "DELETE" }),
-    members: (orgId: string) => json<import("@/types/api").MemberDto[]>(`${orgPath(orgId)}/members`),
+    members: (orgId: string, cursor?: string) => {
+      const suffix = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+      return json<Dto.MemberDto[]>(`${orgPath(orgId)}/members${suffix}`);
+    },
     memberGrants: (orgId: string, membershipId: string) =>
       json<import("@/types/api").GrantDto[]>(`${orgPath(orgId)}/members/${encodeURIComponent(membershipId)}/grants`),
     grantRole: (orgId: string, body: import("@/types/api").GrantRequestDto) =>
@@ -393,6 +407,19 @@ export function createApiClient(options: ApiClientOptions = {}) {
       json<Dto.ProjectDto>(`${orgPath(orgId)}/projects`, { method: "POST", body }),
     updateProject: (orgId: string, projectId: string, body: Dto.UpdateProjectDto) =>
       json<Dto.ProjectDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", body }),
+    // Task 2.2: check-ins use the org-bound token (no org in the path).
+    progressSummary: (projectId: string) =>
+      json<Dto.ProgressSummaryDto>(`/v1/projects/${encodeURIComponent(projectId)}/checkins/summary`),
+    progressHistory: (projectId: string) =>
+      json<Dto.CheckInDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/progress-history`),
+    /** Pass the same idempotencyKey when retrying one submission: the server returns the first result. */
+    submitCheckIn: (projectId: string, body: Dto.CheckInRequestDto, idempotencyKey: string) =>
+      json<Dto.CheckInDto>(`/v1/projects/${encodeURIComponent(projectId)}/checkins`, { method: "POST", body, idempotencyKey }),
+    decideCheckIn: (checkinId: string, body: Dto.CheckInDecisionDto) =>
+      json<Dto.CheckInDto>(`/v1/checkins/${encodeURIComponent(checkinId)}/decision`, { method: "POST", body }),
+    pendingReviews: (orgId: string) => json<Dto.PendingReviewDto[]>(`/v1/organizations/${encodeURIComponent(orgId)}/reviews/pending`),
+    codeReviews: (type: "assigned" | "authored" = "assigned") =>
+      json<Dto.CodeReviewDto[]>(`/v1/developer/reviews?type=${encodeURIComponent(type)}`),
     /** Selects the active workspace; the old token is revoked server-side and replaced here. */
     switchOrganization: (orgId: string) =>
       json<{ access_token: string }>(`/v1/me/organizations/${encodeURIComponent(orgId)}/switch`, { method: "POST" }).then(

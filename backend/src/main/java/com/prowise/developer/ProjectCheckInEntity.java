@@ -61,10 +61,10 @@ public class ProjectCheckInEntity {
     private String downwardReason;
 
     @Column(name = "status", nullable = false, length = 30)
-    private String status = "ACCEPTED"; // "ACCEPTED", "PENDING_VERIFICATION", "REJECTED", "CHANGES_REQUESTED"
+    private String status = "PENDING"; // task 2.2: PENDING, APPROVED, REJECTED (append-only; written by ProgressService)
 
     @Column(name = "method", nullable = false, length = 40)
-    private String method = "DEVELOPER_REPORTED";
+    private String method = "developer_reported";
 
     @Column(name = "verified_by", length = 64)
     private String verifiedBy;

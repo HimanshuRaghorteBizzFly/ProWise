@@ -51,6 +51,9 @@ import {
 } from "@/components/delivery/DeliveryUI";
 import { AccessDeniedState, AccessLostState, SessionExpiredState } from "@/components/org-console/AccessStates";
 import { StaleVersionBanner } from "@/components/org-console/StaleVersionBanner";
+import { formatDay } from "@/components/projects/formatDay";
+import { ProgressSummaryContent } from "@/components/progress/CheckInViews";
+import { useProgressSummary } from "@/components/progress/useCheckInApi";
 import { apiErrorMessage, type LoadState } from "@/components/org-console/useRoleApi";
 import {
   type PortfolioFilters,
@@ -105,14 +108,9 @@ function useBaseHref(base: ProjectBase) {
   return useMemo(() => ({ orgId, href: (path = "dashboard") => `/org/${orgId}/${base}/${path}` }), [orgId, base]);
 }
 
-const createPath = (base: ProjectBase) => (base === "manager" ? "create-project" : "projects/new");
+export { formatDay };
 
-/** Local date (YYYY-MM-DD) shown as a calendar day: never shifted by the viewer's time zone. */
-export function formatDay(day: string | null) {
-  if (!day) return "Not set";
-  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })
-    .format(new Date(`${day}T00:00:00Z`));
-}
+const createPath = (base: ProjectBase) => (base === "manager" ? "create-project" : "projects/new");
 
 function timeZones(current?: string): string[] {
   let zones: string[] = [];
@@ -593,12 +591,7 @@ export function ProjectWorkspaceView({ base, projectId }: { base: ProjectBase; p
                 </p>
               )}
               {tab === "overview" && <OverviewTab project={row} />}
-              {tab === "updates" && (
-                <Panel title="Progress updates" icon={MessageSquareText}>
-                  <EmptyStateView icon={MessageSquareText} title="No progress reported yet"
-                    description="The accountable developer's check-ins (percentage, accomplishments, next steps, blockers) arrive with task 2.2 (Later)." />
-                </Panel>
-              )}
+              {tab === "updates" && <UpdatesTab projectId={row.id} />}
               {tab === "repositories" && (
                 <Panel title="Repositories" icon={GitBranch}>
                   <EmptyStateView icon={GitBranch} title="No repositories linked"
@@ -629,6 +622,16 @@ export function ProjectWorkspaceView({ base, projectId }: { base: ProjectBase; p
   );
 }
 
+/** Task 2.2: approved figure, pending entry (shown separately) and the full check-in history. Read-only here. */
+function UpdatesTab({ projectId }: { projectId: string }) {
+  const state = useProgressSummary(projectId);
+  if (state.kind === "loading") return <PageSkeleton variant="list" />;
+  if (state.kind !== "ready") {
+    return <ErrorBanner message="Progress updates could not be loaded." onRetry={state.kind === "error" ? state.retry : undefined} />;
+  }
+  return <ProgressSummaryContent summary={state.data} />;
+}
+
 function OverviewTab({ project }: { project: ProjectDto }) {
   return (
     <>
@@ -647,9 +650,15 @@ function OverviewTab({ project }: { project: ProjectDto }) {
             <Detail label="Time zone" value={project.timezone} />
             <Detail label="Last updated" value={formatDateTime(project.updated_at)} />
           </dl>
-          {project.progress.percent === null && (
+          {project.progress.percent === null ? (
             <p className="mt-3 text-[11px] text-[var(--color-text-muted)]">
-              Not reported: no check-in yet. Prowise never invents a percentage from tasks, time or code activity.
+              Not reported: no approved check-in yet. Prowise never invents a percentage from tasks, time or code activity.
+            </p>
+          ) : (
+            <p className="mt-3 text-[11px] text-[var(--color-text-secondary)]" data-testid="progress-source">
+              {project.progress.percent}% · {project.progress.label}
+              {project.progress.reported_at ? ` · reported ${formatDateTime(project.progress.reported_at)}` : ""}.
+              See Updates for any check-in waiting for approval.
             </p>
           )}
         </Panel>

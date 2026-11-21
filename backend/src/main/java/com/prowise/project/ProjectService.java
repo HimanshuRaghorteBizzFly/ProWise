@@ -38,6 +38,7 @@ import com.prowise.common.api.CursorPage;
 import com.prowise.common.change.ChangeRecorder;
 import com.prowise.common.persistence.ExpectedVersion;
 import com.prowise.identity.AuthPrincipal;
+import com.prowise.domain.IndividualProgress;
 
 /**
  * Task 2.1 (FR-009 / T09, FR-011 / T11): project records.
@@ -366,7 +367,9 @@ public class ProjectService {
                           AND rp.permission_key = 'project.read' AND (g.expires_at IS NULL OR g.expires_at > now()))
                       OR (? AND (p.accountable_membership_id = ? OR p.project_manager_membership_id = ?
                           OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.org_id = p.org_id
-                                     AND pm.membership_id = ?))))
+                                     AND pm.membership_id = ?)
+                          OR EXISTS (SELECT 1 FROM teams lt WHERE lt.id = p.team_id AND lt.org_id = p.org_id
+                                     AND lt.lead_membership_id = ?))))
                 """);
         args.add(access.portfolio());
         args.add(access.userId());
@@ -374,6 +377,7 @@ public class ProjectService {
         args.add(access.membershipId());
         args.add(access.membershipId());
         args.add(access.membershipId());
+        args.add(access.membershipId()); // task 2.2: the lead of the project's team reads it (to approve check-ins)
     }
 
     /** One readable project, or 404 with no metadata (and a security evidence row). */
@@ -399,7 +403,7 @@ public class ProjectService {
                    p.project_manager_membership_id, pmu.email AS pm_email,
                    p.accountable_membership_id, acu.email AS accountable_email,
                    p.team_id, t.name AS team_name, p.start_on, p.target_on, p.timezone, p.active_baseline_id,
-                   p.last_progress_percent, p.version, p.created_at, p.updated_at,
+                   p.last_progress_percent, p.last_reported_at, p.version, p.created_at, p.updated_at,
                    (SELECT count(*) FROM work_items w WHERE w.org_id = p.org_id AND w.project_id = p.id) AS task_count
             FROM projects p
             LEFT JOIN memberships pmm ON pmm.id = p.project_manager_membership_id AND pmm.org_id = p.org_id
@@ -412,7 +416,7 @@ public class ProjectService {
     private record Row(String id, String key, String name, String description, String mode, String lifecycle,
             boolean archived, String priority, PersonRef projectManager, PersonRef accountable, UUID teamId,
             String teamName, LocalDate startOn, LocalDate targetOn, String timezone, UUID activeBaselineId,
-            BigDecimal percent, long version, Instant createdAt, Instant updatedAt, long taskCount, String sortName) {}
+            BigDecimal percent, Instant reportedAt, long version, Instant createdAt, Instant updatedAt, long taskCount, String sortName) {}
 
     private static Row row(ResultSet rs) throws SQLException {
         UUID pm = rs.getObject("project_manager_membership_id", UUID.class);
@@ -423,7 +427,7 @@ public class ProjectService {
                 accountable == null ? null : new PersonRef(accountable, rs.getString("accountable_email")),
                 rs.getObject("team_id", UUID.class), rs.getString("team_name"), localDate(rs, "start_on"),
                 localDate(rs, "target_on"), rs.getString("timezone"), rs.getObject("active_baseline_id", UUID.class),
-                rs.getBigDecimal("last_progress_percent"), rs.getLong("version"), rs.getTimestamp("created_at").toInstant(),
+                rs.getBigDecimal("last_progress_percent"), instant(rs, "last_reported_at"), rs.getLong("version"), rs.getTimestamp("created_at").toInstant(),
                 rs.getTimestamp("updated_at").toInstant(), rs.getLong("task_count"), rs.getString("sort_name"));
     }
 
@@ -448,7 +452,7 @@ public class ProjectService {
                     || permissions.canOnProject(authentication, organizationId, r.id(), PermissionKey.PROJECT_EDIT.value()));
             Progress progress = r.percent() == null
                     ? new Progress(null, NOT_REPORTED, null)
-                    : new Progress(r.percent(), "INDIVIDUAL".equals(r.mode()) ? "Developer reported" : "Calculated", null);
+                    : new Progress(r.percent(), "INDIVIDUAL".equals(r.mode()) ? IndividualProgress.LABEL : "Calculated", r.reportedAt());
             return new ProjectResponse(r.id(), r.key(), r.name(), r.description(), r.mode(), r.lifecycle(), r.archived(),
                     r.priority(), r.projectManager(), r.accountable(), members.getOrDefault(r.id(), List.of()), r.teamId(),
                     r.teamName(), r.startOn(), r.targetOn(), r.timezone(), r.activeBaselineId(), r.taskCount(), progress,
@@ -599,6 +603,11 @@ public class ProjectService {
     private static LocalDate localDate(ResultSet rs, String column) throws SQLException {
         Date value = rs.getDate(column);
         return value == null ? null : value.toLocalDate();
+    }
+
+    private static Instant instant(ResultSet rs, String column) throws SQLException {
+        Timestamp value = rs.getTimestamp(column);
+        return value == null ? null : value.toInstant();
     }
 
     private static ApiException duplicateKey() {

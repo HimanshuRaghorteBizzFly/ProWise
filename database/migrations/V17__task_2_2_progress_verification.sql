@@ -1,5 +1,5 @@
 -- ==============================================================================
--- ProWise Database Migration: V14__task_2_2_progress_verification.sql
+-- ProWise Database Migration: V17__task_2_2_progress_verification.sql
 -- Task 2.2: Developer Progress & Team Lead Verification
 -- - projects.require_verification, last_progress_method, last_reported_at
 -- - project_progress_checkins: revision_of, revision_seq, method, evidence, review_comment,

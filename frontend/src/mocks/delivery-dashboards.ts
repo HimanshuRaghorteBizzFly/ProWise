@@ -196,15 +196,6 @@ export interface Evidence {
   stats: { label: string; value: string }[];
 }
 
-export interface ActivityItem {
-  id: string;
-  actorId: string;
-  action: string;
-  target: string;
-  at: string;
-  tone: "info" | "success" | "warning" | "danger" | "violet";
-}
-
 /* ----------------------------------------------------------------------------
  * Viewers (the signed-in person for each role)
  * ------------------------------------------------------------------------- */
@@ -463,25 +454,6 @@ export const EVIDENCE: Evidence[] = [
 ];
 
 /* ----------------------------------------------------------------------------
- * Activity feeds
- * ------------------------------------------------------------------------- */
-
-export const MANAGER_ACTIVITY: ActivityItem[] = [
-  { id: "ma-1", actorId: "p-aisha", action: "raised a critical blocker on", target: "ATL-103 Tax provider adapter retries", at: "2026-11-20T09:05:00Z", tone: "danger" },
-  { id: "ma-2", actorId: "p-elena", action: "approved review", target: "RV-2021 Billing alerts in Grafana", at: "2026-11-19T15:30:00Z", tone: "success" },
-  { id: "ma-3", actorId: "p-omar", action: "requested more time on", target: "Cobalt · Ingestion pipelines", at: "2026-11-19T11:20:00Z", tone: "warning" },
-  { id: "ma-4", actorId: "p-hana", action: "completed milestone", target: "Beacon · Offline appointments", at: "2026-11-18T16:00:00Z", tone: "success" },
-  { id: "ma-5", actorId: "p-priya", action: "submitted scope change", target: "SC-033 CSV export of shipment history", at: "2026-11-18T10:10:00Z", tone: "violet" },
-];
-
-export const LEAD_ACTIVITY: ActivityItem[] = [
-  { id: "la-1", actorId: "p-sofia", action: "submitted a check-in", target: "Document previews working", at: "2026-11-20T09:40:00Z", tone: "success" },
-  { id: "la-2", actorId: "p-yuki", action: "moved to In progress", target: "EMB-501 SAML assertion validation", at: "2026-11-20T08:45:00Z", tone: "info" },
-  { id: "la-3", actorId: "p-liam", action: "sent for review", target: "EMB-503 Session revocation", at: "2026-11-19T19:05:00Z", tone: "violet" },
-  { id: "la-4", actorId: "p-diego", action: "flagged a blocker on", target: "ATL-108 Credit note workflow", at: "2026-11-19T15:10:00Z", tone: "danger" },
-];
-
-/* ----------------------------------------------------------------------------
  * Chart series
  * ------------------------------------------------------------------------- */
 
@@ -492,14 +464,6 @@ export const MANAGER_THROUGHPUT = [
   { label: "W44", primary: 19, secondary: 4 },
   { label: "W45", primary: 16, secondary: 6 },
   { label: "W46", primary: 21, secondary: 5 },
-];
-
-export const LEAD_DAILY_COMPLETION = [
-  { label: "Mon", primary: 4, secondary: 1 },
-  { label: "Tue", primary: 6, secondary: 2 },
-  { label: "Wed", primary: 3, secondary: 1 },
-  { label: "Thu", primary: 7, secondary: 0 },
-  { label: "Fri", primary: 2, secondary: 1 },
 ];
 
 export const REVIEWER_WEEKLY_OUTCOMES = [

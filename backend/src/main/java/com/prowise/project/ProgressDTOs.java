@@ -2,70 +2,31 @@ package com.prowise.project;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+
 import com.fasterxml.jackson.annotation.JsonAlias;
-import jakarta.validation.constraints.DecimalMax;
-import jakarta.validation.constraints.DecimalMin;
+
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
-public class ProgressDTOs {
+/** Task 2.2 request and response shapes (JSON is snake_case globally). */
+public final class ProgressDTOs {
 
-    public record EvidenceItemDTO(
-            String type, // "COMMIT", "PR", "LINK"
-            String url,
-            String title,
-            String sha,
-            @JsonAlias({"pr_number", "prNumber"})
-            Integer prNumber,
-            @JsonAlias({"repo_name", "repoName"})
-            String repoName
-    ) {}
+    private ProgressDTOs() {}
 
-    public record CheckInSubmissionRequest(
-            @NotNull(message = "percent is required")
-            @DecimalMin(value = "0.00", message = "percent cannot be negative")
-            @DecimalMax(value = "100.00", message = "percent cannot exceed 100")
+    /** A check-in or a correction. Every submission is a new PENDING entry; nothing is edited. */
+    public record CheckInRequest(
             BigDecimal percent,
-
-            @NotBlank(message = "accomplished is required")
             String accomplished,
-
-            @NotBlank(message = "next_steps is required")
-            @JsonAlias({"next_steps", "nextSteps"})
-            String nextSteps,
-
+            @JsonAlias("nextSteps") String nextSteps,
             String blockers,
-
-            @JsonAlias({"projected_finish", "projectedFinish"})
-            Instant projectedFinish,
-
-            @JsonAlias({"downward_reason", "downwardReason"})
-            String downwardReason,
-
-            @JsonAlias({"revision_of", "revisionOf"})
-            String revisionOf,
-
+            @JsonAlias("projectedFinish") LocalDate projectedFinish,
             String evidence,
+            @JsonAlias("downwardReason") String downwardReason) {}
 
-            @JsonAlias({"evidence_items", "evidenceItems"})
-            List<EvidenceItemDTO> evidenceItems,
-
-            @JsonAlias({"idempotency_key", "idempotencyKey"})
-            String idempotencyKey
-    ) {}
-
-    public record VerificationDecisionRequest(
-            @NotBlank(message = "decision is required (APPROVE, REQUEST_CHANGES, REJECT)")
-            String decision,
-            String comment
-    ) {}
-
-    public record ToggleVerificationRequest(
-            @JsonAlias({"require_verification", "requireVerification"})
-            boolean requireVerification
-    ) {}
+    /** Team Lead decision on a pending entry: APPROVE or REJECT (a rejection needs a reason). */
+    public record DecisionRequest(String decision, String reason, Long expectedVersion) {}
 
     public record AttachRepoRequest(
             @NotBlank(message = "repo_name is required")
@@ -75,53 +36,50 @@ public class ProgressDTOs {
             String defaultBranch
     ) {}
 
-    public record CheckInResponse(
+    public record PersonRef(UUID userId, String email) {}
+
+    /** One stored entry: what was reported, by whom and when, with how (method) and its decision. */
+    public record CheckIn(
             String id,
-            UUID orgId,
             String projectId,
-            String projectKey,
-            String projectName,
-            String authorId,
-            String authorName,
-            String revisionOf,
             int revisionSeq,
+            String revisionOf,
             BigDecimal percent,
             String accomplished,
             String nextSteps,
             String blockers,
-            Instant projectedFinish,
+            LocalDate projectedFinish,
+            String evidence,
             String downwardReason,
             String status,
             String method,
-            String evidence,
-            List<EvidenceItemDTO> evidenceItems,
-            String verifiedBy,
-            String reviewComment,
-            Instant reviewedAt,
-            Instant capturedAt,
-            Instant createdAt,
-            long version
-    ) {}
+            String label,
+            PersonRef author,
+            Instant submittedAt,
+            PersonRef decidedBy,
+            Instant decidedAt,
+            String decisionReason,
+            long version) {}
 
-    public record ProgressSummaryResponse(
+    /** The approved figure; percent null and label "Not reported" when nothing is approved yet. */
+    public record Figure(BigDecimal percent, String label, String method, Instant reportedAt, Instant approvedAt,
+            String checkinId) {}
+
+    public record ProgressSummary(
             String projectId,
             String projectKey,
             String projectName,
             String mode,
-            BigDecimal currentPercent,
-            String currentMethod,
-            Instant lastReportedAt,
-            boolean requireVerification,
-            CheckInResponse latestAcceptedCheckIn,
-            CheckInResponse pendingCheckIn,
-            List<CheckInResponse> history
-    ) {}
+            String lifecycle,
+            boolean archived,
+            Figure current,
+            CheckIn pending,
+            PersonRef approver,
+            String approverNote,
+            boolean canSubmit,
+            boolean canDecide,
+            List<CheckIn> history) {}
 
-    public record PendingReviewResponse(
-            CheckInResponse checkin,
-            String projectKey,
-            String projectName,
-            String authorName,
-            BigDecimal previousAcceptedPercent
-    ) {}
+    public record PendingReview(String projectId, String projectKey, String projectName, Figure current,
+            CheckIn checkin) {}
 }

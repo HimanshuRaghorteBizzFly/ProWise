@@ -470,10 +470,10 @@ public class CalendarCadenceService {
         if ("SUPERSEDED".equalsIgnoreCase(occ.getStatus())) return "SUPERSEDED";
         if ("EXCUSED".equalsIgnoreCase(occ.getStatus())) return "EXCUSED";
 
-        // Check if check-in was recorded for this window
+        // Check if a check-in was submitted for this window (task 2.2: submissions start PENDING; the developer
+        // reported on time even while the Team Lead decision is outstanding)
         Optional<ProjectCheckInEntity> checkin = checkInRepository
-                .findTop1ByOrgIdAndProjectIdAndStatusOrderByRevisionSeqDescCreatedAtDesc(
-                        occ.getOrgId(), occ.getProjectId(), "ACCEPTED");
+                .findTop1ByOrgIdAndProjectIdOrderByRevisionSeqDescCreatedAtDesc(occ.getOrgId(), occ.getProjectId());
 
         if (checkin.isPresent() && checkin.get().getCapturedAt().isAfter(occ.getCutoffInstant().minus(Duration.ofDays(7)))) {
             // Checkin completed

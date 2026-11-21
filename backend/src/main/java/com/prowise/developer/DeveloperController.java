@@ -34,10 +34,13 @@ public class DeveloperController {
 
     private final DeveloperService developerService;
     private final DeveloperAccess access;
+    private final com.prowise.project.ProgressService progressService;
 
-    public DeveloperController(DeveloperService developerService, DeveloperAccess access) {
+    public DeveloperController(DeveloperService developerService, DeveloperAccess access,
+            com.prowise.project.ProgressService progressService) {
         this.developerService = developerService;
         this.access = access;
+        this.progressService = progressService;
     }
 
     private Actor actor(Authentication auth) {
@@ -134,11 +137,15 @@ public class DeveloperController {
     // 4. Check-Ins (Individual Mode)
     @PostMapping({"/v1/developer/check-ins", "/api/v1/developer/check-ins"})
     @PreAuthorize(MEMBER)
-    @Operation(summary = "Submit an authoritative percentage check-in for individual mode")
-    public ResponseEntity<ProjectCheckInEntity> submitCheckIn(
+    @Operation(summary = "Submit an Individual check-in (same rules as POST /v1/projects/{id}/checkins: starts PENDING)")
+    public ResponseEntity<com.prowise.project.ProgressDTOs.CheckIn> submitCheckIn(
             @RequestBody DeveloperDTOs.CheckInSubmissionRequest req,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             Authentication auth) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(developerService.submitCheckIn(actor(auth), "Developer", req));
+        // Task 2.2: one write path. The project's figure changes only when the Team Lead approves.
+        return ResponseEntity.status(HttpStatus.CREATED).body(progressService.submit(auth, req.projectId(),
+                new com.prowise.project.ProgressDTOs.CheckInRequest(req.percent(), req.accomplished(), req.nextSteps(),
+                        req.blockers(), null, null, null), idempotencyKey));
     }
 
     @GetMapping({"/v1/developer/projects/{projectId}/check-ins", "/api/v1/developer/projects/{projectId}/check-ins"})

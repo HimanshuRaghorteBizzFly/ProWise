@@ -1,5 +1,5 @@
--- Task 2.1: Project records, lifecycle, date history, and memberships
--- Supports Individual and Structured project modes, org isolation, and audit trails.
+-- Retired unapplied migration. Superseded by V15__task_2_1_project_records.sql.
+-- Kept for historical reference; the .disabled suffix excludes it from Flyway.
 
 -- 1. Upgrade projects table with versioning, lifecycle history, and explicit accountable developer.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0;

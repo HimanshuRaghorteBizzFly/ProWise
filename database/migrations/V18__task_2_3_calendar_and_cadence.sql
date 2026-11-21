@@ -1,4 +1,4 @@
--- Flyway Migration V15: Task 2.3 Working Calendar, Cadence, Deadlines & Occurrences
+-- Flyway Migration V18: Task 2.3 Working Calendar, Cadence, Deadlines & Occurrences
 
 -- 1. Organization Calendar
 CREATE TABLE IF NOT EXISTS org_calendar (
@@ -41,6 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_project_cadence_org ON project_cadence (org_id);
 INSERT INTO project_cadence (project_id, org_id, frequency, day_of_week, local_cutoff_time, grace_working_days)
 SELECT id, org_id, 'WEEKLY', 'FRIDAY', '17:00', 1
 FROM projects
+WHERE org_id IS NOT NULL
 ON CONFLICT (project_id) DO NOTHING;
 
 -- 3. Due Occurrences (Check-in Cadence & Target Deadlines)

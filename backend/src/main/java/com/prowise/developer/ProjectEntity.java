@@ -59,8 +59,9 @@ public class ProjectEntity {
     @Column(name = "calendar_ref", length = 64)
     private String calendarRef;
 
-    @Column(name = "active_baseline_id", length = 64)
-    private String activeBaselineId;
+    /** uuid column (V15); owned by scope approval, so this legacy entity only reads it. */
+    @Column(name = "active_baseline_id", insertable = false, updatable = false)
+    private UUID activeBaselineId;
 
     @Column(name = "team_ids", columnDefinition = "TEXT")
     private String teamIds;
@@ -89,7 +90,7 @@ public class ProjectEntity {
     private boolean requireVerification = false;
 
     @Column(name = "last_progress_method", length = 40)
-    private String lastProgressMethod = "DEVELOPER_REPORTED";
+    private String lastProgressMethod = "developer_reported";
 
     @Column(name = "last_reported_at")
     private Instant lastReportedAt;
@@ -151,8 +152,7 @@ public class ProjectEntity {
     }
     public String getCalendarRef() { return calendarRef; }
     public void setCalendarRef(String calendarRef) { this.calendarRef = calendarRef; }
-    public String getActiveBaselineId() { return activeBaselineId; }
-    public void setActiveBaselineId(String activeBaselineId) { this.activeBaselineId = activeBaselineId; }
+    public String getActiveBaselineId() { return activeBaselineId == null ? null : activeBaselineId.toString(); }
     public String getTeamIds() { return teamIds; }
     public void setTeamIds(String teamIds) { this.teamIds = teamIds; }
     public String getMemberIds() { return memberIds; }

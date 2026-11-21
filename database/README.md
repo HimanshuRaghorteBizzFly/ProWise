@@ -13,6 +13,11 @@ Never edit an applied migration. Add a new migration instead, using:
 
 Every tenant table must include `org_id`, `version`, `created_at`, and `updated_at`.
 
+The unapplied legacy project migration is retained under `migrations/retired/` with a `.disabled`
+suffix; its schema is superseded by V15, with required compatibility columns added in V16. Pending
+progress, calendar, and delivery migrations continue at V17 through V19 to avoid reusing applied
+version numbers.
+
 ## Backup and restore
 
 Set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD` (or use their documented defaults), then run:

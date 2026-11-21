@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.security.access.prepost.PreAuthorize;
+import com.prowise.org.OrganizationService;
 
 @RestController
 @RequestMapping({"/v1", "/api"})
@@ -34,9 +35,10 @@ public class AuthController {
 
     @PostMapping("/auth/signup")
     @PreAuthorize("permitAll()")
-    @Operation(summary = "Create an identity and start a session")
-    public ResponseEntity<AccessTokenResponse> signup(@RequestBody Credentials request) {
-        return withRefreshCookie(authService.signup(request.email(), request.password()), 201);
+    @Operation(summary = "Create an organization owner and workspace, then start a session")
+    public ResponseEntity<AccessTokenResponse> signup(@RequestBody SignupRequest request) {
+        return withRefreshCookie(authService.signup(request.email(), request.password(), request.name(),
+                request.organization()), 201);
     }
 
     @PostMapping("/auth/signin")
@@ -160,6 +162,8 @@ public class AuthController {
         return authService.me(AuthPrincipal.require(request).userId());
     }
 
+    public record SignupRequest(String email, String password, String name,
+            OrganizationService.CreateOrganizationRequest organization) {}
     public record Credentials(String email, String password) {}
     public record RefreshRequest(String refreshToken) {}
     public record EmailRequest(String email) {}

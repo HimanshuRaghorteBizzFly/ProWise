@@ -22,6 +22,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   "project.scope.change": "Change approved scope",
   "project.deadline.edit": "Edit deadlines",
   "project.progress.report": "Report Individual progress (accountable developer)",
+  "project.progress.verify": "Approve or reject Individual check-ins (team lead)",
   "project.progress.override": "Override progress",
   "task.create": "Create tasks",
   "task.assign": "Assign tasks",

@@ -27,7 +27,7 @@ describe("Access Map", () => {
   it("summarises allowed and denied counts for the owner", () => {
     const markup = render();
     expect(markup).toContain("21 allowed");
-    expect(markup).toContain("1 denied");
+    expect(markup).toContain("2 denied"); // progress override (every role) and check-in approval (Team Lead only, task 2.2)
   });
 
   it("explains that progress override is denied to every role", () => {
@@ -37,7 +37,7 @@ describe("Access Map", () => {
   it("explains missing grants for the admin and keeps owner-only actions denied", () => {
     const markup = render({ family: "admin", grants: FIXTURE_GRANTS.ORGANIZATION_ADMIN, isCurrentOwner: false });
     expect(markup).toContain("10 allowed");
-    expect(markup).toContain("12 denied");
+    expect(markup).toContain("13 denied");
     expect(markup).toContain("Not granted to your active membership");
     expect(markup).toContain("Transfer ownership");
     expect(markup).toContain("Only the current owner with org.manage");

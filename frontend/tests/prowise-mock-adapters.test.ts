@@ -104,7 +104,7 @@ describe("Prowise single mock dataset", () => {
         .map((grant) => grant.key)
         .sort();
 
-    expect(orgKeys("ORGANIZATION_OWNER")).toEqual(PERMISSION_KEYS.filter((key) => key !== "project.progress.override").slice().sort());
+    expect(orgKeys("ORGANIZATION_OWNER")).toEqual(PERMISSION_KEYS.filter((key) => key !== "project.progress.override" && key !== "project.progress.verify").slice().sort());
     expect(orgKeys("ORGANIZATION_ADMIN")).toEqual([
       "audit.read", "member.disable", "member.invite", "project.create", "project.read",
       "repo.connect", "repo.read", "report.export", "role.manage", "team.manage",

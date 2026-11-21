@@ -17,7 +17,7 @@
 ## Permission keys
 - Org/people: `org.manage`, `member.invite`, `member.disable`, `role.manage`, `team.manage` (owner transfer separately restricted)
 - Project/scope: `project.create`, `project.read`, `project.edit`, `project.archive`, `project.mode.change`, `project.scope.change`, `project.deadline.edit`
-- Work/progress: `project.progress.report` (accountable developer, Individual mode only), `project.progress.override` (separate correction/decision entry), `task.create`, `task.assign`, `task.update`, `task.review`
+- Work/progress: `project.progress.report` (accountable developer, Individual mode only), `project.progress.verify` (approve or reject a pending Individual check-in; lead of the project's team only, never their own entry; task 2.2), `project.progress.override` (separate correction/decision entry), `task.create`, `task.assign`, `task.update`, `task.review`
 - Private resources: `repo.connect`, `repo.read`, `report.export`, `audit.read`, plus separate closure and waiver rights
 
 Grants have scope ORG or PROJECT (+ scopeId). A grant on project A authorizes nothing on private project B.

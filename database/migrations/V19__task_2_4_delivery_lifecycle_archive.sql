@@ -1,4 +1,4 @@
--- Flyway Migration V16: Task 2.4 Deliver, Close, Archive & Restore
+-- Flyway Migration V19: Task 2.4 Deliver, Close, Archive & Restore
 
 -- 1. Acceptance Requests
 CREATE TABLE IF NOT EXISTS acceptance_requests (

@@ -8,126 +8,92 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prowise.developer.DeveloperAccess;
-import com.prowise.developer.DeveloperAccess.Actor;
+import com.prowise.common.api.IdempotencyFilter;
 import com.prowise.developer.GitHubActivityEntity;
-import com.prowise.project.ProgressDTOs.*;
+import com.prowise.project.ProgressDTOs.AttachRepoRequest;
+import com.prowise.project.ProgressDTOs.CheckIn;
+import com.prowise.project.ProgressDTOs.CheckInRequest;
+import com.prowise.project.ProgressDTOs.DecisionRequest;
+import com.prowise.project.ProgressDTOs.PendingReview;
+import com.prowise.project.ProgressDTOs.ProgressSummary;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 
+/**
+ * Task 2.2: check-ins and Team Lead approval. Routes only check the org-bound token membership here;
+ * ProgressService applies the project read rule (404), the accountable-developer rule and the team-lead rule.
+ */
 @RestController
-@RequestMapping
-@Tag(name = "Project Progress & Verification", description = "Endpoints for Individual progress check-ins, append-only corrections, and Team Lead verification")
+@Tag(name = "Project progress", description = "Individual check-ins, append-only corrections and Team Lead approval")
 public class ProgressController {
 
     private static final String MEMBER = "@permissionService.tokenOrgMember(authentication)";
 
-    private final ProgressService progressService;
-    private final DeveloperAccess access;
+    private final ProgressService progress;
 
-    public ProgressController(ProgressService progressService, DeveloperAccess access) {
-        this.progressService = progressService;
-        this.access = access;
+    public ProgressController(ProgressService progress) {
+        this.progress = progress;
     }
 
-    private Actor actor(Authentication auth) {
-        return access.actor(auth);
-    }
-
-    // 1. Submit progress check-in (T17, T18, AS-01)
     @PostMapping({"/v1/projects/{projectId}/checkins", "/api/v1/projects/{projectId}/checkins"})
     @PreAuthorize(MEMBER)
-    @Operation(summary = "Submit developer progress check-in (accountable developer only)")
-    public ResponseEntity<CheckInResponse> submitCheckIn(
-            @PathVariable String projectId,
-            @Valid @RequestBody CheckInSubmissionRequest request,
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-            Authentication auth) {
-        CheckInResponse response = progressService.submitCheckIn(actor(auth), projectId, request, idempotencyKey);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    @Operation(summary = "Submit a check-in or correction (accountable developer). Starts PENDING; replay-safe with Idempotency-Key")
+    public ResponseEntity<CheckIn> submit(@PathVariable String projectId, @RequestBody CheckInRequest request,
+            @RequestHeader(value = IdempotencyFilter.HEADER, required = false) String idempotencyKey,
+            Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(progress.submit(authentication, projectId, request, idempotencyKey));
     }
 
-    // 2. Get project check-in history
-    @GetMapping({"/v1/projects/{projectId}/checkins", "/api/v1/projects/{projectId}/checkins"})
+    @GetMapping({"/v1/projects/{projectId}/checkins", "/api/v1/projects/{projectId}/checkins",
+            "/v1/projects/{projectId}/progress-history", "/api/v1/projects/{projectId}/progress-history"})
     @PreAuthorize(MEMBER)
-    @Operation(summary = "Get immutable progress check-in history for a project")
-    public List<CheckInResponse> getProjectCheckIns(
-            @PathVariable String projectId,
-            Authentication auth) {
-        return progressService.getProjectCheckIns(actor(auth), projectId);
+    @Operation(summary = "All check-ins of a project, newest first, with author, time, method and status")
+    public List<CheckIn> history(@PathVariable String projectId, Authentication authentication) {
+        return progress.history(authentication, projectId);
     }
 
-    // 3. Get progress summary (latest accepted, pending, and current progress)
     @GetMapping({"/v1/projects/{projectId}/checkins/summary", "/api/v1/projects/{projectId}/checkins/summary"})
     @PreAuthorize(MEMBER)
-    @Operation(summary = "Get project progress summary with current accepted and pending values")
-    public ProgressSummaryResponse getProgressSummary(
-            @PathVariable String projectId,
-            Authentication auth) {
-        return progressService.getProjectProgressSummary(actor(auth), projectId);
+    @Operation(summary = "Approved figure (or Not reported), the pending entry, the approver and what the caller may do")
+    public ProgressSummary summary(@PathVariable String projectId, Authentication authentication) {
+        return progress.summary(authentication, projectId);
     }
 
-    // 4. Verify check-in (Team Lead / Reviewer decision)
-    @PostMapping({"/v1/checkins/{checkinId}/verify", "/api/v1/checkins/{checkinId}/verify"})
+    @PostMapping({"/v1/checkins/{checkinId}/decision", "/api/v1/checkins/{checkinId}/decision"})
     @PreAuthorize(MEMBER)
-    @Operation(summary = "Verify or request changes on a developer progress check-in")
-    public CheckInResponse verifyCheckIn(
-            @PathVariable String checkinId,
-            @Valid @RequestBody VerificationDecisionRequest request,
-            Authentication auth) {
-        return progressService.verifyCheckIn(actor(auth), checkinId, request);
+    @Operation(summary = "Approve or reject a pending check-in (lead of the project's team, project.progress.verify, not own)")
+    public CheckIn decide(@PathVariable String checkinId, @RequestBody DecisionRequest request,
+            Authentication authentication) {
+        return progress.decide(authentication, checkinId, request);
     }
 
-    // 5. Team Lead pending reviews queue
     @GetMapping({"/v1/organizations/{orgId}/reviews/pending", "/api/v1/organizations/{orgId}/reviews/pending"})
-    @PreAuthorize(MEMBER)
-    @Operation(summary = "Get pending progress check-ins awaiting verification across the organization")
-    public List<PendingReviewResponse> getPendingReviews(
-            @PathVariable UUID orgId,
-            Authentication auth) {
-        return progressService.getPendingReviews(actor(auth), orgId);
+    @PreAuthorize("@permissionService.member(authentication, #orgId)")
+    @Operation(summary = "The caller's approval queue: pending check-ins of projects whose team they lead")
+    public List<PendingReview> pending(@PathVariable UUID orgId, Authentication authentication) {
+        return progress.pendingQueue(authentication, orgId);
     }
 
-    // 6. GitHub activity for project / repos
     @GetMapping({"/v1/projects/{projectId}/github-activity", "/api/v1/projects/{projectId}/github-activity"})
     @PreAuthorize(MEMBER)
-    @Operation(summary = "Get GitHub commits and pull requests for project evidence")
-    public List<GitHubActivityEntity> getGitHubActivity(
-            @PathVariable String projectId,
-            Authentication auth) {
-        return progressService.getGitHubActivity(actor(auth), projectId);
+    @Operation(summary = "Repository events of a project (evidence only; never sets progress)")
+    public List<GitHubActivityEntity> gitHubActivity(@PathVariable String projectId, Authentication authentication) {
+        return progress.gitHubActivity(authentication, projectId);
     }
 
-    // 7. Link repository to project
     @PostMapping({"/v1/projects/{projectId}/repositories", "/api/v1/projects/{projectId}/repositories"})
     @PreAuthorize(MEMBER)
-    @Operation(summary = "Link a GitHub repository to a project")
-    public ResponseEntity<Void> linkRepository(
-            @PathVariable String projectId,
-            @Valid @RequestBody AttachRepoRequest request,
-            Authentication auth) {
-        progressService.linkRepository(actor(auth), projectId, request);
+    @Operation(summary = "Link a repository to a project")
+    public ResponseEntity<Void> linkRepository(@PathVariable String projectId, @RequestBody AttachRepoRequest request,
+            Authentication authentication) {
+        progress.linkRepository(authentication, projectId, request);
         return ResponseEntity.status(HttpStatus.CREATED).build();
-    }
-
-    // 8. Toggle project verification requirement
-    @PatchMapping({"/v1/projects/{projectId}/settings/verification", "/api/v1/projects/{projectId}/settings/verification"})
-    @PreAuthorize(MEMBER)
-    @Operation(summary = "Toggle verification requirement for project check-ins")
-    public ResponseEntity<Void> setRequireVerification(
-            @PathVariable String projectId,
-            @RequestBody ToggleVerificationRequest request,
-            Authentication auth) {
-        progressService.setRequireVerification(actor(auth), projectId, request.requireVerification());
-        return ResponseEntity.noContent().build();
     }
 }

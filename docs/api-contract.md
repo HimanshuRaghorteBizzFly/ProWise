@@ -8,6 +8,12 @@
 - Lists: cursor pagination, deterministic order with unique ID tiebreaker. Pagination never bypasses filter or scope.
 - Authenticated account decides eligible org scope. Never accept trusted `org_id` in a body.
 
+## Identity and authentication
+| Method + path | Permission and behavior |
+|---|---|
+| POST `/auth/signup` | Public: email, password, name, and optionally organization name/slug/timezone/calendar (older clients receive a generated UTC workspace). Create the user, organization, owner membership/grant, audit/outbox records, and org-bound session in one transaction. The public request cannot assign a role; the registrant is always an Organization Owner. |
+| POST `/auth/signin` | Public: email and password. Create a session bound to the user's active organization, except platform administrators, which remain unbound. |
+
 ## Workspace and projects
 | Method + path | Permission and behavior |
 |---|---|
