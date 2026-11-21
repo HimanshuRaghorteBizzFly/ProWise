@@ -41,7 +41,7 @@ export function DeliveryReviewModal({
 
   if (!isOpen) return null;
 
-  const isSelfReview = currentUserId && (currentUserId === request.created_by || currentUserId === project.accountableDeveloperId);
+  const isSelfReview = Boolean(currentUserId && currentUserId === request.created_by);
 
   const openCriticalBlockers = blockers.filter(
     (b) => b.severity === "CRITICAL" && b.status === "OPEN" && !b.waiver
@@ -100,7 +100,7 @@ export function DeliveryReviewModal({
               <span className="text-blue-400">📋</span> Review Delivery Acceptance
             </h2>
             <p className="text-xs text-zinc-400 mt-1">
-              Project <span className="text-zinc-200 font-semibold">{project.name}</span> ({project.key}) · Submitted by {request.created_by_name || request.created_by}
+              Project <span className="text-zinc-200 font-semibold">{project.name}</span> ({project.key}) · Submitted by {request.created_by_name ?? request.created_by ?? "Unknown"}
             </p>
           </div>
           <button
@@ -229,14 +229,18 @@ export function DeliveryReviewModal({
                   <span className="font-semibold text-zinc-400 uppercase text-[10px] px-1.5 py-0.5 bg-zinc-800 rounded">
                     {ev.type}
                   </span>
-                  <a
-                    href={ev.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue-400 hover:underline truncate flex-1"
-                  >
-                    {ev.title || ev.url}
-                  </a>
+                  {ev.url ? (
+                    <a
+                      href={ev.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-400 hover:underline truncate flex-1"
+                    >
+                      {ev.title ?? ev.url}
+                    </a>
+                  ) : (
+                    <span className="text-zinc-300 truncate flex-1">{ev.title ?? ev.reference ?? "Evidence"}</span>
+                  )}
                 </div>
               ))}
             </div>

@@ -41,7 +41,7 @@ export function DeliveryAcceptanceModal({
     { type: "PR", title: "Final Deliverable PR", url: "", reference: "" },
   ]);
   const [boundCheckinId, setBoundCheckinId] = useState<string>(
-    () => checkins.find((c) => c.percent >= 100)?.id || ""
+    () => checkins.find((checkin) => checkin.status === "APPROVED" && checkin.percent >= 100)?.id || ""
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +84,7 @@ export function DeliveryAcceptanceModal({
         bound_checkin_id: boundCheckinId || undefined,
         checklist,
         evidence_summary: evidenceSummary.trim() || undefined,
-        evidence_items: evidenceItems.filter((item) => item.url.trim() !== ""),
+        evidence_items: evidenceItems.filter((item) => (item.url ?? "").trim() !== ""),
       });
       onClose();
     } catch (err: unknown) {
@@ -135,10 +135,10 @@ export function DeliveryAcceptanceModal({
             >
               <option value="">-- Select 100% Check-in (Optional) --</option>
               {checkins
-                .filter((c) => c.percent >= 100)
+                .filter((checkin) => checkin.status === "APPROVED" && checkin.percent >= 100)
                 .map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.accomplished.slice(0, 40)}... (100% - {new Date(c.captured_at).toLocaleDateString()})
+                    {c.accomplished.slice(0, 40)}... (100% - {new Date(c.submitted_at).toLocaleDateString()})
                   </option>
                 ))}
             </select>
@@ -213,7 +213,7 @@ export function DeliveryAcceptanceModal({
                 <input
                   type="text"
                   placeholder="URL (e.g. https://github.com/.../pull/42)"
-                  value={item.url}
+                  value={item.url ?? ""}
                   onChange={(e) => handleEvidenceItemChange(idx, "url", e.target.value)}
                   className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200"
                 />

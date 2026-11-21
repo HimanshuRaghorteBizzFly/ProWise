@@ -11,6 +11,7 @@ import { FIXTURE_INVITATIONS, FIXTURE_PORTFOLIO, FIXTURE_TEAMS } from "../src/li
 import { FIXTURE_GRANTS } from "../src/lib/fixtures/permissions";
 import { canWithGrants } from "../src/lib/permissions";
 import type { PermissionKey } from "../src/types/permission";
+import type { ProjectDto } from "../src/types/api";
 
 const ORG = "org-acme";
 const NOW = "2026-11-17T12:00:00Z";
@@ -97,16 +98,58 @@ describe("TeamsView", () => {
 
 describe("ProjectsPortfolioView", () => {
   const portfolio = FIXTURE_PORTFOLIO(ORG);
+  const projectDtos: ProjectDto[] = portfolio.projects.map((project) => {
+    const member = (membershipId: string) => {
+      const user = portfolio.users.find((item) => item.id === membershipId);
+      return { membership_id: membershipId, email: user?.email ?? "" };
+    };
+    const notReported = project.lastProgressMethod === "NOT_REPORTED" || project.lastProgressPercent < 0;
+    const teamId = project.teamIds[0] ?? null;
+
+    return {
+      id: project.id,
+      key: project.key,
+      name: project.name,
+      description: project.description || null,
+      mode: project.mode,
+      lifecycle: project.lifecycle,
+      archived: project.archived,
+      priority: project.priority,
+      project_manager: project.projectManagerId ? member(project.projectManagerId) : null,
+      accountable: project.accountableOwnerId ? member(project.accountableOwnerId) : null,
+      members: project.memberIds.map(member),
+      team_id: teamId,
+      team_name: portfolio.teams.find((team) => team.id === teamId)?.name ?? null,
+      start_on: project.startDate || null,
+      target_on: project.targetDate || null,
+      timezone: project.timezone,
+      active_baseline_id: project.activeBaselineId ?? null,
+      task_count: 0,
+      progress: {
+        percent: notReported ? null : project.lastProgressPercent,
+        label: notReported
+          ? "Not reported"
+          : project.lastProgressMethod === "DEVELOPER_REPORTED"
+          ? "Developer reported"
+          : "Calculated baseline",
+        reported_at: project.lastReportedAt ?? null,
+      },
+      can_edit: false,
+      version: project.version,
+      created_at: project.createdAt,
+      updated_at: project.createdAt,
+    };
+  });
   const render = (props: Partial<React.ComponentProps<typeof ProjectsPortfolioView>> = {}) =>
     renderToStaticMarkup(
-      <ProjectsPortfolioView {...portfolio} source="fixture" can={canFor("ORGANIZATION_OWNER")} now={NOW} {...props} />,
+      <ProjectsPortfolioView {...portfolio} projects={projectDtos} source="fixture" can={canFor("ORGANIZATION_OWNER")} now={NOW} {...props} />,
     );
 
   it("lists projects with separate progress methods and no portfolio average", () => {
     const markup = render();
     expect(markup).toContain("EMR-200");
-    expect(markup).toContain("Developer reported (Individual)");
-    expect(markup).toContain("Calculated baseline (Structured)");
+    expect(markup).toContain("Developer reported");
+    expect(markup).toContain("Calculated baseline");
     expect(markup).not.toMatch(/average/i);
   });
 

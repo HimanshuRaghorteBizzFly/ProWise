@@ -2,10 +2,9 @@ import { useState, useCallback, useEffect } from "react";
 import { apiClient, ApiError } from "@/lib/api";
 import type {
   ProjectDto,
-  CreateProjectRequestDto,
-  UpdateProjectRequestDto,
-  ProjectMemberDto,
-  ProjectMemberRequestDto,
+  CreateProjectDto,
+  UpdateProjectDto,
+  PersonRefDto,
 } from "@/types/api";
 import { toast } from "sonner";
 
@@ -13,7 +12,6 @@ export interface ProjectFilters {
   search?: string;
   owner?: string;
   team?: string;
-  health?: string;
   status?: string;
   mode?: string;
   archived?: boolean;
@@ -31,17 +29,28 @@ export function useProjectsApi(orgId: string, initialFilters?: ProjectFilters) {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await apiClient.projects(orgId, {
-        search: filters.search,
+      const query = {
+        q: filters.search,
         owner: filters.owner !== "ALL" ? filters.owner : undefined,
         team: filters.team !== "ALL" ? filters.team : undefined,
-        health: filters.health !== "ALL" ? filters.health : undefined,
         status: filters.status !== "ALL" ? filters.status : undefined,
         mode: filters.mode !== "ALL" ? filters.mode : undefined,
-        archived: filters.archived,
-      });
-      setProjects(res.projects);
-      setTotal(res.totalCount);
+        include_archived: filters.archived,
+        limit: 100,
+      };
+      const items: ProjectDto[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await apiClient.projects(orgId, { ...query, cursor });
+        items.push(...page.items);
+        if (!page.has_more) break;
+        if (!page.next_cursor) {
+          throw new Error("The project API reported more results without a next cursor.");
+        }
+        cursor = page.next_cursor;
+      } while (true);
+      setProjects(items);
+      setTotal(items.length);
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to load projects.";
       setError(msg);
@@ -54,7 +63,7 @@ export function useProjectsApi(orgId: string, initialFilters?: ProjectFilters) {
     fetchProjects();
   }, [fetchProjects]);
 
-  const createProject = async (body: CreateProjectRequestDto): Promise<ProjectDto | null> => {
+  const createProject = async (body: CreateProjectDto): Promise<ProjectDto | null> => {
     try {
       const created = await apiClient.createProject(orgId, body);
       toast.success("Project created successfully", {
@@ -71,10 +80,10 @@ export function useProjectsApi(orgId: string, initialFilters?: ProjectFilters) {
 
   const updateProject = async (
     projectId: string,
-    body: UpdateProjectRequestDto
+    body: UpdateProjectDto
   ): Promise<ProjectDto | null> => {
     try {
-      const updated = await apiClient.updateProject(projectId, body, orgId);
+      const updated = await apiClient.updateProject(orgId, projectId, body);
       toast.success("Project updated", {
         description: `Project "${updated.name}" details updated.`,
       });
@@ -84,36 +93,6 @@ export function useProjectsApi(orgId: string, initialFilters?: ProjectFilters) {
       const msg = err instanceof ApiError ? err.message : "Failed to update project.";
       toast.error("Update failed", { description: msg });
       throw err;
-    }
-  };
-
-  const archiveProject = async (projectId: string, expectedVersion: number): Promise<boolean> => {
-    try {
-      await apiClient.archiveProject(projectId, expectedVersion, orgId);
-      toast.success("Project archived", {
-        description: "The project has been archived and changes are frozen.",
-      });
-      await fetchProjects();
-      return true;
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to archive project.";
-      toast.error("Archive failed", { description: msg });
-      return false;
-    }
-  };
-
-  const restoreProject = async (projectId: string, expectedVersion: number): Promise<boolean> => {
-    try {
-      await apiClient.restoreProject(projectId, expectedVersion, orgId);
-      toast.success("Project restored", {
-        description: "The project has been restored to its previous lifecycle state.",
-      });
-      await fetchProjects();
-      return true;
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to restore project.";
-      toast.error("Restore failed", { description: msg });
-      return false;
     }
   };
 
@@ -127,23 +106,25 @@ export function useProjectsApi(orgId: string, initialFilters?: ProjectFilters) {
     refetch: fetchProjects,
     createProject,
     updateProject,
-    archiveProject,
-    restoreProject,
   };
 }
 
 export function useProjectMembers(projectId: string | null, orgId: string) {
-  const [members, setMembers] = useState<ProjectMemberDto[]>([]);
+  const [members, setMembers] = useState<PersonRefDto[]>([]);
+  const [project, setProject] = useState<ProjectDto | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchMembers = useCallback(async () => {
     if (!projectId || !orgId) return;
     setIsLoading(true);
+    setError(null);
     try {
-      const res = await apiClient.projectMembers(projectId, orgId);
-      setMembers(res);
+      const result = await apiClient.project(orgId, projectId);
+      setProject(result);
+      setMembers(result.members);
     } catch (err) {
-      console.error("Failed to load project members", err);
+      setError(err instanceof ApiError ? err.message : "Failed to load project members.");
     } finally {
       setIsLoading(false);
     }
@@ -153,13 +134,17 @@ export function useProjectMembers(projectId: string | null, orgId: string) {
     fetchMembers();
   }, [fetchMembers]);
 
-  const addMember = async (body: ProjectMemberRequestDto) => {
-    if (!projectId) return;
+  const addMember = async (membershipId: string) => {
+    if (!projectId || !project) return;
     try {
-      const added = await apiClient.addProjectMember(projectId, body, orgId);
+      const updated = await apiClient.updateProject(orgId, projectId, {
+        member_membership_ids: [...new Set([...members.map((member) => member.membership_id), membershipId])],
+        expected_version: project.version,
+      });
       toast.success("Member added to project");
-      await fetchMembers();
-      return added;
+      setProject(updated);
+      setMembers(updated.members);
+      return updated;
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to add member.";
       toast.error("Could not add member", { description: msg });
@@ -168,11 +153,17 @@ export function useProjectMembers(projectId: string | null, orgId: string) {
   };
 
   const removeMember = async (membershipId: string) => {
-    if (!projectId) return;
+    if (!projectId || !project) return;
     try {
-      await apiClient.removeProjectMember(projectId, membershipId, orgId);
+      const updated = await apiClient.updateProject(orgId, projectId, {
+        member_membership_ids: members
+          .filter((member) => member.membership_id !== membershipId)
+          .map((member) => member.membership_id),
+        expected_version: project.version,
+      });
       toast.success("Member removed from project");
-      await fetchMembers();
+      setProject(updated);
+      setMembers(updated.members);
       return true;
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Failed to remove member.";
@@ -184,6 +175,7 @@ export function useProjectMembers(projectId: string | null, orgId: string) {
   return {
     members,
     isLoading,
+    error,
     refetch: fetchMembers,
     addMember,
     removeMember,

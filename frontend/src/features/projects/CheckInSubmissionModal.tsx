@@ -5,7 +5,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { apiClient, ApiError } from "@/lib/api";
-import type { GitHubActivityItemDto, EvidenceItemDto } from "@/types/api";
+import type { GitHubActivityDto } from "@/types/api";
 import {
   TrendingDown,
   GitCommit,
@@ -24,9 +24,8 @@ interface CheckInSubmissionModalProps {
   projectId: string;
   projectName: string;
   projectKey: string;
-  currentPercent: number;
-  requireVerification: boolean;
-  gitHubActivity?: GitHubActivityItemDto[];
+  currentPercent: number | null;
+  gitHubActivity?: GitHubActivityDto[];
   onSubmitted?: () => void;
 }
 
@@ -37,11 +36,10 @@ export function CheckInSubmissionModal({
   projectName,
   projectKey,
   currentPercent,
-  requireVerification,
   gitHubActivity = [],
   onSubmitted,
 }: CheckInSubmissionModalProps) {
-  const [percent, setPercent] = useState<number>(currentPercent);
+  const [percent, setPercent] = useState<number>(currentPercent ?? 0);
   const [accomplished, setAccomplished] = useState("");
   const [nextSteps, setNextSteps] = useState("");
   const [blockers, setBlockers] = useState("");
@@ -51,7 +49,7 @@ export function CheckInSubmissionModal({
   const [customEvidenceUrl, setCustomEvidenceUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isDownward = percent < currentPercent;
+  const isDownward = currentPercent !== null && percent < currentPercent;
 
   const toggleCommitSelection = (sha: string) => {
     setSelectedCommitShas((prev) =>
@@ -82,30 +80,13 @@ export function CheckInSubmissionModal({
       return;
     }
 
-    // Build evidence items
-    const evidenceItems: EvidenceItemDto[] = [];
-
-    selectedCommitShas.forEach((sha) => {
-      const commit = gitHubActivity.find((c) => c.sha === sha);
-      if (commit) {
-        evidenceItems.push({
-          type: "COMMIT",
-          sha: commit.sha ?? undefined,
-          title: commit.title,
-          url: commit.url ?? undefined,
-          repo_name: commit.repository_name,
-        });
-      }
-    });
-
-    if (customEvidenceUrl.trim()) {
-      const isPR = customEvidenceUrl.includes("/pull/");
-      evidenceItems.push({
-        type: isPR ? "PULL_REQUEST" : "DOCUMENT",
-        url: customEvidenceUrl.trim(),
-        title: isPR ? "Linked Pull Request" : "Evidence Document",
-      });
-    }
+    const evidence = [
+      ...selectedCommitShas.flatMap((sha) => {
+        const activity = gitHubActivity.find((item) => item.sha === sha);
+        return activity ? [`${activity.repository_name} ${sha}: ${activity.title}`] : [];
+      }),
+      ...(customEvidenceUrl.trim() ? [customEvidenceUrl.trim()] : []),
+    ].join("\n");
 
     setIsSubmitting(true);
     try {
@@ -119,15 +100,14 @@ export function CheckInSubmissionModal({
           blockers: blockers.trim() ? blockers.trim() : undefined,
           projected_finish: projectedFinish ? projectedFinish : undefined,
           downward_reason: isDownward ? downwardReason.trim() : undefined,
-          evidence: evidenceItems.length > 0 ? `${evidenceItems.length} evidence item(s) attached` : undefined,
-          evidence_items: evidenceItems.length > 0 ? evidenceItems : undefined,
+          evidence: evidence || undefined,
         },
         idempotencyKey
       );
 
       toast.success("Progress check-in recorded successfully", {
         description: `Submitted ${res.percent}% progress (${
-          res.status === "PENDING_VERIFICATION" ? "Pending Team Lead review" : "Accepted"
+          res.status === "PENDING" ? "Pending Team Lead review" : res.status.toLowerCase()
         }).`,
       });
 
@@ -154,9 +134,9 @@ export function CheckInSubmissionModal({
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-sidebar)]/30 p-4">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <span className="text-xs text-[var(--color-text-secondary)]">Current Accepted Progress:</span>
+              <span className="text-xs text-[var(--color-text-secondary)]">Current Approved Progress:</span>
               <span className="ml-2 font-mono font-bold text-sm text-[var(--color-text-primary)]">
-                {currentPercent.toFixed(1)}%
+                {currentPercent === null ? "Not reported" : `${currentPercent.toFixed(1)}%`}
               </span>
             </div>
             <div className="text-right">
@@ -225,11 +205,7 @@ export function CheckInSubmissionModal({
         {/* Verification mode note */}
         <div className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)] px-1">
           <ShieldCheck className="w-4 h-4 text-primary-600" />
-          <span>
-            {requireVerification
-              ? "Team Lead verification is enabled: Submission will start as 'Pending Verification'."
-              : "Direct acceptance is enabled: Submission will update project baseline immediately."}
-          </span>
+          <span>Every check-in starts pending and updates official progress only after Team Lead approval.</span>
         </div>
 
         {/* Accomplishments */}

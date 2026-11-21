@@ -36,7 +36,55 @@ import {
   type PortfolioData,
 } from "@/lib/fixtures/org-admin";
 import type { Project } from "@/types";
+import type { ProjectDto } from "@/types/api";
 import { useAuthStore } from "@/store/auth-store";
+
+type ProjectPortfolioData = {
+  projects: ProjectDto[];
+  users: Array<{ id: string; name: string; email: string }>;
+  teams: Array<{ id: string; name: string }>;
+};
+
+function fixtureProjectDto(project: Project, portfolio: PortfolioData): ProjectDto {
+  const person = (membershipId: string) => {
+    const user = portfolio.users.find((item) => item.id === membershipId);
+    return { membership_id: membershipId, email: user?.email ?? "" };
+  };
+  const notReported = project.lastProgressMethod === "NOT_REPORTED" || project.lastProgressPercent < 0;
+  const teamId = project.teamIds[0] ?? null;
+
+  return {
+    id: project.id,
+    key: project.key,
+    name: project.name,
+    description: project.description || null,
+    mode: project.mode,
+    lifecycle: project.lifecycle,
+    archived: project.archived,
+    priority: project.priority,
+    project_manager: project.projectManagerId ? person(project.projectManagerId) : null,
+    accountable: project.accountableOwnerId ? person(project.accountableOwnerId) : null,
+    members: project.memberIds.map(person),
+    team_id: teamId,
+    team_name: portfolio.teams.find((team) => team.id === teamId)?.name ?? null,
+    start_on: project.startDate || null,
+    target_on: project.targetDate || null,
+    timezone: project.timezone,
+    active_baseline_id: project.activeBaselineId ?? null,
+    task_count: 0,
+    progress: {
+      percent: notReported ? null : project.lastProgressPercent,
+      label: notReported ? "Not reported" : project.lastProgressMethod === "DEVELOPER_REPORTED"
+        ? "Developer reported"
+        : "Calculated baseline",
+      reported_at: project.lastReportedAt ?? null,
+    },
+    can_edit: false,
+    version: project.version,
+    created_at: project.createdAt,
+    updated_at: project.createdAt,
+  };
+}
 
 interface FamilyProps {
   family: OrgNavFamily;
@@ -265,57 +313,56 @@ function usePortfolioProjects(name: string) {
   const { orgId } = useParams<{ orgId: string }>();
   const { can } = usePermissions();
   const enabled = can("project.read");
-  const resource = useOrgResource<PortfolioData>({
+  const resource = useOrgResource<ProjectPortfolioData>({
     name,
     orgId,
     enabled,
     fetch: async (id) => {
-      const [projRes, members] = await Promise.all([
-        apiClient.projects(id),
-        apiClient.members(id).catch(() => []),
-      ]);
-      const mappedProjects: Project[] = (projRes.projects || []).map((p) => ({
-        id: p.id,
-        orgId: p.orgId,
-        key: p.key,
-        name: p.name,
-        description: p.description ?? "",
-        mode: p.mode,
-        lifecycle: p.lifecycle as any,
-        archived: p.archived,
-        priority: p.priority as any,
-        projectManagerId: p.projectManagerId ?? "",
-        accountableOwnerId: p.accountableDeveloperId ?? "",
-        teamIds: p.teamIds ?? [],
-        memberIds: p.memberIds ?? [],
-        startDate: p.startDate,
-        targetDate: p.targetDate ?? "",
-        timezone: p.timezone,
-        cadence: "WEEKLY",
-        graceWorkingDays: 2,
-        version: p.version,
-        lastProgressPercent: Number(p.lastProgressPercent) || 0,
-        lastProgressMethod: p.mode === "INDIVIDUAL" ? "DEVELOPER_REPORTED" : "CALCULATED_BASELINE",
-        health: (p.health as any) ?? "ON_TRACK",
-        healthReasons: [],
-        repositoryIds: [],
-        createdAt: p.createdAt,
-      }));
-      const mappedUsers = (members || []).map((m) => ({
-        id: m.id,
-        name: m.display_name,
-        email: m.email,
-        role: m.role_template as any,
-        timezone: "UTC",
-        createdAt: new Date().toISOString(),
-      }));
+      const projects: ProjectDto[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await apiClient.projects(id, { cursor, limit: 100, include_archived: true });
+        projects.push(...page.items);
+        if (!page.has_more) break;
+        if (!page.next_cursor) {
+          throw new Error("The project API reported more results without a next cursor.");
+        }
+        cursor = page.next_cursor;
+      } while (true);
+
+      const people = new Map<string, { id: string; name: string; email: string }>();
+      const teams = new Map<string, { id: string; name: string }>();
+      for (const project of projects) {
+        const refs = [
+          ...project.members,
+          ...(project.project_manager ? [project.project_manager] : []),
+          ...(project.accountable ? [project.accountable] : []),
+        ];
+        for (const person of refs) {
+          people.set(person.membership_id, {
+            id: person.membership_id,
+            name: person.email,
+            email: person.email,
+          });
+        }
+        if (project.team_id && project.team_name) {
+          teams.set(project.team_id, { id: project.team_id, name: project.team_name });
+        }
+      }
       return {
-        projects: mappedProjects,
-        users: mappedUsers,
-        teams: [],
+        projects,
+        users: [...people.values()],
+        teams: [...teams.values()],
       };
     },
-    fixture: FIXTURE_PORTFOLIO,
+    fixture: (id) => {
+      const portfolio = FIXTURE_PORTFOLIO(id);
+      return {
+        projects: portfolio.projects.map((project) => fixtureProjectDto(project, portfolio)),
+        users: portfolio.users.map((user) => ({ id: user.id, name: user.name, email: user.email })),
+        teams: portfolio.teams,
+      };
+    },
   });
   return { ...resource, can, enabled };
 }

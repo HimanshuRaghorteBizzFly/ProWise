@@ -21,7 +21,8 @@ import {
   UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
-import { apiClient, ApiError } from "@/lib/api";
+import { apiClient } from "@/lib/api";
+import type { ProjectDto } from "@/types/api";
 import { useDeliveryStore } from "@/store/delivery-store";
 import { useProjectStore } from "@/store/project-store";
 import { DEMO_TODAY, VIEWERS, type DeliveryMode } from "@/mocks/delivery-dashboards";
@@ -204,32 +205,34 @@ export default function ManagerCreateProjectPage() {
 
     setSaving(true);
 
-    let backendProject: any = null;
+    let backendProject: ProjectDto;
     try {
       backendProject = await apiClient.createProject(safeOrgId, {
         name: form.name.trim(),
         key: cleanKey,
         description: form.description.trim(),
-        mode: form.mode as any,
+        mode: form.mode,
+        status: "PLANNED",
         priority: form.priority,
-        team_id: form.teamId,
-        startDate: form.startDate ? new Date(form.startDate).toISOString() : undefined,
-        targetDate: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
+        project_manager_membership_id: form.projectManagerId || undefined,
+        accountable_membership_id: form.accountableDeveloperId || undefined,
+        member_membership_ids: form.mode === "INDIVIDUAL"
+          ? [form.accountableDeveloperId]
+          : form.selectedMemberIds,
+        team_id: form.teamId || undefined,
+        start_on: form.startDate || undefined,
+        target_on: form.dueDate || undefined,
         timezone: form.timezone,
       });
-    } catch (err: any) {
-      const status = err?.status;
-      if (status === 400 || status === 409 || status === 422) {
-        toast.error("Project Creation Failed", { description: err?.message || "Validation error" });
-        setSaving(false);
-        return;
-      }
-      // In role preview or mock network offline mode, proceed gracefully with reactive store sync
-      console.warn("Backend project creation in role preview/offline mode:", err?.message || err);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "The project could not be created.";
+      toast.error("Project Creation Failed", { description: message });
+      setSaving(false);
+      return;
     }
 
-    const finalKey = backendProject?.key || cleanKey;
-    const finalProjectId = backendProject?.id || `proj-${cleanKey.toLowerCase()}-${Date.now().toString().slice(-4)}`;
+    const finalKey = backendProject.key;
+    const finalProjectId = backendProject.id;
 
     // 1. Sync into Delivery Store (used across Manager & Team Lead workspaces)
     const deliveryProject = createProject(
@@ -527,7 +530,7 @@ export default function ManagerCreateProjectPage() {
                       >
                         {availableManagers.map((pm) => (
                           <option key={pm.id} value={pm.id}>
-                            {pm.name} ({pm.title || pm.role || "Project Manager"})
+                            {pm.name} ({pm.title})
                           </option>
                         ))}
                       </select>
@@ -566,7 +569,7 @@ export default function ManagerCreateProjectPage() {
                       >
                         {availableManagers.map((lead) => (
                           <option key={lead.id} value={lead.id}>
-                            {lead.name} ({lead.title || lead.role})
+                            {lead.name} ({lead.title})
                           </option>
                         ))}
                       </select>

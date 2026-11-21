@@ -7,7 +7,7 @@ import { ProjectFormModal } from "../src/features/projects/ProjectFormModal";
 import { ProjectsPortfolioView } from "../src/components/owner/ProjectsPortfolioView";
 import { apiClient } from "../src/lib/api";
 import type { ProjectDto } from "../src/types/api";
-import type { Project } from "../src/types";
+import type { PermissionKey } from "../src/types/permission";
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
@@ -19,54 +19,62 @@ vi.mock("next/navigation", () => ({
 describe("Task 2.1: Project Management Frontend", () => {
   const mockIndividualProject: ProjectDto = {
     id: "proj-solo-1",
-    orgId: "org-123",
     key: "SOLO",
     name: "Autonomous Agent Module",
     description: "Single developer delivery for intelligent routing",
     mode: "INDIVIDUAL",
     lifecycle: "ACTIVE",
-    priority: "HIGH",
-    projectManagerId: "usr-pm-1",
-    accountableDeveloperId: "usr-dev-1",
-    teamIds: [],
-    memberIds: ["usr-dev-1"],
-    startDate: "2026-11-01T00:00:00Z",
-    targetDate: "2026-12-01T00:00:00Z",
-    timezone: "America/New_York",
-    lastProgressPercent: 0,
-    health: "ON_TRACK",
     archived: false,
+    priority: "HIGH",
+    project_manager: { membership_id: "usr-pm-1", email: "bob@example.test" },
+    accountable: { membership_id: "usr-dev-1", email: "alice@example.test" },
+    members: [{ membership_id: "usr-dev-1", email: "alice@example.test" }],
+    team_id: null,
+    team_name: null,
+    start_on: "2026-11-01",
+    target_on: "2026-12-01",
+    timezone: "America/New_York",
+    active_baseline_id: null,
+    task_count: 0,
+    progress: { percent: null, label: "Not reported", reported_at: null },
+    can_edit: true,
     version: 1,
-    createdAt: "2026-11-01T00:00:00Z",
-    updatedAt: "2026-11-01T00:00:00Z",
+    created_at: "2026-11-01T00:00:00Z",
+    updated_at: "2026-11-01T00:00:00Z",
   };
 
   const mockStructuredProject: ProjectDto = {
     id: "proj-struct-1",
-    orgId: "org-123",
     key: "CORE",
     name: "Enterprise Architecture Upgrade",
     description: "Multi-service distributed refactoring",
     mode: "STRUCTURED",
     lifecycle: "PLANNED",
-    priority: "CRITICAL",
-    projectManagerId: "usr-pm-2",
-    accountableDeveloperId: "usr-dev-2",
-    teamIds: ["team-backend"],
-    memberIds: ["usr-pm-2", "usr-dev-2", "usr-dev-3"],
-    startDate: "2026-11-15T00:00:00Z",
-    targetDate: "2027-01-15T00:00:00Z",
-    timezone: "Europe/London",
-    lastProgressPercent: 45,
-    health: "ON_TRACK",
     archived: false,
+    priority: "CRITICAL",
+    project_manager: { membership_id: "usr-pm-2", email: "manager@example.test" },
+    accountable: { membership_id: "usr-dev-2", email: "developer@example.test" },
+    members: [
+      { membership_id: "usr-pm-2", email: "manager@example.test" },
+      { membership_id: "usr-dev-2", email: "developer@example.test" },
+      { membership_id: "usr-dev-3", email: "other@example.test" },
+    ],
+    team_id: "team-backend",
+    team_name: "Backend",
+    start_on: "2026-11-15",
+    target_on: "2027-01-15",
+    timezone: "Europe/London",
+    active_baseline_id: null,
+    task_count: 0,
+    progress: { percent: 45, label: "Developer reported", reported_at: "2026-11-20T00:00:00Z" },
+    can_edit: true,
     version: 3,
-    createdAt: "2026-11-15T00:00:00Z",
-    updatedAt: "2026-11-20T00:00:00Z",
+    created_at: "2026-11-15T00:00:00Z",
+    updated_at: "2026-11-20T00:00:00Z",
   };
 
   describe("ProjectCard", () => {
-    it("renders Individual mode project with zero tasks guarantee and no fake progress", () => {
+    it("renders Individual mode project with no fabricated progress", () => {
       const markup = renderToStaticMarkup(
         <ProjectCard project={mockIndividualProject} />
       );
@@ -74,10 +82,10 @@ describe("Task 2.1: Project Management Frontend", () => {
       expect(markup).toContain("[SOLO]");
       expect(markup).toContain("Autonomous Agent Module");
       expect(markup).toContain("Individual (Solo)");
-      expect(markup).toContain("0%");
+      expect(markup).toContain("Not reported");
       // Must guarantee zero tasks requirement and no fake percentage
-      expect(markup).toContain("Solo mode: 0 tasks required (progress via developer check-ins)");
-      expect(markup).toContain("Accountable Dev: usr-dev-1");
+      expect(markup).toContain("Solo mode: 0 tasks required (progress via approved developer check-ins)");
+      expect(markup).toContain("Accountable Dev: alice@example.test");
       expect(markup).toContain("v1");
     });
 
@@ -142,60 +150,33 @@ describe("Task 2.1: Project Management Frontend", () => {
   });
 
   describe("ApiClient Project Methods", () => {
-    it("exposes all project CRUD, member, and lifecycle endpoints", () => {
+    it("exposes implemented project endpoints without inventing archive or member routes", () => {
       expect(typeof apiClient.projects).toBe("function");
       expect(typeof apiClient.project).toBe("function");
+      expect(typeof apiClient.projectOptions).toBe("function");
+      expect(typeof apiClient.projectDateHistory).toBe("function");
       expect(typeof apiClient.createProject).toBe("function");
       expect(typeof apiClient.updateProject).toBe("function");
-      expect(typeof apiClient.archiveProject).toBe("function");
-      expect(typeof apiClient.restoreProject).toBe("function");
-      expect(typeof apiClient.projectMembers).toBe("function");
-      expect(typeof apiClient.addProjectMember).toBe("function");
-      expect(typeof apiClient.removeProjectMember).toBe("function");
+      expect("archiveProject" in apiClient).toBe(false);
+      expect("restoreProject" in apiClient).toBe(false);
+      expect("projectMembers" in apiClient).toBe(false);
     });
   });
 
   describe("ProjectsPortfolioView", () => {
-    const mockProjects: Project[] = [
-      {
-        id: "proj-1",
-        orgId: "org-123",
-        key: "PRJ1",
-        name: "First Project",
-        description: "A first project",
-        mode: "INDIVIDUAL",
-        lifecycle: "ACTIVE",
-        archived: false,
-        priority: "MEDIUM",
-        projectManagerId: "usr-pm-1",
-        accountableOwnerId: "usr-dev-1",
-        teamIds: [],
-        memberIds: ["usr-dev-1"],
-        startDate: "2026-11-01",
-        targetDate: "2026-12-01",
-        timezone: "America/New_York",
-        cadence: "WEEKLY",
-        graceWorkingDays: 2,
-        version: 1,
-        lastProgressPercent: 0,
-        lastProgressMethod: "DEVELOPER_REPORTED",
-        health: "ON_TRACK",
-        healthReasons: [],
-        repositoryIds: [],
-        createdAt: "2026-11-01T00:00:00Z",
-      },
-    ];
+    const mockProjects: ProjectDto[] = [{ ...mockIndividualProject, id: "proj-1", key: "PRJ1", name: "First Project" }];
 
     it("renders project cards and create project button when authorized", () => {
-      const can = (key: string) => key === "project.read" || key === "project.create";
+      const can = (key: PermissionKey) =>
+        key === "project.read" || key === "project.create";
 
       const markup = renderToStaticMarkup(
         <ProjectsPortfolioView
           projects={mockProjects}
-          users={[{ id: "usr-dev-1", name: "Alice Developer", email: "alice@example.com", timezone: "UTC", createdAt: "2026-11-01T00:00:00Z" }]}
+          users={[{ id: "usr-dev-1", name: "Alice Developer", email: "alice@example.com" }]}
           teams={[]}
           source="api"
-          can={can as any}
+          can={can}
         />
       );
 

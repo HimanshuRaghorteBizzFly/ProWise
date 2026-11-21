@@ -7,7 +7,6 @@ import { Card, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProgressBar } from "@/components/ui/progress";
-import { HealthBadge } from "@/components/ui/health-badge";
 import {
   FolderGit2,
   Calendar,
@@ -51,6 +50,7 @@ export default function IndividualModeWorkspace() {
   const { currentUser } = useAuthStore();
   const [project, setProject] = useState<ProjectDto | null>(null);
   const [isProjectLoading, setIsProjectLoading] = useState(true);
+  const [projectError, setProjectError] = useState<string | null>(null);
 
   const {
     summary,
@@ -85,11 +85,15 @@ export default function IndividualModeWorkspace() {
 
   const loadProject = async () => {
     if (!projectId) return;
+    setProjectError(null);
+    setIsProjectLoading(true);
     try {
-      const p = await apiClient.project(projectId, orgId);
+      const p = await apiClient.project(orgId, projectId);
       setProject(p);
-    } catch {
-      // Fallback or preview
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load project.";
+      setProjectError(message);
+      toast.error("Project could not be loaded", { description: message });
     } finally {
       setIsProjectLoading(false);
     }
@@ -103,11 +107,10 @@ export default function IndividualModeWorkspace() {
     await Promise.all([loadProject(), refreshProgress(), refreshDelivery()]);
   };
 
-  const currentPercent = summary?.current_percent ?? project?.lastProgressPercent ?? 0;
-  const currentMethod = summary?.current_method ?? "DEVELOPER_REPORTED";
-  const lastReportedAt = summary?.last_reported_at;
-  const pendingCheckIn = summary?.pending_checkin;
-  const latestAccepted = summary?.latest_accepted_checkin;
+  const currentPercent = summary ? summary.current.percent : project?.progress.percent ?? null;
+  const lastReportedAt = summary ? summary.current.reported_at : project?.progress.reported_at ?? null;
+  const pendingCheckIn = summary?.pending ?? null;
+  const latestAccepted = checkIns.find((checkin) => checkin.status === "APPROVED") ?? null;
   const latestRequest = acceptanceRequests[0];
   const isArchived = project?.archived || false;
   const currentLifecycle = project?.lifecycle || "ACTIVE";
@@ -126,6 +129,14 @@ export default function IndividualModeWorkspace() {
       ]}
     >
       <div className="space-y-6">
+        {projectError && (
+          <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+            {projectError}
+          </div>
+        )}
+        {isProjectLoading && !project && (
+          <div role="status" className="text-sm text-app-text-muted">Loading project...</div>
+        )}
         {/* Archived Banner (T14) */}
         {isArchived && (
           <div className="rounded-xl border border-rose-800/80 bg-rose-950/40 p-4 shadow-sm flex items-center justify-between gap-3 text-rose-200 text-sm">
@@ -168,9 +179,9 @@ export default function IndividualModeWorkspace() {
                 {currentLifecycle.replace("_", " ")}
               </span>
 
-              {summary?.require_verification && (
+              {summary && (
                 <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800 flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3" /> TL Verification Required
+                  <ShieldCheck className="w-3 h-3" /> Team Lead Review
                 </span>
               )}
             </div>
@@ -202,7 +213,7 @@ export default function IndividualModeWorkspace() {
             </Button>
 
             {/* Request Delivery Acceptance (T15, AS-02) */}
-            {currentPercent >= 100 && currentLifecycle === "ACTIVE" && !isArchived && (
+            {currentPercent !== null && currentPercent >= 100 && currentLifecycle === "ACTIVE" && !isArchived && (
               <Button
                 size="sm"
                 className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-md shadow-emerald-900/30"
@@ -269,7 +280,7 @@ export default function IndividualModeWorkspace() {
                   </span>
                 </div>
                 <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
-                  Submitted {new Date(pendingCheckIn.created_at).toLocaleString()} by {pendingCheckIn.author_name}. Current accepted baseline remains {currentPercent.toFixed(1)}% until verified.
+                  Submitted {new Date(pendingCheckIn.submitted_at).toLocaleString()} by {pendingCheckIn.author.email ?? "Unknown"}. Current approved progress remains {currentPercent === null ? "Not reported" : `${currentPercent.toFixed(1)}%`} until approved.
                 </p>
               </div>
             </div>
@@ -308,14 +319,14 @@ export default function IndividualModeWorkspace() {
                 <Badge variant="success">Developer Reported</Badge>
               </div>
               <div className="text-3xl font-extrabold text-app-text-primary mt-2">
-                {currentPercent.toFixed(1)}%
+                {currentPercent === null ? "Not reported" : `${currentPercent.toFixed(1)}%`}
               </div>
             </div>
             <div className="mt-4">
               <ProgressBar
-                value={currentPercent}
+                value={currentPercent ?? 0}
                 size="md"
-                isNotReported={currentPercent < 0}
+                isNotReported={currentPercent === null}
               />
               <span className="text-[10px] text-app-text-muted mt-1.5 block">
                 {lastReportedAt
@@ -333,10 +344,10 @@ export default function IndividualModeWorkspace() {
                 <Clock className="w-4 h-4 text-blue-600" />
               </div>
               <div className="text-base font-bold text-app-text-primary mt-2">
-                Target: {project?.targetDate ? new Date(project.targetDate).toLocaleDateString() : "Not Specified"}
+                Target: {project?.target_on ?? "Not Specified"}
               </div>
               <div className="text-xs text-app-text-secondary mt-1">
-                Started: {project?.startDate ? new Date(project.startDate).toLocaleDateString() : "Not Specified"}
+                Started: {project?.start_on ?? "Not Specified"}
               </div>
             </div>
             <div className="mt-4 text-[11px] text-app-text-muted pt-2 border-t border-app-border">
@@ -349,7 +360,7 @@ export default function IndividualModeWorkspace() {
             <div>
               <div className="flex items-center justify-between text-xs text-app-text-muted">
                 <span>Individual Mode</span>
-                <HealthBadge health={project?.health || "ON_TRACK"} />
+                <Badge variant="outline">{project?.lifecycle.replace("_", " ") ?? "Loading"}</Badge>
               </div>
               <div className="text-sm font-semibold text-app-text-primary mt-2">
                 Zero Mandatory Tasks
@@ -361,6 +372,8 @@ export default function IndividualModeWorkspace() {
             <div className="mt-3 text-[10px] text-app-text-muted pt-2 border-t border-app-border">
               {currentPercent === 100
                 ? "100% progress recorded. Active until formal sign-off."
+                : currentPercent === null
+                ? "No approved progress has been reported yet."
                 : `${(100 - currentPercent).toFixed(1)}% remaining to complete.`}
             </div>
           </Card>
@@ -421,18 +434,18 @@ export default function IndividualModeWorkspace() {
                       <h3 className="text-sm font-bold text-app-text-primary">
                         Revision v{latestAccepted.revision_seq} ({latestAccepted.percent}%)
                       </h3>
-                      <Badge variant="success">Verified &amp; Accepted</Badge>
+                      <Badge variant="success">Approved</Badge>
                       <span className="text-[11px] text-blue-600 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-900">
                         Developer reported
                       </span>
                     </div>
                     <span className="text-xs text-app-text-muted">
-                      Submitted {new Date(latestAccepted.captured_at || latestAccepted.created_at).toLocaleString()} by {latestAccepted.author_name}
+                      Submitted {new Date(latestAccepted.submitted_at).toLocaleString()} by {latestAccepted.author.email ?? "Unknown"}
                     </span>
                   </div>
-                  {latestAccepted.verified_by_name && (
+                  {latestAccepted.decided_by?.email && (
                     <span className="text-xs text-emerald-700 dark:text-emerald-300 font-medium">
-                      Verified by {latestAccepted.verified_by_name}
+                      Approved by {latestAccepted.decided_by.email}
                     </span>
                   )}
                 </div>
@@ -463,10 +476,10 @@ export default function IndividualModeWorkspace() {
                     </div>
                   )}
 
-                  {latestAccepted.review_comment && (
+                  {latestAccepted.decision_reason && (
                     <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300">
-                      <span className="font-bold">Reviewer Comment:</span>{" "}
-                      {latestAccepted.review_comment}
+                      <span className="font-bold">Decision note:</span>{" "}
+                      {latestAccepted.decision_reason}
                     </div>
                   )}
                 </div>
@@ -493,6 +506,8 @@ export default function IndividualModeWorkspace() {
           <CheckInAuditTrail
             checkIns={checkIns}
             currentProjectPercent={currentPercent}
+            projectKey={project?.key ?? projectId}
+            projectName={project?.name ?? ""}
             canReview={false}
             onRefresh={handleRefreshAll}
           />
@@ -551,7 +566,7 @@ export default function IndividualModeWorkspace() {
                     Formal delivery acceptance submissions with checklists and evidence.
                   </CardDescription>
                 </div>
-                {currentPercent >= 100 && currentLifecycle === "ACTIVE" && !isArchived && (
+                {currentPercent !== null && currentPercent >= 100 && currentLifecycle === "ACTIVE" && !isArchived && (
                   <Button size="sm" onClick={() => setIsAcceptanceModalOpen(true)}>
                     <PackageCheck className="w-3.5 h-3.5 mr-1" /> New Delivery Request
                   </Button>
@@ -690,7 +705,6 @@ export default function IndividualModeWorkspace() {
               projectName={project.name}
               projectKey={project.key}
               currentPercent={currentPercent}
-              requireVerification={summary?.require_verification || false}
               gitHubActivity={gitHubActivity}
               onSubmitted={handleRefreshAll}
             />
@@ -721,7 +735,7 @@ export default function IndividualModeWorkspace() {
                   toast.success(`Delivery decision recorded: ${data.decision}`);
                 }}
                 onWaiveBlocker={async (blockerId, reason) => {
-                  await waiveBlocker(blockerId, { reason });
+                  await waiveBlocker(blockerId, reason);
                   await handleRefreshAll();
                   toast.success("Blocker waiver approved.");
                 }}
@@ -750,7 +764,7 @@ export default function IndividualModeWorkspace() {
                 toast.success("Blocker reported.");
               }}
               onWaiveBlocker={async (blockerId, reason) => {
-                await waiveBlocker(blockerId, { reason });
+                await waiveBlocker(blockerId, reason);
                 await handleRefreshAll();
                 toast.success("Blocker waived.");
               }}

@@ -154,6 +154,105 @@ describe("typed API client", () => {
     );
   });
 
+  it("uses the project cursor-page query and snake_case request bodies", async () => {
+    const project = {
+      id: "project-1",
+      key: "CORE",
+      name: "Core",
+      description: null,
+      mode: "INDIVIDUAL",
+      lifecycle: "ACTIVE",
+      archived: false,
+      priority: "HIGH",
+      project_manager: null,
+      accountable: null,
+      members: [],
+      team_id: null,
+      team_name: null,
+      start_on: null,
+      target_on: null,
+      timezone: "UTC",
+      active_baseline_id: null,
+      task_count: 0,
+      progress: { percent: null, label: "Not reported", reported_at: null },
+      can_edit: true,
+      version: 1,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, {
+      items: [project],
+      next_cursor: null,
+      has_more: false,
+    }));
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
+
+    await expect(client.projects("org-a", { q: "core", include_archived: false, limit: 10 }))
+      .resolves.toMatchObject({ items: [project], has_more: false });
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://api.test/v1/organizations/org-a/projects?q=core&include_archived=false&limit=10",
+    );
+
+    const createBody = {
+      name: "Core",
+      key: "CORE",
+      mode: "INDIVIDUAL" as const,
+      status: "ACTIVE" as const,
+      start_on: "2026-01-01",
+      target_on: "2026-02-01",
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, project));
+    await client.createProject("org-a", createBody);
+
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toEqual(createBody);
+  });
+
+  it("sends check-in decisions to the implemented decision route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { id: "checkin-1" }));
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
+
+    await client.decideCheckIn("checkin-1", {
+      decision: "APPROVE",
+      reason: "Reviewed",
+      expected_version: 2,
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("http://api.test/v1/checkins/checkin-1/decision");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+      decision: "APPROVE",
+      reason: "Reviewed",
+      expected_version: 2,
+    });
+  });
+
+  it("uses the implemented delivery lifecycle endpoints and request shapes", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(200, [])));
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
+
+    await client.deliveryStatus("project-1");
+    expect(fetchMock.mock.calls[0][0]).toBe("http://api.test/v1/projects/project-1/delivery-status");
+
+    await client.requestDeliveryAcceptance("project-1", {
+      bound_checkin_id: "checkin-1",
+      checklist: [{ id: "tests", label: "Tests pass", checked: true, notes: "CI" }],
+      evidence_summary: "Release evidence",
+      evidence_items: [{ type: "PR", title: "Release", url: "https://example.test/pr/1", reference: "PR-1" }],
+    });
+    expect(fetchMock.mock.calls[1][0]).toBe("http://api.test/v1/projects/project-1/acceptance-requests");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toMatchObject({
+      bound_checkin_id: "checkin-1",
+      evidence_summary: "Release evidence",
+    });
+
+    await client.decideDeliveryAcceptance("request-1", {
+      decision: "ACCEPTED",
+      reason: "Approved",
+      expected_project_version: 3,
+    });
+    expect(fetchMock.mock.calls[2][0]).toBe("http://api.test/v1/acceptance-requests/request-1/decisions");
+  });
+
   it("exposes the contract header and field names", () => {
     expect(IDEMPOTENCY_KEY_HEADER).toBe("Idempotency-Key");
     expect(EXPECTED_VERSION_FIELD).toBe("expectedVersion");

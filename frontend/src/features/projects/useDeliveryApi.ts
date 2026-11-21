@@ -2,13 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api";
-import {
+import type {
   AcceptanceDecisionRequestDto,
   AcceptanceRequestDto,
   AcceptanceSubmissionRequestDto,
   CloseProjectRequestDto,
   CreateBlockerRequestDto,
-  CreateWaiverRequestDto,
   ProjectBlockerDto,
   ProjectClosureDto,
   ProjectDeliveryStatusDto,
@@ -34,11 +33,11 @@ export function useDeliveryApi(projectId?: string) {
     setError(null);
     try {
       const [statusRes, reqsRes, blkRes, histRes, closRes] = await Promise.all([
-        apiClient.deliveryStatus(projectId).catch(() => null),
-        apiClient.acceptanceRequests(projectId).catch(() => []),
-        apiClient.projectBlockers(projectId).catch(() => []),
-        apiClient.projectLifecycleHistory(projectId).catch(() => []),
-        apiClient.projectClosures(projectId).catch(() => []),
+        apiClient.deliveryStatus(projectId),
+        apiClient.acceptanceRequests(projectId),
+        apiClient.projectBlockers(projectId),
+        apiClient.projectLifecycleHistory(projectId),
+        apiClient.projectClosures(projectId),
       ]);
       setStatus(statusRes);
       setRequests(reqsRes);
@@ -96,9 +95,12 @@ export function useDeliveryApi(projectId?: string) {
     await refresh();
   };
 
-  const waiveBlocker = async (blockerId: string, data: CreateWaiverRequestDto) => {
+  const waiveBlocker = async (blockerId: string, reason: string) => {
     if (!projectId) return;
-    await apiClient.waiveProjectBlocker(projectId, blockerId, data);
+    await apiClient.waiveProjectBlocker(projectId, blockerId, {
+      blocker_ref: blockerId,
+      reason,
+    });
     await refresh();
   };
 

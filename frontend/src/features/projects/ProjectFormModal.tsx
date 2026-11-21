@@ -5,11 +5,11 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/button";
 import type {
   ProjectDto,
-  CreateProjectRequestDto,
-  UpdateProjectRequestDto,
-  ProjectMode,
-  ProjectPriority,
-  ProjectLifecycle,
+  CreateProjectDto,
+  UpdateProjectDto,
+  ProjectModeDto,
+  ProjectPriorityDto,
+  ProjectLifecycleDto,
 } from "@/types/api";
 import { AlertCircle, Calendar, Clock, Layers, ShieldCheck, User } from "lucide-react";
 
@@ -22,7 +22,7 @@ interface MemberOption {
 interface ProjectFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: CreateProjectRequestDto | UpdateProjectRequestDto) => Promise<void>;
+  onSubmit: (data: CreateProjectDto | UpdateProjectDto) => Promise<void>;
   project?: ProjectDto | null;
   members: MemberOption[];
 }
@@ -54,9 +54,9 @@ export function ProjectFormModal({
   const [name, setName] = useState("");
   const [key, setKey] = useState("");
   const [description, setDescription] = useState("");
-  const [mode, setMode] = useState<ProjectMode>("STRUCTURED");
-  const [priority, setPriority] = useState<ProjectPriority>("MEDIUM");
-  const [lifecycle, setLifecycle] = useState<ProjectLifecycle>("ACTIVE");
+  const [mode, setMode] = useState<ProjectModeDto>("STRUCTURED");
+  const [priority, setPriority] = useState<ProjectPriorityDto>("MEDIUM");
+  const [lifecycle, setLifecycle] = useState<ProjectLifecycleDto>("ACTIVE");
   const [projectManagerId, setProjectManagerId] = useState("");
   const [accountableDeveloperId, setAccountableDeveloperId] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -75,13 +75,13 @@ export function ProjectFormModal({
       setMode(project.mode);
       setPriority(project.priority);
       setLifecycle(project.lifecycle);
-      setProjectManagerId(project.projectManagerId ?? "");
-      setAccountableDeveloperId(project.accountableDeveloperId ?? "");
-      setStartDate(project.startDate ? project.startDate.split("T")[0] : "");
-      setTargetDate(project.targetDate ? project.targetDate.split("T")[0] : "");
+      setProjectManagerId(project.project_manager?.membership_id ?? "");
+      setAccountableDeveloperId(project.accountable?.membership_id ?? "");
+      setStartDate(project.start_on ?? "");
+      setTargetDate(project.target_on ?? "");
       setTargetDateReason("");
       setTimezone(project.timezone || "America/New_York");
-      setSelectedMemberIds(project.memberIds ?? []);
+      setSelectedMemberIds(project.members.map((member) => member.membership_id));
     } else {
       setName("");
       setKey("");
@@ -104,8 +104,8 @@ export function ProjectFormModal({
 
   const targetDateChanged = Boolean(
     project &&
-      project.targetDate &&
-      targetDate !== project.targetDate.split("T")[0]
+      project.target_on &&
+      targetDate !== project.target_on
   );
 
   const validate = () => {
@@ -114,6 +114,9 @@ export function ProjectFormModal({
     else if (name.trim().length > 200) errs.name = "Name must not exceed 200 characters.";
 
     if (!isEdit) {
+      if (lifecycle === "ON_HOLD") {
+        errs.lifecycle = "New projects must start as Planned or Active.";
+      }
       const trimmedKey = key.trim().toUpperCase();
       if (!trimmedKey) errs.key = "Project key is required.";
       else if (trimmedKey.length < 2 || trimmedKey.length > 20)
@@ -144,36 +147,37 @@ export function ProjectFormModal({
     setSubmitting(true);
     try {
       if (isEdit && project) {
-        const updatePayload: UpdateProjectRequestDto = {
+        const updatePayload: UpdateProjectDto = {
           name: name.trim(),
           description: description.trim(),
           mode,
           priority,
           lifecycle,
-          projectManagerId: projectManagerId || undefined,
-          accountableDeveloperId: accountableDeveloperId || undefined,
-          startDate: startDate ? new Date(startDate).toISOString() : undefined,
-          targetDate: targetDate ? new Date(targetDate).toISOString() : undefined,
-          targetDateReason: targetDateReason.trim() || undefined,
+          project_manager_membership_id: projectManagerId || undefined,
+          accountable_membership_id: accountableDeveloperId || undefined,
+          start_on: startDate || undefined,
+          target_on: targetDate || undefined,
+          previous_target_on: targetDateChanged ? project.target_on : undefined,
+          target_date_reason: targetDateReason.trim() || undefined,
           timezone,
-          memberIds: selectedMemberIds,
-          expectedVersion: project.version,
+          member_membership_ids: selectedMemberIds,
+          expected_version: project.version,
         };
         await onSubmit(updatePayload);
       } else {
-        const createPayload: CreateProjectRequestDto = {
+        const createPayload: CreateProjectDto = {
           name: name.trim(),
           key: key.trim().toUpperCase(),
           description: description.trim(),
           mode,
           priority,
-          lifecycle,
-          projectManagerId: projectManagerId || undefined,
-          accountableDeveloperId: accountableDeveloperId || undefined,
-          startDate: startDate ? new Date(startDate).toISOString() : undefined,
-          targetDate: targetDate ? new Date(targetDate).toISOString() : undefined,
+          status: lifecycle === "PLANNED" ? "PLANNED" : "ACTIVE",
+          project_manager_membership_id: projectManagerId || undefined,
+          accountable_membership_id: accountableDeveloperId || undefined,
+          start_on: startDate || undefined,
+          target_on: targetDate || undefined,
           timezone,
-          memberIds: selectedMemberIds,
+          member_membership_ids: selectedMemberIds,
         };
         await onSubmit(createPayload);
       }
@@ -325,7 +329,7 @@ export function ProjectFormModal({
             </label>
             <select
               value={priority}
-              onChange={(e) => setPriority(e.target.value as ProjectPriority)}
+              onChange={(e) => setPriority(e.target.value as ProjectPriorityDto)}
               className="w-full rounded-lg border border-app-border bg-app-bg px-3 py-2 text-sm text-app-text-primary focus:outline-none focus:ring-2 focus:ring-app-accent"
             >
               <option value="LOW">Low</option>
@@ -341,13 +345,14 @@ export function ProjectFormModal({
             </label>
             <select
               value={lifecycle}
-              onChange={(e) => setLifecycle(e.target.value as ProjectLifecycle)}
+              onChange={(e) => setLifecycle(e.target.value as ProjectLifecycleDto)}
               className="w-full rounded-lg border border-app-border bg-app-bg px-3 py-2 text-sm text-app-text-primary focus:outline-none focus:ring-2 focus:ring-app-accent"
             >
               <option value="PLANNED">Planned</option>
               <option value="ACTIVE">Active</option>
-              <option value="ON_HOLD">On Hold</option>
+              {isEdit && <option value="ON_HOLD">On Hold</option>}
             </select>
+            {errors.lifecycle && <p className="text-xs text-red-500 mt-1">{errors.lifecycle}</p>}
           </div>
         </div>
 

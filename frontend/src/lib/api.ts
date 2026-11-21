@@ -412,12 +412,53 @@ export function createApiClient(options: ApiClientOptions = {}) {
       json<Dto.ProgressSummaryDto>(`/v1/projects/${encodeURIComponent(projectId)}/checkins/summary`),
     progressHistory: (projectId: string) =>
       json<Dto.CheckInDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/progress-history`),
+    projectGitHubActivity: (projectId: string) =>
+      json<Dto.GitHubActivityDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/github-activity`),
     /** Pass the same idempotencyKey when retrying one submission: the server returns the first result. */
-    submitCheckIn: (projectId: string, body: Dto.CheckInRequestDto, idempotencyKey: string) =>
+    submitCheckIn: (projectId: string, body: Dto.CheckInRequestDto, idempotencyKey?: string) =>
       json<Dto.CheckInDto>(`/v1/projects/${encodeURIComponent(projectId)}/checkins`, { method: "POST", body, idempotencyKey }),
     decideCheckIn: (checkinId: string, body: Dto.CheckInDecisionDto) =>
       json<Dto.CheckInDto>(`/v1/checkins/${encodeURIComponent(checkinId)}/decision`, { method: "POST", body }),
     pendingReviews: (orgId: string) => json<Dto.PendingReviewDto[]>(`/v1/organizations/${encodeURIComponent(orgId)}/reviews/pending`),
+    /* Task 2.4: implemented delivery lifecycle routes. */
+    deliveryStatus: (projectId: string) =>
+      json<Dto.ProjectDeliveryStatusDto>(`/v1/projects/${encodeURIComponent(projectId)}/delivery-status`),
+    acceptanceRequests: (projectId: string) =>
+      json<Dto.AcceptanceRequestDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/acceptance-requests`),
+    requestDeliveryAcceptance: (projectId: string, body: Dto.AcceptanceSubmissionRequestDto) =>
+      json<Dto.AcceptanceRequestDto>(`/v1/projects/${encodeURIComponent(projectId)}/acceptance-requests`, {
+        method: "POST",
+        body,
+      }),
+    decideDeliveryAcceptance: (requestId: string, body: Dto.AcceptanceDecisionRequestDto) =>
+      json<Dto.AcceptanceDecisionDto>(`/v1/acceptance-requests/${encodeURIComponent(requestId)}/decisions`, {
+        method: "POST",
+        body,
+      }),
+    closeProjectLifecycle: (projectId: string, body: Dto.CloseProjectRequestDto) =>
+      json<Dto.ProjectClosureDto>(`/v1/projects/${encodeURIComponent(projectId)}/close`, { method: "POST", body }),
+    reopenProjectLifecycle: (projectId: string, body: Dto.ReopenProjectRequestDto) =>
+      json<Dto.ProjectDeliveryStatusDto>(`/v1/projects/${encodeURIComponent(projectId)}/reopen`, { method: "POST", body }),
+    transitionProjectLifecycle: (projectId: string, body: Dto.TransitionLifecycleRequestDto) =>
+      json<Dto.ProjectDeliveryStatusDto>(`/v1/projects/${encodeURIComponent(projectId)}/lifecycle`, { method: "POST", body }),
+    projectBlockers: (projectId: string) =>
+      json<Dto.ProjectBlockerDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/blockers`),
+    createProjectBlocker: (projectId: string, body: Dto.CreateBlockerRequestDto) =>
+      json<Dto.ProjectBlockerDto>(`/v1/projects/${encodeURIComponent(projectId)}/blockers`, { method: "POST", body }),
+    waiveProjectBlocker: (projectId: string, blockerId: string, body: Dto.CreateWaiverRequestDto) =>
+      json<Dto.ProjectBlockerDto>(
+        `/v1/projects/${encodeURIComponent(projectId)}/blockers/${encodeURIComponent(blockerId)}/waiver`,
+        { method: "POST", body },
+      ),
+    resolveProjectBlocker: (projectId: string, blockerId: string) =>
+      json<Dto.ProjectBlockerDto>(
+        `/v1/projects/${encodeURIComponent(projectId)}/blockers/${encodeURIComponent(blockerId)}/resolve`,
+        { method: "POST" },
+      ),
+    projectLifecycleHistory: (projectId: string) =>
+      json<Dto.ProjectLifecycleHistoryDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/lifecycle-history`),
+    projectClosures: (projectId: string) =>
+      json<Dto.ProjectClosureDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/closures`),
     codeReviews: (type: "assigned" | "authored" = "assigned") =>
       json<Dto.CodeReviewDto[]>(`/v1/developer/reviews?type=${encodeURIComponent(type)}`),
     /** Selects the active workspace; the old token is revoked server-side and replaced here. */

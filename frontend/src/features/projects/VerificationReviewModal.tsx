@@ -26,7 +26,9 @@ interface VerificationReviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   checkin: CheckInDto | null;
-  currentProjectPercent?: number;
+  currentProjectPercent?: number | null;
+  projectKey?: string;
+  projectName?: string;
   onDecided?: () => void;
 }
 
@@ -34,7 +36,9 @@ export function VerificationReviewModal({
   isOpen,
   onClose,
   checkin,
-  currentProjectPercent = 0,
+  currentProjectPercent = null,
+  projectKey,
+  projectName,
   onDecided,
 }: VerificationReviewModalProps) {
   const { currentUser } = useAuthStore();
@@ -43,38 +47,34 @@ export function VerificationReviewModal({
 
   if (!checkin) return null;
 
-  const isSelfCheckin = currentUser?.id === checkin.author_id;
+  const isSelfCheckin = currentUser?.id === checkin.author.user_id;
 
-  const handleDecision = async (decision: "APPROVE" | "REQUEST_CHANGES" | "REJECT") => {
+  const handleDecision = async (decision: "APPROVE" | "REJECT") => {
     if (isSelfCheckin) {
       toast.error("Separation of duties: You cannot verify your own check-in submission.");
       return;
     }
 
-    if ((decision === "REQUEST_CHANGES" || decision === "REJECT") && !comment.trim()) {
+    if (decision === "REJECT" && !comment.trim()) {
       toast.error("Please provide review feedback explaining your decision.");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await apiClient.verifyCheckIn(checkin.id, {
+      await apiClient.decideCheckIn(checkin.id, {
         decision,
-        comment: comment.trim() ? comment.trim() : undefined,
+        reason: comment.trim() ? comment.trim() : undefined,
+        expected_version: checkin.version,
       });
 
-      const label =
-        decision === "APPROVE"
-          ? "approved"
-          : decision === "REQUEST_CHANGES"
-          ? "marked for changes"
-          : "rejected";
+      const label = decision === "APPROVE" ? "approved" : "rejected";
 
       toast.success(`Check-in submission ${label}`, {
         description:
           decision === "APPROVE"
-            ? `Verified progress updated to ${checkin.percent}% (Developer reported).`
-            : "Review comments returned to developer.",
+            ? `Approved progress is now ${checkin.percent}% (developer reported).`
+            : "The check-in was rejected with review feedback.",
       });
 
       onClose();
@@ -92,7 +92,7 @@ export function VerificationReviewModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Team Lead Progress Verification"
-      description={`Review developer code submission for [${checkin.project_key}] ${checkin.project_name}.`}
+      description={`Review check-in for [${projectKey ?? checkin.project_id}] ${projectName ?? ""}.`}
       className="max-w-2xl max-h-[90vh] overflow-y-auto"
     >
       <div className="space-y-4 pt-2">
@@ -104,11 +104,11 @@ export function VerificationReviewModal({
               <span>Submitted by</span>
             </div>
             <p className="font-semibold text-sm text-[var(--color-text-primary)]">
-              {checkin.author_name}
+              {checkin.author.email ?? checkin.author.user_id ?? "Unknown"}
             </p>
             <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-muted)] mt-1">
               <Clock className="w-3 h-3" />
-              <span>{new Date(checkin.created_at).toLocaleString()}</span>
+              <span>{new Date(checkin.submitted_at).toLocaleString()}</span>
             </div>
           </div>
 
@@ -116,7 +116,7 @@ export function VerificationReviewModal({
             <div>
               <span className="text-xs text-[var(--color-text-secondary)] block">Current Baseline:</span>
               <span className="font-mono text-base font-bold text-[var(--color-text-muted)]">
-                {currentProjectPercent.toFixed(1)}%
+                {currentProjectPercent === null ? "Not reported" : `${currentProjectPercent.toFixed(1)}%`}
               </span>
             </div>
             <div className="text-right">
@@ -197,51 +197,9 @@ export function VerificationReviewModal({
             Submitted Code Evidence
           </h4>
 
-          {checkin.evidence_items && checkin.evidence_items.length > 0 ? (
-            <div className="space-y-1.5">
-              {checkin.evidence_items.map((ev, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between p-2 rounded bg-[var(--color-sidebar)]/50 border border-[var(--color-border)] text-xs"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    {ev.type === "COMMIT" ? (
-                      <GitCommit className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                    ) : (
-                      <GitPullRequest className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
-                    )}
-                    {ev.sha && (
-                      <span className="font-mono text-[10px] bg-neutral-200 dark:bg-neutral-800 px-1 rounded">
-                        {ev.sha.substring(0, 7)}
-                      </span>
-                    )}
-                    <span className="font-medium text-[var(--color-text-primary)] truncate">
-                      {ev.title || "Code commit / artifact"}
-                    </span>
-                    {ev.repo_name && (
-                      <span className="text-[10px] text-[var(--color-text-muted)]">
-                        ({ev.repo_name})
-                      </span>
-                    )}
-                  </div>
-                  {ev.url && (
-                    <a
-                      href={ev.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] text-primary-600 hover:underline ml-2 flex-shrink-0"
-                    >
-                      <ExternalLink className="w-3 h-3" /> View Diff
-                    </a>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-[var(--color-text-muted)] italic">
-              {checkin.evidence_summary || "No specific git commits attached with this submission."}
-            </p>
-          )}
+          <p className="whitespace-pre-wrap text-xs text-[var(--color-text-muted)] italic">
+            {checkin.evidence || "No specific evidence attached with this submission."}
+          </p>
         </div>
 
         {/* Team Lead Feedback Comments */}
@@ -287,17 +245,6 @@ export function VerificationReviewModal({
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              onClick={() => handleDecision("REQUEST_CHANGES")}
-              disabled={isSubmitting || isSelfCheckin}
-              className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-            >
-              <AlertCircle className="w-3.5 h-3.5 mr-1" />
-              Request Changes
-            </Button>
-
-            <Button
-              type="button"
               size="sm"
               onClick={() => handleDecision("APPROVE")}
               disabled={isSubmitting || isSelfCheckin}

@@ -380,6 +380,7 @@ export interface ProjectListQuery {
   to?: string;
   cursor?: string | null;
   limit?: number;
+  include_archived?: boolean;
 }
 
 export interface CreateProjectDto {
@@ -401,6 +402,7 @@ export interface CreateProjectDto {
 export interface UpdateProjectDto {
   name?: string;
   description?: string | null;
+  mode?: ProjectModeDto;
   priority?: ProjectPriorityDto;
   project_manager_membership_id?: string | null;
   accountable_membership_id?: string | null;
@@ -511,4 +513,169 @@ export interface CheckInDecisionDto {
   decision: "APPROVE" | "REJECT";
   reason?: string;
   expected_version: number;
+}
+
+/** GitHub activity is evidence only; these events never determine project progress. */
+export interface GitHubActivityDto {
+  id: string;
+  repository_name: string;
+  event_type: string;
+  actor: string;
+  title: string;
+  detail: string | null;
+  sha: string | null;
+  pr_number: number | null;
+  branch: string | null;
+  status: string | null;
+  linked_task_key: string | null;
+  project_id: string | null;
+  created_at: string;
+  org_id: string | null;
+}
+
+/* Task 2.4: delivery lifecycle and blocker DTOs (backend DeliveryDTOs). */
+
+export interface DeliveryChecklistItem {
+  id: string;
+  label: string;
+  checked: boolean;
+  notes: string | null;
+}
+
+export interface DeliveryEvidenceItem {
+  type: string;
+  title: string | null;
+  url: string | null;
+  reference: string | null;
+}
+
+export interface AcceptanceSubmissionRequestDto {
+  bound_checkin_id?: string;
+  checklist: DeliveryChecklistItem[];
+  evidence_summary?: string;
+  evidence_items?: DeliveryEvidenceItem[];
+}
+
+export interface AcceptanceDecisionRequestDto {
+  decision: "ACCEPTED" | "REJECTED" | "CHANGES_REQUESTED";
+  reason: string;
+  expected_project_version: number;
+}
+
+export interface AcceptanceDecisionDto {
+  id: string;
+  request_id: string;
+  project_id: string;
+  decision: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  reason: string | null;
+  decided_at: string;
+}
+
+export interface AcceptanceRequestDto {
+  id: string;
+  org_id: string;
+  project_id: string;
+  bound_checkin_id: string | null;
+  checklist: DeliveryChecklistItem[];
+  evidence_summary: string | null;
+  evidence_items: DeliveryEvidenceItem[];
+  status: string;
+  version: number | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+  decisions: AcceptanceDecisionDto[];
+}
+
+export interface CreateBlockerRequestDto {
+  title: string;
+  description?: string;
+  severity: "NORMAL" | "CRITICAL";
+}
+
+export interface CreateWaiverRequestDto {
+  blocker_ref: string;
+  reason: string;
+}
+
+export interface ProjectBlockerWaiverDto {
+  id: string;
+  project_id: string;
+  blocker_ref: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  reason: string;
+  waived_at: string;
+}
+
+export interface ProjectBlockerDto {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  severity: "NORMAL" | "CRITICAL" | string;
+  status: string;
+  created_by: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  waiver: ProjectBlockerWaiverDto | null;
+}
+
+export interface CloseProjectRequestDto {
+  handover_note: string;
+  reason: string;
+  expected_project_version: number;
+}
+
+export interface ReopenProjectRequestDto {
+  reason: string;
+  expected_project_version: number;
+}
+
+export interface TransitionLifecycleRequestDto {
+  target_lifecycle: "ON_HOLD" | "ACTIVE";
+  reason: string;
+  expected_project_version: number;
+}
+
+export interface ProjectClosureDto {
+  id: string;
+  project_id: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  handover_note: string | null;
+  reason: string | null;
+  closed_at: string;
+}
+
+export interface ProjectLifecycleHistoryDto {
+  id: string;
+  project_id: string;
+  previous_lifecycle: string | null;
+  new_lifecycle: string;
+  reason: string | null;
+  actor_id: string | null;
+  actor_name: string | null;
+  created_at: string;
+}
+
+export interface ProjectDeliveryStatusDto {
+  project_id: string;
+  lifecycle: ProjectLifecycleDto;
+  previous_lifecycle: string | null;
+  archived: boolean;
+  progress_percent: number | null;
+  version: number | null;
+  latest_acceptance_request: AcceptanceRequestDto | null;
+  latest_closure: ProjectClosureDto | null;
+  open_critical_blockers_count: number;
+  open_unwaived_critical_blockers_count: number;
+  can_submit_delivery: boolean;
+  can_approve_delivery: boolean;
+  can_close: boolean;
+  can_archive: boolean;
+  can_restore: boolean;
 }

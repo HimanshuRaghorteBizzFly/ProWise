@@ -23,14 +23,18 @@ import {
 
 interface CheckInAuditTrailProps {
   checkIns: CheckInDto[];
-  currentProjectPercent?: number;
+  currentProjectPercent?: number | null;
+  projectKey?: string;
+  projectName?: string;
   canReview?: boolean;
   onRefresh?: () => void;
 }
 
 export function CheckInAuditTrail({
   checkIns = [],
-  currentProjectPercent = 0,
+  currentProjectPercent = null,
+  projectKey,
+  projectName,
   canReview = false,
   onRefresh,
 }: CheckInAuditTrailProps) {
@@ -38,25 +42,18 @@ export function CheckInAuditTrail({
 
   const renderStatusBadge = (status: string) => {
     switch (status) {
-      case "ACCEPTED":
+      case "APPROVED":
         return (
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
             Verified & Accepted
           </span>
         );
-      case "PENDING_VERIFICATION":
+      case "PENDING":
         return (
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800">
             <Clock className="w-3 h-3 text-amber-600" />
             Pending Verification
-          </span>
-        );
-      case "CHANGES_REQUESTED":
-        return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-950/50 px-2 py-0.5 rounded border border-orange-200 dark:border-orange-800">
-            <AlertCircle className="w-3 h-3 text-orange-600" />
-            Changes Requested
           </span>
         );
       case "REJECTED":
@@ -106,7 +103,7 @@ export function CheckInAuditTrail({
         <div className="space-y-3">
           {checkIns.map((item) => {
             const isDownward = Boolean(item.downward_reason);
-            const isPending = item.status === "PENDING_VERIFICATION";
+            const isPending = item.status === "PENDING";
 
             return (
               <div
@@ -145,10 +142,10 @@ export function CheckInAuditTrail({
                   <div className="flex items-center gap-3">
                     <div className="text-right">
                       <span className="block text-[11px] text-[var(--color-text-secondary)]">
-                        {new Date(item.captured_at || item.created_at).toLocaleString()}
+                        {new Date(item.submitted_at).toLocaleString()}
                       </span>
                       <span className="block text-[10px] text-[var(--color-text-muted)]">
-                        by {item.author_name}
+                        by {item.author.email ?? item.author.user_id ?? "Unknown"}
                       </span>
                     </div>
 
@@ -207,53 +204,28 @@ export function CheckInAuditTrail({
                 )}
 
                 {/* Code Evidence Links */}
-                {item.evidence_items && item.evidence_items.length > 0 && (
+                {item.evidence && (
                   <div className="pt-2 border-t border-[var(--color-border)]/50 space-y-1">
                     <span className="block text-[11px] font-semibold text-[var(--color-text-primary)] mb-1">
-                      Code Evidence:
+                      Evidence:
                     </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {item.evidence_items.map((ev, i) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center gap-1.5 rounded bg-[var(--color-sidebar)] px-2 py-1 text-[11px] border border-[var(--color-border)]"
-                        >
-                          {ev.type === "COMMIT" ? (
-                            <GitCommit className="w-3 h-3 text-blue-500" />
-                          ) : (
-                            <GitPullRequest className="w-3 h-3 text-purple-500" />
-                          )}
-                          {ev.sha && <span className="font-mono text-[10px]">{ev.sha.substring(0, 7)}</span>}
-                          <span className="truncate max-w-[200px]">{ev.title || "Evidence"}</span>
-                          {ev.url && (
-                            <a
-                              href={ev.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-primary-600 hover:underline inline-flex items-center"
-                            >
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            </a>
-                          )}
-                        </span>
-                      ))}
-                    </div>
+                    <p className="whitespace-pre-wrap text-xs text-[var(--color-text-secondary)]">{item.evidence}</p>
                   </div>
                 )}
 
                 {/* Verification Decision Comments */}
-                {item.reviewed_at && (
+                {item.decided_at && (
                   <div className="mt-3 pt-2.5 border-t border-[var(--color-border)] text-xs bg-[var(--color-sidebar)]/40 p-2.5 rounded-lg">
                     <div className="flex items-center justify-between text-[11px] text-[var(--color-text-muted)] mb-1">
                       <span className="font-medium flex items-center gap-1 text-[var(--color-text-primary)]">
                         <ShieldCheck className="w-3.5 h-3.5 text-primary-600" />
-                        Verified by {item.verified_by_name || item.verified_by || "Team Lead"}
+                        Decided by {item.decided_by?.email ?? "Team Lead"}
                       </span>
-                      <span>{new Date(item.reviewed_at).toLocaleString()}</span>
+                      <span>{new Date(item.decided_at).toLocaleString()}</span>
                     </div>
-                    {item.review_comment && (
+                    {item.decision_reason && (
                       <p className="text-[var(--color-text-secondary)] italic">
-                        &quot;{item.review_comment}&quot;
+                        &quot;{item.decision_reason}&quot;
                       </p>
                     )}
                   </div>
@@ -271,6 +243,8 @@ export function CheckInAuditTrail({
           onClose={() => setSelectedForReview(null)}
           checkin={selectedForReview}
           currentProjectPercent={currentProjectPercent}
+          projectKey={projectKey}
+          projectName={projectName}
           onDecided={() => {
             setSelectedForReview(null);
             if (onRefresh) onRefresh();

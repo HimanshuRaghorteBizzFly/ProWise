@@ -3,7 +3,6 @@
 import React from "react";
 import type { ProjectDto } from "@/types/api";
 import {
-  Calendar,
   Layers,
   User,
   Shield,
@@ -15,7 +14,6 @@ import {
   Edit2,
   CheckCircle2,
 } from "lucide-react";
-import { HealthBadge } from "@/components/ui/health-badge";
 
 interface ProjectCardProps {
   project: ProjectDto;
@@ -55,8 +53,9 @@ export function ProjectCard({
     CANCELLED: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
   }[project.lifecycle] ?? "bg-slate-500/10 text-slate-600 border-slate-500/20";
 
-  const percent = Number(project.lastProgressPercent) || 0;
+  const percent = project.progress.percent;
   const isIndividual = project.mode === "INDIVIDUAL";
+  const progressLabel = percent === null ? project.progress.label : `${percent}%`;
 
   return (
     <div
@@ -200,14 +199,14 @@ export function ProjectCard({
           </p>
         )}
 
-        {/* Health and Progress */}
+        {/* Approved progress */}
         <div className="my-4 space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="text-app-text-muted font-medium flex items-center gap-1.5">
-              Health: <HealthBadge health={project.health === "OFF_TRACK" ? "DELAYED" : (project.health as any)} />
+              Progress
             </span>
             <span className="font-semibold text-app-text-primary">
-              {percent}%
+              {progressLabel}
             </span>
           </div>
 
@@ -220,15 +219,11 @@ export function ProjectCard({
           >
             <div
               className={`h-full transition-all duration-300 rounded-full ${
-                project.health === "OFF_TRACK"
-                  ? "bg-red-500"
-                  : project.health === "AT_RISK"
-                  ? "bg-amber-500"
-                  : isIndividual
+                isIndividual
                   ? "bg-gradient-to-r from-emerald-500 to-teal-400"
                   : "bg-gradient-to-r from-violet-500 to-indigo-500"
               }`}
-              style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+              style={{ width: `${percent === null ? 0 : Math.min(100, Math.max(0, percent))}%` }}
             />
           </div>
 
@@ -237,9 +232,9 @@ export function ProjectCard({
             <div className="text-[11px] text-app-text-muted flex items-center gap-1 pt-0.5">
               <CheckCircle2 className="w-3 h-3 text-emerald-500" />
               <span>
-                {percent === 0
-                  ? "Solo mode: 0 tasks required (progress via developer check-ins)"
-                  : "Developer reported progress"}
+                {percent === null
+                  ? "Solo mode: 0 tasks required (progress via approved developer check-ins)"
+                  : "Approved developer-reported progress"}
               </span>
             </div>
           )}
@@ -249,10 +244,10 @@ export function ProjectCard({
       {/* Footer: Dates & Ownership */}
       <div className="pt-3 border-t border-app-border/60 space-y-2 text-xs text-app-text-muted">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          {project.targetDate ? (
+          {project.target_on ? (
             <div className="flex items-center gap-1 text-[11px]">
               <Clock className="w-3 h-3" />
-              <span>Due: {new Date(project.targetDate).toLocaleDateString()}</span>
+              <span>Due: {project.target_on}</span>
             </div>
           ) : (
             <div className="text-[11px]">No target date</div>
@@ -263,11 +258,11 @@ export function ProjectCard({
           </div>
         </div>
 
-        {project.accountableDeveloperId && (
+        {project.accountable && (
           <div className="flex items-center gap-1.5 text-[11px] text-app-text-secondary">
             <Shield className="w-3 h-3 text-blue-500" />
             <span className="truncate">
-              Accountable Dev: {project.accountableDeveloperId}
+              Accountable Dev: {project.accountable.email}
             </span>
           </div>
         )}

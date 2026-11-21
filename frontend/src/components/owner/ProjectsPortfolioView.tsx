@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { FolderKanban, LayoutGrid, List, Plus, Edit2, Users, Archive, RotateCcw } from "lucide-react";
+import { FolderKanban, LayoutGrid, List, Plus, Edit2, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { apiClient, ApiError } from "@/lib/api";
@@ -11,32 +11,29 @@ import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLate
 import { OwnerPageState } from "@/components/owner/OwnerPageState";
 import { OwnerPanel } from "@/components/owner/OwnerPanel";
 import { OwnerTable } from "@/components/owner/OwnerTable";
-import { FilterBar, PageHeader, StatusBadge, SurfaceCard, type StatusTone } from "@/components/owner/primitives";
+import { FilterBar, PageHeader, StatusBadge, type StatusTone } from "@/components/owner/primitives";
 import {
   DEADLINE_LABELS,
-  deadlineStatus,
+  calendarDaysUntil,
   formatDateOnly,
-  formatLifecycle,
-  getOwnerName,
-  getProgressMethodLabel,
-  getProgressValue,
   type DeadlineStatus,
 } from "@/components/owner/project-format";
-import { HealthBadge } from "@/components/ui/health-badge";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { PortfolioData } from "@/lib/fixtures/org-admin";
 import { cn } from "@/lib/utils";
-import type { Project } from "@/types";
 import type { PermissionKey } from "@/types/permission";
-import type { ProjectDto, CreateProjectRequestDto, UpdateProjectRequestDto } from "@/types/api";
+import type {
+  ProjectDto,
+  CreateProjectDto,
+  UpdateProjectDto,
+} from "@/types/api";
 import { ProjectFormModal } from "@/features/projects/ProjectFormModal";
 import { ProjectMembersModal } from "@/features/projects/ProjectMembersModal";
 import { ProjectCard } from "@/features/projects/ProjectCard";
-import { useProjectStore } from "@/store/project-store";
-import { useDeliveryStore } from "@/store/delivery-store";
-import { VIEWERS } from "@/mocks/delivery-dashboards";
 
-export interface ProjectsPortfolioViewProps extends PortfolioData {
+export interface ProjectsPortfolioViewProps {
+  projects: ProjectDto[];
+  users: Array<{ id: string; name: string; email: string }>;
+  teams: Array<{ id: string; name: string }>;
   source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
   basePath?: string;
@@ -58,12 +55,19 @@ interface Filters {
   owner: string;
   team: string;
   lifecycle: string;
-  health: string;
   mode: string;
   deadline: string;
 }
 
-const NO_FILTERS: Filters = { owner: "ALL", team: "ALL", lifecycle: "ALL", health: "ALL", mode: "ALL", deadline: "ALL" };
+const NO_FILTERS: Filters = { owner: "ALL", team: "ALL", lifecycle: "ALL", mode: "ALL", deadline: "ALL" };
+
+function projectDeadlineStatus(project: ProjectDto, now?: string): DeadlineStatus {
+  if (["DELIVERED", "CLOSED", "CANCELLED"].includes(project.lifecycle)) return "closed";
+  if (!project.target_on) return "later";
+  const days = calendarDaysUntil(project.target_on, project.timezone, now);
+  if (days < 0) return "overdue";
+  return days <= 14 ? "due-soon" : "later";
+}
 
 function FilterSelect({
   label,
@@ -91,32 +95,6 @@ function FilterSelect({
   );
 }
 
-function toProjectDto(p: Project): ProjectDto {
-  return {
-    id: p.id,
-    orgId: p.orgId,
-    key: p.key,
-    name: p.name,
-    description: p.description,
-    mode: p.mode,
-    lifecycle: p.lifecycle as any,
-    priority: p.priority as any,
-    projectManagerId: p.projectManagerId,
-    accountableDeveloperId: p.accountableOwnerId,
-    teamIds: p.teamIds ?? [],
-    memberIds: p.memberIds ?? [],
-    startDate: p.startDate,
-    targetDate: p.targetDate,
-    timezone: p.timezone,
-    lastProgressPercent: p.lastProgressPercent,
-    health: p.health as any,
-    archived: p.archived,
-    version: p.version,
-    createdAt: p.createdAt,
-    updatedAt: p.createdAt,
-  };
-}
-
 export function ProjectsPortfolioView({
   projects,
   users,
@@ -142,8 +120,8 @@ export function ProjectsPortfolioView({
 
   // Modals state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [memberManagingProject, setMemberManagingProject] = useState<Project | null>(null);
+  const [editingProject, setEditingProject] = useState<ProjectDto | null>(null);
+  const [memberManagingProject, setMemberManagingProject] = useState<ProjectDto | null>(null);
 
   const canCreate = can("project.create");
   const canEdit = can("project.edit");
@@ -156,18 +134,19 @@ export function ProjectsPortfolioView({
       (project) =>
         (showArchived || !project.archived) &&
         (!query || project.name.toLowerCase().includes(query) || project.key.toLowerCase().includes(query)) &&
-        (filters.owner === "ALL" || project.accountableOwnerId === filters.owner) &&
-        (filters.team === "ALL" || project.teamIds.includes(filters.team)) &&
+        (filters.owner === "ALL" || project.accountable?.membership_id === filters.owner) &&
+        (filters.team === "ALL" || project.team_id === filters.team) &&
         (filters.lifecycle === "ALL" || project.lifecycle === filters.lifecycle) &&
-        (filters.health === "ALL" || project.health === filters.health) &&
         (filters.mode === "ALL" || project.mode === filters.mode) &&
-        (filters.deadline === "ALL" || deadlineStatus(project, now) === filters.deadline),
+        (filters.deadline === "ALL" || projectDeadlineStatus(project, now) === filters.deadline),
     );
   }, [projects, search, filters, showArchived, now]);
 
-  const owners = Array.from(new Set(projects.map((project) => project.accountableOwnerId))).map((id) => ({
+  const owners = Array.from(new Set(
+    projects.flatMap((project) => project.accountable ? [project.accountable.membership_id] : []),
+  )).map((id) => ({
     value: id,
-    label: users.find((user) => user.id === id)?.name ?? id,
+    label: users.find((user) => user.id === id)?.name ?? users.find((user) => user.id === id)?.email ?? id,
   }));
   const hasFilters = search !== "" || showArchived || Object.values(filters).some((value) => value !== "ALL");
 
@@ -176,77 +155,28 @@ export function ProjectsPortfolioView({
     [users]
   );
 
-  const handleCreateSubmit = async (data: CreateProjectRequestDto | UpdateProjectRequestDto) => {
-    if (!orgId) return;
-    const createData = data as CreateProjectRequestDto;
-    let backendProject: any = null;
+  const handleCreateSubmit = async (data: CreateProjectDto | UpdateProjectDto) => {
+    if (!orgId) throw new Error("An organization is required to create a project.");
+    if (!("key" in data)) throw new Error("The project create request is missing its key.");
     try {
-      backendProject = await apiClient.createProject(orgId, createData);
+      await apiClient.createProject(orgId, data);
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 400 || err.status === 409 || err.status === 422) {
-          const msg = err.message || "Failed to create project.";
-          toast.error("Project creation failed", { description: msg });
-          throw err;
-        }
-      }
+      const message = err instanceof ApiError ? err.message : "Failed to create project.";
+      toast.error("Project creation failed", { description: message });
+      throw err;
     }
 
-    // Sync to useProjectStore & useDeliveryStore so Developer & Team Lead workspaces reflect the project
-    const finalKey = backendProject?.key || createData.key;
-    try {
-      useProjectStore.getState().createProject({
-        orgId,
-        name: createData.name,
-        key: finalKey,
-        description: createData.description || "",
-        mode: (createData.mode as import("@/types").ProjectMode) || "STRUCTURED",
-        lifecycle: createData.lifecycle || "ACTIVE",
-        archived: false,
-        priority: (createData.priority as import("@/types").Priority) || "MEDIUM",
-        projectManagerId: createData.projectManagerId || VIEWERS.manager.id,
-        accountableOwnerId: createData.accountableDeveloperId || "usr-developer",
-        teamIds: ["t-platform"],
-        memberIds: [
-          createData.accountableDeveloperId || "usr-developer",
-          createData.projectManagerId || VIEWERS.manager.id,
-          VIEWERS.lead.id,
-        ],
-        startDate: createData.startDate ? createData.startDate.split("T")[0] : new Date().toISOString().split("T")[0],
-        targetDate: createData.targetDate ? createData.targetDate.split("T")[0] : "",
-        timezone: createData.timezone || "America/New_York",
-        cadence: "WEEKLY",
-        graceWorkingDays: 1,
-        repositoryIds: [],
-      });
-
-      useDeliveryStore.getState().createProject(
-        {
-          name: createData.name,
-          client: "Internal / Client",
-          mode: (createData.mode as import("@/mocks/delivery-dashboards").DeliveryMode) || "STRUCTURED",
-          teamId: "t-platform",
-          startDate: createData.startDate ? createData.startDate.split("T")[0] : new Date().toISOString().split("T")[0],
-          dueDate: createData.targetDate ? createData.targetDate.split("T")[0] : "",
-          description: createData.description || "",
-        },
-        createData.projectManagerId || VIEWERS.manager.id
-      );
-    } catch {
-      // ignore local sync errors
-    }
-
-    toast.success("Project created successfully", {
-      description: `Project [${finalKey}] is now active across all workspaces.`,
-    });
+    toast.success("Project created successfully");
     onRefresh?.();
     setIsCreateOpen(false);
   };
 
-  const handleEditSubmit = async (data: CreateProjectRequestDto | UpdateProjectRequestDto) => {
-    if (!editingProject) return;
+  const handleEditSubmit = async (data: CreateProjectDto | UpdateProjectDto) => {
+    if (!orgId || !editingProject || !("expected_version" in data)) {
+      throw new Error("The project update request is incomplete.");
+    }
     try {
-      await apiClient.updateProject(editingProject.id, data as UpdateProjectRequestDto, orgId);
+      await apiClient.updateProject(orgId, editingProject.id, data);
       toast.success("Project updated successfully");
       onRefresh?.();
       setEditingProject(null);
@@ -257,20 +187,8 @@ export function ProjectsPortfolioView({
     }
   };
 
-  const handleToggleArchive = async (project: Project) => {
-    try {
-      if (project.archived) {
-        await apiClient.restoreProject(project.id, project.version, orgId);
-        toast.success(`Project "${project.name}" restored`);
-      } else {
-        await apiClient.archiveProject(project.id, project.version, orgId);
-        toast.success(`Project "${project.name}" archived`);
-      }
-      onRefresh?.();
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Action failed.";
-      toast.error("Archive/Restore failed", { description: msg });
-    }
+  const handleToggleArchive = (project: ProjectDto) => {
+    toast.error(`Archive/restore is not available for "${project.name}" because the backend has no corresponding endpoint.`);
   };
 
   const header = (
@@ -338,12 +256,12 @@ export function ProjectsPortfolioView({
     );
   }
 
-  const deadlineBadge = (project: Project) => {
-    const status = deadlineStatus(project, now);
+  const deadlineBadge = (project: ProjectDto) => {
+    const status = projectDeadlineStatus(project, now);
     return <StatusBadge label={DEADLINE_LABELS[status]} tone={DEADLINE_TONES[status]} />;
   };
 
-  const archiveAction = (project: Project) => {
+  const archiveAction = (project: ProjectDto) => {
     if (!canArchive) return null;
     if (source === "fixture") {
       return (
@@ -419,19 +337,8 @@ export function ProjectsPortfolioView({
                   onChange={setFilter("lifecycle")}
                   options={["PLANNED", "ACTIVE", "ON_HOLD", "AWAITING_ACCEPTANCE", "DELIVERED", "CLOSED", "CANCELLED"].map((value) => ({
                     value,
-                    label: formatLifecycle(value as Project["lifecycle"]),
+                    label: value.toLowerCase().replace(/_/g, " "),
                   }))}
-                />
-                <FilterSelect
-                  label="Health"
-                  value={filters.health}
-                  onChange={setFilter("health")}
-                  options={[
-                    { value: "ON_TRACK", label: "On track" },
-                    { value: "AT_RISK", label: "At risk" },
-                    { value: "DELAYED", label: "Delayed" },
-                    { value: "UNKNOWN", label: "Unknown" },
-                  ]}
                 />
                 <FilterSelect
                   label="Mode"
@@ -468,7 +375,7 @@ export function ProjectsPortfolioView({
               {visible.map((project) => (
                 <li key={project.id} className="min-w-0">
                   <ProjectCard
-                    project={toProjectDto(project)}
+                    project={project}
                     canEdit={canEdit}
                     canArchive={canArchive}
                     onEdit={() => setEditingProject(project)}
@@ -486,7 +393,6 @@ export function ProjectsPortfolioView({
                   <TableHead>Project</TableHead>
                   <TableHead>Mode</TableHead>
                   <TableHead>Lifecycle</TableHead>
-                  <TableHead>Health</TableHead>
                   <TableHead>Progress</TableHead>
                   <TableHead>Target date</TableHead>
                   <TableHead>Accountable owner</TableHead>
@@ -508,19 +414,24 @@ export function ProjectsPortfolioView({
                       {project.archived && <StatusBadge label="Archived" tone="neutral" className="ml-2" />}
                     </TableCell>
                     <TableCell>{project.mode === "INDIVIDUAL" ? "Individual" : "Structured"}</TableCell>
-                    <TableCell className="capitalize">{formatLifecycle(project.lifecycle)}</TableCell>
+                    <TableCell className="capitalize">{project.lifecycle.toLowerCase().replace(/_/g, " ")}</TableCell>
                     <TableCell>
-                      <HealthBadge health={project.health} showIcon={false} />
+                      <span className="block font-medium text-app-text-primary">
+                        {project.progress.percent === null ? project.progress.label : `${project.progress.percent}%`}
+                      </span>
+                      <span className="text-caption text-app-text-muted">{project.progress.label}</span>
                     </TableCell>
                     <TableCell>
-                      <span className="block font-medium text-app-text-primary">{getProgressValue(project)}</span>
-                      <span className="text-caption text-app-text-muted">{getProgressMethodLabel(project)}</span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="block whitespace-nowrap">{formatDateOnly(project.targetDate, project.timezone)}</span>
+                      <span className="block whitespace-nowrap">
+                        {project.target_on ? formatDateOnly(project.target_on, project.timezone) : "No target date"}
+                      </span>
                       {deadlineBadge(project)}
                     </TableCell>
-                    <TableCell>{getOwnerName(project, users)}</TableCell>
+                    <TableCell>
+                      {project.accountable
+                        ? users.find((user) => user.id === project.accountable?.membership_id)?.name ?? project.accountable.email
+                        : "Unassigned"}
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         {canEdit && !project.archived && (
@@ -570,7 +481,7 @@ export function ProjectsPortfolioView({
           isOpen={Boolean(editingProject)}
           onClose={() => setEditingProject(null)}
           onSubmit={handleEditSubmit}
-          project={toProjectDto(editingProject)}
+          project={editingProject}
           members={orgMembersList}
         />
       )}
@@ -580,7 +491,7 @@ export function ProjectsPortfolioView({
         <ProjectMembersModal
           isOpen={Boolean(memberManagingProject)}
           onClose={() => setMemberManagingProject(null)}
-          project={toProjectDto(memberManagingProject)}
+          project={memberManagingProject}
           orgMembers={orgMembersList}
           orgId={orgId}
         />
