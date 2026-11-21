@@ -65,7 +65,7 @@ export function AppShell({ children, role: overrideRole, orgId = "org-1", title 
           </main>
         </div>
       </div>
-      <Toaster position="top-right" theme={isDark ? "dark" : "light"} richColors />
+      <Toaster position="bottom-right" theme={isDark ? "dark" : "light"} richColors closeButton />
     </div>
   );
 }

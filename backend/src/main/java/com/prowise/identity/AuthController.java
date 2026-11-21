@@ -8,7 +8,6 @@ import jakarta.servlet.http.Cookie;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.ResponseCookie;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.context.annotation.Profile;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,12 +19,13 @@ import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 @RestController
-@RequestMapping("/v1")
+@RequestMapping({"/v1", "/api"})
 @Profile("!test")
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class AuthController {
 
     private static final String REFRESH_COOKIE = "prowise_refresh_token";
+    private static final String ACCESS_COOKIE = "prowise_access_token";
     private final AuthService authService;
 
     public AuthController(AuthService authService) {
@@ -35,55 +35,128 @@ public class AuthController {
     @PostMapping("/auth/signup")
     @PreAuthorize("permitAll()")
     @Operation(summary = "Create an identity and start a session")
-    ResponseEntity<AccessTokenResponse> signup(@RequestBody Credentials request) {
+    public ResponseEntity<AccessTokenResponse> signup(@RequestBody Credentials request) {
         return withRefreshCookie(authService.signup(request.email(), request.password()), 201);
     }
 
     @PostMapping("/auth/signin")
     @PreAuthorize("permitAll()")
     @Operation(summary = "Sign in and rotate a refresh session")
-    ResponseEntity<AccessTokenResponse> signin(@RequestBody Credentials request) {
+    public ResponseEntity<AccessTokenResponse> signin(@RequestBody Credentials request) {
         return withRefreshCookie(authService.signin(request.email(), request.password()), 200);
+    }
+
+    @PostMapping("/auth/login")
+    @PreAuthorize("permitAll()")
+    @Operation(summary = "Authenticate user with email and password, returning tokens and role-based redirect target")
+    public ResponseEntity<AuthService.AuthResponse> login(
+            HttpServletRequest request,
+            @RequestBody Credentials credentials) {
+        String ip = extractClientIp(request);
+        String userAgent = request.getHeader(HttpHeaders.USER_AGENT);
+        AuthService.AuthResponse response = authService.login(credentials.email(), credentials.password(), ip, userAgent);
+
+        ResponseCookie accessCookie = ResponseCookie.from(ACCESS_COOKIE, response.accessToken())
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(java.time.Duration.ofMinutes(15))
+                .build();
+
+        ResponseCookie refreshCookie = ResponseCookie.from(REFRESH_COOKIE, response.refreshToken())
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(java.time.Duration.ofDays(30))
+                .build();
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, accessCookie.toString())
+                .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
+                .body(response);
     }
 
     @PostMapping("/auth/refresh")
     @PreAuthorize("permitAll()")
     @Operation(summary = "Rotate the refresh session")
-    ResponseEntity<AccessTokenResponse> refresh(HttpServletRequest request, @RequestBody(required = false) RefreshRequest body) {
+    public ResponseEntity<AccessTokenResponse> refresh(HttpServletRequest request, @RequestBody(required = false) RefreshRequest body) {
         String refreshToken = body == null ? null : body.refreshToken();
         if (refreshToken == null) refreshToken = cookieValue(request, REFRESH_COOKIE);
         if (refreshToken == null) refreshToken = "";
         return withRefreshCookie(authService.refresh(refreshToken), 200);
     }
 
-    @PostMapping("/auth/signout")
+    @PostMapping({"/auth/logout", "/auth/signout"})
     @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Revoke the current session")
-    ResponseEntity<Void> signout(HttpServletRequest request) {
-        authService.signout(AuthPrincipal.require(request));
-        return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, clearRefreshCookie().toString()).build();
+    @Operation(summary = "Revoke the current session and clear auth cookies")
+    public ResponseEntity<Void> logout(HttpServletRequest request) {
+        AuthPrincipal principal = AuthPrincipal.require(request);
+        authService.signout(principal);
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, clearCookie(ACCESS_COOKIE).toString())
+                .header(HttpHeaders.SET_COOKIE, clearCookie(REFRESH_COOKIE).toString())
+                .build();
     }
 
-    @PostMapping("/auth/password-reset/request")
+    @PostMapping({"/auth/change-password", "/auth/password/change"})
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Change password for the authenticated user")
+    public ResponseEntity<AuthService.TokenPair> changePassword(
+            HttpServletRequest request,
+            @RequestBody ChangePasswordRequest body) {
+        AuthPrincipal principal = AuthPrincipal.require(request);
+        String ip = extractClientIp(request);
+        AuthService.TokenPair newTokens = authService.changePassword(
+                principal.userId(),
+                body.currentPassword(),
+                body.newPassword(),
+                ip
+        );
+
+        ResponseCookie accessCookie = ResponseCookie.from(ACCESS_COOKIE, newTokens.accessToken())
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(java.time.Duration.ofMinutes(15))
+                .build();
+
+        ResponseCookie refreshCookie = ResponseCookie.from(REFRESH_COOKIE, newTokens.refreshToken())
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(java.time.Duration.ofDays(30))
+                .build();
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, accessCookie.toString())
+                .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
+                .body(newTokens);
+    }
+
+    @PostMapping({"/auth/forgot-password", "/auth/password-reset/request"})
     @PreAuthorize("permitAll()")
     @Operation(summary = "Request password reset instructions")
-    ResponseEntity<Void> requestPasswordReset(@RequestBody EmailRequest request) {
+    public ResponseEntity<Void> forgotPassword(@RequestBody EmailRequest request) {
         authService.requestPasswordReset(request.email());
         return ResponseEntity.accepted().build();
     }
 
-    @PostMapping("/auth/password-reset/confirm")
+    @PostMapping({"/auth/reset-password", "/auth/password-reset/confirm"})
     @PreAuthorize("permitAll()")
     @Operation(summary = "Confirm a password reset")
-    ResponseEntity<Void> confirmPasswordReset(@RequestBody PasswordResetRequest request) {
+    public ResponseEntity<Void> resetPassword(@RequestBody PasswordResetRequest request) {
         authService.confirmPasswordReset(request.token(), request.password());
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/me")
+    @GetMapping({"/me", "/auth/me"})
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Get the authenticated identity and active memberships")
-    AuthService.MeResponse me(HttpServletRequest request) {
+    public AuthService.ExtendedMeResponse me(HttpServletRequest request) {
         return authService.me(AuthPrincipal.require(request).userId());
     }
 
@@ -91,11 +164,13 @@ public class AuthController {
     public record RefreshRequest(String refreshToken) {}
     public record EmailRequest(String email) {}
     public record PasswordResetRequest(String token, String password) {}
+    public record ChangePasswordRequest(String currentPassword, String newPassword) {}
     public record AccessTokenResponse(String accessToken) {}
 
     static ResponseEntity<AccessTokenResponse> withRefreshCookie(AuthService.TokenPair tokens, int status) {
         return ResponseEntity.status(status)
                 .header(HttpHeaders.SET_COOKIE, refreshCookie(tokens.refreshToken()).toString())
+                .header(HttpHeaders.SET_COOKIE, accessCookie(tokens.accessToken()).toString())
                 .body(new AccessTokenResponse(tokens.accessToken()));
     }
 
@@ -108,23 +183,41 @@ public class AuthController {
         return null;
     }
 
+    private static ResponseCookie accessCookie(String value) {
+        return ResponseCookie.from(ACCESS_COOKIE, value)
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(java.time.Duration.ofMinutes(15))
+                .build();
+    }
+
     private static ResponseCookie refreshCookie(String value) {
         return ResponseCookie.from(REFRESH_COOKIE, value)
                 .httpOnly(true)
                 .secure(false)
                 .sameSite("Lax")
-                .path("/api/v1/auth")
+                .path("/")
                 .maxAge(java.time.Duration.ofDays(30))
                 .build();
     }
 
-    private static ResponseCookie clearRefreshCookie() {
-        return ResponseCookie.from(REFRESH_COOKIE, "")
+    private static ResponseCookie clearCookie(String name) {
+        return ResponseCookie.from(name, "")
                 .httpOnly(true)
                 .secure(false)
                 .sameSite("Lax")
-                .path("/api/v1/auth")
+                .path("/")
                 .maxAge(java.time.Duration.ZERO)
                 .build();
+    }
+
+    private static String extractClientIp(HttpServletRequest request) {
+        String xForwardedFor = request.getHeader("X-Forwarded-For");
+        if (xForwardedFor != null && !xForwardedFor.isBlank()) {
+            return xForwardedFor.split(",")[0].trim();
+        }
+        return request.getRemoteAddr() != null ? request.getRemoteAddr() : "127.0.0.1";
     }
 }

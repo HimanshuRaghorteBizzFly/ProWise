@@ -13,15 +13,21 @@ public record AuthPrincipal(
         String operatorId,
         String role,
         String departmentId,
-        String accessLevel
+        String accessLevel,
+        boolean mustChangePassword,
+        String name
 ) {
 
     public AuthPrincipal(UUID userId, UUID sessionId, String email) {
-        this(userId, sessionId, email, null, null, null, null, null);
+        this(userId, sessionId, email, null, null, null, null, null, false, null);
     }
 
     public AuthPrincipal(UUID userId, UUID sessionId, String email, UUID organizationId) {
-        this(userId, sessionId, email, organizationId, null, null, null, null);
+        this(userId, sessionId, email, organizationId, null, null, null, null, false, null);
+    }
+
+    public AuthPrincipal(UUID userId, UUID sessionId, String email, UUID organizationId, String operatorId, String role, String departmentId, String accessLevel) {
+        this(userId, sessionId, email, organizationId, operatorId, role, departmentId, accessLevel, false, null);
     }
 
     public static AuthPrincipal forOperator(String operatorId, UUID sessionId, String email, String role, String departmentId) {
@@ -30,7 +36,7 @@ public record AuthPrincipal(
 
     public static AuthPrincipal forOperator(String operatorId, UUID sessionId, String email, String role, String departmentId, String accessLevel) {
         UUID syntheticUserId = UUID.nameUUIDFromBytes(("operator:" + operatorId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        return new AuthPrincipal(syntheticUserId, sessionId, email, null, operatorId, role, departmentId, accessLevel);
+        return new AuthPrincipal(syntheticUserId, sessionId, email, null, operatorId, role, departmentId, accessLevel, false, null);
     }
 
     public boolean isOperator() {

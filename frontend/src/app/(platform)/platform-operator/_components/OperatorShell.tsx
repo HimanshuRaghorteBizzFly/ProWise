@@ -54,6 +54,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import { RolePreviewGlobalBanner } from "../../super-admin/_components/RolePreviewGlobalBanner";
 
 interface NavItem {
   id: string;
@@ -1049,6 +1050,8 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
+        <RolePreviewGlobalBanner />
+
         <main className="flex-1 w-full min-w-0 px-3 py-4 sm:px-5 sm:py-5 lg:px-7 lg:py-6 max-w-[2200px] mx-auto">
           {isCurrentPathAuthorized ? (
             children
@@ -1139,7 +1142,7 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <Toaster position="top-right" theme={mounted ? resolvedTheme : "light"} richColors />
+      <Toaster position="bottom-right" theme={mounted ? resolvedTheme : "light"} richColors closeButton />
     </div>
   );
 }

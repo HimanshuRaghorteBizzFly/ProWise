@@ -402,9 +402,15 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
 
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setActiveRolePreview: (roleId) => {
-        const role = get().roles.find((r) => r.id === roleId);
+        const role =
+          get().roles.find(
+            (r) =>
+              r.id === roleId ||
+              r.slug === roleId ||
+              (roleId.includes("super-admin") || roleId === "role-sa" ? r.id === "role-super-admin" : false)
+          ) || get().roles[0];
         if (!role) return;
-        set({ activeRoleId: roleId });
+        set({ activeRoleId: role.id });
         get().logActivity(
           "ROLE",
           "ROLE_PREVIEW_SWITCHED",

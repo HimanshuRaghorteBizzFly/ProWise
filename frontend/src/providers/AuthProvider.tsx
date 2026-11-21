@@ -46,6 +46,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setOrganizations(organizations);
     }).catch(() => {
       if (active) {
+        const store = useAuthStore.getState();
+        // If user already signed in or has an active non-viewer role, preserve their authenticated session
+        if (store.isAuthenticated && store.currentRole && store.currentRole !== "VIEWER") {
+          return;
+        }
+
         const defaultOrg: Organization = {
           id: "org-acme",
           slug: "acme-health",

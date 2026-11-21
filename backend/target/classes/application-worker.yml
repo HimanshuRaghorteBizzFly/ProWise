@@ -1,9 +1,0 @@
-# Background worker: no HTTP server, scheduled jobs under ShedLock, graceful stop.
-spring:
-  main:
-    web-application-type: none
-  task:
-    scheduling:
-      pool:
-        size: 2
-      thread-name-prefix: prowise-worker-

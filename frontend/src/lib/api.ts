@@ -30,6 +30,93 @@ export class ApiError extends Error {
   }
 }
 
+export interface AuthUserSummary {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  department?: string;
+  organization_id?: string;
+  organization_name?: string;
+  must_change_password: boolean;
+}
+
+export interface AuthLoginResponse {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+  must_change_password: boolean;
+  target_dashboard_url: string;
+  user: AuthUserSummary;
+}
+
+export interface SuperAdminUserItem {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  department?: string | null;
+  organization_id?: string | null;
+  organization_name?: string | null;
+  phone?: string | null;
+  status: "ACTIVE" | "DISABLED" | string;
+  must_change_password: boolean;
+  last_login_at?: string | null;
+  created_at: string;
+  temp_password?: string | null;
+  email_delivery_status?: string | null;
+  email_delivery_message?: string | null;
+}
+
+export interface SuperAdminUserPageResponse {
+  content: SuperAdminUserItem[];
+  total_elements: number;
+  total_pages: number;
+  number: number;
+  size: number;
+  first: boolean;
+  last: boolean;
+  empty: boolean;
+}
+
+export interface CreateSuperAdminUserPayload {
+  name: string;
+  email: string;
+  role: string;
+  department?: string;
+  organization_id?: string;
+  phone?: string;
+  send_email?: boolean;
+  custom_password?: string;
+}
+
+export interface UpdateSuperAdminUserPayload {
+  name?: string;
+  role?: string;
+  department?: string;
+  organization_id?: string;
+  phone?: string;
+}
+
+export interface ResetPasswordResult {
+  user_id: string;
+  email: string;
+  temp_password?: string;
+  email_delivery_status: string;
+  email_delivery_message?: string;
+}
+
+export interface UserLoginHistoryItem {
+  id: string;
+  user_id: string;
+  email: string;
+  ip_address?: string;
+  user_agent?: string;
+  status: "SUCCESS" | "FAILED" | string;
+  failure_reason?: string;
+  created_at: string;
+}
+
 export function resolveApiBaseUrl(configuredUrl = process.env.NEXT_PUBLIC_API_BASE_URL): string {
   if (!configuredUrl?.trim()) {
     throw new Error("NEXT_PUBLIC_API_BASE_URL is required; see frontend/.env.example.");
@@ -127,9 +214,25 @@ export function createApiClient(options: ApiClientOptions = {}) {
         accessToken = tokens.access_token;
         return tokens;
       }),
+    login: (body: { email: string; password: string }) =>
+      json<AuthLoginResponse>("/api/auth/login", { method: "POST", body }).then((res) => {
+        accessToken = res.access_token;
+        return res;
+      }),
+    changePassword: (body: { currentPassword?: string; newPassword: string }) =>
+      json<{ access_token: string; refresh_token: string }>("/api/auth/change-password", {
+        method: "POST",
+        body: {
+          current_password: body.currentPassword,
+          new_password: body.newPassword,
+        },
+      }).then((tokens) => {
+        accessToken = tokens.access_token;
+        return tokens;
+      }),
     refresh: refreshAccessToken,
     signout: async () => {
-      await request("/v1/auth/signout", { method: "POST" });
+      await request("/api/auth/logout", { method: "POST" });
       accessToken = null;
     },
     me: () => json<import("@/types/api").MeResponse>("/v1/me"),
@@ -179,6 +282,48 @@ export function createApiClient(options: ApiClientOptions = {}) {
       timezone: string;
       calendar: unknown;
     }) => json<import("@/types/api").OrganizationResponse>("/v1/organizations", { method: "POST", body }),
+    superAdminUsers: {
+      list: (params?: {
+        search?: string;
+        role?: string;
+        department?: string;
+        status?: string;
+        organizationId?: string;
+        page?: number;
+        size?: number;
+      }) => {
+        const query = new URLSearchParams();
+        if (params?.search) query.set("search", params.search);
+        if (params?.role) query.set("role", params.role);
+        if (params?.department) query.set("department", params.department);
+        if (params?.status) query.set("status", params.status);
+        if (params?.organizationId) query.set("organizationId", params.organizationId);
+        if (params?.page !== undefined) query.set("page", String(params.page));
+        if (params?.size !== undefined) query.set("size", String(params.size));
+        const qs = query.toString() ? `?${query.toString()}` : "";
+        return json<SuperAdminUserPageResponse>(`/api/super-admin/users${qs}`);
+      },
+      get: (id: string) => json<SuperAdminUserItem>(`/api/super-admin/users/${id}`),
+      create: (body: CreateSuperAdminUserPayload) =>
+        json<SuperAdminUserItem>("/api/super-admin/users", { method: "POST", body }),
+      update: (id: string, body: UpdateSuperAdminUserPayload) =>
+        json<SuperAdminUserItem>(`/api/super-admin/users/${id}`, { method: "PUT", body }),
+      updateStatus: (id: string, status: "ACTIVE" | "DISABLED", reason?: string) =>
+        request(`/api/super-admin/users/${id}/status`, {
+          method: "PATCH",
+          body: { status, reason },
+        }),
+      resetPassword: (id: string) =>
+        json<ResetPasswordResult>(`/api/super-admin/users/${id}/reset-password`, {
+          method: "POST",
+        }),
+      resendInvitation: (id: string) =>
+        json<ResetPasswordResult>(`/api/super-admin/users/${id}/resend-invitation`, {
+          method: "POST",
+        }),
+      loginHistory: (id: string) =>
+        json<UserLoginHistoryItem[]>(`/api/super-admin/users/${id}/login-history`),
+    },
   };
 }
 

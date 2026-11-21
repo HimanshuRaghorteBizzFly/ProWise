@@ -39,6 +39,7 @@ import {
   Sliders,
   Sparkles,
   Sun,
+  UserCheck,
   UserCog,
   Users,
   Webhook,
@@ -55,6 +56,8 @@ import { PERMISSION_CATALOG } from "../_data/seed";
 import { useAdminPermissions, useSuperAdminStore } from "../_store/useSuperAdminStore";
 import { useMaintenanceStore } from "@/store/maintenance-store";
 import { formatDateTime } from "../_services/super-admin-service";
+import { RolePreviewGlobalBanner } from "./RolePreviewGlobalBanner";
+import { resolvePreviewRole } from "../_services/role-preview-config";
 
 interface SidebarNavItem {
   title: string;
@@ -74,6 +77,7 @@ interface SidebarSectionConfig {
 const ROUTE_TITLES: Record<string, { section: string; label: string }> = {
   "/super-admin": { section: "Overview", label: "Dashboard" },
   "/super-admin/dashboard": { section: "Overview", label: "Dashboard" },
+  "/super-admin/users": { section: "Overview", label: "User Management" },
   "/super-admin/organizations": { section: "Overview", label: "Organizations" },
   "/super-admin/operators": { section: "Overview", label: "Platform Operators" },
   "/super-admin/roles-permissions": { section: "Overview", label: "Roles & Permissions" },
@@ -187,10 +191,10 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
     useSuperAdminStore.persist.rehydrate();
     const saved = localStorage.getItem("prowise-theme") as "light" | "dark" | "system" | null;
     if (saved) setTheme(saved);
-    if (currentRole !== "SUPER_ADMIN") {
+    if (activeRoleId === "role-super-admin" && currentRole !== "SUPER_ADMIN") {
       setCurrentRole("SUPER_ADMIN");
     }
-  }, [setTheme, currentRole, setCurrentRole]);
+  }, [setTheme, currentRole, setCurrentRole, activeRoleId]);
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -240,6 +244,12 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
             href: "/super-admin/dashboard",
             matchPaths: ["/super-admin", "/super-admin/dashboard"],
             icon: LayoutDashboard,
+          },
+          {
+            title: "User Management",
+            href: "/super-admin/users",
+            icon: UserCheck,
+            requiredAny: ["operators.view", "operators.manage"],
           },
           {
             title: "Organizations",
@@ -456,7 +466,16 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
     ]
   );
 
+  const currentOrg = useAuthStore((s) => s.currentOrg);
+  const previewDef = useMemo(() => {
+    if (!activeRoleId || activeRoleId === "role-super-admin") return null;
+    return resolvePreviewRole(activeRoleId, currentOrg?.id || "org-acme");
+  }, [activeRoleId, currentOrg?.id]);
+
   const visibleSections = useMemo(() => {
+    if (previewDef) {
+      return previewDef.sections;
+    }
     return sections
       .map((section) => ({
         ...section,
@@ -465,10 +484,10 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
         ),
       }))
       .filter((section) => section.items.length > 0);
-  }, [sections, can]);
+  }, [previewDef, sections, can]);
 
   const activeNavItem = useMemo(() => {
-    for (const section of sections) {
+    for (const section of visibleSections) {
       for (const item of section.items) {
         const matches = item.matchPaths
           ? item.matchPaths.includes(pathname)
@@ -477,14 +496,17 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
       }
     }
     return undefined;
-  }, [sections, pathname]);
+  }, [visibleSections, pathname]);
 
   const isRouteRestricted = Boolean(
-    activeNavItem?.requiredAny && !activeNavItem.requiredAny.some((perm) => can(perm))
+    activeNavItem &&
+      "requiredAny" in activeNavItem &&
+      activeNavItem.requiredAny &&
+      !activeNavItem.requiredAny.some((perm) => can(perm))
   );
 
   const requiredPermissionLabels = useMemo(() => {
-    if (!activeNavItem?.requiredAny) return [];
+    if (!activeNavItem || !("requiredAny" in activeNavItem) || !activeNavItem.requiredAny) return [];
     return activeNavItem.requiredAny.map(
       (k) => PERMISSION_CATALOG.find((p) => p.key === k)?.label || k
     );
@@ -762,7 +784,14 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
                         onClick={() => {
                           setActiveRolePreview(role.id);
                           setRoleMenuOpen(false);
-                          toast.info(`Switched access view to ${role.name}`);
+                          const targetMeta = resolvePreviewRole(role.id, currentOrg?.id || "org-acme");
+                          setCurrentRole(targetMeta.systemRole);
+                          toast.info(`Switched preview to ${role.name}`);
+                          if (role.id !== "role-super-admin") {
+                            router.push(targetMeta.dashboardUrl);
+                          } else {
+                            router.push("/super-admin/dashboard");
+                          }
                         }}
                         className={cn(
                           "w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors",
@@ -989,27 +1018,8 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* Active Role Preview Banner */}
-        {activeRoleId !== "role-super-admin" && (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 sm:px-6 py-2 text-xs text-amber-800 dark:text-amber-200">
-            <div className="flex items-center gap-2">
-              <Lock className="w-3.5 h-3.5 shrink-0" />
-              <span>
-                Previewing role <strong>{activeRole?.name}</strong> ({activeRole?.permissions.length} permissions enabled). Restricted sections and actions are protected.
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveRolePreview("role-super-admin");
-                toast.success("Restored full Super Administrator access");
-              }}
-              className="rounded-md bg-amber-500/20 hover:bg-amber-500/30 px-2.5 py-1 text-[11px] font-semibold transition-colors"
-            >
-              Restore Full Access
-            </button>
-          </div>
-        )}
+        {/* Active Role Preview Global Banner */}
+        <RolePreviewGlobalBanner />
 
         {/* Fluid Ultrawide-Friendly Workspace Canvas */}
         <main className="flex-1 w-full max-w-[1960px] mx-auto px-3.5 sm:px-6 lg:px-7 py-4 sm:py-6 min-w-0">
@@ -1186,7 +1196,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <Toaster position="top-right" theme={resolvedTheme} richColors />
+      <Toaster position="bottom-right" theme={resolvedTheme} richColors closeButton />
     </div>
   );
 }

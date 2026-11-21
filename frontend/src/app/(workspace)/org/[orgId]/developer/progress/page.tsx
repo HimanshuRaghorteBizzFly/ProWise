@@ -46,6 +46,7 @@ import { useAuthStore } from "@/store/auth-store";
 import { useProjectStore } from "@/store/project-store";
 import { calculateStructuredProgress, validateCheckInSubmission } from "@/lib/progress";
 import { Project, WorkItem, WorkItemState, Priority, ScopeBaseline, IndividualCheckIn } from "@/types";
+import { developerApi } from "@/lib/developer-api";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -349,6 +350,18 @@ export default function DeveloperProgressTrackerPage() {
       isDownward ? checkInDownwardReason : undefined
     );
 
+    // Synchronize check-in to PostgreSQL backend
+    developerApi.submitCheckIn({
+      projectId: selectedProject.id,
+      percent: checkInPercent,
+      accomplished: checkInAccomplished,
+      nextSteps: checkInNextSteps,
+      blockers: checkInBlockers.join("; "),
+      risks: isDownward ? checkInDownwardReason : undefined,
+    }).catch((err) => {
+      console.warn("Backend check-in sync failed (using local state):", err);
+    });
+
     if (res.success) {
       toast.success(
         `Check-in v${(latestAcceptedCheckIn?.version || 0) + 1} recorded successfully! Progress set to ${checkInPercent}%.`
@@ -388,6 +401,9 @@ export default function DeveloperProgressTrackerPage() {
     }
 
     updateWorkItemState(task.id, targetState, currentDevId);
+    developerApi.updateTaskStatus(task.id, targetState, `Moved to ${targetState}`).catch((err) => {
+      console.warn("Backend task status sync failed:", err);
+    });
     toast.info(`Task ${task.key} moved to ${targetState.replace("_", " ")}.`);
   };
 
@@ -397,6 +413,9 @@ export default function DeveloperProgressTrackerPage() {
     if (!reviewTask) return;
 
     submitWorkItemForReview(reviewTask.id, currentDevId);
+    developerApi.updateTaskStatus(reviewTask.id, "IN_REVIEW", reviewComment || "Submitted for QA review").catch((err) => {
+      console.warn("Backend review status sync failed:", err);
+    });
     toast.success(
       `Task ${reviewTask.key} submitted for QA review (rev ${reviewTask.currentRevision + 1}). Evidence link recorded.`
     );
@@ -409,6 +428,9 @@ export default function DeveloperProgressTrackerPage() {
     if (!blockerTask || !blockerReason.trim()) return;
 
     addBlocker(blockerTask.id, blockerReason.trim(), blockerSeverity, currentDevId);
+    developerApi.submitBlocker(blockerTask.id, blockerReason.trim(), blockerSeverity).catch((err) => {
+      console.warn("Backend blocker submission sync failed:", err);
+    });
     toast.warning(`Blocker recorded on ${blockerTask.key}. Health monitor updated.`);
     setBlockerTask(null);
     setBlockerReason("");
@@ -417,6 +439,9 @@ export default function DeveloperProgressTrackerPage() {
   // Handle resolving blocker
   const handleResolveBlocker = (task: WorkItem, blockerId: string) => {
     resolveBlocker(task.id, blockerId);
+    developerApi.resolveBlocker(blockerId).catch((err) => {
+      console.warn("Backend blocker resolution sync failed:", err);
+    });
     toast.success(`Blocker resolved on ${task.key}.`);
   };
 

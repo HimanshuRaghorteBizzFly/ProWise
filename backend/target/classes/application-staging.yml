@@ -1,8 +1,0 @@
-# Staging: production-like. Credentials come only from the environment / secret manager.
-springdoc:
-  swagger-ui:
-    enabled: false
-
-logging:
-  level:
-    com.prowise: INFO

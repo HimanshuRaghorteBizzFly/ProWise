@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { User, SystemRole, Organization } from "@/types";
 
 const DEFAULT_ORG: Organization = {
@@ -77,11 +78,19 @@ export function getRoleDashboardPath(role: SystemRole, orgId = ""): string {
       return hasOrg ? `${workspacePath}/developer/dashboard` : workspacePath;
 
     case "QA_REVIEWER":
+<<<<<<< HEAD
       return hasOrg ? `${workspacePath}/reviewer/dashboard` : workspacePath;
 
     case "VIEWER":
       return hasOrg ? `${workspacePath}/viewer/dashboard` : workspacePath;
 
+=======
+      return orgId ? `${workspacePath}/reviewer/dashboard` : workspacePath;
+    case "VIEWER": {
+      const safeOrg = orgId && orgId.trim() !== "" ? orgId : "org-acme";
+      return `/org/${safeOrg}/viewer/dashboard`;
+    }
+>>>>>>> ed15fd8 (Update ProWise frontend and backend)
     default:
       return workspacePath;
   }
@@ -108,6 +117,7 @@ interface AuthState {
   hydrate: (user: User, organizations: Organization[], role: SystemRole) => void;
 }
 
+<<<<<<< HEAD
 export const useAuthStore = create<AuthState>((set, get) => ({
   currentUser: EMPTY_USER,
   currentRole: "VIEWER",
@@ -117,17 +127,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   activeOrgId: "",
   isAuthenticated: false,
   isRolePreview: false,
+=======
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set, get) => ({
+      currentUser: EMPTY_USER,
+      currentRole: "VIEWER",
+      currentOrg: EMPTY_ORG,
+      organizations: [],
+      activeRole: "ORGANIZATION_OWNER",
+      activeOrgId: "",
+      isAuthenticated: false,
+>>>>>>> ed15fd8 (Update ProWise frontend and backend)
 
-  setCurrentUser: (user) => set({ currentUser: user }),
-  setCurrentRole: (role) => set({ currentRole: role, activeRole: role }),
-  setCurrentOrg: (org) => set({ currentOrg: org, activeOrgId: org.id }),
+      setCurrentUser: (user) => set({ currentUser: user }),
+      setCurrentRole: (role) => set({ currentRole: role, activeRole: role }),
+      setCurrentOrg: (org) => set({ currentOrg: org, activeOrgId: org.id }),
 
+<<<<<<< HEAD
   switchRole: (role) => set({ currentRole: role, activeRole: role, isRolePreview: process.env.NODE_ENV !== "production" }),
+=======
+      switchRole: (role) => set({ currentRole: role, activeRole: role }),
+>>>>>>> ed15fd8 (Update ProWise frontend and backend)
 
-  switchOrg: (orgId) => {
-    if (get().currentOrg.id === orgId) return;
-  },
+      switchOrg: (orgId) => {
+        if (get().currentOrg.id === orgId) return;
+      },
 
+<<<<<<< HEAD
   login: (_email, role) =>
     set({
       currentRole: role || "VIEWER",
@@ -147,13 +174,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const targetUrl = getRoleDashboardPath(role, safeOrgId);
     routerPush(targetUrl);
   },
+=======
+      login: (email, role) => {
+        const targetRole = role || "VIEWER";
+        set((state) => ({
+          currentRole: targetRole,
+          activeRole: targetRole,
+          isAuthenticated: true,
+          currentUser: {
+            ...state.currentUser,
+            email,
+            name: state.currentUser.name || email.split("@")[0],
+          },
+        }));
+      },
 
-  switchUserAndRole: (userId, routerPush) => {
-    const { currentOrg, currentRole } = get();
-    const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
-    routerPush(getRoleDashboardPath(currentRole, safeOrgId));
-  },
+      switchRoleAndNavigate: (role, routerPush) => {
+        const { currentOrg } = get();
+        const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
+        set({ currentRole: role, activeRole: role });
+        const targetUrl = getRoleDashboardPath(role, safeOrgId);
+        routerPush(targetUrl);
+      },
+>>>>>>> ed15fd8 (Update ProWise frontend and backend)
 
+      switchUserAndRole: (userId, routerPush) => {
+        const { currentOrg, currentRole } = get();
+        const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
+        routerPush(getRoleDashboardPath(currentRole, safeOrgId));
+      },
+
+<<<<<<< HEAD
   logout: () => {
     set({
       currentUser: DEFAULT_USER,
@@ -178,3 +229,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 }));
+=======
+      logout: () => {
+        set({ currentUser: DEFAULT_USER, currentOrg: DEFAULT_ORG, activeOrgId: "org-acme", isAuthenticated: false });
+      },
+
+      hydrate: (user, organizations, role) => {
+        const organization = organizations[0] || EMPTY_ORG;
+        set({
+          currentUser: user,
+          currentOrg: organization,
+          organizations,
+          currentRole: role,
+          activeRole: role,
+          activeOrgId: organization.id,
+          isAuthenticated: true,
+        });
+      },
+    }),
+    {
+      name: "prowise-auth-store",
+    }
+  )
+);
+>>>>>>> ed15fd8 (Update ProWise frontend and backend)
