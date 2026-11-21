@@ -6,14 +6,14 @@
 Status key: `[ ]` not started, `[~]` in progress, `[x]` done (all "Pass when" tests green), `[!]` blocked
 
 ## Phase 0: Policy and design (8 pts) -> docs/tasks/phase-0.md
-- [ ] 0.1 Agree release scope and decision owners (2)
-- [ ] 0.2 Approve journeys and scoped roles (2)
-- [ ] 0.3 Fix progress and calendar examples as fixtures (2)
-- [ ] 0.4 Build and test environments (2)
+- [x ] 0.1 Agree release scope and decision owners (2)
+- [ x] 0.2 Approve journeys and scoped roles (2)
+- [x ] 0.3 Fix progress and calendar examples as fixtures (2)
+- [ x] 0.4 Build and test environments (2)
 
 ## Phase 1: Workspace foundation (14 pts) -> docs/tasks/phase-1.md
-- [ ] 1.1 Organizations, identity, sessions (3)
-- [ ] 1.2 Invitations, teams, ownership (3)
+- [x ] 1.1 Organizations, identity, sessions (3)
+- [x ] 1.2 Invitations, teams, ownership (3)
 - [x] 1.3 Permissions on every access path (4)
 - [ ] 1.4 Transactions, history, outbox (4)
 
