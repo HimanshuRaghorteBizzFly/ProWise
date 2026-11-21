@@ -41,9 +41,10 @@ class AuthorizationArchitectureTest {
             "com.prowise.common.api.JsonErrorController.error",
             "com.prowise.identity.AuthController.signup",
             "com.prowise.identity.AuthController.signin",
+            "com.prowise.identity.AuthController.login",
             "com.prowise.identity.AuthController.refresh",
-            "com.prowise.identity.AuthController.requestPasswordReset",
-            "com.prowise.identity.AuthController.confirmPasswordReset",
+            "com.prowise.identity.AuthController.forgotPassword",
+            "com.prowise.identity.AuthController.resetPassword",
             "com.prowise.operator.auth.OperatorAuthController.login",
             "com.prowise.operator.auth.OperatorAuthController.refresh",
             "com.prowise.operator.auth.OperatorAuthController.forgotPassword",
@@ -52,10 +53,13 @@ class AuthorizationArchitectureTest {
 
     /** Identity-level routes with no tenant object: the service itself checks membership where it matters. */
     static final Set<String> AUTHENTICATED_ONLY_ENDPOINTS = Set.of(
-            "com.prowise.identity.AuthController.signout",
+            "com.prowise.identity.AuthController.logout",
+            "com.prowise.identity.AuthController.changePassword",
             "com.prowise.identity.AuthController.me",
             "com.prowise.identity.OrganizationSwitchController.switchOrganization",
-            "com.prowise.org.OrganizationController.create");
+            "com.prowise.org.OrganizationController.create",
+            "com.prowise.org.InvitationAcceptController.preview",
+            "com.prowise.org.InvitationAcceptController.accept");
 
     private static final List<String> PLATFORM_PACKAGES = List.of("com.prowise.operator", "com.prowise.superadmin");
     private static final List<String> IDENTITY_PACKAGES = List.of("com.prowise.identity", "com.prowise.common");

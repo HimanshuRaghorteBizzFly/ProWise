@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.prowise.common.api.ApiException;
+import com.prowise.common.api.ErrorCodes;
 import com.prowise.identity.AuthPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -33,15 +35,15 @@ public class SuperAdminUserController {
     }
 
     @PostMapping
-    @PreAuthorize("permitAll()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Create user and automatically send temporary credentials to Gmail")
     public ResponseEntity<UserDTOs.UserResponse> createUser(
             @RequestBody UserDTOs.CreateUserRequest request,
             HttpServletRequest httpRequest
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(httpRequest);
-        UUID actorId = principal != null ? principal.userId() : null;
-        String actorEmail = principal != null ? principal.email() : "superadmin@prowise.com";
+        AuthPrincipal principal = requirePlatformAdmin(httpRequest);
+        UUID actorId = principal.userId();
+        String actorEmail = principal.email();
         String ip = extractClientIp(httpRequest);
 
         UserDTOs.UserResponse response = userService.createUser(request, actorId, actorEmail, ip);
@@ -49,7 +51,7 @@ public class SuperAdminUserController {
     }
 
     @GetMapping
-    @PreAuthorize("permitAll()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "List users with filters, search, and pagination")
     public ResponseEntity<Page<UserDTOs.UserResponse>> listUsers(
             @RequestParam(required = false) String search,
@@ -58,45 +60,48 @@ public class SuperAdminUserController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) UUID organizationId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "15") int size
+            @RequestParam(defaultValue = "15") int size,
+            HttpServletRequest httpRequest
     ) {
+        requirePlatformAdmin(httpRequest);
         return ResponseEntity.ok(userService.listUsers(search, role, department, status, organizationId, page, size));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("permitAll()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Get user details by ID")
-    public ResponseEntity<UserDTOs.UserResponse> getUser(@PathVariable UUID id) {
+    public ResponseEntity<UserDTOs.UserResponse> getUser(@PathVariable UUID id, HttpServletRequest httpRequest) {
+        requirePlatformAdmin(httpRequest);
         return ResponseEntity.ok(userService.getUser(id));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("permitAll()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Update user details")
     public ResponseEntity<UserDTOs.UserResponse> updateUser(
             @PathVariable UUID id,
             @RequestBody UserDTOs.UpdateUserRequest request,
             HttpServletRequest httpRequest
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(httpRequest);
-        UUID actorId = principal != null ? principal.userId() : null;
-        String actorEmail = principal != null ? principal.email() : "superadmin@prowise.com";
+        AuthPrincipal principal = requirePlatformAdmin(httpRequest);
+        UUID actorId = principal.userId();
+        String actorEmail = principal.email();
         String ip = extractClientIp(httpRequest);
 
         return ResponseEntity.ok(userService.updateUser(id, request, actorId, actorEmail, ip));
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("permitAll()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Activate or deactivate a user account")
     public ResponseEntity<Void> updateStatus(
             @PathVariable UUID id,
             @RequestBody UserDTOs.UpdateStatusRequest request,
             HttpServletRequest httpRequest
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(httpRequest);
-        UUID actorId = principal != null ? principal.userId() : null;
-        String actorEmail = principal != null ? principal.email() : "superadmin@prowise.com";
+        AuthPrincipal principal = requirePlatformAdmin(httpRequest);
+        UUID actorId = principal.userId();
+        String actorEmail = principal.email();
         String ip = extractClientIp(httpRequest);
 
         userService.updateStatus(id, request.status(), actorId, actorEmail, ip);
@@ -104,40 +109,57 @@ public class SuperAdminUserController {
     }
 
     @PostMapping("/{id}/reset-password")
-    @PreAuthorize("permitAll()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Reset user password and deliver temporary credentials via email")
     public ResponseEntity<UserDTOs.ResetPasswordResponse> resetPassword(
             @PathVariable UUID id,
             HttpServletRequest httpRequest
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(httpRequest);
-        UUID actorId = principal != null ? principal.userId() : null;
-        String actorEmail = principal != null ? principal.email() : "superadmin@prowise.com";
+        AuthPrincipal principal = requirePlatformAdmin(httpRequest);
+        UUID actorId = principal.userId();
+        String actorEmail = principal.email();
         String ip = extractClientIp(httpRequest);
 
         return ResponseEntity.ok(userService.resetPassword(id, actorId, actorEmail, ip));
     }
 
     @PostMapping("/{id}/resend-invitation")
-    @PreAuthorize("permitAll()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Resend credentials / invitation email to user")
     public ResponseEntity<UserDTOs.ResetPasswordResponse> resendInvitation(
             @PathVariable UUID id,
             HttpServletRequest httpRequest
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(httpRequest);
-        UUID actorId = principal != null ? principal.userId() : null;
-        String actorEmail = principal != null ? principal.email() : "superadmin@prowise.com";
+        AuthPrincipal principal = requirePlatformAdmin(httpRequest);
+        UUID actorId = principal.userId();
+        String actorEmail = principal.email();
         String ip = extractClientIp(httpRequest);
 
         return ResponseEntity.ok(userService.resendInvitation(id, actorId, actorEmail, ip));
     }
 
     @GetMapping("/{id}/login-history")
-    @PreAuthorize("permitAll()")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
     @Operation(summary = "Get user account login history")
-    public ResponseEntity<List<UserDTOs.LoginHistoryResponse>> getLoginHistory(@PathVariable UUID id) {
+    public ResponseEntity<List<UserDTOs.LoginHistoryResponse>> getLoginHistory(@PathVariable UUID id, HttpServletRequest httpRequest) {
+        requirePlatformAdmin(httpRequest);
         return ResponseEntity.ok(userService.getLoginHistory(id));
+    }
+
+    /**
+     * Platform Administrator only: an authenticated SUPER_ADMIN user whose token is not bound to any
+     * organization (no tenant access through this console). @PreAuthorize already requires the authority;
+     * this also refuses org-bound tokens and gives every audited action a real actor.
+     */
+    private static AuthPrincipal requirePlatformAdmin(HttpServletRequest request) {
+        AuthPrincipal principal = AuthPrincipal.current(request);
+        if (principal == null || principal.userId() == null) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.UNAUTHORIZED, "Authentication is required.");
+        }
+        if (principal.organizationId() != null) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.FORBIDDEN, "You are not allowed to perform this action.");
+        }
+        return principal;
     }
 
     private static String extractClientIp(HttpServletRequest request) {

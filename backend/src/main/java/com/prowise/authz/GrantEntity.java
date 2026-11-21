@@ -13,7 +13,7 @@ import org.hibernate.annotations.Filter;
 @Entity
 @Table(name = "grants")
 @Filter(name = "tenantFilter", condition = "org_id = :orgId")
-public class GrantEntity {
+public class GrantEntity extends com.prowise.common.persistence.BaseEntity {
 
     @Id
     private UUID id;
@@ -41,15 +41,6 @@ public class GrantEntity {
 
     @Column(name = "granted_by", nullable = false)
     private UUID grantedBy;
-
-    @Column(nullable = false)
-    private long version;
-
-    @Column(name = "created_at", nullable = false)
-    private Instant createdAt;
-
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
 
     protected GrantEntity() {}
 }

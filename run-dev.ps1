@@ -17,7 +17,7 @@ $env:DB_URL = "jdbc:postgresql://localhost:5432/prowise"
 $env:DB_USERNAME = "prowise"
 $env:DB_PASSWORD = "prowise-dev-password"
 $env:JWT_SIGNING_KEY = "local-development-signing-key-change-me-32-bytes"
-$env:API_BACKEND_URL = "http://localhost:8081"
+$env:API_BACKEND_URL = "http://localhost:8080"
 
 $postgresService = Get-Service -Name "postgresql-x64-18" -ErrorAction SilentlyContinue
 if (-not $postgresService) {
@@ -28,11 +28,11 @@ if ($postgresService.Status -ne "Running") {
     Start-Service -Name "postgresql-x64-18"
 }
 
-Write-Host "Starting backend on http://localhost:8081..."
+Write-Host "Starting backend on http://localhost:8080..."
 $backendProcess = Start-Process `
     -FilePath (Join-Path $backend "mvnw.cmd") `
     -WorkingDirectory $backend `
-    -ArgumentList "spring-boot:run", "-Dspring-boot.run.arguments=--server.port=8081" `
+    -ArgumentList "spring-boot:run", "-Dspring-boot.run.arguments=--server.port=8080" `
     -PassThru
 
 Write-Host "Starting frontend on http://localhost:3000..."
@@ -44,7 +44,7 @@ $frontendProcess = Start-Process `
 
 Write-Host ""
 Write-Host "Prowise is starting:"
-Write-Host "  Backend:  http://localhost:8081/v1/health"
+Write-Host "  Backend:  http://localhost:8080/v1/health"
 Write-Host "  Frontend: http://localhost:3000"
 Write-Host "Close this window or press Ctrl+C to stop the application processes."
 

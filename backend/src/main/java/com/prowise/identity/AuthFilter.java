@@ -32,6 +32,7 @@ import com.prowise.common.api.RequestIdFilter;
 import com.prowise.authz.TenantContext;
 
 @Component
+@org.springframework.core.annotation.Order(org.springframework.core.Ordered.LOWEST_PRECEDENCE - 10) // before IdempotencyFilter
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class AuthFilter extends OncePerRequestFilter {
 

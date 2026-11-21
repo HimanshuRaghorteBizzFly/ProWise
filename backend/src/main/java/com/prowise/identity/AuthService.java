@@ -133,8 +133,11 @@ public class AuthService {
             throw invalidCredentials();
         }
 
-        // If organizationId is null, look up first active membership
-        if (organizationId == null) {
+        // A Platform Administrator works outside every tenant: never bind that session to an organization.
+        if ("SUPER_ADMIN".equalsIgnoreCase(role)) {
+            organizationId = null;
+        } else if (organizationId == null) {
+            // If organizationId is null, look up first active membership
             List<UUID> orgs = jdbc.query("SELECT org_id FROM memberships WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
                     (rs, rowNum) -> rs.getObject("org_id", UUID.class), userId);
             if (!orgs.isEmpty()) {
@@ -230,8 +233,16 @@ public class AuthService {
         }
         UUID userId = (UUID) row.get("user_id");
         jdbc.update("UPDATE sessions SET revoked_at = now() WHERE id = ?", row.get("id"));
-        String email = jdbc.queryForObject("SELECT email FROM users WHERE id = ?", String.class, userId);
-        return issueSession(userId, email, familyId);
+        Map<String, Object> user = jdbc.queryForMap(
+                "SELECT email, role, name, must_change_password FROM users WHERE id = ?", userId);
+        // Keep the organization binding only while the membership is still active (task 1.3, T06).
+        UUID organizationId = (UUID) row.get("org_id");
+        if (organizationId != null && !hasActiveMembership(userId, organizationId)) {
+            organizationId = null;
+        }
+        // Role and name come from the user row now, so a changed role takes effect on the next refresh.
+        return issueSession(userId, (String) user.get("email"), familyId, organizationId, (String) user.get("role"),
+                (String) user.get("name"), Boolean.TRUE.equals(user.get("must_change_password")));
     }
 
     @Transactional
@@ -256,8 +267,9 @@ public class AuthService {
                 rs -> rs.next() ? rs.getObject("family_id", UUID.class) : null,
                 principal.sessionId(), principal.userId());
         jdbc.update("UPDATE sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE id = ?", principal.sessionId());
+        Map<String, Object> user = jdbc.queryForMap("SELECT role, name FROM users WHERE id = ?", principal.userId());
         return issueSession(principal.userId(), principal.email(), familyId == null ? UUID.randomUUID() : familyId,
-                organizationId);
+                organizationId, (String) user.get("role"), (String) user.get("name"), false);
     }
 
     private boolean hasActiveMembership(UUID userId, UUID organizationId) {
@@ -268,10 +280,7 @@ public class AuthService {
                 SELECT count(*) FROM memberships
                 WHERE org_id = ? AND user_id = ? AND status = 'ACTIVE'
                 """, Integer.class, organizationId, userId);
-        if (membership == null || membership != 1) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "The requested resource was not found.");
-        }
-        return true;
+        return membership != null && membership == 1;
     }
 
     public ExtendedMeResponse me(UUID userId) {
@@ -384,10 +393,12 @@ public class AuthService {
     private TokenPair issueSession(UUID userId, String email, UUID familyId, UUID organizationId, String role, String name, boolean mustChangePassword) {
         String refreshToken = randomToken();
         UUID sessionId = UUID.randomUUID();
-        jdbc.update("INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, expires_at) "
-                        + "VALUES (?, ?, ?, ?, now() + (? * interval '1 day'))",
-                sessionId, userId, hash(refreshToken), familyId, refreshTokenDays);
-        String accessToken = jwtService.issueAccessToken(new AuthPrincipal(userId, sessionId, email, organizationId));
+        // The session remembers its organization (task 1.3, T06) so refresh keeps the binding.
+        jdbc.update("INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, org_id, expires_at) "
+                        + "VALUES (?, ?, ?, ?, ?, now() + (? * interval '1 day'))",
+                sessionId, userId, hash(refreshToken), familyId, organizationId, refreshTokenDays);
+        String accessToken = jwtService.issueAccessToken(new AuthPrincipal(userId, sessionId, email, organizationId,
+                null, role, null, null, mustChangePassword, name));
         return new TokenPair(accessToken, refreshToken);
     }
 

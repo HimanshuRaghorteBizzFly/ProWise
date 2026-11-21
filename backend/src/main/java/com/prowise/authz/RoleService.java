@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.prowise.common.api.ApiException;
+import com.prowise.common.change.ChangeRecorder;
+import com.prowise.common.persistence.ExpectedVersion;
 import com.prowise.identity.AuthPrincipal;
 
 /**
@@ -22,7 +24,8 @@ import com.prowise.identity.AuthPrincipal;
  * nobody can create, edit, delete, grant or revoke a role holding a key they do not hold themselves
  * at that scope, and self-elevation is refused and recorded.
  *
- * TODO(1.4): Idempotency-Key, audit rows and outbox events for role and grant changes.
+ * Task 1.4: every role and grant change writes one audit row and one outbox event in the same
+ * transaction (via {@link ChangeRecorder}); Idempotency-Key is handled by the API filter.
  */
 @Service
 public class RoleService {
@@ -33,11 +36,31 @@ public class RoleService {
     private final JdbcTemplate jdbc;
     private final PermissionService permissions;
     private final SecurityEvidenceService evidence;
+    private final ChangeRecorder changes;
 
-    public RoleService(JdbcTemplate jdbc, PermissionService permissions, SecurityEvidenceService evidence) {
+    public RoleService(JdbcTemplate jdbc, PermissionService permissions, SecurityEvidenceService evidence,
+            ChangeRecorder changes) {
         this.jdbc = jdbc;
         this.permissions = permissions;
         this.evidence = evidence;
+        this.changes = changes;
+    }
+
+    /** Task 1.4: one audit row + one outbox event, in the caller's transaction. */
+    private void recordChange(UUID organizationId, Authentication authentication, String action, String targetType,
+            UUID targetId, Map<String, ?> previous, Map<String, ?> next, String aggregateType, UUID aggregateId,
+            long aggregateVersion, String eventType, Map<String, ?> payload) {
+        UUID actorId = permissions.principal(authentication).userId();
+        changes.record(
+                new ChangeRecorder.AuditEntry(organizationId, actorId, action, targetType, targetId, null, previous, next),
+                new ChangeRecorder.DomainEvent(organizationId, aggregateType, aggregateId, aggregateVersion, eventType, payload));
+    }
+
+    private static Map<String, Object> roleSnapshot(String name, Set<String> keys) {
+        Map<String, Object> snapshot = new java.util.LinkedHashMap<>();
+        snapshot.put("name", name);
+        snapshot.put("permission_keys", keys.stream().sorted().toList());
+        return snapshot;
     }
 
     /* ------------------------------------------------------------------
@@ -80,6 +103,8 @@ public class RoleService {
         } catch (DuplicateKeyException exception) {
             throw new ApiException(HttpStatus.CONFLICT, "DUPLICATE_ROLE", "That role name is already in use.");
         }
+        recordChange(organizationId, authentication, "role.created", "ROLE", id, null, roleSnapshot(name, keys),
+                "ROLE", id, 0L, "RoleCreated", roleSnapshot(name, keys));
         return find(organizationId, id);
     }
 
@@ -87,12 +112,12 @@ public class RoleService {
     public RoleResponse update(UUID organizationId, UUID roleId, Authentication authentication, RoleRequest request) {
         permissions.require(authentication, organizationId, PermissionKey.ROLE_MANAGE.value());
         RoleRow role = customRole(organizationId, roleId);
-        if (role.version() != request.expectedVersion()) {
-            throw new ApiException(HttpStatus.CONFLICT, "STALE_VERSION", "The role was changed by another request.");
-        }
+        ExpectedVersion.check(role.version(), request.expectedVersion());
         String name = validName(request.name());
         Set<String> next = validKeys(request.permissionKeys());
         Set<String> current = new HashSet<>(rolePermissionsForRole(roleId));
+        String currentName = jdbc.queryForObject("SELECT name FROM roles WHERE id = ? AND org_id = ?",
+                String.class, roleId, organizationId);
         Set<String> changed = new HashSet<>(next);
         changed.addAll(current);
         changed.removeIf(key -> next.contains(key) && current.contains(key));
@@ -103,14 +128,19 @@ public class RoleService {
                     UPDATE roles SET name = ?, version = version + 1, updated_at = now()
                     WHERE id = ? AND org_id = ? AND version = ?
                     """, name, roleId, organizationId, request.expectedVersion());
-            if (updated == 0) {
-                throw new ApiException(HttpStatus.CONFLICT, "STALE_VERSION", "The role was changed by another request.");
-            }
+            // A concurrent edit that committed first moved the version on: this one loses with 409.
+            ExpectedVersion.requireUpdated(updated);
             jdbc.update("DELETE FROM role_permissions WHERE role_id = ?", roleId);
             insertPermissions(roleId, next);
         } catch (DuplicateKeyException exception) {
             throw new ApiException(HttpStatus.CONFLICT, "DUPLICATE_ROLE", "That role name is already in use.");
         }
+        Map<String, Object> payload = roleSnapshot(name, next);
+        payload.put("added", next.stream().filter(key -> !current.contains(key)).sorted().toList());
+        payload.put("removed", current.stream().filter(key -> !next.contains(key)).sorted().toList());
+        recordChange(organizationId, authentication, "role.changed", "ROLE", roleId,
+                roleSnapshot(currentName, current), roleSnapshot(name, next),
+                "ROLE", roleId, request.expectedVersion() + 1, "RoleChanged", payload);
         return find(organizationId, roleId);
     }
 
@@ -118,18 +148,22 @@ public class RoleService {
     public void delete(UUID organizationId, UUID roleId, long expectedVersion, Authentication authentication) {
         permissions.require(authentication, organizationId, PermissionKey.ROLE_MANAGE.value());
         RoleRow role = customRole(organizationId, roleId);
-        if (role.version() != expectedVersion) {
-            throw new ApiException(HttpStatus.CONFLICT, "STALE_VERSION", "The role was changed by another request.");
-        }
-        requireHoldsAll(authentication, organizationId, null, new HashSet<>(rolePermissionsForRole(roleId)),
-                false, "ROLE", roleId.toString());
+        ExpectedVersion.check(role.version(), expectedVersion);
+        Set<String> keys = new HashSet<>(rolePermissionsForRole(roleId));
+        requireHoldsAll(authentication, organizationId, null, keys, false, "ROLE", roleId.toString());
+        String name = jdbc.queryForObject("SELECT name FROM roles WHERE id = ? AND org_id = ?", String.class, roleId, organizationId);
         Integer used = jdbc.queryForObject("SELECT count(*) FROM grants WHERE org_id = ? AND org_role_id = ?",
                 Integer.class, organizationId, roleId);
         if (used != null && used > 0) {
             throw new ApiException(HttpStatus.CONFLICT, "ROLE_IN_USE", "Revoke the role grants before deleting the role.");
         }
         jdbc.update("DELETE FROM role_permissions WHERE role_id = ?", roleId);
-        jdbc.update("DELETE FROM roles WHERE id = ? AND org_id = ? AND version = ?", roleId, organizationId, expectedVersion);
+        // A concurrent edit moved the version on: 409, and the whole transaction (permissions too) rolls back.
+        ExpectedVersion.requireUpdated(jdbc.update(
+                "DELETE FROM roles WHERE id = ? AND org_id = ? AND version = ? AND is_template = FALSE",
+                roleId, organizationId, expectedVersion));
+        recordChange(organizationId, authentication, "role.deleted", "ROLE", roleId, roleSnapshot(name, keys), null,
+                "ROLE", roleId, expectedVersion + 1, "RoleDeleted", Map.of("name", name));
     }
 
     /* ------------------------------------------------------------------
@@ -140,14 +174,14 @@ public class RoleService {
         permissions.require(authentication, organizationId, PermissionKey.ROLE_MANAGE.value());
         UUID after = parseCursor(cursor);
         return jdbc.query("""
-                SELECT m.id, u.email, m.status, m.role_template
+                SELECT m.id, u.email, m.status, m.role_template, m.version
                 FROM memberships m JOIN users u ON u.id = m.user_id
                 WHERE m.org_id = ? AND (CAST(? AS uuid) IS NULL OR m.id > CAST(? AS uuid))
                 ORDER BY m.id
                 LIMIT 51
                 """, (rs, rowNum) -> new MemberResponse(
                         rs.getObject("id", UUID.class), rs.getString("email"), rs.getString("email"),
-                        rs.getString("status"), rs.getString("role_template")),
+                        rs.getString("status"), rs.getString("role_template"), rs.getLong("version")),
                 organizationId, after, after);
     }
 
@@ -206,31 +240,48 @@ public class RoleService {
         } catch (DuplicateKeyException exception) {
             throw new ApiException(HttpStatus.CONFLICT, "GRANT_EXISTS", "That grant already exists.");
         }
+        Map<String, Object> snapshot = grantSnapshot(member.id(), roleId, scope, request.scopeId(), request.expiresAt());
+        recordChange(organizationId, authentication, "role.granted", "MEMBERSHIP", member.id(), null, snapshot,
+                "GRANT", id, 0L, "RoleGranted", snapshot);
         return findGrant(organizationId, id);
+    }
+
+    private static Map<String, Object> grantSnapshot(UUID membershipId, Object roleId, Object scope, Object scopeId,
+            Object expiresAt) {
+        Map<String, Object> snapshot = new java.util.LinkedHashMap<>();
+        snapshot.put("membership_id", membershipId.toString());
+        snapshot.put("role_id", String.valueOf(roleId));
+        snapshot.put("scope", String.valueOf(scope));
+        snapshot.put("scope_id", scopeId == null ? null : scopeId.toString());
+        snapshot.put("expires_at", expiresAt == null ? null : expiresAt.toString());
+        return snapshot;
     }
 
     @Transactional
     public void revoke(UUID organizationId, UUID grantId, long expectedVersion, Authentication authentication) {
         permissions.require(authentication, organizationId, PermissionKey.ROLE_MANAGE.value());
         List<Map<String, Object>> rows = jdbc.queryForList("""
-                SELECT COALESCE(template_role_id, org_role_id) AS role_id, template_role_id, scope, scope_id
+                SELECT COALESCE(template_role_id, org_role_id) AS role_id, template_role_id, scope, scope_id,
+                       membership_id, expires_at
                 FROM grants WHERE id = ? AND org_id = ?
                 """, grantId, organizationId);
         if (rows.isEmpty()) throw PermissionService.notFound();
         Map<String, Object> row = rows.get(0);
         if (OWNER_TEMPLATE_ID.equals(row.get("template_role_id"))) {
-            // TODO(1.2): owner changes go through ownership transfer, which keeps exactly one owner.
+            // Owner changes go through ownership transfer (task 1.2), which keeps exactly one owner.
             throw new ApiException(HttpStatus.FORBIDDEN, "OWNER_TRANSFER_REQUIRED",
                     "The owner role can only change through ownership transfer.");
         }
         String projectRef = row.get("scope_id") == null ? null : row.get("scope_id").toString();
         requireHoldsAll(authentication, organizationId, projectRef,
                 new HashSet<>(rolePermissionsForRole((UUID) row.get("role_id"))), false, "GRANT", grantId.toString());
-        int updated = jdbc.update("DELETE FROM grants WHERE id = ? AND org_id = ? AND version = ?",
-                grantId, organizationId, expectedVersion);
-        if (updated == 0) {
-            throw new ApiException(HttpStatus.CONFLICT, "STALE_VERSION", "The grant was changed by another request.");
-        }
+        ExpectedVersion.requireUpdated(jdbc.update("DELETE FROM grants WHERE id = ? AND org_id = ? AND version = ?",
+                grantId, organizationId, expectedVersion));
+        UUID membershipId = (UUID) row.get("membership_id");
+        Map<String, Object> snapshot = grantSnapshot(membershipId, row.get("role_id"), row.get("scope"),
+                row.get("scope_id"), row.get("expires_at"));
+        recordChange(organizationId, authentication, "role.revoked", "MEMBERSHIP", membershipId, snapshot, null,
+                "GRANT", grantId, expectedVersion + 1, "RoleRevoked", snapshot);
     }
 
     public List<String> effectivePermissions(UUID organizationId, UUID membershipId, Authentication authentication) {
@@ -254,6 +305,28 @@ public class RoleService {
      * The actor must hold every key in {@code keys} at the given scope (ORG when {@code projectRef} is null).
      * Refusals are recorded as security evidence; self-elevation is recorded under its own event type.
      */
+    /**
+     * Task 1.2 (invitations, member role change): the template role can be handed out by a grant (never the
+     * owner or platform template) and the actor holds every key in it. Returns the template name.
+     */
+    public String requireAssignableTemplate(UUID organizationId, Authentication authentication, UUID templateRoleId,
+            boolean self, String targetType, String targetRef) {
+        if (templateRoleId == null) throw validation("template_role_id", "A role is required.");
+        UUID roleId = resolveGrantableRole(organizationId, templateRoleId, null);
+        requireHoldsAll(authentication, organizationId, null, new HashSet<>(rolePermissionsForRole(roleId)), self,
+                targetType, targetRef);
+        return jdbc.queryForObject("SELECT name FROM roles WHERE id = ?", String.class, roleId);
+    }
+
+    /** Task 1.2: removing a role from someone needs every key of that role too (no demoting above yourself). */
+    public void requireHoldsTemplate(UUID organizationId, Authentication authentication, String templateName,
+            String targetType, String targetRef) {
+        List<UUID> ids = jdbc.queryForList("SELECT id FROM roles WHERE is_template AND name = ?", UUID.class, templateName);
+        if (ids.isEmpty()) return;
+        requireHoldsAll(authentication, organizationId, null, new HashSet<>(rolePermissionsForRole(ids.get(0))), false,
+                targetType, targetRef);
+    }
+
     private void requireHoldsAll(
             Authentication authentication,
             UUID organizationId,
@@ -305,7 +378,7 @@ public class RoleService {
             throw PermissionService.notFound();
         }
         if (OWNER_TEMPLATE_ID.equals(templateRoleId)) {
-            // TODO(1.2): a second owner is never created by a grant; use ownership transfer.
+            // A second owner is never created by a grant: ownership moves only through transfer (task 1.2).
             throw new ApiException(HttpStatus.FORBIDDEN, "OWNER_TRANSFER_REQUIRED",
                     "The owner role can only change through ownership transfer.");
         }
@@ -431,7 +504,8 @@ public class RoleService {
     public record RoleResponse(
             UUID id, String name, boolean template, boolean ownerOnly, long version, long grantCount,
             List<String> permissionKeys) {}
-    public record MemberResponse(UUID id, String displayName, String email, String status, String roleTemplate) {}
+    public record MemberResponse(UUID id, String displayName, String email, String status, String roleTemplate,
+            long version) {}
     public record RoleHolderResponse(
             UUID grantId, UUID membershipId, String email, String status, String scope, UUID scopeId,
             Instant expiresAt, long version) {}

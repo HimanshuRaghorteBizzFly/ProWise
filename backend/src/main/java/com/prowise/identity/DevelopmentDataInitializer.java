@@ -17,12 +17,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Initializes development login accounts for Super Admin, Platform Operator, and Developer
- * when running in local/test/development environments.
+ * in the local {@code dev} profile only (SPRING_PROFILES_ACTIVE=dev). It replaces the former Flyway
+ * migration V12__seed_development_logins (now database/seeds/legacy), so test and production databases never
+ * get known-password accounts and an empty database never depends on seed data.
  *
  * Refuses to run under 'prod' or 'production' profiles.
  * Never overwrites existing accounts.
  */
 @Component
+@org.springframework.context.annotation.Profile("dev")
 public class DevelopmentDataInitializer implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DevelopmentDataInitializer.class);

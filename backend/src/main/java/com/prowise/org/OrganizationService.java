@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prowise.common.api.ApiException;
+import com.prowise.common.change.ChangeRecorder;
 import com.prowise.identity.AuthPrincipal;
 
 @Service
@@ -23,10 +24,12 @@ public class OrganizationService {
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final ChangeRecorder changes;
 
-    public OrganizationService(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+    public OrganizationService(JdbcTemplate jdbc, ObjectMapper objectMapper, ChangeRecorder changes) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.changes = changes;
     }
 
     @Transactional
@@ -55,6 +58,15 @@ public class OrganizationService {
                     JOIN roles r ON r.name = m.role_template AND r.is_template
                     WHERE m.org_id = ? AND m.user_id = ?
                     """, UUID.randomUUID(), orgId, principal.userId(), orgId, principal.userId());
+            String slug = request.slug().trim().toLowerCase(java.util.Locale.ROOT);
+            // Task 1.4: organization + owner membership + audit + OrganizationCreated commit together.
+            changes.record(
+                    new ChangeRecorder.AuditEntry(orgId, principal.userId(), "organization.created", "ORGANIZATION", orgId,
+                            null, null, java.util.Map.of("name", request.name().trim(), "slug", slug,
+                                    "timezone", request.timezone())),
+                    new ChangeRecorder.DomainEvent(orgId, "ORGANIZATION", orgId, 0L, "OrganizationCreated",
+                            java.util.Map.of("name", request.name().trim(), "slug", slug, "timezone", request.timezone(),
+                                    "owner_user_id", principal.userId().toString())));
         } catch (DuplicateKeyException exception) {
             throw new ApiException(HttpStatus.CONFLICT, "DUPLICATE_SLUG", "That organization slug is already in use.");
         }

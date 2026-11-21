@@ -28,6 +28,7 @@ public class AuthAuditLogEntity {
     private UUID targetUserId;
 
     @Column(name = "details", columnDefinition = "JSONB")
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     private String details = "{}";
 
     @Column(name = "ip_address", length = 100)

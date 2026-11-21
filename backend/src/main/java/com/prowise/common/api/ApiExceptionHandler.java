@@ -43,6 +43,13 @@ public class ApiExceptionHandler {
         return respond(exception.status(), exception.code(), exception.getMessage(), exception.fieldErrors(), request);
     }
 
+    /** JPA @Version conflict (task 1.4): same 409 STALE_VERSION as the JDBC expectedVersion check. */
+    @ExceptionHandler(org.springframework.dao.OptimisticLockingFailureException.class)
+    ResponseEntity<ApiError> handleOptimisticLock(Exception exception, HttpServletRequest request) {
+        return respond(HttpStatus.CONFLICT, ErrorCodes.STALE_VERSION,
+                "The record was changed by someone else. Reload and try again.", List.of(), request);
+    }
+
     @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
     ResponseEntity<ApiError> handleNotFound(Exception exception, HttpServletRequest request) {
         return respond(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "The requested resource was not found.",

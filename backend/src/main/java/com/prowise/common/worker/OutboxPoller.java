@@ -12,13 +12,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Profile;
 import org.springframework.context.event.EventListener;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.prowise.common.outbox.OutboxDispatcher;
+
 /**
- * Skeleton outbox poller. Only one worker instance runs it at a time (ShedLock). Dispatch and
- * consumer dedupe by event_id arrive with task 1.4; for now it proves DB connectivity.
+ * Worker-profile outbox poller (task 1.4). ShedLock keeps one active poller across worker instances, and
+ * {@link OutboxDispatcher} claims rows with FOR UPDATE SKIP LOCKED, so even overlapping runs never deliver
+ * the same event twice at once. System job: it spans organizations, and each event keeps its own org_id.
  */
 @Component
 @Profile("worker")
@@ -28,13 +30,18 @@ public class OutboxPoller {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxPoller.class);
 
-    private final JdbcTemplate jdbc;
+    private final OutboxDispatcher dispatcher;
     private final long delayMs;
+    private final int batchSize;
     private final AtomicLong completedPolls = new AtomicLong();
 
-    public OutboxPoller(JdbcTemplate jdbc, @Value("${prowise.worker.outbox-delay-ms:5000}") long delayMs) {
-        this.jdbc = jdbc;
+    public OutboxPoller(
+            OutboxDispatcher dispatcher,
+            @Value("${prowise.worker.outbox-delay-ms:5000}") long delayMs,
+            @Value("${prowise.worker.outbox-batch-size:50}") int batchSize) {
+        this.dispatcher = dispatcher;
         this.delayMs = delayMs;
+        this.batchSize = batchSize;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -45,12 +52,11 @@ public class OutboxPoller {
     @Scheduled(fixedDelayString = "${prowise.worker.outbox-delay-ms:5000}")
     @SchedulerLock(name = LOCK_NAME, lockAtMostFor = "PT1M")
     public void poll() {
-        // System job: intentionally spans all organisations; every outbox row carries its own org_id,
-        // and dispatch (task 1.4) keeps that org_id on each delivered event.
-        Long pending = jdbc.queryForObject(
-                "SELECT count(*) FROM outbox_event WHERE state = 'PENDING' AND available_at <= now()", Long.class);
+        int handled = dispatcher.dispatchBatch(batchSize);
         completedPolls.incrementAndGet();
-        log.debug("Outbox poll complete: {} pending event(s)", pending);
+        if (handled > 0) {
+            log.debug("Outbox poll handled {} event(s)", handled);
+        }
     }
 
     public long completedPolls() {

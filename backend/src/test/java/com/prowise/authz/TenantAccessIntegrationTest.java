@@ -203,6 +203,41 @@ class TenantAccessIntegrationTest {
      * ================================================================== */
 
     @Test
+    void refreshedTokenForOrganizationAStaysBoundToAAndCannotOpenB() throws Exception {
+        Workspace orgA = workspace("refresh-a");
+        Workspace orgB = workspace("refresh-b");
+        notification(orgA.id(), orgA.ownerId(), "Alert in A");
+
+        MvcResult switched = mockMvc.perform(withToken(post("/v1/me/organizations/{org}/switch", orgA.id()), orgA.ownerToken()))
+                .andExpect(status().isOk()).andReturn();
+        Cookie refresh = switched.getResponse().getCookie("prowise_refresh_token");
+        assertThat(refresh).isNotNull();
+
+        MvcResult refreshed = mockMvc.perform(post("/v1/auth/refresh").cookie(refresh)).andExpect(status().isOk()).andReturn();
+        String token = json(refreshed).path("access_token").asText();
+
+        // Still bound to A: A's data is reachable, without selecting the organization again.
+        mockMvc.perform(withToken(get("/v1/organizations/{org}/roles", orgA.id()), token)).andExpect(status().isOk());
+        mockMvc.perform(withToken(get("/v1/developer/dashboard"), token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unread_notifications_count").value(1));
+        // B stays closed: no data, no existence signal, and no switch without a membership.
+        mockMvc.perform(withToken(get("/v1/organizations/{org}/roles", orgB.id()), token)).andExpect(status().isNotFound());
+        mockMvc.perform(withToken(get("/v1/me/permissions").param("org", orgB.id().toString()), token))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(withToken(post("/v1/me/organizations/{org}/switch", orgB.id()), token))
+                .andExpect(status().isNotFound());
+
+        // Once the membership in A is disabled, a refresh no longer carries the binding to A.
+        jdbc.update("UPDATE memberships SET status = 'DISABLED' WHERE org_id = ? AND user_id = ?", orgA.id(), orgA.ownerId());
+        Cookie next = refreshed.getResponse().getCookie("prowise_refresh_token");
+        assertThat(next).isNotNull();
+        String unbound = json(mockMvc.perform(post("/v1/auth/refresh").cookie(next)).andExpect(status().isOk()).andReturn())
+                .path("access_token").asText();
+        mockMvc.perform(withToken(get("/v1/organizations/{org}/roles", orgA.id()), unbound)).andExpect(status().isNotFound());
+    }
+
+    @Test
     void switchingOrganizationInvalidatesTheOldTokenAndItsData() throws Exception {
         Workspace orgA = workspace("first");
         String orgB = createOrganization(orgA.ownerToken(), "second");

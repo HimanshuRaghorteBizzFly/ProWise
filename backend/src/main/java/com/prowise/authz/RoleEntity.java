@@ -1,6 +1,5 @@
 package com.prowise.authz;
 
-import java.time.Instant;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -16,7 +15,7 @@ import org.hibernate.annotations.ParamDef;
 @Table(name = "roles")
 @FilterDef(name = "tenantFilter", parameters = @ParamDef(name = "orgId", type = UUID.class))
 @Filter(name = "tenantFilter", condition = "org_id = :orgId OR is_template = true")
-public class RoleEntity {
+public class RoleEntity extends com.prowise.common.persistence.BaseEntity {
 
     @Id
     private UUID id;
@@ -28,15 +27,6 @@ public class RoleEntity {
 
     @Column(name = "is_template", nullable = false)
     private boolean template;
-
-    @Column(nullable = false)
-    private long version;
-
-    @Column(name = "created_at", nullable = false)
-    private Instant createdAt;
-
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
 
     protected RoleEntity() {}
 
@@ -54,9 +44,5 @@ public class RoleEntity {
 
     public boolean isTemplate() {
         return template;
-    }
-
-    public long getVersion() {
-        return version;
     }
 }

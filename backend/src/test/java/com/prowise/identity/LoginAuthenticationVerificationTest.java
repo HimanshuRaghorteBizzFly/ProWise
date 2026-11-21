@@ -40,11 +40,15 @@ class LoginAuthenticationVerificationTest {
     private JdbcTemplate jdbc;
 
     @Autowired
-    private DevelopmentDataInitializer dataInitializer;
+    private org.springframework.core.env.Environment environment;
 
+    /**
+     * The dev seeder is a dev-profile bean (it must never run in test or production contexts), so this
+     * test creates the same accounts explicitly before verifying that each of them can sign in.
+     */
     @BeforeEach
     void ensureAccounts() {
-        dataInitializer.run(null);
+        new DevelopmentDataInitializer(jdbc, passwordEncoder, environment).run(null);
     }
 
     @Test

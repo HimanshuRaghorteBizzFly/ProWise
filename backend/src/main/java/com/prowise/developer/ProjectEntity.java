@@ -58,8 +58,13 @@ public class ProjectEntity {
     @Column(name = "timezone", length = 60)
     private String timezone = "America/New_York";
 
+    /** Task 2.1: optimistic version shared with the project API (expectedVersion). */
+    @jakarta.persistence.Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
     @Column(name = "last_progress_percent", precision = 5, scale = 2)
-    private BigDecimal lastProgressPercent = BigDecimal.ZERO;
+    private BigDecimal lastProgressPercent; // null = not reported (task 2.1: no invented percentage)
 
     @Column(name = "health", length = 20)
     private String health = "ON_TRACK";
