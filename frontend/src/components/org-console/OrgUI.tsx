@@ -45,7 +45,7 @@ export function useOrgLookups() {
  */
 const NEED_TO_KEY: Record<PermissionId, PermissionKey> = {
   "org.manage": "org.manage",
-  "org.ownership.transfer": "org.manage", // TODO(1.2): ownership transfer gets its own restricted flow
+  "org.ownership.transfer": "org.manage", // the API also requires the caller to be the current owner (task 1.2)
   "org.privacy.manage": "org.manage",
   "member.invite": "member.invite",
   "member.disable": "member.disable",

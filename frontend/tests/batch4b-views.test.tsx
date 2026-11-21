@@ -210,7 +210,9 @@ describe("Organization settings extension", () => {
 
   it("shows the danger zone transfer only to the current owner with org.manage", () => {
     expect(renderToStaticMarkup(<OrganizationDangerZone canTransfer />)).toContain("Transfer ownership");
-    expect(renderToStaticMarkup(<OrganizationDangerZone canTransfer />)).toContain("Later · task 1.2");
+    expect(renderToStaticMarkup(<OrganizationDangerZone canTransfer transferHref="/org/o1/owner/transfer-ownership" />)).toContain(
+      `href="/org/o1/owner/transfer-ownership"`,
+    );
     expect(renderToStaticMarkup(<OrganizationDangerZone canTransfer={false} />)).toBe("");
   });
 });

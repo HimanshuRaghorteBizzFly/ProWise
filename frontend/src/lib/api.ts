@@ -1,12 +1,36 @@
 import type { ApiErrorResponse, HealthResponse } from "@/types/api";
+import type * as Dto from "@/types/api";
 import { mocksAllowed, readPermissionEnv } from "@/lib/permissions";
 import { useAuthStore } from "@/store/auth-store";
 
 export const REQUEST_ID_HEADER = "X-Request-Id";
 export const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 export const EXPECTED_VERSION_FIELD = "expectedVersion";
+export const STALE_VERSION_CODE = "STALE_VERSION";
+
+const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 type FetchLike = typeof globalThis.fetch;
+
+interface RequestOptions {
+  method?: string;
+  body?: unknown;
+  retryOnUnauthorized?: boolean;
+  /** Reuse a key to make a user-level retry of the same change safe; otherwise one is generated per call. */
+  idempotencyKey?: string;
+}
+
+/** Random id for X-Request-Id and Idempotency-Key (UUID when available, safe characters only). */
+export function newClientId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") return cryptoApi.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/** True when the server refused a write because someone else changed the record first. */
+export function isStaleVersion(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && error.code === STALE_VERSION_CODE;
+}
 
 export class ApiError extends Error {
   readonly status: number;
@@ -143,41 +167,55 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
   async function request(
     path: string,
-    requestOptions: { method?: string; body?: unknown; retryOnUnauthorized?: boolean } = {},
+    requestOptions: RequestOptions = {},
   ): Promise<Response> {
     const previewAllowed = path === "/v1/health" || path === "/v1/auth/signout";
     if (isRolePreview() && mocksAllowed(readPermissionEnv()) && !previewAllowed) {
       throw new ApiError(0, "ROLE_PREVIEW", "API requests are disabled during role preview.", "");
     }
 
+    const method = (requestOptions.method ?? "GET").toUpperCase();
+    // Task 1.4: one key per logical mutation, reused when the request is retried after a token refresh,
+    // so the server returns the earlier result instead of applying the change twice.
+    const idempotencyKey =
+      requestOptions.idempotencyKey ?? (MUTATION_METHODS.has(method) ? newClientId() : undefined);
+    const requestId = newClientId();
+
     let response: Response;
     try {
       const headers = new Headers({ Accept: "application/json" });
       if (requestOptions.body !== undefined) headers.set("Content-Type", "application/json");
       if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+      headers.set(REQUEST_ID_HEADER, requestId);
+      if (idempotencyKey) headers.set(IDEMPOTENCY_KEY_HEADER, idempotencyKey);
       response = await fetcher(`${resolveApiBaseUrl(options.baseUrl)}${path}`, {
-        method: requestOptions.method ?? "GET",
+        method,
         headers,
         credentials: "include",
         body: requestOptions.body === undefined ? undefined : JSON.stringify(requestOptions.body),
       });
     } catch (error) {
-      throw new ApiError(0, "NETWORK_ERROR", error instanceof Error ? error.message : "Network request failed.", "");
+      throw new ApiError(
+        0,
+        "NETWORK_ERROR",
+        error instanceof Error ? error.message : "Network request failed.",
+        requestId,
+      );
     }
 
     if (response.status === 401 && requestOptions.retryOnUnauthorized !== false) {
       const refreshed = await refreshAccessToken();
       if (refreshed) {
-        return request(path, { ...requestOptions, retryOnUnauthorized: false });
+        return request(path, { ...requestOptions, idempotencyKey, retryOnUnauthorized: false });
       }
     }
     if (!response.ok) {
-      throw await toApiError(response);
+      throw await toApiError(response, requestId);
     }
     return response;
   }
 
-  async function json<T>(path: string, requestOptions: { method?: string; body?: unknown } = {}): Promise<T> {
+  async function json<T>(path: string, requestOptions: RequestOptions = {}): Promise<T> {
     const response = await request(path, requestOptions);
     return (await response.json()) as T;
   }
@@ -232,7 +270,9 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }),
     refresh: refreshAccessToken,
     signout: async () => {
-      await request("/api/auth/logout", { method: "POST" });
+      // /v1 path: the base URL is "/api" and only /api/v1/* is proxied to the backend; also the one sign-out
+      // path allowed during role preview.
+      await request("/v1/auth/signout", { method: "POST" });
       accessToken = null;
     },
     me: () => json<import("@/types/api").MeResponse>("/v1/me"),
@@ -264,6 +304,92 @@ export function createApiClient(options: ApiClientOptions = {}) {
       json<import("@/types/api").GrantDto>(`${orgPath(orgId)}/grants`, { method: "POST", body }),
     revokeGrant: (orgId: string, grantId: string, expectedVersion: number) =>
       request(`${orgPath(orgId)}/grants/${encodeURIComponent(grantId)}?expectedVersion=${expectedVersion}`, { method: "DELETE" }),
+    /* ---- Task 1.2: invitations, teams, member changes, handover and ownership ---- */
+    invitations: (orgId: string) => json<Dto.InvitationDto[]>(`${orgPath(orgId)}/invitations`),
+    invitation: (orgId: string, invitationId: string) =>
+      json<Dto.InvitationDto>(`${orgPath(orgId)}/invitations/${encodeURIComponent(invitationId)}`),
+    createInvitation: (orgId: string, body: Dto.CreateInvitationDto) =>
+      json<Dto.InvitationDto>(`${orgPath(orgId)}/invitations`, { method: "POST", body }),
+    resendInvitation: (orgId: string, invitationId: string, expectedVersion: number) =>
+      json<Dto.InvitationDto>(`${orgPath(orgId)}/invitations/${encodeURIComponent(invitationId)}/resend`, {
+        method: "POST",
+        body: { expected_version: expectedVersion },
+      }),
+    revokeInvitation: (orgId: string, invitationId: string, expectedVersion: number) =>
+      json<Dto.InvitationDto>(`${orgPath(orgId)}/invitations/${encodeURIComponent(invitationId)}/revoke`, {
+        method: "POST",
+        body: { expected_version: expectedVersion },
+      }),
+    /** The token goes in the body, never in a URL. */
+    previewInvitation: (token: string) =>
+      json<Dto.InvitationPreviewDto>("/v1/invitations/preview", { method: "POST", body: { token } }),
+    acceptInvitation: (token: string) =>
+      json<Dto.AcceptInvitationDto>("/v1/invitations/accept", { method: "POST", body: { token } }),
+    teams: (orgId: string) => json<Dto.TeamDto[]>(`${orgPath(orgId)}/teams`),
+    team: (orgId: string, teamId: string) => json<Dto.TeamDto>(`${orgPath(orgId)}/teams/${encodeURIComponent(teamId)}`),
+    createTeam: (orgId: string, body: { name: string; description?: string | null; lead_membership_id?: string | null }) =>
+      json<Dto.TeamDto>(`${orgPath(orgId)}/teams`, { method: "POST", body }),
+    updateTeam: (orgId: string, teamId: string, body: { name: string; description?: string | null; expected_version: number }) =>
+      json<Dto.TeamDto>(`${orgPath(orgId)}/teams/${encodeURIComponent(teamId)}`, { method: "PATCH", body }),
+    archiveTeam: (orgId: string, teamId: string, expectedVersion: number) =>
+      json<Dto.TeamDto>(`${orgPath(orgId)}/teams/${encodeURIComponent(teamId)}/archive`, {
+        method: "POST",
+        body: { expected_version: expectedVersion },
+      }),
+    addTeamMember: (orgId: string, teamId: string, membershipId: string, expectedVersion: number) =>
+      json<Dto.TeamDto>(`${orgPath(orgId)}/teams/${encodeURIComponent(teamId)}/members`, {
+        method: "POST",
+        body: { membership_id: membershipId, expected_version: expectedVersion },
+      }),
+    removeTeamMember: (orgId: string, teamId: string, membershipId: string, expectedVersion: number) =>
+      json<Dto.TeamDto>(
+        `${orgPath(orgId)}/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(membershipId)}?expectedVersion=${expectedVersion}`,
+        { method: "DELETE" },
+      ),
+    changeTeamLead: (orgId: string, teamId: string, leadMembershipId: string | null, expectedVersion: number) =>
+      json<Dto.TeamDto>(`${orgPath(orgId)}/teams/${encodeURIComponent(teamId)}/lead`, {
+        method: "PUT",
+        body: { lead_membership_id: leadMembershipId, expected_version: expectedVersion },
+      }),
+    changeMemberRole: (orgId: string, membershipId: string, templateRoleId: string, expectedVersion: number) =>
+      json<Dto.MemberChangeDto>(`${orgPath(orgId)}/members/${encodeURIComponent(membershipId)}/role`, {
+        method: "PATCH",
+        body: { template_role_id: templateRoleId, expected_version: expectedVersion },
+      }),
+    changeMemberStatus: (orgId: string, membershipId: string, body: Dto.MemberStatusRequestDto) =>
+      json<Dto.MemberChangeDto>(`${orgPath(orgId)}/members/${encodeURIComponent(membershipId)}/status`, {
+        method: "PATCH",
+        body,
+      }),
+    memberOwnership: (orgId: string, membershipId: string) =>
+      json<Dto.MemberOwnershipDto>(`${orgPath(orgId)}/members/${encodeURIComponent(membershipId)}/ownership`),
+    handoverItems: (orgId: string) => json<Dto.HandoverItemDto[]>(`${orgPath(orgId)}/handover-items`),
+    resolveHandover: (orgId: string, itemId: string, replacementMembershipId: string, expectedVersion: number) =>
+      json<Dto.HandoverItemDto>(`${orgPath(orgId)}/handover-items/${encodeURIComponent(itemId)}/resolve`, {
+        method: "POST",
+        body: { replacement_membership_id: replacementMembershipId, expected_version: expectedVersion },
+      }),
+    ownership: (orgId: string) => json<Dto.OwnershipDto>(`${orgPath(orgId)}/ownership`),
+    transferOwnership: (orgId: string, body: Dto.TransferOwnershipDto) =>
+      json<Dto.TransferResultDto>(`${orgPath(orgId)}/ownership/transfer`, { method: "POST", body }),
+    /* ---- Task 2.1: project records ---- */
+    projects: (orgId: string, query: Dto.ProjectListQuery = {}) => {
+      const params = new URLSearchParams();
+      for (const [name, value] of Object.entries(query)) {
+        if (value !== undefined && value !== null && value !== "") params.set(name, String(value));
+      }
+      const suffix = params.toString() ? `?${params.toString()}` : "";
+      return json<Dto.CursorPageDto<Dto.ProjectDto>>(`${orgPath(orgId)}/projects${suffix}`);
+    },
+    project: (orgId: string, projectId: string) =>
+      json<Dto.ProjectDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}`),
+    projectOptions: (orgId: string) => json<Dto.ProjectOptionsDto>(`${orgPath(orgId)}/projects/options`),
+    projectDateHistory: (orgId: string, projectId: string) =>
+      json<Dto.ProjectDateChangeDto[]>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/date-history`),
+    createProject: (orgId: string, body: Dto.CreateProjectDto) =>
+      json<Dto.ProjectDto>(`${orgPath(orgId)}/projects`, { method: "POST", body }),
+    updateProject: (orgId: string, projectId: string, body: Dto.UpdateProjectDto) =>
+      json<Dto.ProjectDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", body }),
     /** Selects the active workspace; the old token is revoked server-side and replaced here. */
     switchOrganization: (orgId: string) =>
       json<{ access_token: string }>(`/v1/me/organizations/${encodeURIComponent(orgId)}/switch`, { method: "POST" }).then(
@@ -333,8 +459,8 @@ function orgPath(orgId: string): string {
   return `/v1/organizations/${encodeURIComponent(orgId)}`;
 }
 
-async function toApiError(response: Response): Promise<ApiError> {
-  const requestId = response.headers.get(REQUEST_ID_HEADER) ?? "";
+async function toApiError(response: Response, sentRequestId = ""): Promise<ApiError> {
+  const requestId = response.headers.get(REQUEST_ID_HEADER) ?? sentRequestId;
   let body: Partial<ApiErrorResponse> = {};
   try {
     body = (await response.json()) as Partial<ApiErrorResponse>;

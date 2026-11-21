@@ -41,6 +41,8 @@ import {
   formatDateTime,
 } from "@/components/delivery/DeliveryUI";
 import { AccessDeniedState, AccessLostState, SessionExpiredState } from "./AccessStates";
+import { StaleVersionBanner } from "./StaleVersionBanner";
+import { isStaleVersion, type ApiError } from "@/lib/api";
 import { useOrgHref } from "./OrgUI";
 import type { OrgFamily } from "./role-rules";
 import { KEY_GROUPS, KEY_LABEL, MATRIX_DENIED_KEYS, roleDisplayName, roleTier } from "./permission-key-catalog";
@@ -51,25 +53,38 @@ import {
   useOrgId,
   useRole,
   useRoleHolders,
+  useReloadRoleData,
   useRoleMutations,
   useRoles,
   type LoadState,
 } from "./useRoleApi";
 
-const FAMILY_LABEL: Record<OrgFamily, string> = { owner: "Owner", admin: "Admin" };
+export const FAMILY_LABEL: Record<OrgFamily, string> = { owner: "Owner", admin: "Admin" };
 
 /* ======================================================================
  * Shared pieces
  * ==================================================================== */
 
 /** Renders the non-ready states of an API load in a consistent way. */
-function LoadGate<T>({ state, family, children }: { state: LoadState<T>; family: OrgFamily; children: (data: T, sample: boolean) => React.ReactNode }) {
+export function LoadGate<T>({
+  state,
+  family,
+  children,
+  permission = "role.manage",
+  what = "Roles",
+}: {
+  state: LoadState<T>;
+  family: OrgFamily;
+  children: (data: T, sample: boolean) => React.ReactNode;
+  permission?: string;
+  what?: string;
+}) {
   const href = useOrgHref(family);
   if (state.kind === "loading") return <PageSkeleton variant="list" />;
-  if (state.kind === "forbidden") return <AccessDeniedState permission="role.manage" backHref={href()} />;
+  if (state.kind === "forbidden") return <AccessDeniedState permission={permission} backHref={href()} />;
   if (state.kind === "access-lost") return <AccessLostState />;
   if (state.kind === "unauthenticated") return <SessionExpiredState />;
-  if (state.kind === "error") return <ErrorBanner message="Roles could not be loaded." onRetry={state.retry} />;
+  if (state.kind === "error") return <ErrorBanner message={`${what} could not be loaded.`} onRetry={state.retry} />;
   return <>{children(state.data, state.sample)}</>;
 }
 
@@ -486,6 +501,25 @@ export function RoleDetailView({ family, roleId }: { family: OrgFamily; roleId: 
   const canManage = can("role.manage");
   const [draft, setDraft] = useState<string[] | null>(null);
   const [error, setError] = useState("");
+  const [stale, setStale] = useState<ApiError | null>(null);
+  const [reloading, setReloading] = useState(false);
+  const reloadRoleData = useReloadRoleData(orgId);
+  const onMutationError = (failure: unknown) => {
+    // Task 1.4: a lost race is not a failure message, it is an inline "someone changed this" banner.
+    if (isStaleVersion(failure)) {
+      setError("");
+      setStale(failure as ApiError);
+    } else {
+      setError(apiErrorMessage(failure));
+    }
+  };
+  const reload = () => {
+    setReloading(true);
+    void reloadRoleData().finally(() => {
+      setReloading(false);
+      setStale(null);
+    });
+  };
 
   const role = state.kind === "ready" ? state.data : null;
   useEffect(() => {
@@ -508,7 +542,7 @@ export function RoleDetailView({ family, roleId }: { family: OrgFamily; roleId: 
             setError("");
             updateRole.mutate(
               { roleId: loaded.id, body: { name: loaded.name, permission_keys: value, expected_version: loaded.version } },
-              { onSuccess: () => toast.success(`${loaded.name} updated`), onError: (failure) => setError(apiErrorMessage(failure)) },
+              { onSuccess: () => toast.success(`${loaded.name} updated`), onError: onMutationError },
             );
           };
           const remove = () => {
@@ -520,7 +554,7 @@ export function RoleDetailView({ family, roleId }: { family: OrgFamily; roleId: 
                   toast.success(`${loaded.name} deleted`);
                   router.push(href("roles-permissions"));
                 },
-                onError: (failure) => setError(apiErrorMessage(failure)),
+                onError: onMutationError,
               },
             );
           };
@@ -528,6 +562,7 @@ export function RoleDetailView({ family, roleId }: { family: OrgFamily; roleId: 
           return (
             <>
               <SampleNotice sample={sample} />
+              {stale && <StaleVersionBanner requestId={stale.requestId} onReload={reload} reloading={reloading} />}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <StatPill label="Type" value={loaded.template ? "Template" : "Custom"} />
                 <StatPill label="Permissions" value={`${loaded.permission_keys.length} / 22`} />
@@ -578,7 +613,7 @@ export function RoleDetailView({ family, roleId }: { family: OrgFamily; roleId: 
                                     onClick={() =>
                                       revokeGrant.mutate(
                                         { grantId: row.grant_id, version: row.version },
-                                        { onSuccess: () => toast.success("Role revoked"), onError: (failure) => toast.error(apiErrorMessage(failure)) },
+                                        { onSuccess: () => toast.success("Role revoked"), onError: onMutationError },
                                       )
                                     }
                                   >
@@ -627,7 +662,17 @@ export function AssignRoleView({ family }: { family: OrgFamily }) {
   const [projectId, setProjectId] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [error, setError] = useState("");
+  const [stale, setStale] = useState<ApiError | null>(null);
+  const [reloading, setReloading] = useState(false);
+  const reloadRoleData = useReloadRoleData(orgId);
   const grants = useMemberGrants(orgId, membershipId);
+  const reload = () => {
+    setReloading(true);
+    void reloadRoleData().finally(() => {
+      setReloading(false);
+      setStale(null);
+    });
+  };
 
   useEffect(() => {
     const preset = new URLSearchParams(window.location.search).get("role");
@@ -676,6 +721,7 @@ export function AssignRoleView({ family }: { family: OrgFamily }) {
               return (
                 <>
                   <SampleNotice sample={sample} />
+                  {stale && <StaleVersionBanner requestId={stale.requestId} onReload={reload} reloading={reloading} />}
                   <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
                     <Panel className="xl:col-span-2" title="New grant" icon={KeyRound}>
                       {activeMembers.length === 0 ? (
@@ -726,7 +772,10 @@ export function AssignRoleView({ family }: { family: OrgFamily }) {
                                       <AdminButton size="xs" variant="ghost" disabled={sample || revokeGrant.isPending}
                                         onClick={() => revokeGrant.mutate({ grantId: grant.id, version: grant.version }, {
                                           onSuccess: () => toast.success("Role revoked"),
-                                          onError: (failure) => toast.error(apiErrorMessage(failure)),
+                                          onError: (failure) =>
+                                            isStaleVersion(failure)
+                                              ? setStale(failure as ApiError)
+                                              : toast.error(apiErrorMessage(failure)),
                                         })}>
                                         Revoke
                                       </AdminButton>

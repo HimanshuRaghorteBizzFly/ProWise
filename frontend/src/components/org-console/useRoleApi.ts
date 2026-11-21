@@ -53,7 +53,7 @@ async function withFixture<T>(call: () => Promise<T>, fixture: () => T): Promise
   }
 }
 
-function toState<T>(query: {
+export function toState<T>(query: {
   isPending: boolean;
   error: unknown;
   data: T | SampleData<T> | undefined;
@@ -145,13 +145,7 @@ export function useMemberGrants(orgId: string, membershipId: string): LoadState<
 
 /** Mutations invalidate every role, member and permission query of the organization. */
 export function useRoleMutations(orgId: string) {
-  const queryClient = useQueryClient();
-  const invalidate = () =>
-    Promise.all(
-      ["roles", "role", "role-holders", "members", "member-grants"].map((key) =>
-        queryClient.invalidateQueries({ queryKey: [key, orgId] }),
-      ),
-    );
+  const invalidate = useReloadRoleData(orgId);
   return {
     createRole: useMutation({ mutationFn: (body: RoleRequestDto) => apiClient.createRole(orgId, body), onSuccess: invalidate }),
     updateRole: useMutation({
@@ -172,6 +166,24 @@ export function useRoleMutations(orgId: string) {
 
 /** Error code and message from an API error ({ code, message, request_id, field_errors }). */
 export function apiErrorMessage(error: unknown): string {
+  const message = baseErrorMessage(error);
+  const requestId =
+    typeof error === "object" && error && "requestId" in error ? String((error as { requestId: unknown }).requestId ?? "") : "";
+  return requestId ? `${message} (Reference: ${requestId})` : message;
+}
+
+/** Reloads every role, member and grant query of the organization (used after a STALE_VERSION conflict). */
+export function useReloadRoleData(orgId: string) {
+  const queryClient = useQueryClient();
+  return () =>
+    Promise.all(
+      ["roles", "role", "role-holders", "members", "member-grants"].map((key) =>
+        queryClient.invalidateQueries({ queryKey: [key, orgId] }),
+      ),
+    );
+}
+
+function baseErrorMessage(error: unknown): string {
   if (typeof error === "object" && error && "code" in error) {
     const code = String((error as { code: string }).code);
     if (code === "SELF_ELEVATION_DENIED") return "You can't give yourself permissions you don't hold.";

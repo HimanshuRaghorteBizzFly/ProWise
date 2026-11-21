@@ -70,7 +70,7 @@ export default function OwnerOrganizationSettingsPage() {
             </div>
           }
         />
-        <OrganizationDangerZone canTransfer={canManage && isCurrentOwner} />
+        <OrganizationDangerZone canTransfer={canManage && isCurrentOwner} transferHref={`/org/${orgId}/owner/transfer-ownership`} />
       </div>
     );
   }
