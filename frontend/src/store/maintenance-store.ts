@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { safeJSONStorage } from "@/lib/safe-storage";
 import {
   MaintenanceAuditLog,
   MaintenanceChecklistStep,
@@ -1144,6 +1145,8 @@ export const useMaintenanceStore = create<MaintenanceStoreState>()(
     }),
     {
       name: "prowise-maintenance-store-v2",
+      storage: safeJSONStorage,
+      skipHydration: true,
       partialize: (state) => ({
         maintenanceWindows: state.maintenanceWindows,
         platformWideMaintenanceActive: state.platformWideMaintenanceActive,

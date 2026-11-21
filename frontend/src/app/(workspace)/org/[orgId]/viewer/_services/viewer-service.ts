@@ -18,6 +18,7 @@ import {
   ViewerActivityItem,
   ViewerNotificationItem,
 } from "../_types";
+import { useDeliveryStore } from "@/store/delivery-store";
 
 /**
  * Normalizes organization ID, falling back to 'org-acme' if empty or invalid.
@@ -41,16 +42,57 @@ export function assertReadOnly(actionDescription: string): never {
 
 /**
  * Filter projects by tenant organization.
- * Prevents cross-tenant data leakage.
+ * Prevents cross-tenant data leakage. Interconnects with live delivery store.
  */
 export function getViewerProjects(orgId?: string): ViewerProject[] {
   const safeId = normalizeOrgId(orgId);
-  return SEEDED_VIEWER_PROJECTS.filter((p) => p.orgId === safeId);
+  const seeded = SEEDED_VIEWER_PROJECTS.filter((p) => p.orgId === safeId);
+
+  try {
+    const liveDelivery = useDeliveryStore.getState().projects;
+    const seededKeys = new Set(seeded.map((s) => s.key.toLowerCase()));
+
+    const liveMapped: ViewerProject[] = liveDelivery
+      .filter((p) => !seededKeys.has(p.code.toLowerCase()))
+      .map((p) => ({
+        id: p.id,
+        orgId: safeId,
+        key: p.code,
+        name: p.name,
+        description: p.description || "",
+        mode: p.mode,
+        lifecycle: (p.status === "ACTIVE" ? "ACTIVE" : "PLANNING") as any,
+        priority: "MEDIUM",
+        projectManagerId: p.managerId || "usr-manager",
+        projectManagerName: "Priya Raman",
+        accountableOwnerId: p.accountableDeveloperId || "00000000-0000-0000-0000-000000000003",
+        accountableOwnerName: "Alex Rivera",
+        teamIds: [p.teamId || "t-platform"],
+        teamNames: ["Platform Squad"],
+        memberCount: p.memberIds?.length || 1,
+        startDate: p.startDate,
+        targetDate: p.dueDate,
+        timezone: "America/New_York",
+        cadence: "WEEKLY",
+        lastProgressPercent: p.progress || 0,
+        lastProgressMethod: p.mode === "INDIVIDUAL" ? "NOT_REPORTED" : "CALCULATED_BASELINE",
+        lastReportedAt: p.startDate,
+        health: p.health === "ON_TRACK" ? "ON_TRACK" : p.health === "AT_RISK" ? "AT_RISK" : "OFF_TRACK",
+        healthReasons: ["Live project active in portfolio."],
+        repositoryIds: [],
+        repositoryNames: [],
+        archived: false,
+      }));
+
+    return [...seeded, ...liveMapped];
+  } catch {
+    return seeded;
+  }
 }
 
 export function getViewerProjectById(orgId?: string, projectId?: string): ViewerProject | undefined {
-  const safeId = normalizeOrgId(orgId);
-  return SEEDED_VIEWER_PROJECTS.find((p) => p.orgId === safeId && p.id === projectId);
+  const all = getViewerProjects(orgId);
+  return all.find((p) => p.id === projectId || p.key.toLowerCase() === projectId?.toLowerCase());
 }
 
 /**

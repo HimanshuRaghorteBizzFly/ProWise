@@ -1,6 +1,7 @@
 package com.prowise.identity;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -70,8 +71,9 @@ public class DevelopmentDataInitializer implements ApplicationRunner {
             ensureSuperAdminExists();
             ensurePlatformOperatorExists();
             ensureDeveloperExists();
+            ensureAllSectionAccountsExist();
             ensureProjectAssociations();
-            log.info("Development login credentials verified: Super Admin, Platform Operator, Developer accounts active.");
+            log.info("Development login credentials verified: Super Admin, Platform Operator, Developer, and all section accounts active.");
         } catch (Exception ex) {
             log.warn("Development login initialization skipped or deferred: {}", ex.getMessage());
         }
@@ -165,6 +167,27 @@ public class DevelopmentDataInitializer implements ApplicationRunner {
                 VALUES (gen_random_uuid(), ?, ?, 'DEVELOPER', 'ACTIVE')
                 ON CONFLICT (org_id, user_id) DO NOTHING
                 """, DEFAULT_ORG_ID, devUserId);
+    }
+
+    private void ensureAllSectionAccountsExist() {
+        record AccountSpec(UUID id, String email, String name, String pass, String role) {}
+        List<AccountSpec> specs = List.of(
+                new AccountSpec(UUID.fromString("00000000-0000-0000-0000-000000000004"), "dr.sarah.lin@acmehealth.com", "Dr. Sarah Lin", "Owner2026!", "ORGANIZATION_OWNER"),
+                new AccountSpec(UUID.fromString("00000000-0000-0000-0000-000000000005"), "david.kim@acmehealth.com", "David Kim", "Admin2026!", "ORGANIZATION_ADMIN"),
+                new AccountSpec(UUID.fromString("00000000-0000-0000-0000-000000000006"), "priya.raman@acmehealth.com", "Priya Raman", "Manager2026!", "PROJECT_MANAGER"),
+                new AccountSpec(UUID.fromString("00000000-0000-0000-0000-000000000007"), "marcus.chen@acmehealth.com", "Marcus Chen", "Lead2026!", "TEAM_LEAD"),
+                new AccountSpec(UUID.fromString("00000000-0000-0000-0000-000000000008"), "elena.ruiz@acmehealth.com", "Elena Ruiz", "Reviewer2026!", "QA_REVIEWER"),
+                new AccountSpec(UUID.fromString("00000000-0000-0000-0000-000000000009"), "jordan.lee@acmehealth.com", "Jordan Lee", "Viewer2026!", "VIEWER")
+        );
+
+        for (AccountSpec s : specs) {
+            ensureUserAccount(s.id(), s.email(), s.name(), s.pass(), s.role(), null, DEFAULT_ORG_ID);
+            jdbc.update("""
+                    INSERT INTO memberships (id, org_id, user_id, role_template, status)
+                    VALUES (gen_random_uuid(), ?, ?, ?, 'ACTIVE')
+                    ON CONFLICT (org_id, user_id) DO NOTHING
+                    """, DEFAULT_ORG_ID, s.id(), s.role());
+        }
     }
 
     private void ensureUserAccount(UUID id, String email, String name, String rawPassword, String role, String department, UUID orgId) {

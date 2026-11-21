@@ -404,7 +404,7 @@ export function Sidebar({ mobileOpen, onMobileClose, mobileTriggerRef }: Sidebar
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex h-screen w-72 max-w-[85vw] shrink-0 flex-col border-r border-app-border bg-app-sidebar text-app-text-primary shadow-2xl",
           "transition-transform duration-200 motion-reduce:transition-none",
-          "lg:sticky lg:top-0 lg:z-30 lg:max-w-none lg:translate-x-0 lg:shadow-none lg:visible lg:transition-[width]",
+          "lg:static lg:h-full lg:z-30 lg:max-w-none lg:translate-x-0 lg:shadow-none lg:visible lg:transition-[width]",
           isCollapsed ? "lg:w-[68px]" : "lg:w-64",
           mobileOpen ? "visible translate-x-0" : "invisible -translate-x-full",
         )}

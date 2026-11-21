@@ -87,4 +87,5 @@ public class ProjectController {
             Authentication authentication, @RequestBody ProjectService.UpdateProjectRequest request) {
         return projects.update(orgId, projectId, authentication, request);
     }
+
 }

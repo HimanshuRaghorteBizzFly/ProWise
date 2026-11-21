@@ -67,13 +67,29 @@ public class JwtService {
             String role = claims.get("role", String.class);
             String dept = claims.get("dept", String.class);
             String accessLevel = claims.get("accessLevel", String.class);
-            return AuthPrincipal.forOperator(
-                    opid,
+            String sub = claims.getSubject();
+            UUID parsedUserId = null;
+            if (sub != null && !sub.isBlank()) {
+                try {
+                    parsedUserId = UUID.fromString(sub);
+                } catch (IllegalArgumentException ignored) {
+                    parsedUserId = null;
+                }
+            }
+            if (parsedUserId == null) {
+                parsedUserId = UUID.nameUUIDFromBytes(("operator:" + opid).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            return new AuthPrincipal(
+                    parsedUserId,
                     UUID.fromString(claims.get("sid", String.class)),
                     claims.get("email", String.class),
+                    null,
+                    opid,
                     role,
                     dept,
-                    accessLevel != null ? accessLevel : "DEPARTMENT_OPERATOR"
+                    accessLevel != null ? accessLevel : "DEPARTMENT_OPERATOR",
+                    false,
+                    claims.get("name", String.class)
             );
         }
         String organization = claims.get("org", String.class);

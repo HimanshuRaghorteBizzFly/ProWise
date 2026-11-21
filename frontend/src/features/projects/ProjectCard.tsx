@@ -60,28 +60,47 @@ export function ProjectCard({
 
   return (
     <div
-      className={`rounded-xl border bg-app-surface p-5 shadow-sm transition-all hover:shadow-md relative flex flex-col justify-between ${
+      className={`relative overflow-hidden rounded-xl border p-5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg flex flex-col justify-between ${
         project.archived
           ? "border-dashed border-app-border opacity-70 bg-app-bg/60"
-          : "border-app-border"
+          : isIndividual
+          ? "border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-app-surface to-teal-500/5 hover:border-emerald-500/60 hover:shadow-emerald-500/10"
+          : "border-violet-500/30 bg-gradient-to-br from-violet-500/10 via-app-surface to-indigo-500/5 hover:border-violet-500/60 hover:shadow-violet-500/10"
       }`}
     >
+      {/* Top Mode Color Stripe */}
+      {!project.archived && (
+        <span
+          className={`absolute inset-x-0 top-0 h-1.5 ${
+            isIndividual
+              ? "bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600"
+              : "bg-gradient-to-r from-violet-500 via-purple-400 to-indigo-600"
+          }`}
+        />
+      )}
+
       <div>
         {/* Top Header: Key, Badges, Actions Menu */}
-        <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start justify-between gap-3 mb-3 pt-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-app-bg border border-app-border text-app-text-primary">
+            <span
+              className={`font-mono text-xs font-bold px-2 py-0.5 rounded border ${
+                isIndividual
+                  ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 border-emerald-500/30"
+                  : "text-violet-700 dark:text-violet-300 bg-violet-500/15 border-violet-500/30"
+              }`}
+            >
               [{project.key}]
             </span>
 
             {/* Mode Badge */}
             {isIndividual ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/20">
-                <User className="w-3 h-3" /> Individual (Solo)
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30 shadow-xs">
+                <User className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> Individual (Solo)
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
-                <Layers className="w-3 h-3" /> Structured
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-violet-500/20 text-violet-800 dark:text-violet-200 border border-violet-500/30 shadow-xs">
+                <Layers className="w-3 h-3 text-violet-600 dark:text-violet-400" /> Structured (Team)
               </span>
             )}
 
@@ -192,14 +211,22 @@ export function ProjectCard({
             </span>
           </div>
 
-          <div className="h-2 w-full bg-app-bg rounded-full overflow-hidden border border-app-border">
+          <div
+            className={`h-2.5 w-full rounded-full overflow-hidden border ${
+              isIndividual
+                ? "bg-emerald-500/10 border-emerald-500/20"
+                : "bg-violet-500/10 border-violet-500/20"
+            }`}
+          >
             <div
               className={`h-full transition-all duration-300 rounded-full ${
                 project.health === "OFF_TRACK"
                   ? "bg-red-500"
                   : project.health === "AT_RISK"
                   ? "bg-amber-500"
-                  : "bg-blue-600"
+                  : isIndividual
+                  ? "bg-gradient-to-r from-emerald-500 to-teal-400"
+                  : "bg-gradient-to-r from-violet-500 to-indigo-500"
               }`}
               style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
             />

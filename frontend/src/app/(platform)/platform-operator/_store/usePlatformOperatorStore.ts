@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { safeJSONStorage } from "@/lib/safe-storage";
 import { useAuthStore } from "@/store/auth-store";
 import {
   AnnouncementDraft,
@@ -1852,6 +1853,7 @@ export const usePlatformOperatorStore = create<PlatformOperatorStoreState>()(
     }),
     {
       name: "prowise-platform-operator-store-v1",
+      storage: safeJSONStorage,
       skipHydration: true,
     }
   )
