@@ -13,8 +13,16 @@ import org.springframework.stereotype.Repository;
 public interface ProjectRepository extends JpaRepository<ProjectEntity, String> {
     Optional<ProjectEntity> findByIdAndOrgId(String id, UUID orgId);
 
+    Optional<ProjectEntity> findByOrgIdAndKey(UUID orgId, String key);
+
+    boolean existsByOrgIdAndKey(UUID orgId, String key);
+
     List<ProjectEntity> findByOrgIdOrderByNameAsc(UUID orgId);
 
-    @Query("SELECT p FROM ProjectEntity p WHERE p.orgId = :orgId AND (p.accountableOwnerId = :userId OR p.memberIds LIKE CONCAT('%', :userId, '%')) ORDER BY p.name")
+    List<ProjectEntity> findByOrgIdOrderByCreatedAtDesc(UUID orgId);
+
+    List<ProjectEntity> findByOrgIdAndArchivedOrderByCreatedAtDesc(UUID orgId, boolean archived);
+
+    @Query("SELECT p FROM ProjectEntity p WHERE p.orgId = :orgId AND (p.accountableOwnerId = :userId OR p.accountableDeveloperId = :userId OR p.memberIds LIKE CONCAT('%', :userId, '%')) ORDER BY p.name")
     List<ProjectEntity> findAssignedProjectsInOrg(@Param("orgId") UUID orgId, @Param("userId") String userId);
 }

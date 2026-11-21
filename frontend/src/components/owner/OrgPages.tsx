@@ -33,7 +33,9 @@ import {
   FIXTURE_REPOSITORIES,
   FIXTURE_ROLES,
   FIXTURE_TEAMS,
+  type PortfolioData,
 } from "@/lib/fixtures/org-admin";
+import type { Project } from "@/types";
 import { useAuthStore } from "@/store/auth-store";
 
 interface FamilyProps {
@@ -259,13 +261,72 @@ function usePortfolio(name: string) {
   return { ...resource, can, enabled };
 }
 
+function usePortfolioProjects(name: string) {
+  const { orgId } = useParams<{ orgId: string }>();
+  const { can } = usePermissions();
+  const enabled = can("project.read");
+  const resource = useOrgResource<PortfolioData>({
+    name,
+    orgId,
+    enabled,
+    fetch: async (id) => {
+      const [projRes, members] = await Promise.all([
+        apiClient.projects(id),
+        apiClient.members(id).catch(() => []),
+      ]);
+      const mappedProjects: Project[] = (projRes.projects || []).map((p) => ({
+        id: p.id,
+        orgId: p.orgId,
+        key: p.key,
+        name: p.name,
+        description: p.description ?? "",
+        mode: p.mode,
+        lifecycle: p.lifecycle as any,
+        archived: p.archived,
+        priority: p.priority as any,
+        projectManagerId: p.projectManagerId ?? "",
+        accountableOwnerId: p.accountableDeveloperId ?? "",
+        teamIds: p.teamIds ?? [],
+        memberIds: p.memberIds ?? [],
+        startDate: p.startDate,
+        targetDate: p.targetDate ?? "",
+        timezone: p.timezone,
+        cadence: "WEEKLY",
+        graceWorkingDays: 2,
+        version: p.version,
+        lastProgressPercent: Number(p.lastProgressPercent) || 0,
+        lastProgressMethod: p.mode === "INDIVIDUAL" ? "DEVELOPER_REPORTED" : "CALCULATED_BASELINE",
+        health: (p.health as any) ?? "ON_TRACK",
+        healthReasons: [],
+        repositoryIds: [],
+        createdAt: p.createdAt,
+      }));
+      const mappedUsers = (members || []).map((m) => ({
+        id: m.id,
+        name: m.display_name,
+        email: m.email,
+        role: m.role_template as any,
+        timezone: "UTC",
+        createdAt: new Date().toISOString(),
+      }));
+      return {
+        projects: mappedProjects,
+        users: mappedUsers,
+        teams: [],
+      };
+    },
+    fixture: FIXTURE_PORTFOLIO,
+  });
+  return { ...resource, can, enabled };
+}
+
 export function OrgProjectsContent({ family }: FamilyProps) {
-  const { state, retry, can, enabled } = usePortfolio("projects");
+  const { state, retry, can, enabled } = usePortfolioProjects("projects");
   const basePath = useFamilyBasePath(family);
   if (!enabled) return <ProjectsPortfolioView projects={[]} users={[]} teams={[]} source="api" can={can} basePath={basePath} />;
   return (
-    <ResourceStates state={state} retry={retry} requiredPermission="project.read" label="projects" laterTask="2.1">
-      {(ready) => <ProjectsPortfolioView {...ready.data} source={ready.source} can={can} basePath={basePath} />}
+    <ResourceStates state={state} retry={retry} requiredPermission="project.read" label="projects">
+      {(ready) => <ProjectsPortfolioView {...ready.data} source={ready.source} can={can} basePath={basePath} onRefresh={retry} />}
     </ResourceStates>
   );
 }

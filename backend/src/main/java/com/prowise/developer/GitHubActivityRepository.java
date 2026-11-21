@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface GitHubActivityRepository extends JpaRepository<GitHubActivityEntity, String> {
     List<GitHubActivityEntity> findByOrgIdOrderByCreatedAtDesc(UUID orgId);
+    List<GitHubActivityEntity> findByOrgIdAndProjectIdOrderByCreatedAtDesc(UUID orgId, String projectId);
     List<GitHubActivityEntity> findByOrgIdAndRepositoryNameOrderByCreatedAtDesc(UUID orgId, String repositoryName);
     List<GitHubActivityEntity> findByOrgIdAndActorOrderByCreatedAtDesc(UUID orgId, String actor);
 }

@@ -1,0 +1,73 @@
+-- Task 2.1: Project records, lifecycle, date history, and memberships
+-- Supports Individual and Structured project modes, org isolation, and audit trails.
+
+-- 1. Upgrade projects table with versioning, lifecycle history, and explicit accountable developer.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS previous_lifecycle VARCHAR(30) NULL;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS accountable_developer_id VARCHAR(64) NULL;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS calendar_ref VARCHAR(64) NULL;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS active_baseline_id VARCHAR(64) NULL;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS scope_description TEXT NULL;
+
+-- Backfill accountable_developer_id from accountable_owner_id where missing
+UPDATE projects SET accountable_developer_id = accountable_owner_id WHERE accountable_developer_id IS NULL AND accountable_owner_id IS NOT NULL;
+UPDATE projects SET scope_description = description WHERE scope_description IS NULL AND description IS NOT NULL;
+
+-- Ensure lifecycle check includes AWAITING_ACCEPTANCE
+ALTER TABLE projects DROP CONSTRAINT IF EXISTS ck_project_lifecycle;
+ALTER TABLE projects ADD CONSTRAINT ck_project_lifecycle
+    CHECK (lifecycle IN ('PLANNED', 'ACTIVE', 'ON_HOLD', 'AWAITING_ACCEPTANCE', 'DELIVERED', 'CLOSED', 'CANCELLED'));
+
+-- Unique project key per organization
+ALTER TABLE projects DROP CONSTRAINT IF EXISTS uq_projects_org_key;
+ALTER TABLE projects ADD CONSTRAINT uq_projects_org_key UNIQUE (org_id, key);
+
+-- Indexes for efficient querying by org and archived flag
+CREATE INDEX IF NOT EXISTS idx_projects_org_archived ON projects (org_id, archived);
+CREATE INDEX IF NOT EXISTS idx_projects_org_key ON projects (org_id, key);
+CREATE INDEX IF NOT EXISTS idx_projects_acc_dev ON projects (org_id, accountable_developer_id);
+
+-- 2. Project Memberships (linking project to active organization memberships)
+CREATE TABLE IF NOT EXISTS project_members (
+    id UUID PRIMARY KEY,
+    org_id UUID NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+    project_id VARCHAR(64) NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+    membership_id UUID NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'MEMBER',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fk_project_members_membership
+        FOREIGN KEY (org_id, membership_id) REFERENCES memberships (org_id, id) ON DELETE CASCADE,
+    CONSTRAINT uq_project_members UNIQUE (project_id, membership_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_members_org_proj ON project_members (org_id, project_id);
+CREATE INDEX IF NOT EXISTS idx_project_members_membership ON project_members (membership_id);
+
+-- 3. Project Date History (append-only history of target date changes)
+CREATE TABLE IF NOT EXISTS project_date_history (
+    id UUID PRIMARY KEY,
+    org_id UUID NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+    project_id VARCHAR(64) NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+    old_target_date TIMESTAMPTZ,
+    new_target_date TIMESTAMPTZ NOT NULL,
+    reason TEXT NOT NULL,
+    actor_id UUID REFERENCES users (id),
+    changed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_date_history_proj ON project_date_history (org_id, project_id, changed_at DESC);
+
+-- 4. Project Ownership History (append-only history of ownership changes)
+CREATE TABLE IF NOT EXISTS project_ownership_history (
+    id UUID PRIMARY KEY,
+    org_id UUID NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+    project_id VARCHAR(64) NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+    old_owner_id VARCHAR(64),
+    new_owner_id VARCHAR(64) NOT NULL,
+    reason TEXT,
+    changed_by UUID REFERENCES users (id),
+    changed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_ownership_history_proj ON project_ownership_history (org_id, project_id, changed_at DESC);

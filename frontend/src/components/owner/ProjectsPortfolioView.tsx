@@ -2,8 +2,11 @@
 
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { FolderKanban, LayoutGrid, List } from "lucide-react";
+import { useParams } from "next/navigation";
+import { FolderKanban, LayoutGrid, List, Plus, Edit2, Users, Archive, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 
+import { apiClient, ApiError } from "@/lib/api";
 import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
 import { OwnerPageState } from "@/components/owner/OwnerPageState";
 import { OwnerPanel } from "@/components/owner/OwnerPanel";
@@ -25,12 +28,20 @@ import type { PortfolioData } from "@/lib/fixtures/org-admin";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/types";
 import type { PermissionKey } from "@/types/permission";
+import type { ProjectDto, CreateProjectRequestDto, UpdateProjectRequestDto } from "@/types/api";
+import { ProjectFormModal } from "@/features/projects/ProjectFormModal";
+import { ProjectMembersModal } from "@/features/projects/ProjectMembersModal";
+import { ProjectCard } from "@/features/projects/ProjectCard";
+import { useProjectStore } from "@/store/project-store";
+import { useDeliveryStore } from "@/store/delivery-store";
+import { VIEWERS } from "@/mocks/delivery-dashboards";
 
 export interface ProjectsPortfolioViewProps extends PortfolioData {
   source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
   basePath?: string;
   now?: string;
+  onRefresh?: () => void;
 }
 
 const DEADLINE_TONES: Record<DeadlineStatus, StatusTone> = {
@@ -80,13 +91,62 @@ function FilterSelect({
   );
 }
 
-export function ProjectsPortfolioView({ projects, users, teams, source, can, basePath, now }: ProjectsPortfolioViewProps) {
+function toProjectDto(p: Project): ProjectDto {
+  return {
+    id: p.id,
+    orgId: p.orgId,
+    key: p.key,
+    name: p.name,
+    description: p.description,
+    mode: p.mode,
+    lifecycle: p.lifecycle as any,
+    priority: p.priority as any,
+    projectManagerId: p.projectManagerId,
+    accountableDeveloperId: p.accountableOwnerId,
+    teamIds: p.teamIds ?? [],
+    memberIds: p.memberIds ?? [],
+    startDate: p.startDate,
+    targetDate: p.targetDate,
+    timezone: p.timezone,
+    lastProgressPercent: p.lastProgressPercent,
+    health: p.health as any,
+    archived: p.archived,
+    version: p.version,
+    createdAt: p.createdAt,
+    updatedAt: p.createdAt,
+  };
+}
+
+export function ProjectsPortfolioView({
+  projects,
+  users,
+  teams,
+  source,
+  can,
+  basePath,
+  now,
+  onRefresh,
+}: ProjectsPortfolioViewProps) {
+  let orgId: string | undefined;
+  try {
+    const params = useParams<{ orgId?: string }>();
+    orgId = params?.orgId;
+  } catch {
+    // harmless in unit test rendering
+  }
+
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [showArchived, setShowArchived] = useState(false);
   const [layout, setLayout] = useState<"list" | "cards">("list");
 
+  // Modals state
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [memberManagingProject, setMemberManagingProject] = useState<Project | null>(null);
+
   const canCreate = can("project.create");
+  const canEdit = can("project.edit");
   const canArchive = can("project.archive");
   const setFilter = (key: keyof Filters) => (value: string) => setFilters((current) => ({ ...current, [key]: value }));
 
@@ -111,6 +171,108 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, bas
   }));
   const hasFilters = search !== "" || showArchived || Object.values(filters).some((value) => value !== "ALL");
 
+  const orgMembersList = useMemo(
+    () => users.map((u) => ({ id: u.id, name: u.name, email: u.email })),
+    [users]
+  );
+
+  const handleCreateSubmit = async (data: CreateProjectRequestDto | UpdateProjectRequestDto) => {
+    if (!orgId) return;
+    const createData = data as CreateProjectRequestDto;
+    let backendProject: any = null;
+    try {
+      backendProject = await apiClient.createProject(orgId, createData);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 400 || err.status === 409 || err.status === 422) {
+          const msg = err.message || "Failed to create project.";
+          toast.error("Project creation failed", { description: msg });
+          throw err;
+        }
+      }
+    }
+
+    // Sync to useProjectStore & useDeliveryStore so Developer & Team Lead workspaces reflect the project
+    const finalKey = backendProject?.key || createData.key;
+    try {
+      useProjectStore.getState().createProject({
+        orgId,
+        name: createData.name,
+        key: finalKey,
+        description: createData.description || "",
+        mode: (createData.mode as import("@/types").ProjectMode) || "STRUCTURED",
+        lifecycle: createData.lifecycle || "ACTIVE",
+        archived: false,
+        priority: (createData.priority as import("@/types").Priority) || "MEDIUM",
+        projectManagerId: createData.projectManagerId || VIEWERS.manager.id,
+        accountableOwnerId: createData.accountableDeveloperId || "usr-developer",
+        teamIds: ["t-platform"],
+        memberIds: [
+          createData.accountableDeveloperId || "usr-developer",
+          createData.projectManagerId || VIEWERS.manager.id,
+          VIEWERS.lead.id,
+        ],
+        startDate: createData.startDate ? createData.startDate.split("T")[0] : new Date().toISOString().split("T")[0],
+        targetDate: createData.targetDate ? createData.targetDate.split("T")[0] : "",
+        timezone: createData.timezone || "America/New_York",
+        cadence: "WEEKLY",
+        graceWorkingDays: 1,
+        repositoryIds: [],
+      });
+
+      useDeliveryStore.getState().createProject(
+        {
+          name: createData.name,
+          client: "Internal / Client",
+          mode: (createData.mode as import("@/mocks/delivery-dashboards").DeliveryMode) || "STRUCTURED",
+          teamId: "t-platform",
+          startDate: createData.startDate ? createData.startDate.split("T")[0] : new Date().toISOString().split("T")[0],
+          dueDate: createData.targetDate ? createData.targetDate.split("T")[0] : "",
+          description: createData.description || "",
+        },
+        createData.projectManagerId || VIEWERS.manager.id
+      );
+    } catch {
+      // ignore local sync errors
+    }
+
+    toast.success("Project created successfully", {
+      description: `Project [${finalKey}] is now active across all workspaces.`,
+    });
+    onRefresh?.();
+    setIsCreateOpen(false);
+  };
+
+  const handleEditSubmit = async (data: CreateProjectRequestDto | UpdateProjectRequestDto) => {
+    if (!editingProject) return;
+    try {
+      await apiClient.updateProject(editingProject.id, data as UpdateProjectRequestDto, orgId);
+      toast.success("Project updated successfully");
+      onRefresh?.();
+      setEditingProject(null);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Failed to update project.";
+      toast.error("Project update failed", { description: msg });
+      throw err;
+    }
+  };
+
+  const handleToggleArchive = async (project: Project) => {
+    try {
+      if (project.archived) {
+        await apiClient.restoreProject(project.id, project.version, orgId);
+        toast.success(`Project "${project.name}" restored`);
+      } else {
+        await apiClient.archiveProject(project.id, project.version, orgId);
+        toast.success(`Project "${project.name}" archived`);
+      }
+      onRefresh?.();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Action failed.";
+      toast.error("Archive/Restore failed", { description: msg });
+    }
+  };
+
   const header = (
     <PageHeader
       title="Projects portfolio"
@@ -125,7 +287,20 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, bas
             >
               Create project
             </Link>
-          ) : <><LaterActionButton>Create project</LaterActionButton><OwnerLaterBadge task="2.1" /></>
+          ) : source === "api" ? (
+            <button
+              type="button"
+              onClick={() => setIsCreateOpen(true)}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#1A73E8] px-3.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#1557B0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transition-none"
+            >
+              <Plus className="w-4 h-4" /> Create project
+            </button>
+          ) : (
+            <>
+              <LaterActionButton>Create project</LaterActionButton>
+              <OwnerLaterBadge task="2.1" />
+            </>
+          )
         ) : undefined
       }
     />
@@ -144,7 +319,21 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, bas
     return (
       <div className="space-y-4">
         {header}
-        <OwnerPageState state="empty" icon={FolderKanban} title="No projects yet" description="Projects you can read will appear here." />
+        <OwnerPageState
+          state="empty"
+          icon={FolderKanban}
+          title="No projects yet"
+          description="Projects you can read will appear here."
+        />
+
+        {isCreateOpen && (
+          <ProjectFormModal
+            isOpen={isCreateOpen}
+            onClose={() => setIsCreateOpen(false)}
+            onSubmit={handleCreateSubmit}
+            members={orgMembersList}
+          />
+        )}
       </div>
     );
   }
@@ -153,8 +342,30 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, bas
     const status = deadlineStatus(project, now);
     return <StatusBadge label={DEADLINE_LABELS[status]} tone={DEADLINE_TONES[status]} />;
   };
-  const archiveAction = (project: Project) =>
-    canArchive ? <LaterActionButton title="Available when task 2.4 ships">{project.archived ? "Restore" : "Archive"}</LaterActionButton> : null;
+
+  const archiveAction = (project: Project) => {
+    if (!canArchive) return null;
+    if (source === "fixture") {
+      return (
+        <LaterActionButton title="Available when task 2.4 ships">
+          {project.archived ? "Restore" : "Archive"}
+        </LaterActionButton>
+      );
+    }
+    return (
+      <button
+        type="button"
+        onClick={() => handleToggleArchive(project)}
+        className={`p-1 rounded text-xs font-medium transition-colors ${
+          project.archived
+            ? "text-blue-600 hover:bg-blue-500/10"
+            : "text-app-text-secondary hover:text-red-600 hover:bg-red-500/10"
+        }`}
+      >
+        {project.archived ? "Restore" : "Archive"}
+      </button>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -206,7 +417,7 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, bas
                   label="Lifecycle"
                   value={filters.lifecycle}
                   onChange={setFilter("lifecycle")}
-                  options={["PLANNED", "ACTIVE", "ON_HOLD", "DELIVERED", "CLOSED", "CANCELLED"].map((value) => ({
+                  options={["PLANNED", "ACTIVE", "ON_HOLD", "AWAITING_ACCEPTANCE", "DELIVERED", "CLOSED", "CANCELLED"].map((value) => ({
                     value,
                     label: formatLifecycle(value as Project["lifecycle"]),
                   }))}
@@ -237,7 +448,7 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, bas
                   onChange={setFilter("deadline")}
                   options={(["overdue", "due-soon", "later", "closed"] as const).map((value) => ({ value, label: DEADLINE_LABELS[value] }))}
                 />
-                <label className="col-span-2 inline-flex items-center gap-2 text-xs text-app-text-secondary">
+                <label className="col-span-2 inline-flex items-center gap-2 text-xs text-app-text-secondary cursor-pointer">
                   <input
                     type="checkbox"
                     checked={showArchived}
@@ -253,31 +464,18 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, bas
           {visible.length === 0 ? (
             <OwnerPageState state="empty" title="No projects match your filters" description="Change or reset the filters." />
           ) : layout === "cards" ? (
-            <ul className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+            <ul className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
               {visible.map((project) => (
                 <li key={project.id} className="min-w-0">
-                  <SurfaceCard className="flex h-full flex-col gap-2 p-4 transition-shadow hover:shadow-floating motion-reduce:transition-none">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-caption font-semibold text-app-text-secondary">{project.key}</span>
-                      <HealthBadge health={project.health} showIcon={false} />
-                      {project.archived && <StatusBadge label="Archived" tone="neutral" />}
-                    </div>
-                    {basePath ? (
-                      <Link href={`${basePath}/projects/${project.id}`} className="rounded-sm text-sm font-semibold text-app-text-primary hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">{project.name}</Link>
-                    ) : <h3 className="text-sm font-semibold text-app-text-primary">{project.name}</h3>}
-                    <p className="text-caption text-app-text-secondary">
-                      {project.mode === "INDIVIDUAL" ? "Individual" : "Structured"} · {formatLifecycle(project.lifecycle)}
-                    </p>
-                    <p className="text-sm text-app-text-primary">
-                      {getProgressValue(project)} <span className="text-caption text-app-text-muted">· {getProgressMethodLabel(project)}</span>
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2 text-caption text-app-text-secondary">
-                      <span>Target {formatDateOnly(project.targetDate, project.timezone)}</span>
-                      {deadlineBadge(project)}
-                    </div>
-                    <p className="text-caption text-app-text-muted">Owner: {getOwnerName(project, users)}</p>
-                    {archiveAction(project) && <div className="mt-auto pt-1">{archiveAction(project)}</div>}
-                  </SurfaceCard>
+                  <ProjectCard
+                    project={toProjectDto(project)}
+                    canEdit={canEdit}
+                    canArchive={canArchive}
+                    onEdit={() => setEditingProject(project)}
+                    onManageMembers={() => setMemberManagingProject(project)}
+                    onArchive={() => handleToggleArchive(project)}
+                    onRestore={() => handleToggleArchive(project)}
+                  />
                 </li>
               ))}
             </ul>
@@ -292,17 +490,21 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, bas
                   <TableHead>Progress</TableHead>
                   <TableHead>Target date</TableHead>
                   <TableHead>Accountable owner</TableHead>
-                  {canArchive && <TableHead>Actions</TableHead>}
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {visible.map((project) => (
                   <TableRow key={project.id}>
                     <TableCell>
-                      <span className="block text-caption font-semibold text-app-text-secondary">{project.key}</span>
+                      <span className="block text-caption font-semibold font-mono text-app-text-secondary">[{project.key}]</span>
                       {basePath ? (
-                        <Link href={`${basePath}/projects/${project.id}`} className="font-medium text-app-text-primary hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">{project.name}</Link>
-                      ) : <span className="font-medium text-app-text-primary">{project.name}</span>}
+                        <Link href={`${basePath}/projects/${project.id}`} className="font-medium text-app-text-primary hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:hover:text-blue-300">
+                          {project.name}
+                        </Link>
+                      ) : (
+                        <span className="font-medium text-app-text-primary">{project.name}</span>
+                      )}
                       {project.archived && <StatusBadge label="Archived" tone="neutral" className="ml-2" />}
                     </TableCell>
                     <TableCell>{project.mode === "INDIVIDUAL" ? "Individual" : "Structured"}</TableCell>
@@ -319,7 +521,31 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, bas
                       {deadlineBadge(project)}
                     </TableCell>
                     <TableCell>{getOwnerName(project, users)}</TableCell>
-                    {canArchive && <TableCell>{archiveAction(project)}</TableCell>}
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {canEdit && !project.archived && (
+                          <button
+                            type="button"
+                            onClick={() => setEditingProject(project)}
+                            title="Edit Project"
+                            className="p-1 rounded text-app-text-secondary hover:text-app-text-primary hover:bg-app-hover transition-colors"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {!project.archived && (
+                          <button
+                            type="button"
+                            onClick={() => setMemberManagingProject(project)}
+                            title="Manage Members"
+                            className="p-1 rounded text-app-text-secondary hover:text-app-text-primary hover:bg-app-hover transition-colors"
+                          >
+                            <Users className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {archiveAction(project)}
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -327,6 +553,38 @@ export function ProjectsPortfolioView({ projects, users, teams, source, can, bas
           )}
         </div>
       </OwnerPanel>
+
+      {/* Creation Modal */}
+      {isCreateOpen && (
+        <ProjectFormModal
+          isOpen={isCreateOpen}
+          onClose={() => setIsCreateOpen(false)}
+          onSubmit={handleCreateSubmit}
+          members={orgMembersList}
+        />
+      )}
+
+      {/* Edit Modal */}
+      {editingProject && (
+        <ProjectFormModal
+          isOpen={Boolean(editingProject)}
+          onClose={() => setEditingProject(null)}
+          onSubmit={handleEditSubmit}
+          project={toProjectDto(editingProject)}
+          members={orgMembersList}
+        />
+      )}
+
+      {/* Members Modal */}
+      {memberManagingProject && orgId && (
+        <ProjectMembersModal
+          isOpen={Boolean(memberManagingProject)}
+          onClose={() => setMemberManagingProject(null)}
+          project={toProjectDto(memberManagingProject)}
+          orgMembers={orgMembersList}
+          orgId={orgId}
+        />
+      )}
     </div>
   );
 }

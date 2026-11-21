@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -11,130 +11,223 @@ import {
   FolderGit2,
   CheckSquare,
   Clock,
-  AlertCircle,
+  AlertTriangle,
   ArrowRight,
   GitPullRequest,
-  Send,
-  MessageSquare,
+  CheckCircle2,
+  GitBranch,
+  ShieldAlert,
+  Calendar,
+  Layers,
+  Sparkles,
+  Bug,
+  Eye,
   FileCheck,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth-store";
 import { useProjectStore } from "@/store/project-store";
+import { useDeliveryStore } from "@/store/delivery-store";
+import { developerApi, DeveloperDashboardSummary } from "@/lib/developer-api";
 
 export default function DeveloperDashboard() {
   const params = useParams();
   const router = useRouter();
   const orgId = (params?.orgId as string) || "org-acme";
   const { currentOrg, currentUser } = useAuthStore();
-  const { projects, workItems, checkIns, gitEvents } = useProjectStore();
+  const { projects, workItems, gitEvents } = useProjectStore();
+  const deliveryProjects = useDeliveryStore((s) => s.projects);
 
-  // Developer projects
-  const myProjects = projects.filter(
-    (p) =>
-      p.accountableOwnerId === "usr-developer" ||
-      p.memberIds.includes("usr-developer")
+  const [apiData, setApiData] = useState<DeveloperDashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    developerApi.getDashboard(orgId).then((data) => {
+      if (mounted) {
+        if (data) setApiData(data);
+        setLoading(false);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [orgId]);
+
+  // Fallback to local store if backend call pending or offline
+  const projectStoreMatches = projects.filter(
+    (p) => p.accountableOwnerId === "usr-developer" || p.memberIds.includes("usr-developer")
   );
+  const deliveryMatches = deliveryProjects.filter((p) =>
+    p.memberIds.some((m) => m === "p-aisha" || m === "p-diego" || m === "p-sofia" || m === "usr-developer")
+  );
+  const myProjects = [...projectStoreMatches, ...deliveryMatches.filter(d => !projectStoreMatches.some(p => p.key.toLowerCase() === d.code.toLowerCase()))];
+  const myTasks = workItems.filter((w) => w.primaryAssigneeId === "usr-developer");
+  const completedCount = myTasks.filter((w) => w.state === "DONE").length;
+  const pendingCount = myTasks.filter((w) => w.state !== "DONE").length;
+  const overdueCount = myTasks.filter((w) => w.dueDate && new Date(w.dueDate) < new Date() && w.state !== "DONE").length;
+  const blockedCount = myTasks.filter((w) => w.isBlocked).length;
 
-  // Developer assigned work items
-  const myWorkItems = workItems.filter((w) => w.primaryAssigneeId === "usr-developer");
+  const totalAssignedProjects = apiData ? apiData.assignedProjectsCount : myProjects.length;
+  const activeProjects = apiData ? apiData.activeProjectsCount : myProjects.filter((p) => (p as any).lifecycle === "ACTIVE" || (p as any).status === "ACTIVE" || (p as any).status === "PLANNING").length;
+  const assignedTasks = apiData ? apiData.assignedTasksCount : myTasks.length;
+  const completedTasks = apiData ? apiData.completedTasksCount : completedCount;
+  const pendingTasks = apiData ? apiData.pendingTasksCount : pendingCount;
+  const overdueTasks = apiData ? apiData.overdueTasksCount : overdueCount;
+  const openBugs = apiData ? apiData.openBugsCount : 1;
+  const pendingReviews = apiData ? apiData.pendingReviewsCount : 2;
+
+  const priorityTasksList = apiData?.priorityTasks?.length
+    ? apiData.priorityTasks
+    : myTasks.filter((w) => (w.criticality === "HIGH" || w.criticality === "CRITICAL") && w.state !== "DONE");
+
+  const blockedTasksList = apiData?.blockedTasks?.length
+    ? apiData.blockedTasks
+    : myTasks.filter((w) => w.isBlocked);
+
+  const deadlinesList = apiData?.upcomingDeadlines?.length
+    ? apiData.upcomingDeadlines
+    : myTasks
+        .filter((w) => w.dueDate && w.state !== "DONE")
+        .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime())
+        .slice(0, 5);
+
+  const recentGit = apiData?.recentGitEvents?.length ? apiData.recentGitEvents : gitEvents.slice(0, 5);
 
   return (
     <PanelLayout
       title="Developer Workspace"
-      breadcrumb={[{ label: currentOrg.name }, { label: "Alex Rivera (Developer)" }]}
+      breadcrumb={[{ label: currentOrg?.name || "Organization" }, { label: "Developer Dashboard" }]}
     >
       <div className="space-y-6">
-        {/* Welcome Banner */}
-        <div className="p-4 rounded-xl bg-app-surface border border-app-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-subtle">
+        {/* Welcome & Quick Action Header */}
+        <div className="p-5 rounded-xl bg-app-surface border border-app-border flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-subtle">
           <div>
-            <h2 className="text-base font-bold text-app-text-primary">
-              Welcome back, Alex Rivera
-            </h2>
-            <p className="text-xs text-app-text-secondary mt-0.5">
-              Active assignments across solo delivery and structured engineering milestones.
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold text-app-text-primary">
+                Welcome back, {currentUser?.name || "Alex Rivera"}
+              </h2>
+              <Badge variant="default" className="text-xs">
+                Developer Panel
+              </Badge>
+            </div>
+            <p className="text-xs text-app-text-secondary mt-1">
+              Active assignments across solo individual ownership and structured engineering deliverables.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2.5">
             <Button
               size="sm"
               variant="outline"
-              onClick={() => router.push(`/org/${orgId}/developer/projects/proj-individual-solo/individual`)}
+              onClick={() => router.push(`/org/${orgId}/developer/projects`)}
+              className="gap-1.5"
             >
-              <FileCheck className="w-3.5 h-3.5 mr-1 text-blue-600" /> Open Solo Check-in (SOLO-10)
+              <FolderGit2 className="w-3.5 h-3.5 text-blue-600" />
+              <span>My Projects</span>
             </Button>
             <Button
               size="sm"
-              onClick={() => router.push(`/org/${orgId}/developer/projects/proj-structured-cds/structured`)}
+              variant="outline"
+              onClick={() => router.push(`/org/${orgId}/developer/tasks`)}
+              className="gap-1.5"
             >
-              <GitPullRequest className="w-3.5 h-3.5 mr-1" /> Open Structured Board (CRM-100)
+              <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+              <span>My Tasks</span>
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => router.push(`/org/${orgId}/developer/progress`)}
+              className="gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Progress Tracker</span>
             </Button>
           </div>
         </div>
 
-        {/* Developer Core KPIs */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Assigned Projects</div>
-            <div className="text-2xl font-bold text-app-text-primary mt-1">{myProjects.length}</div>
-            <div className="text-[10px] text-blue-600 font-medium mt-0.5">1 Solo / 1 Structured</div>
+        {/* 8 Metric KPI Cards Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          <Card className="p-3.5 border-l-2 border-l-blue-600">
+            <div className="text-[11px] font-medium text-app-text-muted truncate">Assigned Projects</div>
+            <div className="text-xl font-bold text-app-text-primary mt-1">{totalAssignedProjects}</div>
+            <div className="text-[10px] text-blue-600 font-medium mt-0.5">{activeProjects} active</div>
           </Card>
 
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Assigned Tasks</div>
-            <div className="text-2xl font-bold text-app-text-primary mt-1">{myWorkItems.length}</div>
-            <div className="text-[10px] text-green-600 font-medium mt-0.5">
-              {myWorkItems.filter((w) => w.state === "DONE").length} Done / {myWorkItems.filter((w) => w.state === "IN_REVIEW").length} In Review
-            </div>
+          <Card className="p-3.5 border-l-2 border-l-indigo-600">
+            <div className="text-[11px] font-medium text-app-text-muted truncate">Active Projects</div>
+            <div className="text-xl font-bold text-indigo-600 mt-1">{activeProjects}</div>
+            <div className="text-[10px] text-app-text-muted mt-0.5">In flight</div>
           </Card>
 
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Check-ins Due</div>
-            <div className="text-2xl font-bold text-amber-600 mt-1">1 Due</div>
-            <div className="text-[10px] text-amber-600 font-medium mt-0.5">Weekly grace active</div>
+          <Card className="p-3.5 border-l-2 border-l-purple-600">
+            <div className="text-[11px] font-medium text-app-text-muted truncate">Assigned Tasks</div>
+            <div className="text-xl font-bold text-app-text-primary mt-1">{assignedTasks}</div>
+            <div className="text-[10px] text-purple-600 font-medium mt-0.5">Total owned</div>
           </Card>
 
-          <Card className="p-4">
-            <div className="text-xs text-app-text-muted">Upcoming Deadlines</div>
-            <div className="text-2xl font-bold text-blue-600 mt-1">Nov 15 &amp; 20</div>
-            <div className="text-[10px] text-app-text-muted mt-0.5">On track</div>
+          <Card className="p-3.5 border-l-2 border-l-emerald-600">
+            <div className="text-[11px] font-medium text-app-text-muted truncate">Completed Tasks</div>
+            <div className="text-xl font-bold text-emerald-600 mt-1">{completedTasks}</div>
+            <div className="text-[10px] text-emerald-600 font-medium mt-0.5">Done &amp; verified</div>
+          </Card>
+
+          <Card className="p-3.5 border-l-2 border-l-amber-600">
+            <div className="text-[11px] font-medium text-app-text-muted truncate">Pending Tasks</div>
+            <div className="text-xl font-bold text-amber-600 mt-1">{pendingTasks}</div>
+            <div className="text-[10px] text-amber-600 font-medium mt-0.5">In progress / review</div>
+          </Card>
+
+          <Card className="p-3.5 border-l-2 border-l-rose-600">
+            <div className="text-[11px] font-medium text-app-text-muted truncate">Overdue Tasks</div>
+            <div className="text-xl font-bold text-rose-600 mt-1">{overdueTasks}</div>
+            <div className="text-[10px] text-rose-600 font-medium mt-0.5">Past due date</div>
+          </Card>
+
+          <Card className="p-3.5 border-l-2 border-l-red-600">
+            <div className="text-[11px] font-medium text-app-text-muted truncate">Open Bugs</div>
+            <div className="text-xl font-bold text-red-600 mt-1">{openBugs}</div>
+            <div className="text-[10px] text-red-600 font-medium mt-0.5">Requires triage</div>
+          </Card>
+
+          <Card className="p-3.5 border-l-2 border-l-teal-600">
+            <div className="text-[11px] font-medium text-app-text-muted truncate">Code Reviews</div>
+            <div className="text-xl font-bold text-teal-600 mt-1">{pendingReviews}</div>
+            <div className="text-[10px] text-teal-600 font-medium mt-0.5">Awaiting decision</div>
           </Card>
         </div>
 
-        {/* Dual Mode Switcher Cards */}
+        {/* Dual Mode Feature Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Mode A: Individual Card */}
+          {/* Individual Mode Card */}
           <Card className="p-5 border-l-4 border-l-blue-600 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase text-blue-600 tracking-wide">
-                Mode A — Individual Ownership
+              <span className="text-xs font-bold uppercase text-blue-600 tracking-wide flex items-center gap-1.5">
+                <FileCheck className="w-4 h-4" /> Mode A — Individual Ownership
               </span>
-              <Badge variant="default">45% Reported</Badge>
+              <Badge variant="default">Weekly Grace Active</Badge>
             </div>
             <h3 className="text-base font-bold text-app-text-primary">
               FHIR Patient Intake Service (SOLO-10)
             </h3>
             <p className="text-xs text-app-text-secondary leading-relaxed">
-              One accountable developer. Zero mandatory task boards. Progress reported directly via weekly check-in forms.
+              Direct developer check-in model. No mandatory task boards. Authors directly update percentage progress and delivery milestones weekly.
             </p>
             <div className="pt-2 flex items-center justify-between">
               <span className="text-xs text-app-text-muted">Target: 2026-11-20</span>
               <Button
                 size="sm"
-                onClick={() =>
-                  router.push(`/org/${orgId}/developer/projects/proj-individual-solo/individual`)
-                }
+                onClick={() => router.push(`/org/${orgId}/developer/projects/proj-individual-solo/individual`)}
               >
-                <span>Enter Solo Workspace</span>
+                <span>Open Solo Check-in</span>
                 <ArrowRight className="w-3.5 h-3.5 ml-1" />
               </Button>
             </div>
           </Card>
 
-          {/* Mode B: Structured Card */}
+          {/* Structured Mode Card */}
           <Card className="p-5 border-l-4 border-l-indigo-600 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase text-indigo-600 tracking-wide">
-                Mode B — Structured Delivery
+              <span className="text-xs font-bold uppercase text-indigo-600 tracking-wide flex items-center gap-1.5">
+                <GitPullRequest className="w-4 h-4" /> Mode B — Structured Delivery
               </span>
               <Badge variant="success">50% Calculated</Badge>
             </div>
@@ -142,89 +235,183 @@ export default function DeveloperDashboard() {
               Clinical Decision Support API (CRM-100)
             </h3>
             <p className="text-xs text-app-text-secondary leading-relaxed">
-              Approved baseline weights (50/100 points). Interactive Kanban board, task details, review submission, and dependency graphs.
+              Approved baseline weights (50/100 points). Interactive Sprint board, task state transitions, leaf evidence reviews, and dependency tracking.
             </p>
             <div className="pt-2 flex items-center justify-between">
               <span className="text-xs text-app-text-muted">Target: 2026-12-15</span>
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() =>
-                  router.push(`/org/${orgId}/developer/projects/proj-structured-cds/structured`)
-                }
+                onClick={() => router.push(`/org/${orgId}/developer/projects/proj-structured-cds/structured`)}
               >
-                <span>Enter Structured Workspace</span>
+                <span>Open Sprint Board</span>
                 <ArrowRight className="w-3.5 h-3.5 ml-1" />
               </Button>
             </div>
           </Card>
         </div>
 
-        {/* Assigned Tasks Table */}
-        <Card className="p-0 overflow-hidden">
-          <div className="p-4 border-b border-app-border">
-            <CardTitle className="text-sm">My Active Structured Tasks</CardTitle>
-            <CardDescription>
-              Tasks directly assigned to Alex Rivera on active engineering projects.
-            </CardDescription>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Key</TableHead>
-                <TableHead>Title</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Weight</TableHead>
-                <TableHead>Current Revision</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {myWorkItems.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="font-mono font-bold text-xs text-blue-600">
-                    {item.key}
-                  </TableCell>
-                  <TableCell className="text-xs font-semibold text-app-text-primary">
-                    {item.title}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        item.state === "DONE"
-                          ? "success"
-                          : item.state === "IN_REVIEW"
-                          ? "warning"
-                          : "secondary"
-                      }
-                    >
-                      {item.state}
+        {/* Today's Work: Priority & Blockers Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Priority Tasks */}
+          <Card className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <h3 className="text-sm font-bold text-app-text-primary">Priority Tasks</h3>
+              </div>
+              <Badge variant="secondary" className="text-xs font-mono">
+                {priorityTasksList.length}
+              </Badge>
+            </div>
+            <div className="space-y-2.5">
+              {priorityTasksList.length === 0 ? (
+                <p className="text-xs text-app-text-muted py-4 text-center">No high priority tasks pending.</p>
+              ) : (
+                priorityTasksList.slice(0, 4).map((t: any) => (
+                  <div
+                    key={t.id}
+                    className="p-3 rounded-lg border border-app-border bg-app-surface/50 hover:bg-app-hover transition-colors flex items-center justify-between cursor-pointer"
+                    onClick={() => router.push(`/org/${orgId}/developer/tasks`)}
+                  >
+                    <div className="min-w-0 pr-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-mono font-bold text-blue-600">{t.key}</span>
+                        <Badge variant="danger" className="text-[9px] px-1 py-0">
+                          {t.priority}
+                        </Badge>
+                      </div>
+                      <p className="text-xs font-medium text-app-text-primary truncate mt-0.5">{t.title}</p>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] shrink-0">
+                      {t.state}
                     </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs font-semibold">{item.weight} pts</TableCell>
-                  <TableCell className="font-mono text-xs text-app-text-muted">
-                    rev {item.currentRevision}
-                  </TableCell>
-                  <TableCell className="text-xs text-app-text-secondary">{item.dueDate || "N/A"}</TableCell>
-                  <TableCell className="text-right">
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+
+          {/* Blocked Tasks */}
+          <Card className="p-5 space-y-4 border-l-4 border-l-rose-500">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-rose-500" />
+                <h3 className="text-sm font-bold text-app-text-primary">Blocked Tasks</h3>
+              </div>
+              <Badge variant="danger" className="text-xs font-mono">
+                {blockedTasksList.length}
+              </Badge>
+            </div>
+            <div className="space-y-2.5">
+              {blockedTasksList.length === 0 ? (
+                <div className="text-center py-5">
+                  <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-1.5" />
+                  <p className="text-xs text-app-text-muted">No blockers currently active.</p>
+                </div>
+              ) : (
+                blockedTasksList.map((t: any) => (
+                  <div
+                    key={t.id}
+                    className="p-3 rounded-lg border border-rose-500/20 bg-rose-500/5 flex items-center justify-between"
+                  >
+                    <div className="min-w-0 pr-2">
+                      <span className="text-[11px] font-mono font-bold text-rose-600">{t.key}</span>
+                      <p className="text-xs font-medium text-app-text-primary truncate mt-0.5">{t.title}</p>
+                    </div>
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() =>
-                        router.push(`/org/${orgId}/developer/projects/proj-structured-cds/structured`)
-                      }
+                      className="text-[11px] h-7 border-rose-300 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-950"
+                      onClick={() => router.push(`/org/${orgId}/developer/tasks`)}
                     >
-                      View on Board
+                      Inspect
                     </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+
+          {/* Upcoming Deadlines */}
+          <Card className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-blue-500" />
+                <h3 className="text-sm font-bold text-app-text-primary">Upcoming Deadlines</h3>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-blue-600 h-6 p-0"
+                onClick={() => router.push(`/org/${orgId}/developer/calendar`)}
+              >
+                View Calendar
+              </Button>
+            </div>
+            <div className="space-y-2.5">
+              {deadlinesList.length === 0 ? (
+                <p className="text-xs text-app-text-muted py-4 text-center">No upcoming deadlines.</p>
+              ) : (
+                deadlinesList.slice(0, 4).map((d: any) => (
+                  <div
+                    key={d.id}
+                    className="p-2.5 rounded-lg border border-app-border flex items-center justify-between text-xs"
+                  >
+                    <div className="min-w-0 pr-2">
+                      <span className="font-mono text-blue-600 font-semibold">{d.key || "TASK"}</span>
+                      <p className="truncate text-app-text-primary font-medium">{d.title}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[11px] font-semibold text-rose-600 flex items-center gap-1 justify-end">
+                        <Clock className="w-3 h-3" />
+                        {d.dueDate ? new Date(d.dueDate).toLocaleDateString() : "TBD"}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+        </div>
+
+        {/* Recent GitHub Activity Feed */}
+        <Card className="p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <GitBranch className="w-4 h-4 text-purple-600" />
+              <h3 className="text-sm font-bold text-app-text-primary">Recent GitHub &amp; CI/CD Activity</h3>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/org/${orgId}/developer/github`)}
+            >
+              Open GitHub Feed
+            </Button>
+          </div>
+          <div className="divide-y divide-app-border">
+            {recentGit.map((evt: any) => (
+              <div key={evt.id} className="py-2.5 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                  <Badge variant="outline" className="font-mono text-[10px]">
+                    {evt.eventType || evt.type || "COMMIT"}
+                  </Badge>
+                  <span className="font-semibold text-app-text-primary truncate">
+                    {evt.repositoryName || evt.repo || "prowise/backend"}
+                  </span>
+                  <span className="text-app-text-secondary truncate hidden sm:inline">
+                    {evt.payloadSummary || evt.message || evt.title || "Pushed updates"}
+                  </span>
+                </div>
+                <div className="text-[11px] text-app-text-muted shrink-0">
+                  {evt.actor || "Developer"} &bull; {new Date(evt.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
       </div>
     </PanelLayout>
   );
 }
-

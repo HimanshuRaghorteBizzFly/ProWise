@@ -7,6 +7,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "projects")
@@ -28,11 +29,20 @@ public class ProjectEntity {
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
+    @Column(name = "scope_description", columnDefinition = "TEXT")
+    private String scopeDescription;
+
     @Column(name = "mode", nullable = false, length = 30)
     private String mode = "STRUCTURED"; // "INDIVIDUAL" or "STRUCTURED"
 
     @Column(name = "lifecycle", nullable = false, length = 30)
-    private String lifecycle = "ACTIVE"; // "PLANNED", "ACTIVE", "ON_HOLD", "DELIVERED", "CLOSED", "CANCELLED"
+    private String lifecycle = "ACTIVE"; // "PLANNED", "ACTIVE", "ON_HOLD", "AWAITING_ACCEPTANCE", "DELIVERED", "CLOSED", "CANCELLED"
+
+    @Column(name = "previous_lifecycle", length = 30)
+    private String previousLifecycle;
+
+    @Column(name = "archived", nullable = false)
+    private boolean archived = false;
 
     @Column(name = "priority", nullable = false, length = 20)
     private String priority = "MEDIUM";
@@ -42,6 +52,15 @@ public class ProjectEntity {
 
     @Column(name = "accountable_owner_id", length = 64)
     private String accountableOwnerId;
+
+    @Column(name = "accountable_developer_id", length = 64)
+    private String accountableDeveloperId;
+
+    @Column(name = "calendar_ref", length = 64)
+    private String calendarRef;
+
+    @Column(name = "active_baseline_id", length = 64)
+    private String activeBaselineId;
 
     @Column(name = "team_ids", columnDefinition = "TEXT")
     private String teamIds;
@@ -66,6 +85,15 @@ public class ProjectEntity {
     @Column(name = "last_progress_percent", precision = 5, scale = 2)
     private BigDecimal lastProgressPercent; // null = not reported (task 2.1: no invented percentage)
 
+    @Column(name = "require_verification", nullable = false)
+    private boolean requireVerification = false;
+
+    @Column(name = "last_progress_method", length = 40)
+    private String lastProgressMethod = "DEVELOPER_REPORTED";
+
+    @Column(name = "last_reported_at")
+    private Instant lastReportedAt;
+
     @Column(name = "health", length = 20)
     private String health = "ON_TRACK";
 
@@ -87,20 +115,44 @@ public class ProjectEntity {
     public void setCode(String code) { this.key = code; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
+    public String getDescription() { return description != null ? description : scopeDescription; }
+    public void setDescription(String description) {
+        this.description = description;
+        if (this.scopeDescription == null) this.scopeDescription = description;
+    }
+    public String getScopeDescription() { return scopeDescription != null ? scopeDescription : description; }
+    public void setScopeDescription(String scopeDescription) {
+        this.scopeDescription = scopeDescription;
+        if (this.description == null) this.description = scopeDescription;
+    }
     public String getMode() { return mode; }
     public void setMode(String mode) { this.mode = mode; }
     public String getLifecycle() { return lifecycle; }
     public void setLifecycle(String lifecycle) { this.lifecycle = lifecycle; }
+    public String getPreviousLifecycle() { return previousLifecycle; }
+    public void setPreviousLifecycle(String previousLifecycle) { this.previousLifecycle = previousLifecycle; }
+    public boolean isArchived() { return archived; }
+    public void setArchived(boolean archived) { this.archived = archived; }
     public String getStatus() { return lifecycle; }
     public void setStatus(String status) { this.lifecycle = status; }
     public String getPriority() { return priority; }
     public void setPriority(String priority) { this.priority = priority; }
     public String getProjectManagerId() { return projectManagerId; }
     public void setProjectManagerId(String projectManagerId) { this.projectManagerId = projectManagerId; }
-    public String getAccountableOwnerId() { return accountableOwnerId; }
-    public void setAccountableOwnerId(String accountableOwnerId) { this.accountableOwnerId = accountableOwnerId; }
+    public String getAccountableOwnerId() { return accountableOwnerId != null ? accountableOwnerId : accountableDeveloperId; }
+    public void setAccountableOwnerId(String accountableOwnerId) {
+        this.accountableOwnerId = accountableOwnerId;
+        if (this.accountableDeveloperId == null) this.accountableDeveloperId = accountableOwnerId;
+    }
+    public String getAccountableDeveloperId() { return accountableDeveloperId != null ? accountableDeveloperId : accountableOwnerId; }
+    public void setAccountableDeveloperId(String accountableDeveloperId) {
+        this.accountableDeveloperId = accountableDeveloperId;
+        this.accountableOwnerId = accountableDeveloperId;
+    }
+    public String getCalendarRef() { return calendarRef; }
+    public void setCalendarRef(String calendarRef) { this.calendarRef = calendarRef; }
+    public String getActiveBaselineId() { return activeBaselineId; }
+    public void setActiveBaselineId(String activeBaselineId) { this.activeBaselineId = activeBaselineId; }
     public String getTeamIds() { return teamIds; }
     public void setTeamIds(String teamIds) { this.teamIds = teamIds; }
     public String getMemberIds() { return memberIds; }
@@ -115,8 +167,16 @@ public class ProjectEntity {
     public void setTimezone(String timezone) { this.timezone = timezone; }
     public BigDecimal getLastProgressPercent() { return lastProgressPercent; }
     public void setLastProgressPercent(BigDecimal lastProgressPercent) { this.lastProgressPercent = lastProgressPercent; }
+    public boolean isRequireVerification() { return requireVerification; }
+    public void setRequireVerification(boolean requireVerification) { this.requireVerification = requireVerification; }
+    public String getLastProgressMethod() { return lastProgressMethod; }
+    public void setLastProgressMethod(String lastProgressMethod) { this.lastProgressMethod = lastProgressMethod; }
+    public Instant getLastReportedAt() { return lastReportedAt; }
+    public void setLastReportedAt(Instant lastReportedAt) { this.lastReportedAt = lastReportedAt; }
     public String getHealth() { return health; }
     public void setHealth(String health) { this.health = health; }
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
     public BigDecimal getTotalWeight() { return BigDecimal.valueOf(100); }
     public BigDecimal getCompletedWeight() { return lastProgressPercent != null ? lastProgressPercent : BigDecimal.ZERO; }
     public Instant getCreatedAt() { return createdAt; }

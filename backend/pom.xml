@@ -21,7 +21,7 @@
         <java.version>21</java.version>
         <springdoc.version>2.7.0</springdoc.version>
         <shedlock.version>5.16.0</shedlock.version>
-        <test.db.url>jdbc:postgresql://localhost:5432/prowise</test.db.url>
+        <test.db.url>jdbc:postgresql://localhost:5433/prowise</test.db.url>
         <test.db.username>prowise</test.db.username>
         <test.db.password>ci-password</test.db.password>
         <test.jwt.signing.key>test-signing-key-that-is-at-least-32-bytes-long</test.jwt.signing.key>

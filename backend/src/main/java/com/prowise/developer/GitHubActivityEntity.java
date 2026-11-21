@@ -44,6 +44,9 @@ public class GitHubActivityEntity {
     @Column(name = "linked_task_key", length = 30)
     private String linkedTaskKey;
 
+    @Column(name = "project_id", length = 64)
+    private String projectId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -71,6 +74,8 @@ public class GitHubActivityEntity {
     public void setStatus(String status) { this.status = status; }
     public String getLinkedTaskKey() { return linkedTaskKey; }
     public void setLinkedTaskKey(String linkedTaskKey) { this.linkedTaskKey = linkedTaskKey; }
+    public String getProjectId() { return projectId; }
+    public void setProjectId(String projectId) { this.projectId = projectId; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 

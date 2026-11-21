@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/prowise}
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/prowise}
     username: ${DB_USERNAME:prowise}
     password: ${DB_PASSWORD:ci-password}
     hikari:

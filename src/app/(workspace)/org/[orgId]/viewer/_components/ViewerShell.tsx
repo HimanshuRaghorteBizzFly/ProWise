@@ -23,9 +23,7 @@ import {
   Moon,
   ChevronDown,
   Sparkles,
-  Shield,
   ExternalLink,
-  Check,
   ChevronRight,
   LogOut,
   Layers,
@@ -41,8 +39,8 @@ import { FilePreviewModal } from "./FilePreviewModal";
 import { EventDetailModal } from "./EventDetailModal";
 import { ReadOnlyBadge, SimulatedMetricBadge } from "./ViewerPrimitives";
 import { getViewerProjects, getViewerTasks, getViewerMembers, getViewerFiles } from "../_services/viewer-service";
+import { apiClient } from "@/lib/api";
 import { Toaster, toast } from "sonner";
-import { SystemRole } from "@/types";
 
 interface NavItem {
   title: string;
@@ -63,7 +61,7 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
   const rawOrgId = params?.orgId as string;
   const orgId = !rawOrgId || rawOrgId === "viewer" ? "org-acme" : rawOrgId;
 
-  const { currentUser, currentOrg, setCurrentRole, switchRoleAndNavigate, logout } = useAuthStore();
+  const { currentUser, currentRole, currentOrg, logout } = useAuthStore();
   const { theme, resolvedTheme, toggleTheme, setTheme } = useThemeStore();
   const {
     notifications,
@@ -79,19 +77,43 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
     setSelectedEvent,
     isSearchModalOpen,
     setIsSearchModalOpen,
+    userSettings,
   } = useViewerStore();
+
+  const displayName = userSettings?.displayName || currentUser?.name || "Jordan Lee";
+  const displayEmail = userSettings?.email || currentUser?.email || "jordan.lee@acmehealth.com";
+
+  const getInitials = (name: string) => {
+    if (!name) return "JL";
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2 && parts[0] && parts[parts.length - 1]) {
+      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationPopoverOpen, setIsNotificationPopoverOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
   const [searchFilter, setSearchFilter] = useState("");
 
   const notificationPopoverRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const handleSignOut = async () => {
+    try {
+      await apiClient.signout();
+    } catch {
+      // Ignore network errors during signout
+    }
+    logout();
+    setIsProfileMenuOpen(false);
+    toast.success("Signed out successfully");
+    router.push("/login");
+  };
 
   useEffect(() => {
     // Theme initialization
@@ -132,7 +154,6 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
         setIsSearchModalOpen(false);
         setIsNotificationPopoverOpen(false);
         setIsProfileMenuOpen(false);
-        setIsRoleSwitcherOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -193,19 +214,6 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
     );
     return { projects, tasks, members, files };
   }, [orgId, searchFilter]);
-
-  // Roles available for testing
-  const allRoles: { role: SystemRole; label: string; path: string }[] = [
-    { role: "SUPER_ADMIN", label: "Super Admin", path: "/super-admin" },
-    { role: "PLATFORM_OPERATOR", label: "Platform Operator", path: "/platform-operator" },
-    { role: "ORGANIZATION_OWNER", label: "Org Owner", path: `/org/${orgId}/owner` },
-    { role: "ORGANIZATION_ADMIN", label: "Org Admin", path: `/org/${orgId}/admin` },
-    { role: "PROJECT_MANAGER", label: "Project Manager", path: `/org/${orgId}/manager` },
-    { role: "TEAM_LEAD", label: "Team Lead", path: `/org/${orgId}/lead` },
-    { role: "DEVELOPER", label: "Developer", path: `/org/${orgId}/developer` },
-    { role: "QA_REVIEWER", label: "QA / Reviewer", path: `/org/${orgId}/reviewer` },
-    { role: "VIEWER", label: "Viewer (Read-Only)", path: `/org/${orgId}/viewer/dashboard` },
-  ];
 
   const currentPathLabel = useMemo(() => {
     for (const section of navigationSections) {
@@ -547,12 +555,15 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
               <button
                 onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
                 className="flex items-center gap-2 p-1 pl-2 rounded-xl border border-app-border bg-app-bg hover:bg-app-hover transition-colors cursor-pointer"
+                aria-label={`Profile menu for ${displayName}`}
               >
                 <div className="w-7 h-7 rounded-lg bg-blue-600 text-white font-bold text-xs flex items-center justify-center">
-                  JL
+                  {getInitials(displayName)}
                 </div>
                 <div className="hidden sm:block text-left text-xs">
-                  <div className="font-bold text-app-text-primary leading-none">Jordan Lee</div>
+                  <div className="font-bold text-app-text-primary leading-none max-w-[120px] truncate">
+                    {displayName}
+                  </div>
                   <div className="text-[10px] text-app-text-muted leading-tight mt-0.5">Viewer</div>
                 </div>
                 <ChevronDown className="w-3.5 h-3.5 text-app-text-muted mr-1" />
@@ -561,8 +572,8 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
               {isProfileMenuOpen && (
                 <div className="absolute right-0 mt-2 w-64 rounded-xl border border-app-border bg-app-surface shadow-xl z-50 p-2 animate-in fade-in zoom-in-95 duration-150 text-xs">
                   <div className="p-3 border-b border-app-border">
-                    <div className="font-bold text-app-text-primary">Jordan Lee</div>
-                    <div className="text-app-text-muted text-[11px]">jordan.lee@acmehealth.com</div>
+                    <div className="font-bold text-app-text-primary truncate">{displayName}</div>
+                    <div className="text-app-text-muted text-[11px] truncate">{displayEmail}</div>
                     <div className="mt-2">
                       <ReadOnlyBadge />
                     </div>
@@ -577,27 +588,13 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
                       <Settings className="w-4 h-4 text-app-text-muted" />
                       <span>My Profile Preferences</span>
                     </Link>
-
-                    {/* Quick Role Switcher for Verification */}
-                    <button
-                      onClick={() => {
-                        setIsRoleSwitcherOpen(true);
-                        setIsProfileMenuOpen(false);
-                      }}
-                      className="flex w-full items-center justify-between px-3 py-2 rounded-lg hover:bg-app-hover text-app-text-secondary hover:text-app-text-primary"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Shield className="w-4 h-4 text-blue-500" />
-                        <span>Switch Role Preview</span>
-                      </div>
-                      <ChevronRight className="w-3.5 h-3.5 text-app-text-muted" />
-                    </button>
                   </div>
 
                   <div className="pt-1 border-t border-app-border">
                     <button
-                      onClick={() => logout()}
-                      className="flex w-full items-center gap-2 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
+                      type="button"
+                      onClick={handleSignOut}
+                      className="flex w-full items-center gap-2 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer transition-colors"
                     >
                       <LogOut className="w-4 h-4" />
                       <span>Sign Out</span>
@@ -619,15 +616,6 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
             <span className="text-slate-300">
               Viewing authorized organization &amp; project health for <strong>{currentOrg.name}</strong>. Mutations and administrative actions are strictly restricted.
             </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsRoleSwitcherOpen(true)}
-              className="text-[11px] text-blue-400 hover:text-blue-300 font-medium underline"
-            >
-              Test Other Roles
-            </button>
           </div>
         </div>
 
@@ -780,53 +768,6 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* 5. Role Switcher Modal for test navigation */}
-      {isRoleSwitcherOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-app-surface border border-app-border rounded-2xl shadow-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-app-border">
-              <div className="flex items-center gap-2">
-                <Shield className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-sm text-app-text-primary">Role Access Switcher</h3>
-              </div>
-              <button
-                onClick={() => setIsRoleSwitcherOpen(false)}
-                className="p-1 rounded-lg text-app-text-muted hover:text-app-text-primary"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <p className="text-xs text-app-text-secondary">
-              Switch role view to test permissions, navigation, and security boundaries.
-            </p>
-
-            <div className="space-y-1.5 max-h-72 overflow-y-auto">
-              {allRoles.map((r) => (
-                <button
-                  key={r.role}
-                  onClick={() => {
-                    setCurrentRole(r.role);
-                    switchRoleAndNavigate(r.role, (p) => router.push(p));
-                    setIsRoleSwitcherOpen(false);
-                    toast.info(`Switched role to ${r.label}`);
-                  }}
-                  className={cn(
-                    "flex w-full items-center justify-between p-2.5 rounded-lg text-xs font-medium transition-colors border",
-                    r.role === "VIEWER"
-                      ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-bold"
-                      : "border-transparent hover:bg-app-hover text-app-text-secondary"
-                  )}
-                >
-                  <span>{r.label}</span>
-                  {r.role === "VIEWER" && <Check className="w-4 h-4 text-blue-600" />}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Detail Drawers & Modals */}
       <ProjectDetailDrawer project={selectedProject} onClose={() => setSelectedProject(null)} />
       <TaskDetailDrawer task={selectedTask} onClose={() => setSelectedTask(null)} />
@@ -834,7 +775,7 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
       <EventDetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
 
       {/* Notification Toaster */}
-      <Toaster position="top-right" theme={resolvedTheme} richColors />
+      <Toaster position="bottom-right" theme={resolvedTheme} richColors closeButton />
     </div>
   );
 }

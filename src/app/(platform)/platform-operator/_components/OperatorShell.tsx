@@ -13,7 +13,6 @@ import { formatDateTime } from "../_services/operator-service";
 import {
   Activity,
   AlertTriangle,
-  ArrowLeftRight,
   Bell,
   Building2,
   ChevronLeft,
@@ -146,23 +145,11 @@ const ROUTE_TITLES: Record<string, { section: string; label: string }> = {
   "/platform-operator/settings": { section: "Account & Audit", label: "Operator Settings" },
 };
 
-const PANEL_ROLES: { role: SystemRole; label: string }[] = [
-  { role: "PLATFORM_OPERATOR", label: "Platform Operator" },
-  { role: "SUPER_ADMIN", label: "Super Admin" },
-  { role: "ORGANIZATION_OWNER", label: "Organization Owner" },
-  { role: "ORGANIZATION_ADMIN", label: "Organization Admin" },
-  { role: "PROJECT_MANAGER", label: "Project Manager" },
-  { role: "TEAM_LEAD", label: "Team Lead" },
-  { role: "DEVELOPER", label: "Developer" },
-  { role: "QA_REVIEWER", label: "QA / Reviewer" },
-  { role: "VIEWER", label: "Viewer" },
-];
-
 export function OperatorShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { resolvedTheme, setTheme } = useThemeStore();
-  const { currentRole, switchRoleAndNavigate, setCurrentRole, logout } = useAuthStore();
+  const { currentRole, setCurrentRole, logout } = useAuthStore();
 
   const incidents = usePlatformOperatorStore((s) => s.incidents);
   const tickets = usePlatformOperatorStore((s) => s.tickets);
@@ -181,7 +168,6 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [notifOpen, setNotifOpen] = useState(false);
-  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -198,7 +184,6 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setMobileOpen(false);
     setNotifOpen(false);
-    setRoleMenuOpen(false);
     setProfileMenuOpen(false);
   }, [pathname]);
 
@@ -211,7 +196,6 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
       if (e.key === "Escape") {
         setSearchOpen(false);
         setNotifOpen(false);
-        setRoleMenuOpen(false);
         setProfileMenuOpen(false);
       }
     };
@@ -700,53 +684,7 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => {
-                  setRoleMenuOpen((v) => !v);
-                  setNotifOpen(false);
-                  setProfileMenuOpen(false);
-                }}
-                className="flex items-center gap-1.5 h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] px-2.5 text-xs font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-hover)] transition-colors"
-                title="Switch workspace panel"
-              >
-                <ArrowLeftRight className="w-3.5 h-3.5 text-teal-500" />
-                <span className="hidden sm:inline">Switch Panel</span>
-              </button>
-
-              {roleMenuOpen && (
-                <div className="absolute right-0 mt-2 w-60 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-xl z-40">
-                  <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-                    Jump to ProWise Panel
-                  </div>
-                  {PANEL_ROLES.map((item) => (
-                    <button
-                      key={item.role}
-                      type="button"
-                      onClick={() => {
-                        setRoleMenuOpen(false);
-                        switchRoleAndNavigate(item.role, (url) => router.push(url));
-                      }}
-                      className={cn(
-                        "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs text-left transition-colors",
-                        item.role === "PLATFORM_OPERATOR"
-                          ? "bg-teal-500/12 text-teal-700 dark:text-teal-300 font-semibold"
-                          : "text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
-                      )}
-                    >
-                      <span>{item.label}</span>
-                      {item.role === "PLATFORM_OPERATOR" && (
-                        <span className="text-[10px]">Current</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
                   setNotifOpen((v) => !v);
-                  setRoleMenuOpen(false);
                   setProfileMenuOpen(false);
                 }}
                 aria-label="Operational notifications"
@@ -817,7 +755,6 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => {
                   setProfileMenuOpen((v) => !v);
-                  setRoleMenuOpen(false);
                   setNotifOpen(false);
                 }}
                 aria-label="Operator profile menu"

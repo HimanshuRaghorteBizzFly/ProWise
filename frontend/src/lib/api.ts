@@ -184,6 +184,9 @@ export function createApiClient(options: ApiClientOptions = {}) {
     let response: Response;
     try {
       const headers = new Headers({ Accept: "application/json" });
+      if (requestOptions.headers) {
+        Object.entries(requestOptions.headers).forEach(([k, v]) => headers.set(k, v));
+      }
       if (requestOptions.body !== undefined) headers.set("Content-Type", "application/json");
       if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
       headers.set(REQUEST_ID_HEADER, requestId);
