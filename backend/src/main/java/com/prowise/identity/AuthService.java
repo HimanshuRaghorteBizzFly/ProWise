@@ -264,11 +264,11 @@ public class AuthService {
         Integer membership = jdbc.queryForObject("""
                 SELECT count(*) FROM memberships
                 WHERE org_id = ? AND user_id = ? AND status = 'ACTIVE'
-                """, Integer.class, organizationId, principal.userId());
+                """, Integer.class, organizationId, userId);
         if (membership == null || membership != 1) {
             throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "The requested resource was not found.");
         }
-        return issueSession(principal.userId(), principal.email(), UUID.randomUUID(), organizationId);
+        return true;
     }
 
     public ExtendedMeResponse me(UUID userId) {

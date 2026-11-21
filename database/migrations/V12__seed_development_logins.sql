@@ -3,7 +3,7 @@
 -- 1. Ensure Acme organization exists for Developer workspace
 INSERT INTO organizations (id, name, slug, timezone, state, work_calendar)
 VALUES (
-    '0a000000-0000-4000-8000-00000000000a',
+    (SELECT id FROM organizations WHERE slug = 'acme'),
     'Acme Health Tech',
     'acme',
     'America/New_York',
@@ -101,12 +101,12 @@ VALUES (
     '$2a$10$dM.NruQ8EOkAyrfyF/2xa.vOwE5EUD62ahGoiWId4Af6FlbzVu.Mi',
     'Alex Rivera',
     'DEVELOPER',
-    '0a000000-0000-4000-8000-00000000000a',
+    (SELECT id FROM organizations WHERE slug = 'acme'),
     'ACTIVE',
     false
 )
 ON CONFLICT (lower(email)) DO UPDATE
-SET role = 'DEVELOPER', name = 'Alex Rivera', organization_id = '0a000000-0000-4000-8000-00000000000a', status = 'ACTIVE';
+SET role = 'DEVELOPER', name = 'Alex Rivera', organization_id = (SELECT id FROM organizations WHERE slug = 'acme'), status = 'ACTIVE';
 
 INSERT INTO user_roles (user_id, role_name)
 SELECT id, 'DEVELOPER' FROM users WHERE lower(email) = 'alex.rivera@acmehealth.com'
@@ -119,12 +119,12 @@ VALUES (
     '$2a$10$dM.NruQ8EOkAyrfyF/2xa.vOwE5EUD62ahGoiWId4Af6FlbzVu.Mi',
     'Alex Rivera',
     'DEVELOPER',
-    '0a000000-0000-4000-8000-00000000000a',
+    (SELECT id FROM organizations WHERE slug = 'acme'),
     'ACTIVE',
     false
 )
 ON CONFLICT (lower(email)) DO UPDATE
-SET role = 'DEVELOPER', name = 'Alex Rivera', organization_id = '0a000000-0000-4000-8000-00000000000a', status = 'ACTIVE';
+SET role = 'DEVELOPER', name = 'Alex Rivera', organization_id = (SELECT id FROM organizations WHERE slug = 'acme'), status = 'ACTIVE';
 
 INSERT INTO user_roles (user_id, role_name)
 SELECT id, 'DEVELOPER' FROM users WHERE lower(email) = 'developer@prowise.com'
@@ -134,7 +134,7 @@ ON CONFLICT (user_id, role_name) DO NOTHING;
 INSERT INTO memberships (id, org_id, user_id, role_template, status)
 VALUES (
     '00000000-0000-0000-0000-000000000031',
-    '0a000000-0000-4000-8000-00000000000a',
+    (SELECT id FROM organizations WHERE slug = 'acme'),
     '00000000-0000-0000-0000-000000000003',
     'DEVELOPER',
     'ACTIVE'
@@ -143,5 +143,5 @@ ON CONFLICT (org_id, user_id) DO NOTHING;
 
 -- Associate developer to seeded projects
 UPDATE projects
-SET org_id = '0a000000-0000-4000-8000-00000000000a'
+SET org_id = (SELECT id FROM organizations WHERE slug = 'acme')
 WHERE org_id IS NULL;

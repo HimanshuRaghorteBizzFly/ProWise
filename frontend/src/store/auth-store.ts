@@ -78,19 +78,11 @@ export function getRoleDashboardPath(role: SystemRole, orgId = ""): string {
       return hasOrg ? `${workspacePath}/developer/dashboard` : workspacePath;
 
     case "QA_REVIEWER":
-<<<<<<< HEAD
-      return hasOrg ? `${workspacePath}/reviewer/dashboard` : workspacePath;
-
-    case "VIEWER":
-      return hasOrg ? `${workspacePath}/viewer/dashboard` : workspacePath;
-
-=======
       return orgId ? `${workspacePath}/reviewer/dashboard` : workspacePath;
     case "VIEWER": {
       const safeOrg = orgId && orgId.trim() !== "" ? orgId : "org-acme";
       return `/org/${safeOrg}/viewer/dashboard`;
     }
->>>>>>> ed15fd8 (Update ProWise frontend and backend)
     default:
       return workspacePath;
   }
@@ -117,17 +109,6 @@ interface AuthState {
   hydrate: (user: User, organizations: Organization[], role: SystemRole) => void;
 }
 
-<<<<<<< HEAD
-export const useAuthStore = create<AuthState>((set, get) => ({
-  currentUser: EMPTY_USER,
-  currentRole: "VIEWER",
-  currentOrg: EMPTY_ORG,
-  organizations: [],
-  activeRole: "ORGANIZATION_OWNER",
-  activeOrgId: "",
-  isAuthenticated: false,
-  isRolePreview: false,
-=======
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -138,43 +119,18 @@ export const useAuthStore = create<AuthState>()(
       activeRole: "ORGANIZATION_OWNER",
       activeOrgId: "",
       isAuthenticated: false,
->>>>>>> ed15fd8 (Update ProWise frontend and backend)
+      isRolePreview: false,
 
       setCurrentUser: (user) => set({ currentUser: user }),
       setCurrentRole: (role) => set({ currentRole: role, activeRole: role }),
       setCurrentOrg: (org) => set({ currentOrg: org, activeOrgId: org.id }),
 
-<<<<<<< HEAD
-  switchRole: (role) => set({ currentRole: role, activeRole: role, isRolePreview: process.env.NODE_ENV !== "production" }),
-=======
       switchRole: (role) => set({ currentRole: role, activeRole: role }),
->>>>>>> ed15fd8 (Update ProWise frontend and backend)
 
       switchOrg: (orgId) => {
         if (get().currentOrg.id === orgId) return;
       },
 
-<<<<<<< HEAD
-  login: (_email, role) =>
-    set({
-      currentRole: role || "VIEWER",
-      activeRole: role || "VIEWER",
-      isAuthenticated: true,
-      isRolePreview: false,
-    }),
-
-  switchRoleAndNavigate: (role, routerPush) => {
-    const { currentOrg } = get();
-    const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
-    set({
-      currentRole: role,
-      activeRole: role,
-      isRolePreview: process.env.NODE_ENV !== "production",
-    });
-    const targetUrl = getRoleDashboardPath(role, safeOrgId);
-    routerPush(targetUrl);
-  },
-=======
       login: (email, role) => {
         const targetRole = role || "VIEWER";
         set((state) => ({
@@ -196,7 +152,6 @@ export const useAuthStore = create<AuthState>()(
         const targetUrl = getRoleDashboardPath(role, safeOrgId);
         routerPush(targetUrl);
       },
->>>>>>> ed15fd8 (Update ProWise frontend and backend)
 
       switchUserAndRole: (userId, routerPush) => {
         const { currentOrg, currentRole } = get();
@@ -204,32 +159,6 @@ export const useAuthStore = create<AuthState>()(
         routerPush(getRoleDashboardPath(currentRole, safeOrgId));
       },
 
-<<<<<<< HEAD
-  logout: () => {
-    set({
-      currentUser: DEFAULT_USER,
-      currentOrg: DEFAULT_ORG,
-      activeOrgId: "org-acme",
-      isAuthenticated: false,
-      isRolePreview: false,
-    });
-  },
-
-  hydrate: (user, organizations, role) => {
-    const organization = organizations[0] || EMPTY_ORG;
-    set({
-      currentUser: user,
-      currentOrg: organization,
-      organizations,
-      currentRole: role,
-      activeRole: role,
-      activeOrgId: organization.id,
-      isAuthenticated: true,
-      isRolePreview: false,
-    });
-  },
-}));
-=======
       logout: () => {
         set({ currentUser: DEFAULT_USER, currentOrg: DEFAULT_ORG, activeOrgId: "org-acme", isAuthenticated: false });
       },
@@ -252,4 +181,3 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
->>>>>>> ed15fd8 (Update ProWise frontend and backend)
