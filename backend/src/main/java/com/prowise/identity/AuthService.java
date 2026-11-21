@@ -261,14 +261,14 @@ public class AuthService {
     }
 
     private boolean hasActiveMembership(UUID userId, UUID organizationId) {
+        if (userId == null || organizationId == null) {
+            return false;
+        }
         Integer membership = jdbc.queryForObject("""
                 SELECT count(*) FROM memberships
                 WHERE org_id = ? AND user_id = ? AND status = 'ACTIVE'
-                """, Integer.class, organizationId, principal.userId());
-        if (membership == null || membership != 1) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "The requested resource was not found.");
-        }
-        return issueSession(principal.userId(), principal.email(), UUID.randomUUID(), organizationId);
+                """, Integer.class, organizationId, userId);
+        return membership != null && membership == 1;
     }
 
     public ExtendedMeResponse me(UUID userId) {
