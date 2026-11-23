@@ -72,6 +72,7 @@ class SuperAdminBootstrapIntegrationTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private AccountTokenService accountTokenService;
     @Autowired private EmailDeliveryLogRepository deliveryLogRepository;
+    @Autowired private com.prowise.notification.smtp.SmtpSettingsProvider settingsProvider;
     @Autowired @org.springframework.beans.factory.annotation.Qualifier("requestMappingHandlerMapping")
     private RequestMappingHandlerMapping handlerMapping;
 
@@ -92,7 +93,7 @@ class SuperAdminBootstrapIntegrationTest {
         SuperAdminBootstrapService.Result result = bootstrapService.bootstrap("  " + adminEmail.toUpperCase() + " ");
 
         assertThat(result.outcome()).isEqualTo(Outcome.CREATED);
-        assertThat(result.emailDeliveryStatus()).isEqualTo("DELIVERED");
+        assertThat(result.emailDeliveryStatus()).isEqualTo("SMTP_ACCEPTED");
         Map<String, Object> user = jdbc.queryForMap("SELECT id, email, role, status, password_hash FROM users WHERE id = ?", result.userId());
         assertThat(user.get("email")).isEqualTo(adminEmail);
         assertThat(user.get("role")).isEqualTo("SUPER_ADMIN");
@@ -166,7 +167,7 @@ class SuperAdminBootstrapIntegrationTest {
         SuperAdminBootstrapService.Result retry = bootstrapService.bootstrap(adminEmail);
 
         assertThat(retry.outcome()).isEqualTo(Outcome.SETUP_LINK_RESENT);
-        assertThat(retry.emailDeliveryStatus()).isEqualTo("DELIVERED");
+        assertThat(retry.emailDeliveryStatus()).isEqualTo("SMTP_ACCEPTED");
         assertThat(retry.userId()).isEqualTo(first.userId());
         String freshToken = CapturedMail.token(CapturedMail.sentHtml(mailSender).get(0), SETUP_LINK);
         assertThat(freshToken).isNotEqualTo(undeliveredToken);
@@ -185,7 +186,7 @@ class SuperAdminBootstrapIntegrationTest {
     void withoutOutgoingEmailNothingIsSentAndTheAccountStaysPending() {
         EmailCredentialService notConfigured = new EmailCredentialService(
                 new StaticListableBeanFactory().getBeanProvider(JavaMailSender.class), deliveryLogRepository,
-                "", "no-reply@test.prowise", "http://localhost:3000");
+                settingsProvider, "http://localhost:3000");
         SuperAdminBootstrapService service = new SuperAdminBootstrapService(
                 jdbc, passwordEncoder, accountTokenService, notConfigured, deliveryLogRepository);
 

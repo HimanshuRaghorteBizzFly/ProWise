@@ -125,7 +125,7 @@ class AccountSetupIntegrationTest {
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("PENDING_ACTIVATION"))
-                .andExpect(jsonPath("$.email_delivery_status").value("DELIVERED"))
+                .andExpect(jsonPath("$.email_delivery_status").value("SMTP_ACCEPTED"))
                 .andReturn().getResponse().getContentAsString();
 
         JsonNode json = objectMapper.readTree(body);
@@ -153,7 +153,7 @@ class AccountSetupIntegrationTest {
 
         assertThat(jdbc.queryForObject(
                 "SELECT status FROM email_delivery_logs WHERE user_id = ? AND email_type = 'ACCOUNT_SETUP'",
-                String.class, userId)).isEqualTo("DELIVERED");
+                String.class, userId)).isEqualTo("SMTP_ACCEPTED");
     }
 
     @Test
@@ -195,7 +195,7 @@ class AccountSetupIntegrationTest {
 
         mockMvc.perform(asAdmin(post("/v1/admin/users/{id}/resend-invitation", userId)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.email_delivery_status").value("DELIVERED"))
+                .andExpect(jsonPath("$.email_delivery_status").value("SMTP_ACCEPTED"))
                 .andExpect(jsonPath("$.temp_password").doesNotExist());
         String second = tokenFrom(onlySentEmailHtml());
         assertThat(second).isNotEqualTo(first);
@@ -274,7 +274,7 @@ class AccountSetupIntegrationTest {
         mockMvc.perform(asAdmin(post("/v1/admin/users/{id}/reset-password", userId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.temp_password").doesNotExist())
-                .andExpect(jsonPath("$.email_delivery_status").value("DELIVERED"));
+                .andExpect(jsonPath("$.email_delivery_status").value("SMTP_ACCEPTED"));
 
         assertThat(count("SELECT count(*) FROM sessions WHERE user_id = ? AND revoked_at IS NULL", userId)).isZero();
         // Measured against the database clock: the test JVM and the database container can differ by milliseconds.

@@ -223,7 +223,7 @@ export interface Invoice {
   createdAt: string;
 }
 
-export type SmtpProvider = "SMTP_CUSTOM" | "SENDGRID" | "AWS_SES" | "POSTMARK" | "MAILGUN";
+export type SmtpProvider = "SMTP_CUSTOM" | "GMAIL" | "SENDGRID" | "AWS_SES" | "POSTMARK" | "MAILGUN";
 export type SmtpEncryption = "TLS" | "SSL" | "NONE";
 
 export interface SmtpConfig {

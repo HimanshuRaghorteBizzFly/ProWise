@@ -36,27 +36,10 @@ export default function SignupPage() {
 
     setIsLoading(true);
     try {
-<<<<<<< HEAD
-      const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      await apiClient.signup({
-        email: email.trim(),
-        password,
-        name: name.trim(),
-        organization: {
-          name: orgName.trim(),
-          slug,
-          timezone,
-          calendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
-        },
-      });
-      toast.success("Organization workspace registered successfully!");
-      window.location.assign("/select-org");
-=======
       // No session yet: the account activates from the emailed link (approved decision D9). The same answer is
       // shown whether or not the address was already registered.
       await apiClient.signup({ email: email.trim(), password, name: name.trim() });
       setSubmitted(true);
->>>>>>> b46fd9c (Update ProWise application)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to register right now.");
     } finally {

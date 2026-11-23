@@ -30,9 +30,9 @@ import com.prowise.identity.PublishedSeedCredentials;
  * BCrypt cannot be evaluated in plain SQL here, which is why this is a Java migration. Run
  * {@code database/scripts/preview_v18_seed_credentials.sql} (read-only) to see the candidate rows first.
  */
-public class V18__task_1_1_disable_published_seed_credentials extends BaseJavaMigration {
+public class V22__task_1_1_disable_published_seed_credentials extends BaseJavaMigration {
 
-    static final String ACTOR = "system:migration-V18";
+    static final String ACTOR = "system:migration-V22";
 
     @Override
     public void migrate(Context context) throws Exception {
@@ -73,7 +73,7 @@ public class V18__task_1_1_disable_published_seed_credentials extends BaseJavaMi
                 audit.setObject(1, UUID.randomUUID());
                 audit.setString(2, ACTOR);
                 audit.setObject(3, id);
-                audit.setString(4, "{\"reason\":\"published_seed_credential\",\"migration\":\"V18\"}");
+                audit.setString(4, "{\"reason\":\"published_seed_credential\",\"migration\":\"V22\"}");
                 audit.executeUpdate();
             }
             disabledUsers.add(email);
@@ -106,7 +106,7 @@ public class V18__task_1_1_disable_published_seed_credentials extends BaseJavaMi
                 audit.setObject(1, UUID.randomUUID());
                 audit.setString(2, id);
                 audit.setString(3, ACTOR);
-                audit.setString(4, "Suspended: the account still used a password published in the repository (V18).");
+                audit.setString(4, "Suspended: the account still used a password published in the repository (V22).");
                 audit.executeUpdate();
             }
             suspendedOperators.add(id.toLowerCase(Locale.ROOT));

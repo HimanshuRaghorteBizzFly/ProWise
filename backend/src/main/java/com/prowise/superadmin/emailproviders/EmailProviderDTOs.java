@@ -2,109 +2,121 @@ package com.prowise.superadmin.emailproviders;
 
 import java.time.Instant;
 import java.util.List;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
+/**
+ * SMTP administration contract. No response type has a password field: only whether one is configured and
+ * where it comes from. Requests are validated in {@link EmailProviderService} (after authorization).
+ */
 public final class EmailProviderDTOs {
 
     private EmailProviderDTOs() {}
 
-    public record SmtpConfigResponse(
+    public record SmtpSettingsResponse(
             String provider,
             String host,
             int port,
             String encryption,
             String username,
-            boolean hasPasswordConfigured,
-            Instant passwordLastRotatedAt,
+            /** True when a password is available to the server (saved encrypted, or SMTP_PASSWORD). */
+            boolean credentialsConfigured,
+            /** DATABASE, ENVIRONMENT, NONE or UNREADABLE. */
+            String passwordSource,
+            Instant passwordUpdatedAt,
+            /** False when SMTP_CREDENTIAL_ENCRYPTION_KEY is missing: a password cannot be saved from the panel. */
+            boolean encryptionKeyConfigured,
+            /** DATABASE once the Super Admin saved settings, otherwise ENVIRONMENT (SMTP_* variables). */
+            String settingsSource,
             String fromName,
             String fromEmail,
             String replyToEmail,
             int rateLimitPerMinute,
             int retryAttempts,
-            int retryBackoffSeconds,
-            boolean trackOpens,
-            boolean trackClicks,
-            boolean sandboxMode,
+            int retryWaitSeconds,
+            /** Written only by a real connection test: NOT_TESTED until the first one. */
             String connectionStatus,
             Instant lastTestedAt,
             String lastTestMessage,
-            Instant updatedAt
-    ) {
-        public static SmtpConfigResponse fromEntity(EmailProviderEntity e) {
-            return new SmtpConfigResponse(
-                    e.getProviderType(),
-                    e.getHost(),
-                    e.getPort(),
-                    e.getEncryption(),
-                    e.getUsername(),
-                    e.getPasswordEncrypted() != null && !e.getPasswordEncrypted().isEmpty(),
-                    e.getUpdatedAt(),
-                    e.getFromName(),
-                    e.getFromEmail(),
-                    e.getReplyToEmail(),
-                    e.getRateLimitPerMinute(),
-                    e.getRetryAttempts(),
-                    e.getRetryBackoffSeconds(),
-                    e.getTrackOpens(),
-                    e.getTrackClicks(),
-                    e.getSandboxMode(),
-                    e.getConnectionStatus(),
-                    e.getLastTestedAt(),
-                    e.getLastTestMessage(),
-                    e.getUpdatedAt()
-            );
-        }
-    }
+            String problem,
+            String updatedBy,
+            Instant updatedAt,
+            long version
+    ) {}
 
-    public record UpdateSmtpConfigRequest(
-            @NotBlank String provider,
-            @NotBlank String host,
-            @NotNull @Min(1) @Max(65535) Integer port,
-            @NotBlank String encryption,
-            @NotBlank String username,
+    public record UpdateSmtpSettingsRequest(
+            String provider,
+            String host,
+            Integer port,
+            String encryption,
+            String username,
+            /** Write-only. Omit or leave blank to keep the stored password. */
             String password,
-            @NotBlank String fromName,
-            @NotBlank @Email String fromEmail,
-            @NotBlank @Email String replyToEmail,
+            String fromName,
+            String fromEmail,
+            String replyToEmail,
             Integer rateLimitPerMinute,
             Integer retryAttempts,
-            Integer retryBackoffSeconds,
-            Boolean trackOpens,
-            Boolean trackClicks,
-            Boolean sandboxMode
+            Integer retryWaitSeconds,
+            Long expectedVersion
     ) {}
 
-    public record TestSmtpRequest(
-            @NotBlank @Email String recipientEmail
+    public record ConnectionTestResponse(
+            String status,
+            long latencyMs,
+            String serverResponse,
+            String detail,
+            boolean encrypted,
+            String host,
+            int port,
+            String encryption,
+            Instant testedAt
     ) {}
 
-    public record TestSmtpResponse(
-            boolean success,
-            String message,
-            int latencyMs,
-            Instant timestamp,
-            List<SmtpHandshakeStep> steps
+    public record TestEmailRequest(String recipient) {}
+
+    public record TestEmailResponse(
+            boolean accepted,
+            /** SMTP_ACCEPTED, FAILED or NOT_SENT. */
+            String status,
+            String recipient,
+            String sender,
+            String provider,
+            Instant attemptedAt,
+            String messageId,
+            String smtpResponse,
+            String error,
+            int attempts,
+            String logId,
+            String note
     ) {}
 
-    public record SmtpHandshakeStep(
-            String name,
-            boolean ok,
-            String detail
+    public record VerifySenderRequest(String senderEmail) {}
+
+    public record VerifySenderResponse(
+            String senderEmail,
+            boolean accepted,
+            String connectionStatus,
+            String smtpResponse,
+            String detail,
+            boolean matchesAuthenticatedAccount,
+            Instant checkedAt
     ) {}
 
     public record EmailDeliveryLogDTO(
             String id,
             String recipient,
+            String sender,
             String subject,
-            String templateKey,
-            String source,
-            String status,
+            String emailType,
             String provider,
-            String detail,
+            String status,
+            int attempts,
+            String smtpResponse,
+            String errorCode,
+            String errorMessage,
+            String messageId,
+            Instant createdAt,
             Instant sentAt
     ) {}
+
+    public record EmailDeliveryLogPage(List<EmailDeliveryLogDTO> items, int page, int size, long total, int totalPages) {}
 }

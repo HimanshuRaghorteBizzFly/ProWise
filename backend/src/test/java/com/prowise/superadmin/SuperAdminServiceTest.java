@@ -38,10 +38,6 @@ import com.prowise.superadmin.billing.PaymentEntity;
 import com.prowise.superadmin.billing.PaymentRepository;
 import com.prowise.superadmin.dashboard.SuperAdminDashboardDTOs;
 import com.prowise.superadmin.dashboard.SuperAdminDashboardService;
-import com.prowise.superadmin.emailproviders.EmailProviderDTOs;
-import com.prowise.superadmin.emailproviders.EmailProviderEntity;
-import com.prowise.superadmin.emailproviders.EmailProviderRepository;
-import com.prowise.superadmin.emailproviders.EmailProviderService;
 import com.prowise.superadmin.emailtemplates.EmailTemplateDTOs;
 import com.prowise.superadmin.emailtemplates.EmailTemplateEntity;
 import com.prowise.superadmin.emailtemplates.EmailTemplateRepository;
@@ -304,20 +300,8 @@ public class SuperAdminServiceTest {
     }
 
     @Test
-    @DisplayName("Email Providers & Templates: SMTP handshake simulation and template variable extraction")
+    @DisplayName("Email Templates: template variable extraction (live SMTP is covered by SmtpAdminIntegrationTest)")
     void testEmailModule() {
-        EmailProviderRepository providerRepo = mock(EmailProviderRepository.class);
-        EmailProviderService providerService = new EmailProviderService(providerRepo, auditService);
-
-        when(providerRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-        EmailProviderDTOs.TestSmtpResponse testRes = providerService.testConnection(
-                new EmailProviderDTOs.TestSmtpRequest("verify@prowise.io"),
-                "superadmin@prowise.io"
-        );
-        assertTrue(testRes.success());
-        assertEquals(5, testRes.steps().size());
-
         EmailTemplateRepository tplRepo = mock(EmailTemplateRepository.class);
         EmailTemplateService tplService = new EmailTemplateService(tplRepo, auditService, objectMapper);
 

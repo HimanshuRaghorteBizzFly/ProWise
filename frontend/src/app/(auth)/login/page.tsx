@@ -8,6 +8,8 @@ import { isBackendUnreachable, mocksAllowed, readPermissionEnv } from "@/lib/per
 import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
 import { useSuperAdminStore } from "@/app/(platform)/super-admin/_store/useSuperAdminStore";
 import { usePlatformOperatorStore } from "@/app/(platform)/platform-operator/_store/usePlatformOperatorStore";
+import { operatorAuthService } from "@/app/(platform)/platform-operator/_services/operator-auth-service";
+import { applyLoginResponse } from "@/lib/auth-session";
 import { Button } from "@/components/ui/button";
 import { SystemRole } from "@/types";
 import { toast } from "sonner";
@@ -176,10 +178,27 @@ export default function LoginPage() {
           return;
         }
 
-        userRole = (response.user?.role as SystemRole) || "VIEWER";
-        userName = response.user?.name || userName;
-        destination = response.target_dashboard_url || "";
+        // Real session: the server's user, organization(s) and membership role. Never the demo organization.
+        const realDestination = applyLoginResponse(response);
+        const roleText = (response.user.role ?? "member").replace(/_/g, " ").toLowerCase();
+        toast.success(
+          response.requires_organization_selection
+            ? "Signed in. Choose the organization to open."
+            : `Signed in as ${roleText}.`,
+        );
+        window.location.assign(realDestination);
+        return;
       } catch (backendError) {
+        // One login page for all nine roles: Platform Operators have their own account store, so a wrong
+        // password on the member login is tried once against the operator login before it is reported.
+        if (backendError instanceof ApiError && backendError.status === 401 && backendError.code === "INVALID_CREDENTIALS") {
+          const operatorDestination = await tryOperatorLogin(cleanEmail, targetPass);
+          if (operatorDestination) {
+            window.location.assign(operatorDestination);
+            return;
+          }
+          throw backendError;
+        }
         // A real answer from the server (wrong password, account pending activation, disabled, rate limited)
         // is always shown as-is. Only an unreachable backend in a development build may use the local
         // preview session below; production builds never do.
@@ -297,6 +316,31 @@ export default function LoginPage() {
       toast.error(err instanceof Error ? err.message : "Unable to complete sign in.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  /** Platform Operator sign-in on the common page. Returns the dashboard, or null when the credentials are not an operator's. */
+  const tryOperatorLogin = async (operatorEmail: string, operatorPassword: string): Promise<string | null> => {
+    try {
+      const res = await operatorAuthService.login(operatorEmail, operatorPassword, false);
+      usePlatformOperatorStore.getState().updateAccountSettings({
+        name: res.operator.name,
+        email: res.operator.email,
+        department: res.operator.departmentName as never,
+        shiftName: res.operator.shiftName,
+        mfaEnabled: res.operator.mfaEnabled,
+        activeOperatorId: res.operator.id,
+      });
+      useAuthStore.getState().setCurrentRole("PLATFORM_OPERATOR");
+      useAuthStore.getState().login(res.operator.email, "PLATFORM_OPERATOR");
+      toast.success(`Welcome back, ${res.operator.name}.`);
+      return "/platform-operator/dashboard";
+    } catch (operatorError) {
+      // A real operator refusal (suspended, setup unfinished, locked) is shown as-is; anything else means the
+      // address is not an operator, and the member login's "invalid credentials" answer stands.
+      const message = operatorError instanceof Error ? operatorError.message : "";
+      if (/suspend|disabled|locked|setup|invitation/i.test(message)) throw operatorError;
+      return null;
     }
   };
 

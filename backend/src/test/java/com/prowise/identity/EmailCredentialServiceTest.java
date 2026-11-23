@@ -45,8 +45,14 @@ class EmailCredentialServiceTest {
 
     private EmailCredentialService service(String smtpUsername) {
         when(mailSenderProvider.getIfAvailable()).thenReturn(mailSender);
-        return new EmailCredentialService(mailSenderProvider, deliveryLogRepository, smtpUsername,
-                "noreply@prowise.com", "http://localhost:3000");
+        // Real settings resolution over an empty settings table: the SMTP_* environment fallback applies.
+        com.prowise.superadmin.emailproviders.EmailProviderRepository providers =
+                mock(com.prowise.superadmin.emailproviders.EmailProviderRepository.class);
+        when(providers.findById(any())).thenReturn(java.util.Optional.empty());
+        com.prowise.notification.smtp.SmtpSettingsProvider settings = new com.prowise.notification.smtp.SmtpSettingsProvider(
+                providers, new com.prowise.notification.smtp.SmtpCredentialCipher(""),
+                "smtp.gmail.com", 587, smtpUsername, "", "noreply@prowise.com", "ProWise Platform", "", "");
+        return new EmailCredentialService(mailSenderProvider, deliveryLogRepository, settings, "http://localhost:3000");
     }
 
     @Test
@@ -72,7 +78,7 @@ class EmailCredentialServiceTest {
                 service("smtp-user").sendAccountSetupEmail(UUID.randomUUID(), "alex@gmail.com", "Alex", "setup-token-abc");
 
         assertTrue(result.success());
-        assertEquals("DELIVERED", result.status());
+        assertEquals("SMTP_ACCEPTED", result.status());
         ArgumentCaptor<MimeMessage> sent = ArgumentCaptor.forClass(MimeMessage.class);
         verify(mailSender).send(sent.capture());
         String html = text(sent.getValue().getContent());

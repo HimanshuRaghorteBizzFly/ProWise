@@ -13,10 +13,11 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
 
 $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.13.9-hotspot"
 $env:Path = "$env:JAVA_HOME\bin;$env:Path"
-$env:DB_URL = "jdbc:postgresql://localhost:5432/prowise"
-$env:DB_USERNAME = "prowise"
-$env:DB_PASSWORD = "prowise-dev-password"
-$env:JWT_SIGNING_KEY = "local-development-signing-key-change-me-32-bytes"
+# Secrets (database, JWT, SMTP) are read by the backend from backend/.env (git-ignored); they are never set here,
+# because environment variables would override that file. Copy backend/.env.example to backend/.env first.
+if (-not (Test-Path (Join-Path $backend ".env"))) {
+    throw "backend/.env is missing. Copy backend/.env.example to backend/.env and fill in your values."
+}
 $env:API_BACKEND_URL = "http://localhost:8080"
 
 $postgresService = Get-Service -Name "postgresql-x64-18" -ErrorAction SilentlyContinue

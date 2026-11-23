@@ -32,14 +32,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prowise.authz.TestDatabase;
 
-import db.migration.V18__task_1_1_disable_published_seed_credentials;
+import db.migration.V22__task_1_1_disable_published_seed_credentials;
 
 /**
  * Approved decision D4 (Phase 2): the logins seeded with published passwords cannot authenticate, through either
  * login endpoint, and legitimate accounts keep working with the correct role routing.
  *
  * <p>Each test re-creates the seeded rows exactly as migrations V7, V9, V10 and V11 (published hashes) and the old
- * development initializer (fresh salts of the same published passwords) left them, then applies the V18 logic.
+ * development initializer (fresh salts of the same published passwords) left them, then applies the V22 logic.
  */
 @SpringBootTest
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
@@ -53,36 +53,18 @@ class LoginAuthenticationVerificationTest {
     /** Hash published in migrations V7 and V9 for platform_operators. */
     private static final String V7_OPERATOR_HASH = "$2a$10$4b0rjVL9OrfiXT2yXc11c.x5Q.wK12FsTd/UzkoOtp2GKu7ujVdQK";
 
-<<<<<<< HEAD
-    @Autowired
-    private PasswordEncoder passwordEncoder;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    @Autowired
-    private JdbcTemplate jdbc;
-
-    @Autowired
-    private org.springframework.core.env.Environment environment;
-=======
     @Autowired private MockMvc mockMvc;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private DataSource dataSource;
->>>>>>> b46fd9c (Update ProWise application)
 
     /**
      * The dev seeder is a dev-profile bean (it must never run in test or production contexts), so this
      * test creates the same accounts explicitly before verifying that each of them can sign in.
      */
     @BeforeEach
-<<<<<<< HEAD
-    void ensureAccounts() {
-        new DevelopmentDataInitializer(jdbc, passwordEncoder, environment).run(null);
-=======
-    void recreateSeededAccountsAndApplyV18() throws Exception {
+    void recreateSeededAccountsAndApplyV22() throws Exception {
         TestDatabase.clean(jdbc);
         for (Map.Entry<String, String> seed : PublishedSeedCredentials.USER_ACCOUNTS.entrySet()) {
             String hash = switch (seed.getValue()) {
@@ -97,12 +79,11 @@ class LoginAuthenticationVerificationTest {
         }
         upsertOperator("op-main-1", "main.operator@prowise.io", "MAIN_PLATFORM_OPERATOR", null);
         upsertOperator("op-2", "operator@prowise.io", "DEPARTMENT_OPERATOR", "site-reliability");
-        // An open session that V18 must revoke.
+        // An open session that V22 must revoke.
         jdbc.update("INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, expires_at) "
                         + "SELECT gen_random_uuid(), id, 'seed-session', gen_random_uuid(), now() + interval '1 day' "
                         + "FROM users WHERE lower(email) = 'superadmin@prowise.com'");
-        runV18();
->>>>>>> b46fd9c (Update ProWise application)
+        runV22();
     }
 
     @Test
@@ -137,7 +118,7 @@ class LoginAuthenticationVerificationTest {
     }
 
     @Test
-    @DisplayName("V18 revokes sessions, writes audit rows, keeps hashes and is idempotent")
+    @DisplayName("V22 revokes sessions, writes audit rows, keeps hashes and is idempotent")
     void v18RevokesSessionsAuditsAndIsIdempotent() throws Exception {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sessions WHERE revoked_at IS NULL", Integer.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM auth_audit_logs WHERE action = 'SEED_CREDENTIAL_DISABLED' "
@@ -148,7 +129,7 @@ class LoginAuthenticationVerificationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM users", Integer.class))
                 .isEqualTo(PublishedSeedCredentials.USER_ACCOUNTS.size()); // nothing deleted
 
-        V18__task_1_1_disable_published_seed_credentials.Result second = runV18();
+        V22__task_1_1_disable_published_seed_credentials.Result second = runV22();
         assertThat(second.disabledUsers()).isEmpty();
         assertThat(second.suspendedOperators()).isEmpty();
     }
@@ -160,7 +141,7 @@ class LoginAuthenticationVerificationTest {
         String ownPassword = "Her-Own-Chosen-Pass-1";
         insertUser("dr.sarah.lin@acmehealth.com", passwordEncoder.encode(ownPassword), "DEVELOPER");
 
-        V18__task_1_1_disable_published_seed_credentials.Result result = runV18();
+        V22__task_1_1_disable_published_seed_credentials.Result result = runV22();
 
         assertThat(result.disabledUsers()).isEmpty();
         mockMvc.perform(post("/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
@@ -234,9 +215,9 @@ class LoginAuthenticationVerificationTest {
         }
     }
 
-    private V18__task_1_1_disable_published_seed_credentials.Result runV18() throws Exception {
+    private V22__task_1_1_disable_published_seed_credentials.Result runV22() throws Exception {
         try (Connection connection = dataSource.getConnection()) {
-            return V18__task_1_1_disable_published_seed_credentials.disablePublishedSeedCredentials(connection);
+            return V22__task_1_1_disable_published_seed_credentials.disablePublishedSeedCredentials(connection);
         }
     }
 

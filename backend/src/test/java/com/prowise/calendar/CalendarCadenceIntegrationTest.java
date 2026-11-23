@@ -83,7 +83,7 @@ class CalendarCadenceIntegrationTest {
         String email = name + "-" + UUID.randomUUID().toString().substring(0, 8) + "@example.test";
         // Signup now returns 202 without a session (D9); verify through the real endpoint, then sign in.
         TestAccounts.Account account = TestAccounts.signUpVerifyAndLogin(
-                mockMvc, jdbc, accountTokens, objectMapper, email, "correct-horse-battery");
+                mockMvc, jdbc, accountTokens, objectMapper, email, "Correct-Horse-Battery-1!");
         return new Person(account.id(), email, account.accessToken());
     }
 

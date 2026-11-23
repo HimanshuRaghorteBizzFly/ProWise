@@ -133,9 +133,15 @@ public class AuthFilter extends OncePerRequestFilter {
                 writeUnauthorized(request, response);
                 return;
             }
+            // "My sessions" shows when each device was last active; at most one write per session per minute.
+            jdbcTemplate.update("UPDATE sessions SET last_used_at = now() WHERE id = ? "
+                    + "AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')", principal.sessionId());
             if (principal.organizationId() != null) {
+                // The membership must be active and the organization not suspended or archived: either change
+                // ends the organization-bound session on its next request.
                 Integer member = jdbcTemplate.queryForObject(
-                        "SELECT count(*) FROM memberships WHERE org_id = ? AND user_id = ? AND status = 'ACTIVE'",
+                        "SELECT count(*) FROM memberships m JOIN organizations o ON o.id = m.org_id "
+                                + "WHERE m.org_id = ? AND m.user_id = ? AND m.status = 'ACTIVE' AND o.state = 'ACTIVE'",
                         Integer.class, principal.organizationId(), principal.userId());
                 if (member == null || member != 1) {
                     writeUnauthorized(request, response);

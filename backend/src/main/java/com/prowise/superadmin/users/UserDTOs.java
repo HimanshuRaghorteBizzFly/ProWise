@@ -34,7 +34,7 @@ public class UserDTOs {
     /**
      * {@code emailDeliveryStatus} / {@code emailDeliveryMessage}: on create, the result of the setup email just sent;
      * on read, the latest setup email for an account still pending activation (null otherwise).
-     * Values: DELIVERED, FAILED, NOT_SENT, NOT_REQUESTED.
+     * Values: SMTP_ACCEPTED (accepted by the SMTP server, not proof of inbox delivery), FAILED, NOT_SENT, NOT_REQUESTED.
      */
     public record UserResponse(
             UUID id,

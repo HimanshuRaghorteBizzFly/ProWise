@@ -1,27 +1,31 @@
 "use client";
+
 import React, { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useProjects } from "@/hooks/useProjects";
 
+import { PanelLayout } from "@/components/layouts/panel-layout";
+import { DevGate } from "@/components/developer/DevUI";
+import { useDevProject } from "@/components/developer/useDeveloperData";
+
+/** Opens the project's own workspace by its mode (Individual check-ins or Structured work), from the real project record. */
 export default function DeveloperProjectRouterPage() {
   const params = useParams();
   const router = useRouter();
-  const orgId = (params.orgId as string) || "org-1";
-  const projectId = params.projectId as string;
-  const { projects } = useProjects(orgId);
+  const orgId = (params?.orgId as string) || "";
+  const projectId = (params?.projectId as string) || "";
+  const project = useDevProject(projectId);
+  const mode = project.kind === "ready" ? project.data.mode : null;
 
   useEffect(() => {
-    const project = projects.find(p => p.id === projectId);
-    if (project?.mode === "STRUCTURED") {
-      router.replace(`/org/${orgId}/developer/projects/${projectId}/structured`);
-    } else {
-      router.replace(`/org/${orgId}/developer/projects/${projectId}/individual`);
-    }
-  }, [projects, projectId, orgId, router]);
+    if (!mode) return;
+    router.replace(`/org/${orgId}/developer/projects/${projectId}/${mode === "STRUCTURED" ? "structured" : "individual"}`);
+  }, [mode, orgId, projectId, router]);
 
   return (
-    <div className="min-h-[300px] flex items-center justify-center">
-      <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
-    </div>
+    <PanelLayout title="Project" breadcrumb={[{ label: "My Projects", href: `/org/${orgId}/developer/projects` }, { label: "Project" }]}>
+      <DevGate state={project} what="This project" back={{ href: `/org/${orgId}/developer/projects`, label: "Back to my projects" }} skeleton="detail">
+        {() => <p className="text-xs text-[var(--color-text-muted)]">Opening the project…</p>}
+      </DevGate>
+    </PanelLayout>
   );
 }

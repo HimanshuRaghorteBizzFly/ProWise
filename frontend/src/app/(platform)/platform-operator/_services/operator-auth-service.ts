@@ -228,6 +228,25 @@ class OperatorAuthService {
   public async getDashboard(): Promise<OperatorDashboardResponse> {
     return this.request<OperatorDashboardResponse>("/v1/operator/dashboard");
   }
+
+  /** Real email delivery log (read-only for operators; SMTP settings stay Super Admin only). */
+  public async listEmailDeliveries(status?: string): Promise<OperatorEmailDelivery[]> {
+    const query = status && status !== "ALL" ? `?status=${encodeURIComponent(status)}` : "";
+    return this.request<OperatorEmailDelivery[]>(`/v1/operator/email/delivery${query}`);
+  }
+}
+
+export interface OperatorEmailDelivery {
+  id: string;
+  recipient: string;
+  subject: string;
+  provider: string | null;
+  status: string;
+  attempts: number;
+  errorCode: string | null;
+  errorMessage: string | null;
+  sentAt: string | null;
+  createdAt: string;
 }
 
 export const operatorAuthService = new OperatorAuthService();

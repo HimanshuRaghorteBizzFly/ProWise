@@ -92,7 +92,7 @@ class SuperAdminUserManagementTest {
         when(userRepository.saveAndFlush(any(UserEntity.class))).thenAnswer(inv -> inv.getArgument(0));
         when(accountTokenService.issue(any(), eq(AccountTokenService.Purpose.SETUP))).thenReturn("raw-setup-token");
         when(emailCredentialService.sendAccountSetupEmail(any(), eq("jane.doe@example.com"), eq("Jane Doe"), eq("raw-setup-token")))
-                .thenReturn(new EmailCredentialService.EmailDeliveryResult(true, "DELIVERED", "Setup email sent."));
+                .thenReturn(new EmailCredentialService.EmailDeliveryResult(true, "SMTP_ACCEPTED", "Setup email sent."));
 
         UserDTOs.UserResponse response = userService.createUser(request, UUID.randomUUID(), "superadmin@prowise.com", "127.0.0.1");
 
@@ -100,7 +100,7 @@ class SuperAdminUserManagementTest {
         assertEquals("DEVELOPER", response.role());
         assertEquals("PENDING_ACTIVATION", response.status());
         assertFalse(response.mustChangePassword());
-        assertEquals("DELIVERED", response.emailDeliveryStatus());
+        assertEquals("SMTP_ACCEPTED", response.emailDeliveryStatus());
         assertFalse(Arrays.stream(UserDTOs.UserResponse.class.getRecordComponents())
                 .anyMatch(c -> c.getName().toLowerCase().contains("password") && !c.getName().equals("mustChangePassword")));
 
@@ -262,12 +262,12 @@ class SuperAdminUserManagementTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(accountTokenService.issue(userId, AccountTokenService.Purpose.RESET)).thenReturn("raw-reset-token");
         when(emailCredentialService.sendPasswordResetEmail(userId, "test@example.com", "Test User", "raw-reset-token"))
-                .thenReturn(new EmailCredentialService.EmailDeliveryResult(true, "DELIVERED", "Reset email sent."));
+                .thenReturn(new EmailCredentialService.EmailDeliveryResult(true, "SMTP_ACCEPTED", "Reset email sent."));
 
         UserDTOs.CredentialDeliveryResponse reset = userService.resetPassword(userId, UUID.randomUUID(), "superadmin@prowise.com", "127.0.0.1");
 
         assertEquals("test@example.com", reset.email());
-        assertEquals("DELIVERED", reset.emailDeliveryStatus());
+        assertEquals("SMTP_ACCEPTED", reset.emailDeliveryStatus());
         assertEquals("oldHash", user.getPasswordHash());
         verify(jdbc).update(eq("UPDATE sessions SET revoked_at = now() WHERE user_id = ? AND revoked_at IS NULL"), eq(userId));
         verify(passwordEncoder, never()).encode(anyString());
@@ -294,9 +294,9 @@ class SuperAdminUserManagementTest {
                 new UserEntity(pendingId, "p@example.com", "hash", "P", "DEVELOPER", "PENDING_ACTIVATION", false)));
         when(accountTokenService.issue(pendingId, AccountTokenService.Purpose.SETUP)).thenReturn("raw-setup-token-2");
         when(emailCredentialService.sendAccountSetupEmail(pendingId, "p@example.com", "P", "raw-setup-token-2"))
-                .thenReturn(new EmailCredentialService.EmailDeliveryResult(true, "DELIVERED", "Setup email sent."));
+                .thenReturn(new EmailCredentialService.EmailDeliveryResult(true, "SMTP_ACCEPTED", "Setup email sent."));
 
-        assertEquals("DELIVERED", userService.resendInvitation(pendingId, UUID.randomUUID(), "superadmin@prowise.com", "127.0.0.1")
+        assertEquals("SMTP_ACCEPTED", userService.resendInvitation(pendingId, UUID.randomUUID(), "superadmin@prowise.com", "127.0.0.1")
                 .emailDeliveryStatus());
 
         UUID activeId = UUID.randomUUID();

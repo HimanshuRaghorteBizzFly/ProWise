@@ -1,201 +1,121 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Bell,
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  Mail,
-  ShieldAlert,
-  FolderGit2,
-} from "lucide-react";
-import { developerApi, DeveloperNotification } from "@/lib/developer-api";
-import { useNotificationStore } from "@/store/notification-store";
+import React, { useState } from "react";
+import Link from "next/link";
+import { Bell, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
 
+import { PanelLayout } from "@/components/layouts/panel-layout";
+import { AdminButton, EmptyStateView, PageFrame, Panel, SegmentTabs, StatusBadge } from "@/components/delivery/DeliveryUI";
+import { DevGate, changeError, dateTimeText } from "@/components/developer/DevUI";
+import { useDevMutation, useDevNotifications } from "@/components/developer/useDeveloperData";
+import { useOrgId } from "@/components/org-console/useRoleApi";
+import { developerApi, type DeveloperNotification } from "@/lib/developer-api";
+
+/** Only same-app links are followed from a notification; anything else is shown as plain text. */
+function safeTarget(url?: string): string | null {
+  return url && url.startsWith("/") && !url.startsWith("//") ? url : null;
+}
+
 export default function DeveloperNotificationsPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { notifications: storeNotifications } = useNotificationStore();
+  const orgId = useOrgId();
+  const home = `/org/${orgId}/developer/dashboard`;
+  const list = useDevNotifications();
+  const [filter, setFilter] = useState<"all" | "unread">("all");
 
-  const [notifications, setNotifications] = useState<DeveloperNotification[]>([]);
-  const [unreadOnly, setUnreadOnly] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const markOne = useDevMutation((id: string) => developerApi.markNotificationRead(id));
+  const markAll = useDevMutation((_: void) => developerApi.markAllNotificationsRead());
 
-  const loadNotifications = async () => {
-    setLoading(true);
-    const res = await developerApi.getNotifications(unreadOnly);
-    if (res && res.length > 0) {
-      setNotifications(res);
-    } else {
-      // Mock fallback
-      const mock: DeveloperNotification[] = [
-        {
-          id: "notif-1",
-          userId: "usr-developer",
-          category: "CHECKIN_DUE",
-          title: "Weekly Check-in Due for FHIR Intake (SOLO-10)",
-          message: "Weekly individual progress report is required by Friday 18:00 UTC.",
-          targetUrl: `/org/${orgId}/developer/projects/proj-individual-solo/individual`,
-          read: false,
-          createdAt: "2026-11-18T08:00:00Z",
-        },
-        {
-          id: "notif-2",
-          userId: "usr-developer",
-          category: "REVIEW_REQUESTED",
-          title: "Code Review Assigned: PR #42 Drools Connector",
-          message: "Sarah Jenkins requested your review on feature/drools-engine.",
-          targetUrl: `/org/${orgId}/developer/reviews`,
-          read: false,
-          createdAt: "2026-11-18T10:15:00Z",
-        },
-        {
-          id: "notif-3",
-          userId: "usr-developer",
-          category: "BLOCKER_RESOLVED",
-          title: "Blocker Resolved on CDS Task #101",
-          message: "Database credential provisioning unblocked your service connection.",
-          targetUrl: `/org/${orgId}/developer/tasks`,
-          read: true,
-          createdAt: "2026-11-17T15:00:00Z",
-        },
-      ];
-      setNotifications(mock);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    loadNotifications();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unreadOnly]);
-
-  const handleMarkRead = async (id: string) => {
-    await developerApi.markNotificationRead(id);
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
-    toast.success("Notification marked as read");
-  };
-
-  const handleMarkAllRead = async () => {
-    await developerApi.markAllNotificationsRead();
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    toast.success("All notifications marked as read");
-  };
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const items: DeveloperNotification[] = list.kind === "ready" ? list.data : [];
+  const unread = items.filter((n) => !n.read).length;
+  const shown = filter === "unread" ? items.filter((n) => !n.read) : items;
 
   return (
-    <PanelLayout
-      title="Notifications"
-      breadcrumb={[{ label: "Developer", href: `/org/${orgId}/developer` }, { label: "Notifications" }]}
-    >
-      <div className="space-y-6">
-        {/* Header & Controls */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-app-text-primary">Activity &amp; Alerts</h2>
-              {unreadCount > 0 && (
-                <Badge variant="default" className="text-xs">
-                  {unreadCount} unread
-                </Badge>
+    <PanelLayout title="Notifications">
+      <PageFrame
+        crumbs={[{ label: "Developer", href: home }, { label: "Notifications" }]}
+        title="Notifications"
+        description="Assignments, review decisions, blockers and deadlines that involve you."
+        actions={
+          <AdminButton
+            variant="outline"
+            size="sm"
+            disabled={unread === 0 || markAll.isPending}
+            isLoading={markAll.isPending}
+            onClick={() =>
+              markAll.mutate(undefined, {
+                onSuccess: () => toast.success("All notifications marked as read."),
+                onError: (e) => toast.error(changeError(e)),
+              })
+            }
+          >
+            <CheckCheck className="mr-1 h-3.5 w-3.5" /> Mark all read
+          </AdminButton>
+        }
+      >
+        <DevGate state={list} what="Notifications" back={{ href: home, label: "Back to dashboard" }}>
+          {() => (
+            <Panel title="Inbox" icon={Bell}>
+              <div className="mb-3">
+                <SegmentTabs
+                  value={filter}
+                  onChange={setFilter}
+                  options={[
+                    { value: "all", label: "All", count: items.length },
+                    { value: "unread", label: "Unread", count: unread },
+                  ]}
+                />
+              </div>
+              {shown.length === 0 ? (
+                <EmptyStateView
+                  icon={Bell}
+                  title={filter === "unread" ? "You're all caught up" : "No notifications yet"}
+                  description="New activity on your work will appear here."
+                />
+              ) : (
+                <ul className="divide-y divide-[var(--color-border)]">
+                  {shown.map((n) => {
+                    const target = safeTarget(n.targetUrl);
+                    return (
+                      <li key={n.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {!n.read && <span className="h-2 w-2 rounded-full bg-blue-600" aria-label="Unread" />}
+                            <span className="text-sm font-semibold text-[var(--color-text-primary)]">{n.title}</span>
+                            {n.category && <StatusBadge label={n.category} tone="neutral" />}
+                          </div>
+                          <p className="text-xs text-[var(--color-text-secondary)]">{n.message}</p>
+                          <p className="text-[11px] text-[var(--color-text-muted)]">
+                            {dateTimeText(n.createdAt)}
+                            {target && (
+                              <>
+                                {" · "}
+                                <Link href={target} className="text-blue-600 hover:underline dark:text-blue-400">
+                                  Open
+                                </Link>
+                              </>
+                            )}
+                          </p>
+                        </div>
+                        {!n.read && (
+                          <AdminButton
+                            variant="ghost"
+                            size="xs"
+                            disabled={markOne.isPending}
+                            onClick={() => markOne.mutate(n.id, { onError: (e) => toast.error(changeError(e)) })}
+                          >
+                            Mark read
+                          </AdminButton>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
-            </div>
-            <p className="text-xs text-app-text-secondary mt-0.5">
-              Assignment alerts, check-in reminders, review invitations, and blocker resolutions.
-            </p>
-          </div>
-          <div className="flex items-center gap-2.5">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setUnreadOnly(!unreadOnly)}
-              className="text-xs"
-            >
-              {unreadOnly ? "Show All" : "Unread Only"}
-            </Button>
-            {unreadCount > 0 && (
-              <Button size="sm" onClick={handleMarkAllRead} className="text-xs">
-                Mark All as Read
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Notifications List */}
-        <div className="space-y-3">
-          {notifications.length === 0 ? (
-            <Card className="p-12 text-center text-xs text-app-text-muted">
-              You are all caught up! No notifications in this view.
-            </Card>
-          ) : (
-            notifications.map((n) => (
-              <Card
-                key={n.id}
-                className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
-                  !n.read ? "border-l-4 border-l-blue-600 bg-blue-500/5" : "opacity-85"
-                }`}
-              >
-                <div className="flex items-start gap-3 min-w-0">
-                  <div className="p-2 rounded-lg bg-app-surface border border-app-border shrink-0 mt-0.5">
-                    {n.category === "CHECKIN_DUE" ? (
-                      <Clock className="w-4 h-4 text-amber-500" />
-                    ) : n.category === "BLOCKER_RESOLVED" ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                    ) : (
-                      <Bell className="w-4 h-4 text-blue-500" />
-                    )}
-                  </div>
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-xs text-app-text-primary">{n.title}</span>
-                      <Badge variant="outline" className="text-[9px] font-mono">
-                        {n.category}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-app-text-secondary">{n.message}</p>
-                    <div className="text-[10px] text-app-text-muted pt-0.5">
-                      {new Date(n.createdAt).toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {!n.read && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-xs h-7 text-blue-600"
-                      onClick={() => handleMarkRead(n.id)}
-                    >
-                      Mark Read
-                    </Button>
-                  )}
-                  {n.targetUrl && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs h-7"
-                      onClick={() => (window.location.href = n.targetUrl!)}
-                    >
-                      View
-                    </Button>
-                  )}
-                </div>
-              </Card>
-            ))
+            </Panel>
           )}
-        </div>
-      </div>
+        </DevGate>
+      </PageFrame>
     </PanelLayout>
   );
 }

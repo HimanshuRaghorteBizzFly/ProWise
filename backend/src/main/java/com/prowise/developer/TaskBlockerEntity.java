@@ -21,7 +21,7 @@ public class TaskBlockerEntity {
     private String reason;
 
     @Column(name = "severity", nullable = false, length = 20)
-    private String severity = "HIGH";
+    private String severity = "NORMAL"; // NORMAL or CRITICAL (task 3.4)
 
     @Column(name = "owner_id", length = 64)
     private String ownerId;

@@ -375,6 +375,7 @@ export function getStatusTone(status: string): StatusTone {
       "HEALTHY",
       "SYNCED",
       "DELIVERED",
+      "SMTP_ACCEPTED",
       "COMPLETED",
       "RESOLVED",
       "VERIFIED",

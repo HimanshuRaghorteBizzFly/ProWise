@@ -23,7 +23,8 @@ export interface DeveloperProject {
   description?: string;
   mode: "INDIVIDUAL" | "STRUCTURED";
   status: string;
-  completionPercent: number;
+  /** Last approved / calculated figure; null means "Not reported" (Individual) or "Not measurable" (Structured). */
+  completionPercent: number | null;
   targetCompletionDate?: string;
   accountableOwnerId?: string;
   memberIds?: string;
@@ -45,7 +46,8 @@ export interface DeveloperWorkItem {
   description?: string;
   primaryAssigneeId?: string;
   reviewerId?: string;
-  state: "TODO" | "IN_PROGRESS" | "BLOCKED" | "IN_REVIEW" | "DONE";
+  /** Blocked is the separate `blocked` flag (T21), never a state. */
+  state: "TODO" | "IN_PROGRESS" | "IN_REVIEW" | "DONE" | "CANCELLED";
   blocked: boolean;
   weight: number;
   weightUnit?: string;
@@ -198,101 +200,100 @@ export interface DeveloperPreferences {
   timezone: string;
 }
 
-// Helper to make safe fetch calls with timeout and fallback
-async function fetchJson<T>(url: string, options: RequestInit = {}): Promise<T | null> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        ...(options.headers || {}),
-      },
-    });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
+export interface DeveloperGitHubEvent {
+  id: string;
+  repository?: string;
+  repositoryName?: string;
+  eventType?: string;
+  actor?: string;
+  title?: string;
+  url?: string;
+  workItemId?: string;
+  occurredAt?: string;
+  createdAt?: string;
+  [key: string]: unknown;
 }
 
+/*
+ * Transport. Every call goes through the authenticated apiClient (bearer token, refresh, X-Request-Id,
+ * Idempotency-Key on writes) and throws ApiError on failure: pages show an error state with Retry, never fake data.
+ * The backend serializes snake_case; this module converts at the boundary so the page types stay camelCase.
+ */
+function camelKey(key: string): string {
+  return key.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+}
+
+function snakeKey(key: string): string {
+  return key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+export function camelizeKeys<T>(value: unknown): T {
+  if (Array.isArray(value)) return value.map((v) => camelizeKeys(v)) as T;
+  if (isPlainObject(value)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [camelKey(k), camelizeKeys(v)])) as T;
+  }
+  return value as T;
+}
+
+export function snakeizeKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((v) => snakeizeKeys(v));
+  if (isPlainObject(value)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [snakeKey(k), snakeizeKeys(v)]));
+  }
+  return value;
+}
+
+async function call<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  const { apiClient } = await import("@/lib/api");
+  const body = init.body === undefined ? undefined : snakeizeKeys(init.body);
+  const result = await apiClient.call<unknown>(path, { method: init.method, body });
+  return camelizeKeys<T>(result);
+}
+
+function query(params: Record<string, string | boolean | undefined>): string {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== "" && v !== false) search.set(k, String(v));
+  });
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
+}
+
+const enc = encodeURIComponent;
+
 export const developerApi = {
-  async getDashboard(orgId?: string): Promise<DeveloperDashboardSummary | null> {
-    const query = orgId ? `?orgId=${encodeURIComponent(orgId)}` : "";
-    return fetchJson<DeveloperDashboardSummary>(`/api/v1/developer/dashboard${query}`);
-  },
+  /** The organization comes from the signed-in token; the argument is kept for call-site compatibility. */
+  getDashboard: (_orgId?: string) => call<DeveloperDashboardSummary>("/v1/developer/dashboard"),
+  getProjects: (_orgId?: string) => call<DeveloperProject[]>("/v1/developer/projects"),
+  getProject: (projectId: string) => call<DeveloperProject>(`/v1/developer/projects/${enc(projectId)}`),
 
-  async getProjects(orgId?: string): Promise<DeveloperProject[] | null> {
-    const query = orgId ? `?orgId=${encodeURIComponent(orgId)}` : "";
-    return fetchJson<DeveloperProject[]>(`/api/v1/developer/projects${query}`);
-  },
+  getTasks: (params?: { status?: string; priority?: string; projectId?: string }) =>
+    call<DeveloperWorkItem[]>(`/v1/developer/tasks${query({ ...params })}`),
+  updateTaskStatus: (taskId: string, state: string, note?: string) =>
+    call<DeveloperWorkItem>(`/v1/developer/tasks/${enc(taskId)}/status`, { method: "PATCH", body: { state, note } }),
+  submitBlocker: (taskId: string, reason: string, severity: "NORMAL" | "CRITICAL" = "NORMAL") =>
+    call<unknown>(`/v1/developer/tasks/${enc(taskId)}/blockers`, { method: "POST", body: { reason, severity } }),
+  resolveBlocker: (blockerId: string) =>
+    call<unknown>(`/v1/developer/blockers/${enc(blockerId)}/resolve`, { method: "POST" }),
 
-  async getProject(projectId: string): Promise<DeveloperProject | null> {
-    return fetchJson<DeveloperProject>(`/api/v1/developer/projects/${encodeURIComponent(projectId)}`);
-  },
-
-  async getTasks(params?: { status?: string; priority?: string; projectId?: string }): Promise<DeveloperWorkItem[] | null> {
-    const searchParams = new URLSearchParams();
-    if (params?.status) searchParams.set("status", params.status);
-    if (params?.priority) searchParams.set("priority", params.priority);
-    if (params?.projectId) searchParams.set("projectId", params.projectId);
-    const qs = searchParams.toString() ? `?${searchParams.toString()}` : "";
-    return fetchJson<DeveloperWorkItem[]>(`/api/v1/developer/tasks${qs}`);
-  },
-
-  async updateTaskStatus(taskId: string, state: string, note?: string): Promise<DeveloperWorkItem | null> {
-    return fetchJson<DeveloperWorkItem>(`/api/v1/developer/tasks/${encodeURIComponent(taskId)}/status`, {
-      method: "PATCH",
-      body: JSON.stringify({ state, note }),
-    });
-  },
-
-  async submitBlocker(taskId: string, reason: string, severity?: string): Promise<any | null> {
-    return fetchJson<any>(`/api/v1/developer/tasks/${encodeURIComponent(taskId)}/blockers`, {
-      method: "POST",
-      body: JSON.stringify({ reason, severity: severity || "HIGH" }),
-    });
-  },
-
-  async resolveBlocker(blockerId: string): Promise<any | null> {
-    return fetchJson<any>(`/api/v1/developer/blockers/${encodeURIComponent(blockerId)}/resolve`, {
-      method: "POST",
-    });
-  },
-
-  async submitCheckIn(payload: {
+  submitCheckIn: (payload: {
     projectId: string;
     percent: number;
     accomplished: string;
     nextSteps: string;
     blockers?: string;
     risks?: string;
-  }): Promise<any | null> {
-    return fetchJson<any>(`/api/v1/developer/check-ins`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
+  }) => call<unknown>("/v1/developer/check-ins", { method: "POST", body: payload }),
+  getCheckIns: (projectId: string) => call<unknown[]>(`/v1/developer/projects/${enc(projectId)}/check-ins`),
 
-  async getCheckIns(projectId: string): Promise<any[] | null> {
-    return fetchJson<any[]>(`/api/v1/developer/projects/${encodeURIComponent(projectId)}/check-ins`);
-  },
+  getSprints: (projectId?: string) => call<DeveloperSprint[]>(`/v1/developer/sprints${query({ projectId })}`),
 
-  async getSprints(projectId?: string): Promise<DeveloperSprint[] | null> {
-    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-    return fetchJson<DeveloperSprint[]>(`/api/v1/developer/sprints${query}`);
-  },
-
-  async getBugs(projectId?: string): Promise<DeveloperBug[] | null> {
-    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-    return fetchJson<DeveloperBug[]>(`/api/v1/developer/bugs${query}`);
-  },
-
-  async createBug(payload: {
+  getBugs: (projectId?: string) => call<DeveloperBug[]>(`/v1/developer/bugs${query({ projectId })}`),
+  createBug: (payload: {
     projectId: string;
     title: string;
     description: string;
@@ -300,45 +301,23 @@ export const developerApi = {
     reproductionSteps?: string;
     environment?: string;
     assignedTo?: string;
-  }): Promise<DeveloperBug | null> {
-    return fetchJson<DeveloperBug>(`/api/v1/developer/bugs`, {
+  }) => call<DeveloperBug>("/v1/developer/bugs", { method: "POST", body: payload }),
+  updateBugStatus: (bugId: string, status: string, resolution?: string) =>
+    call<DeveloperBug>(`/v1/developer/bugs/${enc(bugId)}/status`, { method: "PATCH", body: { status, resolution } }),
+
+  getReviews: (type?: "assigned" | "authored") =>
+    call<DeveloperCodeReview[]>(`/v1/developer/reviews${query({ type })}`),
+  submitReviewDecision: (reviewId: string, decision: string, feedback?: string) =>
+    call<DeveloperCodeReview>(`/v1/developer/reviews/${enc(reviewId)}/decision`, {
       method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
+      body: { decision, feedback },
+    }),
 
-  async updateBugStatus(bugId: string, status: string, resolution?: string): Promise<DeveloperBug | null> {
-    return fetchJson<DeveloperBug>(`/api/v1/developer/bugs/${encodeURIComponent(bugId)}/status`, {
-      method: "PATCH",
-      body: JSON.stringify({ status, resolution }),
-    });
-  },
+  getGitHubActivity: (repo?: string, actor?: string) =>
+    call<DeveloperGitHubEvent[]>(`/v1/developer/github/activity${query({ repo, actor })}`),
 
-  async getReviews(type?: "assigned" | "authored"): Promise<DeveloperCodeReview[] | null> {
-    const query = type ? `?type=${encodeURIComponent(type)}` : "";
-    return fetchJson<DeveloperCodeReview[]>(`/api/v1/developer/reviews${query}`);
-  },
-
-  async submitReviewDecision(reviewId: string, decision: string, feedback?: string): Promise<DeveloperCodeReview | null> {
-    return fetchJson<DeveloperCodeReview>(`/api/v1/developer/reviews/${encodeURIComponent(reviewId)}/decision`, {
-      method: "POST",
-      body: JSON.stringify({ decision, feedback }),
-    });
-  },
-
-  async getGitHubActivity(repo?: string, actor?: string): Promise<any[] | null> {
-    const searchParams = new URLSearchParams();
-    if (repo) searchParams.set("repo", repo);
-    if (actor) searchParams.set("actor", actor);
-    const qs = searchParams.toString() ? `?${searchParams.toString()}` : "";
-    return fetchJson<any[]>(`/api/v1/developer/github/activity${qs}`);
-  },
-
-  async getCalendarEvents(): Promise<DeveloperCalendarEvent[] | null> {
-    return fetchJson<DeveloperCalendarEvent[]>(`/api/v1/developer/calendar`);
-  },
-
-  async createCalendarEvent(payload: {
+  getCalendarEvents: () => call<DeveloperCalendarEvent[]>("/v1/developer/calendar"),
+  createCalendarEvent: (payload: {
     projectId?: string;
     title: string;
     description?: string;
@@ -347,105 +326,45 @@ export const developerApi = {
     endTime?: string;
     allDay?: boolean;
     url?: string;
-  }): Promise<DeveloperCalendarEvent | null> {
-    return fetchJson<DeveloperCalendarEvent>(`/api/v1/developer/calendar`, {
+  }) => call<DeveloperCalendarEvent>("/v1/developer/calendar", { method: "POST", body: payload }),
+
+  getDiscussions: (projectId?: string) =>
+    call<DeveloperDiscussion[]>(`/v1/developer/discussions${query({ projectId })}`),
+  createDiscussion: (payload: { projectId: string; title: string; category?: string; initialMessage?: string }) =>
+    call<DeveloperDiscussion>("/v1/developer/discussions", { method: "POST", body: payload }),
+  getDiscussionMessages: (discussionId: string) =>
+    call<DeveloperDiscussionMessage[]>(`/v1/developer/discussions/${enc(discussionId)}/messages`),
+  sendDiscussionMessage: (discussionId: string, message: string) =>
+    call<DeveloperDiscussionMessage>(`/v1/developer/discussions/${enc(discussionId)}/messages`, {
       method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
+      body: { message },
+    }),
 
-  async getDiscussions(projectId?: string): Promise<DeveloperDiscussion[] | null> {
-    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-    return fetchJson<DeveloperDiscussion[]>(`/api/v1/developer/discussions${query}`);
-  },
-
-  async createDiscussion(payload: {
-    projectId: string;
-    title: string;
-    category?: string;
-    initialMessage?: string;
-  }): Promise<DeveloperDiscussion | null> {
-    return fetchJson<DeveloperDiscussion>(`/api/v1/developer/discussions`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
-
-  async getDiscussionMessages(discussionId: string): Promise<DeveloperDiscussionMessage[] | null> {
-    return fetchJson<DeveloperDiscussionMessage[]>(`/api/v1/developer/discussions/${encodeURIComponent(discussionId)}/messages`);
-  },
-
-  async sendDiscussionMessage(discussionId: string, message: string): Promise<DeveloperDiscussionMessage | null> {
-    return fetchJson<DeveloperDiscussionMessage>(`/api/v1/developer/discussions/${encodeURIComponent(discussionId)}/messages`, {
-      method: "POST",
-      body: JSON.stringify({ message }),
-    });
-  },
-
-  async getFiles(projectId?: string, workItemId?: string): Promise<DeveloperFile[] | null> {
-    const searchParams = new URLSearchParams();
-    if (projectId) searchParams.set("projectId", projectId);
-    if (workItemId) searchParams.set("workItemId", workItemId);
-    const qs = searchParams.toString() ? `?${searchParams.toString()}` : "";
-    return fetchJson<DeveloperFile[]>(`/api/v1/developer/files${qs}`);
-  },
-
-  async saveFileRecord(payload: {
+  getFiles: (projectId?: string, workItemId?: string) =>
+    call<DeveloperFile[]>(`/v1/developer/files${query({ projectId, workItemId })}`),
+  saveFileRecord: (payload: {
     projectId?: string;
     workItemId?: string;
     fileName: string;
     fileUrl: string;
     fileSize?: number;
     contentType?: string;
-  }): Promise<DeveloperFile | null> {
-    return fetchJson<DeveloperFile>(`/api/v1/developer/files`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
+  }) => call<DeveloperFile>("/v1/developer/files", { method: "POST", body: payload }),
 
-  async getNotifications(unreadOnly?: boolean): Promise<DeveloperNotification[] | null> {
-    const query = unreadOnly ? `?unreadOnly=true` : "";
-    return fetchJson<DeveloperNotification[]>(`/api/v1/developer/notifications${query}`);
-  },
+  getNotifications: (unreadOnly?: boolean) =>
+    call<DeveloperNotification[]>(`/v1/developer/notifications${query({ unreadOnly })}`),
+  markNotificationRead: (notificationId: string) =>
+    call<void>(`/v1/developer/notifications/${enc(notificationId)}/read`, { method: "PATCH" }),
+  markAllNotificationsRead: () => call<void>("/v1/developer/notifications/read-all", { method: "POST" }),
 
-  async markNotificationRead(id: string): Promise<boolean> {
-    try {
-      const res = await fetch(`/api/v1/developer/notifications/${encodeURIComponent(id)}/read`, { method: "PATCH" });
-      return res.ok;
-    } catch {
-      return false;
-    }
-  },
+  getReportsSummary: (_orgId?: string) => call<DeveloperReportsSummary>("/v1/developer/reports/summary"),
 
-  async markAllNotificationsRead(): Promise<boolean> {
-    try {
-      const res = await fetch(`/api/v1/developer/notifications/read-all`, { method: "POST" });
-      return res.ok;
-    } catch {
-      return false;
-    }
-  },
-
-  async getReportsSummary(orgId?: string): Promise<DeveloperReportsSummary | null> {
-    const query = orgId ? `?orgId=${encodeURIComponent(orgId)}` : "";
-    return fetchJson<DeveloperReportsSummary>(`/api/v1/developer/reports/summary${query}`);
-  },
-
-  async getPreferences(): Promise<DeveloperPreferences | null> {
-    return fetchJson<DeveloperPreferences>(`/api/v1/developer/preferences`);
-  },
-
-  async updatePreferences(payload: {
+  getPreferences: () => call<DeveloperPreferences>("/v1/developer/preferences"),
+  updatePreferences: (payload: {
     emailNotifications: boolean;
     slackNotifications: boolean;
     theme?: string;
     githubUsername?: string;
     timezone?: string;
-  }): Promise<DeveloperPreferences | null> {
-    return fetchJson<DeveloperPreferences>(`/api/v1/developer/preferences`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
-  },
+  }) => call<DeveloperPreferences>("/v1/developer/preferences", { method: "PUT", body: payload }),
 };

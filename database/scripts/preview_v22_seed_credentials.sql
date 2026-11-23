@@ -1,12 +1,12 @@
--- READ-ONLY preview for migration V18 (disable published seed credentials). Changes nothing.
--- Run it against a shared or production database BEFORE deploying V18, for example:
+-- READ-ONLY preview for migration V22 (disable published seed credentials). Changes nothing.
+-- Run it against a shared or production database BEFORE deploying V22, for example:
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/scripts/preview_v18_seed_credentials.sql
 --
--- V18 itself decides with BCrypt, which plain SQL cannot evaluate here. This script lists every row V18 will
+-- V22 itself decides with BCrypt, which plain SQL cannot evaluate here. This script lists every row V22 will
 -- examine and flags those whose hash is byte-identical to a hash published in migrations V7, V9, V10 or V11.
 -- Rows re-hashed by the old development initializer carry a different salt, so they show
--- published_migration_hash = false but may still match a published password; V18 checks those with BCrypt.
--- Rows that V18 does not match are left untouched.
+-- published_migration_hash = false but may still match a published password; V22 checks those with BCrypt.
+-- Rows that V22 does not match are left untouched.
 BEGIN TRANSACTION READ ONLY;
 
 SELECT 'users' AS source,
@@ -42,7 +42,7 @@ SELECT 'platform_operators' AS source,
 FROM platform_operators o
 ORDER BY o.id;
 
--- Accounts that are NOT seeded and would remain the only active Super Admins after V18.
+-- Accounts that are NOT seeded and would remain the only active Super Admins after V22.
 SELECT id, lower(email) AS email, status
 FROM users
 WHERE upper(role) = 'SUPER_ADMIN'

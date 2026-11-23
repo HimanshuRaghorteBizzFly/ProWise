@@ -27,20 +27,18 @@ public class AuthController {
 
     private static final String REFRESH_COOKIE = "prowise_refresh_token";
     private static final String ACCESS_COOKIE = "prowise_access_token";
+    /** HTTPS-only auth cookies; on in production (application-prod.yml), off for plain-HTTP local development. */
+    private static volatile boolean secureCookies;
     private final AuthService authService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService,
+            @org.springframework.beans.factory.annotation.Value("${prowise.auth.secure-cookies:false}") boolean secureCookiesSetting) {
         this.authService = authService;
+        secureCookies = secureCookiesSetting;
     }
 
     @PostMapping("/auth/signup")
     @PreAuthorize("permitAll()")
-<<<<<<< HEAD
-    @Operation(summary = "Create an organization owner and workspace, then start a session")
-    public ResponseEntity<AccessTokenResponse> signup(@RequestBody SignupRequest request) {
-        return withRefreshCookie(authService.signup(request.email(), request.password(), request.name(),
-                request.organization()), 201);
-=======
     @Operation(summary = "Register an account; a single-use link emailed to the address activates it (no session is issued)")
     public ResponseEntity<MessageResponse> signup(HttpServletRequest httpRequest, @RequestBody SignupRequest request) {
         authService.signup(request.email(), request.password(), request.name(), extractClientIp(httpRequest));
@@ -54,7 +52,6 @@ public class AuthController {
     public ResponseEntity<Void> verifyEmail(@RequestBody TokenRequest request) {
         authService.verifyEmail(request.token());
         return ResponseEntity.noContent().build();
->>>>>>> b46fd9c (Update ProWise application)
     }
 
     @PostMapping("/auth/signin")
@@ -72,11 +69,12 @@ public class AuthController {
             @RequestBody Credentials credentials) {
         String ip = extractClientIp(request);
         String userAgent = request.getHeader(HttpHeaders.USER_AGENT);
-        AuthService.AuthResponse response = authService.login(credentials.email(), credentials.password(), ip, userAgent);
+        AuthService.AuthResponse response = authService.login(credentials.email(), credentials.password(),
+                credentials.organizationId(), ip, userAgent);
 
         ResponseCookie accessCookie = ResponseCookie.from(ACCESS_COOKIE, response.accessToken())
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookies)
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(java.time.Duration.ofMinutes(15))
@@ -84,7 +82,7 @@ public class AuthController {
 
         ResponseCookie refreshCookie = ResponseCookie.from(REFRESH_COOKIE, response.refreshToken())
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookies)
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(java.time.Duration.ofDays(30))
@@ -128,6 +126,7 @@ public class AuthController {
         String ip = extractClientIp(request);
         AuthService.TokenPair newTokens = authService.changePassword(
                 principal.userId(),
+                principal.organizationId(),
                 body.currentPassword(),
                 body.newPassword(),
                 ip
@@ -135,7 +134,7 @@ public class AuthController {
 
         ResponseCookie accessCookie = ResponseCookie.from(ACCESS_COOKIE, newTokens.accessToken())
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookies)
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(java.time.Duration.ofMinutes(15))
@@ -143,7 +142,7 @@ public class AuthController {
 
         ResponseCookie refreshCookie = ResponseCookie.from(REFRESH_COOKIE, newTokens.refreshToken())
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookies)
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(java.time.Duration.ofDays(30))
@@ -171,22 +170,49 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping({"/auth/activate-account", "/auth/account-setup/confirm"})
+    @PreAuthorize("permitAll()")
+    @Operation(summary = "Activate a pending account with its emailed single-use setup link and a self-chosen password")
+    public ResponseEntity<Void> activateAccount(@RequestBody PasswordResetRequest request) {
+        authService.activateAccount(request.token(), request.password());
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping({"/me", "/auth/me"})
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Get the authenticated identity and active memberships")
     public AuthService.ExtendedMeResponse me(HttpServletRequest request) {
-        return authService.me(AuthPrincipal.require(request).userId());
+        return authService.me(AuthPrincipal.require(request));
     }
 
-<<<<<<< HEAD
-    public record SignupRequest(String email, String password, String name,
-            OrganizationService.CreateOrganizationRequest organization) {}
-=======
+    @GetMapping("/me/sessions")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "List my signed-in devices (open sessions); the current one is marked")
+    public java.util.List<AuthService.SessionView> sessions(HttpServletRequest request) {
+        return authService.sessions(AuthPrincipal.require(request));
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/me/sessions/{sessionId}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Sign one of my devices out")
+    public ResponseEntity<Void> revokeSession(HttpServletRequest request,
+            @org.springframework.web.bind.annotation.PathVariable UUID sessionId) {
+        authService.revokeSession(AuthPrincipal.require(request), sessionId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/me/sessions/revoke-others")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Sign every other device out; this session stays")
+    public java.util.Map<String, Integer> revokeOtherSessions(HttpServletRequest request) {
+        return java.util.Map.of("revoked", authService.revokeOtherSessions(AuthPrincipal.require(request)));
+    }
+
     static final String SIGNUP_ACCEPTED =
             "If this address can be registered, we have emailed a link to activate the account. Use it, then sign in.";
 
->>>>>>> b46fd9c (Update ProWise application)
-    public record Credentials(String email, String password) {}
+    /** {@code organizationId} is optional: it signs straight into one of the caller's organizations. */
+    public record Credentials(String email, String password, UUID organizationId) {}
     public record SignupRequest(String email, String password, String name) {}
     public record TokenRequest(String token) {}
     public record MessageResponse(String message) {}
@@ -215,7 +241,7 @@ public class AuthController {
     private static ResponseCookie accessCookie(String value) {
         return ResponseCookie.from(ACCESS_COOKIE, value)
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookies)
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(java.time.Duration.ofMinutes(15))
@@ -225,7 +251,7 @@ public class AuthController {
     private static ResponseCookie refreshCookie(String value) {
         return ResponseCookie.from(REFRESH_COOKIE, value)
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookies)
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(java.time.Duration.ofDays(30))
@@ -235,7 +261,7 @@ public class AuthController {
     private static ResponseCookie clearCookie(String name) {
         return ResponseCookie.from(name, "")
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookies)
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(java.time.Duration.ZERO)

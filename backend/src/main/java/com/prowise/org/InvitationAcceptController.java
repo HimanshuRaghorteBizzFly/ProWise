@@ -29,6 +29,20 @@ public class InvitationAcceptController {
         return invitations.preview(authentication, request);
     }
 
+    /** Opened from the emailed link before signing in: what the invitation is for. Invalid links are a 404. */
+    @PostMapping("/public-preview")
+    @PreAuthorize("permitAll()")
+    InvitationService.PublicInvitationPreview publicPreview(@RequestBody InvitationService.TokenRequest request) {
+        return invitations.publicPreview(request);
+    }
+
+    /** A new person creates their account from the single-use link with their own password, and joins. */
+    @PostMapping("/activate")
+    @PreAuthorize("permitAll()")
+    InvitationService.AcceptResponse activate(@RequestBody InvitationService.ActivateRequest request) {
+        return invitations.activate(request);
+    }
+
     @PostMapping("/accept")
     @PreAuthorize("isAuthenticated()")
     InvitationService.AcceptResponse accept(Authentication authentication,

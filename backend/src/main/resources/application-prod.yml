@@ -25,3 +25,6 @@ prowise:
   mail:
     from: ${SMTP_FROM:}
     frontend-url: ${FRONTEND_URL:}
+  auth:
+    # Production is served over HTTPS: refresh and access cookies are never sent over plain HTTP.
+    secure-cookies: ${AUTH_SECURE_COOKIES:true}

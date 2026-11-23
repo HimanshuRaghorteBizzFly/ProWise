@@ -34,10 +34,16 @@ public class OrganizationSwitchController {
     @PostMapping("/{orgId}/switch")
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Switch the active organization and receive an org-bound access token")
-    ResponseEntity<AuthController.AccessTokenResponse> switchOrganization(
+    ResponseEntity<SwitchResponse> switchOrganization(
             @PathVariable UUID orgId,
             Authentication authentication) {
         AuthPrincipal principal = (AuthPrincipal) authentication.getPrincipal();
-        return AuthController.withRefreshCookie(authService.switchOrganization(principal, orgId), 200);
+        AuthService.SwitchResult result = authService.switchOrganizationWithRole(principal, orgId);
+        ResponseEntity<AuthController.AccessTokenResponse> withCookies = AuthController.withRefreshCookie(result.tokens(), 200);
+        return ResponseEntity.status(200).headers(withCookies.getHeaders())
+                .body(new SwitchResponse(result.tokens().accessToken(), result.role(), result.targetDashboardUrl()));
     }
+
+    /** The org-bound token plus the role it carries there and the dashboard to open. */
+    public record SwitchResponse(String accessToken, String role, String targetDashboardUrl) {}
 }

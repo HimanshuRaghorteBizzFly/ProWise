@@ -34,6 +34,14 @@ public class AuthService {
     private static final int MAX_ATTEMPTS_PER_WINDOW = 10;
     private static final long RATE_WINDOW_MILLIS = 60_000L;
     private static final Map<String, RateAttempt> RATE_ATTEMPTS = new ConcurrentHashMap<>();
+    /** Wrong passwords in a row before the account is locked, and for how long. */
+    static final int MAX_FAILED_ATTEMPTS = 5;
+    static final int LOCK_MINUTES = 15;
+    /** Roles held by the account itself (platform scope); every other role comes from a membership. */
+    static final java.util.Set<String> PLATFORM_ROLES = java.util.Set.of("SUPER_ADMIN", "PLATFORM_OPERATOR");
+    /** BCrypt of a random value nobody knows: compared against for unknown emails so timing reveals nothing. */
+    private static final String DUMMY_HASH =
+            new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode(AccountTokenService.randomToken());
 
     private final JdbcTemplate jdbc;
     private final PasswordEncoder passwordEncoder;
@@ -80,31 +88,6 @@ public class AuthService {
      * (superseding the previous one). Attempts are rate limited per email and per client address.
      */
     @Transactional
-<<<<<<< HEAD
-    public TokenPair signup(String email, String password, String name,
-            OrganizationService.CreateOrganizationRequest organization) {
-        validateCredentials(email, password);
-        UUID userId = UUID.randomUUID();
-        String normalizedEmail = normalize(email);
-        String displayName = name == null || name.isBlank()
-                ? normalizedEmail.substring(0, normalizedEmail.indexOf('@'))
-                : name.trim();
-        try {
-            jdbc.update("INSERT INTO users (id, email, password_hash, name, role, status, must_change_password) VALUES (?, ?, ?, ?, 'VIEWER', 'ACTIVE', false)",
-                    userId, normalizedEmail, passwordEncoder.encode(password), displayName);
-        } catch (DuplicateKeyException exception) {
-            throw new ApiException(HttpStatus.CONFLICT, "EMAIL_IN_USE", "An account already exists for this email.");
-        }
-
-        OrganizationService.CreateOrganizationRequest workspace = organization == null
-                ? defaultRegistrationOrganization(displayName, userId)
-                : organization;
-        OrganizationService.OrganizationResponse created = organizationService.createForRegistration(userId, workspace);
-        jdbc.update("UPDATE users SET role = 'ORGANIZATION_OWNER', organization_id = ? WHERE id = ?",
-                created.id(), userId);
-        return issueSession(userId, normalizedEmail, UUID.randomUUID(), created.id(),
-                "ORGANIZATION_OWNER", displayName, false);
-=======
     public void signup(String email, String password, String name, String ip) {
         validateCredentials(email, password);
         String normalizedEmail = normalize(email);
@@ -164,7 +147,6 @@ public class AuthService {
             status = credService.sendEmailVerificationEmail(userId, email, name, token).status();
         }
         recordAuditLog(auditAction, null, null, userId, "{\"email_delivery_status\":\"" + status + "\"}", ip);
->>>>>>> b46fd9c (Update ProWise application)
     }
 
     @Transactional
@@ -172,8 +154,7 @@ public class AuthService {
         enforceRateLimit("signin:" + normalizeForRateLimit(email));
         Map<String, Object> user;
         try {
-            user = jdbc.queryForMap("SELECT id, email, password_hash, status, name, role, organization_id "
-                            + "FROM users WHERE lower(email) = lower(?)",
+            user = jdbc.queryForMap("SELECT id, email, password_hash, status FROM users WHERE lower(email) = lower(?)",
                     email);
         } catch (org.springframework.dao.EmptyResultDataAccessException exception) {
             throw invalidCredentials();
@@ -182,29 +163,26 @@ public class AuthService {
                 || !passwordEncoder.matches(password, (String) user.get("password_hash"))) {
             throw invalidCredentials();
         }
-        UUID userId = (UUID) user.get("id");
-        String role = (String) user.get("role");
-        UUID organizationId = (UUID) user.get("organization_id");
-        if ("SUPER_ADMIN".equalsIgnoreCase(role)) {
-            organizationId = null;
-        } else if (organizationId == null) {
-            List<UUID> memberships = jdbc.query(
-                    "SELECT org_id FROM memberships WHERE user_id = ? AND status = 'ACTIVE' ORDER BY created_at LIMIT 1",
-                    (rs, rowNum) -> rs.getObject("org_id", UUID.class), userId);
-            if (!memberships.isEmpty()) organizationId = memberships.get(0);
-        }
-        return issueSession(userId, (String) user.get("email"), UUID.randomUUID(), organizationId,
-                role == null || role.isBlank() ? "VIEWER" : role, (String) user.get("name"), false);
+        // Not bound to any organization: the client binds one explicitly through the switch endpoint (task 1.3, T06).
+        return issueSession((UUID) user.get("id"), (String) user.get("email"));
     }
 
-    private OrganizationService.CreateOrganizationRequest defaultRegistrationOrganization(String name, UUID userId) {
-        String slug = "workspace-" + userId.toString().replace("-", "").substring(0, 16);
-        return new OrganizationService.CreateOrganizationRequest(name + " Workspace", slug, "UTC",
-                Map.of("workDays", List.of(1, 2, 3, 4, 5), "dailyHours", 8, "holidays", List.of()));
-    }
-
-    @Transactional
     public AuthResponse login(String email, String password, String ip, String userAgent) {
+        return login(email, password, null, ip, userAgent);
+    }
+
+    /**
+     * The one sign-in for all nine roles. Platform roles (Super Admin, Platform Operator) come from the account and
+     * are never bound to an organization. Every organization role comes from the member's ACTIVE membership in an
+     * ACTIVE organization, never from the {@code users.role} column, so the same person can be a Developer in one
+     * organization and an Owner in another. With several usable memberships the session starts unbound and the
+     * client asks the person to choose (switch endpoint), unless {@code requestedOrganizationId} names one of them.
+     *
+     * <p>Five wrong passwords in a row lock the account for 15 minutes; the lock is checked before the password, so
+     * guessing stops even with the right one. A pending account is only revealed after the right password.
+     */
+    @Transactional(noRollbackFor = ApiException.class)
+    public AuthResponse login(String email, String password, UUID requestedOrganizationId, String ip, String userAgent) {
         if (email == null || email.isBlank() || password == null || password.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, "Email and password are required.");
         }
@@ -212,11 +190,13 @@ public class AuthService {
 
         String normalizedEmail = normalize(email);
         List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT id, email, password_hash, status, name, role, department, organization_id, must_change_password "
+                "SELECT id, email, password_hash, status, name, role, department, must_change_password, "
+                        + "(locked_until IS NOT NULL AND locked_until > now()) AS locked "
                         + "FROM users WHERE lower(email) = lower(?)",
                 normalizedEmail);
 
         if (rows.isEmpty()) {
+            passwordEncoder.matches(password, DUMMY_HASH); // same work as a real check: no timing hint
             recordLoginAttempt(null, normalizedEmail, ip, userAgent, "FAILED", "User not found");
             throw invalidCredentials();
         }
@@ -224,30 +204,30 @@ public class AuthService {
         Map<String, Object> user = rows.get(0);
         UUID userId = (UUID) user.get("id");
         String status = (String) user.get("status");
-        String passwordHash = (String) user.get("password_hash");
         String name = (String) user.get("name");
-        String role = (String) user.get("role");
+        String accountRole = user.get("role") == null ? "" : ((String) user.get("role")).trim().toUpperCase(java.util.Locale.ROOT);
         String department = (String) user.get("department");
-        UUID organizationId = (UUID) user.get("organization_id");
-        Boolean mustChangePassword = (Boolean) user.get("must_change_password");
+        boolean mustChangePassword = Boolean.TRUE.equals(user.get("must_change_password"));
 
+        // A suspended account is told so directly (approved decision D4: seeded logins answer ACCOUNT_DISABLED).
         if ("DISABLED".equalsIgnoreCase(status)) {
-            recordLoginAttempt(userId, normalizedEmail, ip, userAgent, "FAILED", "Account deactivated");
-            throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_DISABLED", "Your account has been deactivated. Please contact your administrator.");
+            recordLoginAttempt(userId, normalizedEmail, ip, userAgent, "FAILED", "Account suspended");
+            throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_DISABLED",
+                    "Your account has been suspended. Please contact your administrator.");
         }
-
-        if (!passwordEncoder.matches(password, passwordHash)) {
+        if (Boolean.TRUE.equals(user.get("locked"))) {
+            recordLoginAttempt(userId, normalizedEmail, ip, userAgent, "FAILED", "Account locked");
+            throw new ApiException(HttpStatus.LOCKED, "ACCOUNT_LOCKED",
+                    "Too many failed sign-in attempts. Try again in " + LOCK_MINUTES + " minutes or reset your password.");
+        }
+        if (!passwordEncoder.matches(password, (String) user.get("password_hash"))) {
+            registerFailedAttempt(userId);
             recordLoginAttempt(userId, normalizedEmail, ip, userAgent, "FAILED", "Invalid password");
             throw invalidCredentials();
         }
+        jdbc.update("UPDATE users SET failed_login_count = 0, locked_until = NULL "
+                + "WHERE id = ? AND (failed_login_count > 0 OR locked_until IS NOT NULL)", userId);
 
-<<<<<<< HEAD
-        // A Platform Administrator works outside every tenant: never bind that session to an organization.
-        if ("SUPER_ADMIN".equalsIgnoreCase(role)) {
-            organizationId = null;
-        } else if (organizationId == null) {
-            // If organizationId is null, look up first active membership
-=======
         // Checked after the password so the response does not reveal that a pending account exists.
         if ("PENDING_ACTIVATION".equalsIgnoreCase(status)) {
             recordLoginAttempt(userId, normalizedEmail, ip, userAgent, "FAILED", "Account pending activation");
@@ -255,47 +235,105 @@ public class AuthService {
                     "Activate your account using the link we emailed you, then sign in.");
         }
 
-        // If organizationId is null, look up first active membership
-        if (organizationId == null) {
->>>>>>> b46fd9c (Update ProWise application)
-            List<UUID> orgs = jdbc.query("SELECT org_id FROM memberships WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
-                    (rs, rowNum) -> rs.getObject("org_id", UUID.class), userId);
-            if (!orgs.isEmpty()) {
-                organizationId = orgs.get(0);
+        UUID organizationId = null;
+        String role;
+        List<OrganizationChoice> choices = List.of();
+        boolean requiresSelection = false;
+        if (PLATFORM_ROLES.contains(accountRole)) {
+            // A platform role works outside every tenant: never bind that session to an organization.
+            role = accountRole;
+        } else {
+            List<MembershipRow> all = memberships(userId);
+            List<MembershipRow> usable = all.stream().filter(MembershipRow::usable).toList();
+            choices = usable.stream().map(m -> new OrganizationChoice(m.orgId(), m.orgName(), m.role(),
+                    resolveDashboardUrl(m.role(), m.orgId(), false))).toList();
+            if (requestedOrganizationId != null) {
+                MembershipRow chosen = usable.stream().filter(m -> m.orgId().equals(requestedOrganizationId)).findFirst()
+                        .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND,
+                                "The requested resource was not found."));
+                organizationId = chosen.orgId();
+                role = chosen.role();
+            } else if (usable.size() == 1) {
+                organizationId = usable.get(0).orgId();
+                role = usable.get(0).role();
+            } else if (usable.size() > 1) {
+                requiresSelection = true;
+                role = null; // no organization role until one is chosen; the token carries no role authority
+            } else if (!all.isEmpty()) {
+                boolean orgSuspended = all.stream()
+                        .anyMatch(m -> "ACTIVE".equals(m.membershipStatus()) && !"ACTIVE".equals(m.orgState()));
+                recordLoginAttempt(userId, normalizedEmail, ip, userAgent, "FAILED",
+                        orgSuspended ? "Organization suspended" : "Membership disabled");
+                throw orgSuspended
+                        ? new ApiException(HttpStatus.FORBIDDEN, "ORGANIZATION_SUSPENDED",
+                                "Your organization's workspace is suspended. Contact your organization owner or Prowise support.")
+                        : new ApiException(HttpStatus.FORBIDDEN, "MEMBERSHIP_DISABLED",
+                                "Your access to your organization has been suspended. Contact your organization administrator.");
+            } else {
+                role = "VIEWER"; // no organization yet: a verified self-registered owner creates the first workspace
             }
         }
 
-        if (role == null || role.isBlank()) {
-            role = "VIEWER";
-        }
+        String targetDashboardUrl = requiresSelection
+                ? (mustChangePassword ? "/change-password" : "/select-org")
+                : resolveDashboardUrl(role, organizationId, mustChangePassword);
 
-        String targetDashboardUrl = resolveDashboardUrl(role, organizationId, mustChangePassword);
-
-        TokenPair tokens = issueSession(userId, normalizedEmail, UUID.randomUUID(), organizationId, role, name, Boolean.TRUE.equals(mustChangePassword));
-
-        try {
-            jdbc.update("UPDATE users SET last_login_at = now() WHERE id = ?", userId);
-        } catch (Exception ignored) {}
+        TokenPair tokens = issueSession(userId, normalizedEmail, UUID.randomUUID(), organizationId, role, name,
+                mustChangePassword, ip, userAgent);
+        jdbc.update("UPDATE users SET last_login_at = now() WHERE id = ?", userId);
         recordLoginAttempt(userId, normalizedEmail, ip, userAgent, "SUCCESS", null);
 
-        String orgName = lookupOrgName(organizationId);
-        UserSummary userSummary = new UserSummary(userId, normalizedEmail, name, role, department, organizationId, orgName, Boolean.TRUE.equals(mustChangePassword));
+        UserSummary userSummary = new UserSummary(userId, normalizedEmail, name, role, department, organizationId,
+                lookupOrgName(organizationId), mustChangePassword);
+        return new AuthResponse(tokens.accessToken(), tokens.refreshToken(), accessTokenMinutes * 60, mustChangePassword,
+                targetDashboardUrl, userSummary, requiresSelection, choices);
+    }
 
-        return new AuthResponse(
-                tokens.accessToken(),
-                tokens.refreshToken(),
-                accessTokenMinutes * 60,
-                Boolean.TRUE.equals(mustChangePassword),
-                targetDashboardUrl,
-                userSummary
-        );
+    /** Counts a wrong password; the fifth in a row locks the account and starts the count again. */
+    private void registerFailedAttempt(UUID userId) {
+        jdbc.update("""
+                UPDATE users SET
+                    locked_until = CASE WHEN failed_login_count + 1 >= ? THEN now() + (? * interval '1 minute') ELSE locked_until END,
+                    failed_login_count = CASE WHEN failed_login_count + 1 >= ? THEN 0 ELSE failed_login_count + 1 END
+                WHERE id = ?
+                """, MAX_FAILED_ATTEMPTS, LOCK_MINUTES, MAX_FAILED_ATTEMPTS, userId);
+    }
+
+    /** Every membership of the person with its organization's state, for login decisions and the chooser. */
+    private List<MembershipRow> memberships(UUID userId) {
+        return jdbc.query("""
+                SELECT m.org_id, o.name, m.role_template, m.status, o.state
+                FROM memberships m JOIN organizations o ON o.id = m.org_id
+                WHERE m.user_id = ? ORDER BY lower(o.name), o.id
+                """, (rs, n) -> new MembershipRow(rs.getObject("org_id", UUID.class), rs.getString("name"),
+                rs.getString("role_template"), rs.getString("status"), rs.getString("state")), userId);
+    }
+
+    /**
+     * The role a session carries. Bound to {@code organizationId}: the ACTIVE membership's role in an ACTIVE
+     * organization, or null when there is none, also for a platform account (an organization-bound token never
+     * carries platform authority). Unbound: the account's platform role, or null.
+     */
+    private String sessionRole(UUID userId, String accountRole, UUID organizationId) {
+        if (organizationId == null) {
+            String platform = accountRole == null ? "" : accountRole.trim().toUpperCase(java.util.Locale.ROOT);
+            return PLATFORM_ROLES.contains(platform) ? platform : null;
+        }
+        List<String> roles = jdbc.queryForList("""
+                SELECT m.role_template FROM memberships m JOIN organizations o ON o.id = m.org_id
+                WHERE m.org_id = ? AND m.user_id = ? AND m.status = 'ACTIVE' AND o.state = 'ACTIVE'
+                """, String.class, organizationId, userId);
+        return roles.isEmpty() ? null : roles.get(0);
     }
 
     @Transactional
     public TokenPair changePassword(UUID userId, String currentPassword, String newPassword, String ip) {
-        if (newPassword == null || newPassword.length() < 8) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, "New password must contain at least 8 characters.");
-        }
+        return changePassword(userId, null, currentPassword, newPassword, ip);
+    }
+
+    @Transactional
+    public TokenPair changePassword(UUID userId, UUID currentOrganization, String currentPassword, String newPassword, String ip) {
+        validatePassword(newPassword);
 
         Map<String, Object> user;
         try {
@@ -316,6 +354,9 @@ public class AuthService {
         } else if (!Boolean.TRUE.equals(mustChange)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "CURRENT_PASSWORD_REQUIRED", "Current password is required.");
         }
+        if (passwordEncoder.matches(newPassword, currentHash)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "PASSWORD_REUSE", "Choose a password different from your current one.");
+        }
 
         String newHash = passwordEncoder.encode(newPassword);
         jdbc.update("UPDATE users SET password_hash = ?, must_change_password = false, version = version + 1, updated_at = now() WHERE id = ?",
@@ -325,20 +366,22 @@ public class AuthService {
         jdbc.update("UPDATE sessions SET revoked_at = now() WHERE user_id = ? AND revoked_at IS NULL", userId);
 
         String email = (String) user.get("email");
-        String role = (String) user.get("role");
         String name = (String) user.get("name");
-        UUID orgId = (UUID) user.get("organization_id");
 
         recordAuditLog("PASSWORD_CHANGED", userId, email, userId, "{\"changedBy\":\"user\"}", ip);
 
-        return issueSession(userId, email, UUID.randomUUID(), orgId, role, name, false);
+        // Keep the caller's organization (when still usable) and its membership role; never the users-row role.
+        UUID orgId = currentOrganization;
+        String role = sessionRole(userId, (String) user.get("role"), orgId);
+        if (orgId != null && role == null) orgId = null;
+        return issueSession(userId, email, UUID.randomUUID(), orgId, role, name, false, ip, null);
     }
 
     @Transactional(noRollbackFor = ApiException.class)
     public TokenPair refresh(String refreshToken) {
         String hash = hash(refreshToken);
         List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT id, user_id, family_id, org_id, revoked_at, (expires_at <= now()) AS expired "
+                "SELECT id, user_id, family_id, org_id, revoked_at, user_agent, ip_address, (expires_at <= now()) AS expired "
                         + "FROM sessions WHERE refresh_token_hash = ?",
                 hash);
         if (rows.isEmpty()) {
@@ -347,32 +390,30 @@ public class AuthService {
         Map<String, Object> row = rows.get(0);
         UUID familyId = (UUID) row.get("family_id");
         if (row.get("revoked_at") != null || Boolean.TRUE.equals(row.get("expired"))) {
+            // Reuse of a rotated or revoked refresh token: close the whole family (stolen-token defence).
             jdbc.update("UPDATE sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE family_id = ?",
                     familyId);
             throw invalidCredentials();
         }
         UUID userId = (UUID) row.get("user_id");
         jdbc.update("UPDATE sessions SET revoked_at = now() WHERE id = ?", row.get("id"));
-<<<<<<< HEAD
         Map<String, Object> user = jdbc.queryForMap(
-                "SELECT email, role, name, must_change_password FROM users WHERE id = ?", userId);
-        // Keep the organization binding only while the membership is still active (task 1.3, T06).
-        UUID organizationId = (UUID) row.get("org_id");
-        if (organizationId != null && !hasActiveMembership(userId, organizationId)) {
-            organizationId = null;
-        }
-        // Role and name come from the user row now, so a changed role takes effect on the next refresh.
-        return issueSession(userId, (String) user.get("email"), familyId, organizationId, (String) user.get("role"),
-                (String) user.get("name"), Boolean.TRUE.equals(user.get("must_change_password")));
-=======
-        Map<String, Object> owner = jdbc.queryForMap("SELECT email, status FROM users WHERE id = ?", userId);
-        if (!"ACTIVE".equals(owner.get("status"))) {
+                "SELECT email, status, role, name, must_change_password FROM users WHERE id = ?", userId);
+        if (!"ACTIVE".equals(user.get("status"))) {
             // A disabled or pending account gets no new session; its whole refresh family is closed.
             jdbc.update("UPDATE sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE family_id = ?", familyId);
             throw invalidCredentials();
         }
-        return issueSession(userId, (String) owner.get("email"), familyId);
->>>>>>> b46fd9c (Update ProWise application)
+        // Keep the organization binding only while the membership and the organization are still active
+        // (task 1.3, T06); the role is re-read from that membership, so a role change applies on the next refresh.
+        UUID organizationId = (UUID) row.get("org_id");
+        String role = sessionRole(userId, (String) user.get("role"), organizationId);
+        if (organizationId != null && role == null) {
+            organizationId = null;
+        }
+        return issueSession(userId, (String) user.get("email"), familyId, organizationId, role,
+                (String) user.get("name"), Boolean.TRUE.equals(user.get("must_change_password")),
+                (String) row.get("ip_address"), (String) row.get("user_agent"));
     }
 
     @Transactional
@@ -383,54 +424,72 @@ public class AuthService {
         }
     }
 
+    public TokenPair switchOrganization(AuthPrincipal principal, UUID organizationId) {
+        return switchOrganizationWithRole(principal, organizationId).tokens();
+    }
+
     /**
-     * Issues an access token bound to {@code organizationId} (task 1.3, T06). The current session is revoked in
-     * the same transaction, so the previous organization's access token and refresh token stop working on their
-     * next use; the new session continues the same refresh family and remembers the organization.
+     * Issues an access token bound to {@code organizationId} (task 1.3, T06) carrying the membership's role there.
+     * The current session is revoked in the same transaction, so the previous organization's access token and
+     * refresh token stop working on their next use; the new session continues the same refresh family.
      */
     @Transactional
-    public TokenPair switchOrganization(AuthPrincipal principal, UUID organizationId) {
-        if (principal.isOperator() || !hasActiveMembership(principal.userId(), organizationId)) {
+    public SwitchResult switchOrganizationWithRole(AuthPrincipal principal, UUID organizationId) {
+        Map<String, Object> user = principal.isOperator() ? null
+                : jdbc.queryForMap("SELECT role, name FROM users WHERE id = ?", principal.userId());
+        // The membership role there; a platform account that is also a member gets only that role (no platform authority).
+        String role = user == null || organizationId == null ? null : sessionRole(principal.userId(), null, organizationId);
+        if (role == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "The requested resource was not found.");
         }
-        UUID familyId = jdbc.query("SELECT family_id FROM sessions WHERE id = ? AND user_id = ?",
-                rs -> rs.next() ? rs.getObject("family_id", UUID.class) : null,
+        Map<String, Object> current = jdbc.query("SELECT family_id, ip_address, user_agent FROM sessions WHERE id = ? AND user_id = ?",
+                rs -> rs.next() ? Map.<String, Object>of("family_id", rs.getObject("family_id", UUID.class),
+                        "ip", String.valueOf(rs.getString("ip_address")), "ua", String.valueOf(rs.getString("user_agent"))) : null,
                 principal.sessionId(), principal.userId());
         jdbc.update("UPDATE sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE id = ?", principal.sessionId());
-        Map<String, Object> user = jdbc.queryForMap("SELECT role, name FROM users WHERE id = ?", principal.userId());
-        return issueSession(principal.userId(), principal.email(), familyId == null ? UUID.randomUUID() : familyId,
-                organizationId, (String) user.get("role"), (String) user.get("name"), false);
+        UUID familyId = current == null ? UUID.randomUUID() : (UUID) current.get("family_id");
+        TokenPair tokens = issueSession(principal.userId(), principal.email(), familyId, organizationId, role,
+                (String) user.get("name"), false,
+                current == null ? null : nullIfText((String) current.get("ip")), current == null ? null : nullIfText((String) current.get("ua")));
+        return new SwitchResult(tokens, role, resolveDashboardUrl(role, organizationId, false));
+    }
+
+    private static String nullIfText(String value) {
+        return value == null || "null".equals(value) ? null : value;
     }
 
     private boolean hasActiveMembership(UUID userId, UUID organizationId) {
-        if (userId == null || organizationId == null) {
-            return false;
-        }
-        Integer membership = jdbc.queryForObject("""
-                SELECT count(*) FROM memberships
-                WHERE org_id = ? AND user_id = ? AND status = 'ACTIVE'
-                """, Integer.class, organizationId, userId);
-        return membership != null && membership == 1;
+        return sessionRole(userId, null, organizationId) != null;
     }
 
-    public ExtendedMeResponse me(UUID userId) {
+    /** The signed-in identity as the current session sees it: role and organization of this token, not the users row. */
+    public ExtendedMeResponse me(AuthPrincipal principal) {
+        UUID userId = principal.userId();
         Map<String, Object> user = jdbc.queryForMap(
-                "SELECT id, email, name, role, department, organization_id, phone, status, must_change_password FROM users WHERE id = ?",
+                "SELECT id, email, name, role, department, phone, status, must_change_password FROM users WHERE id = ?",
                 userId);
 
         List<MembershipResponse> memberships = jdbc.query(
                 "SELECT m.id, m.org_id, m.role_template, m.status, o.name, o.slug, o.timezone, o.work_calendar "
                         + "FROM memberships m JOIN organizations o ON o.id = m.org_id "
-                        + "WHERE m.user_id = ? AND m.status = 'ACTIVE' ORDER BY o.slug",
+                        + "WHERE m.user_id = ? AND m.status = 'ACTIVE' AND o.state = 'ACTIVE' ORDER BY o.slug",
                 (rs, rowNum) -> new MembershipResponse(
                         rs.getObject("id", UUID.class), rs.getObject("org_id", UUID.class),
                         rs.getString("role_template"), rs.getString("status"), rs.getString("name"),
                         rs.getString("slug"), rs.getString("timezone"), rs.getString("work_calendar")),
                 userId);
 
-        String role = (String) user.get("role");
-        UUID organizationId = (UUID) user.get("organization_id");
-        Boolean mustChangePassword = (Boolean) user.get("must_change_password");
+        UUID organizationId = principal.organizationId();
+        String role = sessionRole(userId, (String) user.get("role"), organizationId);
+        boolean mustChangePassword = Boolean.TRUE.equals(user.get("must_change_password"));
+        String target;
+        if (role == null && organizationId == null && memberships.size() > 1) {
+            target = "/select-org";
+        } else if (role == null && organizationId == null && memberships.size() == 1) {
+            target = resolveDashboardUrl(memberships.get(0).roleTemplate(), memberships.get(0).orgId(), mustChangePassword);
+        } else {
+            target = resolveDashboardUrl(role == null ? "VIEWER" : role, organizationId, mustChangePassword);
+        }
 
         return new ExtendedMeResponse(
                 (UUID) user.get("id"),
@@ -442,10 +501,53 @@ public class AuthService {
                 lookupOrgName(organizationId),
                 (String) user.get("phone"),
                 (String) user.get("status"),
-                Boolean.TRUE.equals(mustChangePassword),
-                resolveDashboardUrl(role, organizationId, mustChangePassword),
+                mustChangePassword,
+                target,
                 memberships
         );
+    }
+
+    public ExtendedMeResponse me(UUID userId) {
+        return me(new AuthPrincipal(userId, null, null, null, null, null, null, null, false, null));
+    }
+
+    /* ------------------------------------------------------------------ self-service sessions */
+
+    /** The caller's open sessions (one per signed-in device), newest first; the current one is marked. */
+    public List<SessionView> sessions(AuthPrincipal principal) {
+        return jdbc.query("""
+                SELECT s.id, s.created_at, COALESCE(s.last_used_at, s.created_at) AS last_used_at, s.expires_at,
+                       s.user_agent, s.ip_address, o.name AS org_name
+                FROM sessions s LEFT JOIN organizations o ON o.id = s.org_id
+                WHERE s.user_id = ? AND s.revoked_at IS NULL AND s.expires_at > now()
+                ORDER BY s.created_at DESC
+                LIMIT 50
+                """, (rs, n) -> new SessionView(rs.getObject("id", UUID.class), rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("last_used_at").toInstant(), rs.getTimestamp("expires_at").toInstant(),
+                rs.getString("user_agent"), rs.getString("ip_address"), rs.getString("org_name"),
+                rs.getObject("id", UUID.class).equals(principal.sessionId())), principal.userId());
+    }
+
+    /** Signs one of the caller's own devices out. Someone else's or an unknown session is a 404. */
+    @Transactional
+    public void revokeSession(AuthPrincipal principal, UUID sessionId) {
+        int updated = jdbc.update("UPDATE sessions SET revoked_at = now() WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
+                sessionId, principal.userId());
+        if (updated != 1) {
+            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "The requested resource was not found.");
+        }
+        recordAuditLog("SESSION_REVOKED", principal.userId(), principal.email(), principal.userId(),
+                "{\"current\":" + sessionId.equals(principal.sessionId()) + "}", null);
+    }
+
+    /** Signs every other device out; the current session stays. */
+    @Transactional
+    public int revokeOtherSessions(AuthPrincipal principal) {
+        int count = jdbc.update("UPDATE sessions SET revoked_at = now() WHERE user_id = ? AND id <> ? AND revoked_at IS NULL",
+                principal.userId(), principal.sessionId());
+        recordAuditLog("SESSIONS_REVOKED", principal.userId(), principal.email(), principal.userId(),
+                "{\"count\":" + count + "}", null);
+        return count;
     }
 
     @Transactional
@@ -494,6 +596,31 @@ public class AuthService {
             throw invalidCredentials(); // rolls back the token consumption with the rest of the transaction
         }
         jdbc.update("UPDATE sessions SET revoked_at = now() WHERE user_id = ? AND revoked_at IS NULL", userId);
+        auditPasswordEvent(consumed.purpose() == AccountTokenService.Purpose.SETUP ? "ACCOUNT_ACTIVATED" : "PASSWORD_RESET", userId);
+    }
+
+    /**
+     * First password for a pending account (the emailed setup link). Accepts only SETUP links, so a reset link can
+     * never be replayed here. The password is validated before the single-use link is consumed.
+     */
+    @Transactional
+    public void activateAccount(String token, String password) {
+        validatePassword(password);
+        AccountTokenService.ConsumedToken consumed = accountTokenService.consume(token, AccountTokenService.Purpose.SETUP)
+                .orElseThrow(AuthService::invalidLink);
+        int updated = jdbc.update("UPDATE users SET password_hash = ?, must_change_password = false, status = 'ACTIVE', "
+                + "version = version + 1, updated_at = now() WHERE id = ? AND status = 'PENDING_ACTIVATION'",
+                passwordEncoder.encode(password), consumed.userId());
+        if (updated != 1) {
+            throw invalidLink(); // rolls back the token consumption with the rest of the transaction
+        }
+        jdbc.update("UPDATE sessions SET revoked_at = now() WHERE user_id = ? AND revoked_at IS NULL", consumed.userId());
+        auditPasswordEvent("ACCOUNT_ACTIVATED", consumed.userId());
+    }
+
+    private void auditPasswordEvent(String action, UUID userId) {
+        String email = jdbc.queryForObject("SELECT email FROM users WHERE id = ?", String.class, userId);
+        recordAuditLog(action, userId, email, userId, "{\"via\":\"emailed_link\"}", null);
     }
 
     public static String resolveDashboardUrl(String role, UUID organizationId, Boolean mustChangePassword) {
@@ -529,19 +656,19 @@ public class AuthService {
     }
 
     private TokenPair issueSession(UUID userId, String email, UUID familyId, UUID organizationId, String role, String name, boolean mustChangePassword) {
+        return issueSession(userId, email, familyId, organizationId, role, name, mustChangePassword, null, null);
+    }
+
+    private TokenPair issueSession(UUID userId, String email, UUID familyId, UUID organizationId, String role, String name,
+            boolean mustChangePassword, String ip, String userAgent) {
         String refreshToken = randomToken();
         UUID sessionId = UUID.randomUUID();
-<<<<<<< HEAD
-        // The session remembers its organization (task 1.3, T06) so refresh keeps the binding.
-        jdbc.update("INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, org_id, expires_at) "
-                        + "VALUES (?, ?, ?, ?, ?, now() + (? * interval '1 day'))",
-                sessionId, userId, hash(refreshToken), familyId, organizationId, refreshTokenDays);
-        String accessToken = jwtService.issueAccessToken(new AuthPrincipal(userId, sessionId, email, organizationId,
-                null, role, null, null, mustChangePassword, name));
-=======
-        jdbc.update("INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, expires_at) "
-                        + "VALUES (?, ?, ?, ?, now() + (? * interval '1 day'))",
-                sessionId, userId, hash(refreshToken), familyId, refreshTokenDays);
+        // The session remembers its organization (task 1.3, T06) so refresh keeps the binding, and the device
+        // details the member needs to recognise it in "My sessions".
+        jdbc.update("INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, org_id, expires_at, ip_address, user_agent, last_used_at) "
+                        + "VALUES (?, ?, ?, ?, ?, now() + (? * interval '1 day'), ?, ?, now())",
+                sessionId, userId, hash(refreshToken), familyId, organizationId, refreshTokenDays,
+                truncate(ip, 64), truncate(userAgent, 300));
 
         // A users-table platform operator acts with the access level and department of its own active
         // platform_operators row. Without such a row the token carries no operator claims at all (it used to be
@@ -568,7 +695,6 @@ public class AuthService {
         );
 
         String accessToken = jwtService.issueAccessToken(principal);
->>>>>>> b46fd9c (Update ProWise application)
         return new TokenPair(accessToken, refreshToken);
     }
 
@@ -624,9 +750,10 @@ public class AuthService {
     }
 
     private static void validatePassword(String password) {
-        if (password == null || password.length() < 12) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED,
-                    "The request has invalid fields.");
+        List<String> problems = PasswordPolicy.violations(password);
+        if (!problems.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, PasswordPolicy.SUMMARY,
+                    problems.stream().map(p -> new com.prowise.common.api.ApiError.FieldError("password", p)).toList());
         }
     }
 
@@ -696,9 +823,25 @@ public class AuthService {
             long expiresIn,
             boolean mustChangePassword,
             String targetDashboardUrl,
-            UserSummary user
+            UserSummary user,
+            boolean requiresOrganizationSelection,
+            List<OrganizationChoice> organizations
     ) {}
     public record MembershipResponse(UUID id, UUID orgId, String roleTemplate, String status,
             String name, String slug, String timezone, String workCalendar) {}
     private record RateAttempt(long startedAt, int count) {}
+    private record MembershipRow(UUID orgId, String orgName, String role, String membershipStatus, String orgState) {
+        boolean usable() {
+            return "ACTIVE".equals(membershipStatus) && "ACTIVE".equals(orgState);
+        }
+    }
+    /** An organization the person can sign into, with the role and dashboard it gives. */
+    public record OrganizationChoice(UUID organizationId, String name, String role, String targetDashboardUrl) {}
+    public record SwitchResult(TokenPair tokens, String role, String targetDashboardUrl) {}
+    public record SessionView(UUID id, Instant createdAt, Instant lastUsedAt, Instant expiresAt, String userAgent,
+            String ipAddress, String organizationName, boolean current) {}
+
+    private static String truncate(String value, int max) {
+        return value == null ? null : value.length() <= max ? value : value.substring(0, max);
+    }
 }

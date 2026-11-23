@@ -32,7 +32,6 @@ public class AuthAuditLogEntity {
     /** JSON text bound as jsonb; without the JSON type code PostgreSQL rejects the varchar parameter. */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "details", columnDefinition = "JSONB")
-    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     private String details = "{}";
 
     @Column(name = "ip_address", length = 100)

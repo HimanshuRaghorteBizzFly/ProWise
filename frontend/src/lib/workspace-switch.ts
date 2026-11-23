@@ -28,12 +28,19 @@ export function clearWorkspaceCaches(): void {
   useDeliveryStore.setState(useDeliveryStore.getInitialState(), true);
 }
 
-export type SwitchResult = { ok: true; offline: boolean } | { ok: false; status: number; message: string };
+/** On success, the role the person holds in that organization and the dashboard to open (from the server). */
+export type SwitchResult =
+  | { ok: true; offline: boolean; role?: string; targetDashboardUrl?: string }
+  | { ok: false; status: number; message: string };
 
 export async function switchWorkspace(orgId: string): Promise<SwitchResult> {
   let offline = false;
+  let role: string | undefined;
+  let targetDashboardUrl: string | undefined;
   try {
-    await apiClient.switchOrganization(orgId);
+    const switched = await apiClient.switchOrganization(orgId);
+    role = switched.role;
+    targetDashboardUrl = switched.target_dashboard_url;
   } catch (error) {
     // Dev only: with mocks allowed and the API unreachable, switch locally so the fixtures keep working.
     if (classifyFailure(error, readPermissionEnv()) === "fixture") {
@@ -54,7 +61,8 @@ export async function switchWorkspace(orgId: string): Promise<SwitchResult> {
   const target = workspace.organizations.find((organization) => organization.id === orgId);
   const auth = useAuthStore.getState();
   auth.setCurrentOrg(target ?? { ...auth.currentOrg, id: orgId });
-  return { ok: true, offline };
+  if (role) auth.setCurrentRole(role as Parameters<typeof auth.setCurrentRole>[0]);
+  return { ok: true, offline, role, targetDashboardUrl };
 }
 
 /** Same page in the new workspace: /org/{old}/... becomes /org/{new}/... */

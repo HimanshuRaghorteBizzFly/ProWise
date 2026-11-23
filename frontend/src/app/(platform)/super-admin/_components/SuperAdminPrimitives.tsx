@@ -7,6 +7,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Eye,
+  EyeOff,
   FlaskConical,
   Lock,
   RotateCcw,
@@ -190,11 +192,17 @@ export interface AdminInputProps extends React.InputHTMLAttributes<HTMLInputElem
   label?: string;
   error?: string;
   helperText?: string;
+  showPasswordToggle?: boolean;
 }
 
 export const AdminInput = React.forwardRef<HTMLInputElement, AdminInputProps>(
-  ({ className, label, error, helperText, id, ...props }, ref) => {
+  ({ className, label, error, helperText, id, type, showPasswordToggle, ...props }, ref) => {
+    const [visible, setVisible] = React.useState(false);
     const inputId = id || (label ? `sa-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : undefined);
+    const isPassword = type === "password";
+    const shouldToggle = isPassword || showPasswordToggle;
+    const computedType = isPassword ? (visible ? "text" : "password") : type;
+
     return (
       <div className="w-full space-y-1.5 min-w-0">
         {label && (
@@ -202,16 +210,30 @@ export const AdminInput = React.forwardRef<HTMLInputElement, AdminInputProps>(
             {label}
           </label>
         )}
-        <input
-          ref={ref}
-          id={inputId}
-          className={cn(
-            "flex h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 [color-scheme:light] dark:[color-scheme:dark]",
-            error && "border-red-500 focus:ring-red-500",
-            className
+        <div className="relative">
+          <input
+            ref={ref}
+            id={inputId}
+            type={computedType}
+            className={cn(
+              "flex h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] px-3 py-1.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 [color-scheme:light] dark:[color-scheme:dark]",
+              shouldToggle && "pr-9",
+              error && "border-red-500 focus:ring-red-500",
+              className
+            )}
+            {...props}
+          />
+          {shouldToggle && (
+            <button
+              type="button"
+              onClick={() => setVisible(!visible)}
+              aria-label={visible ? "Hide password" : "Show password"}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] p-0.5 rounded transition-colors"
+            >
+              {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
           )}
-          {...props}
-        />
+        </div>
         {error && <p className="text-[11px] text-red-500 dark:text-red-400">{error}</p>}
         {helperText && !error && <p className="text-[11px] text-[var(--color-text-muted)]">{helperText}</p>}
       </div>
@@ -402,13 +424,13 @@ export function StatusBadge({
 
 export function getStatusTone(status: string): StatusTone {
   const s = status.toUpperCase();
-  if (["ACTIVE", "PAID", "SUCCEEDED", "PUBLISHED", "CONNECTED", "DELIVERED_SIMULATED", "APPROVED", "ENFORCED", "OPERATIONAL", "HEALTHY", "RESOLVED"].includes(s)) {
+  if (["ACTIVE", "PAID", "SUCCEEDED", "PUBLISHED", "CONNECTED", "SMTP_ACCEPTED", "DELIVERED_SIMULATED", "APPROVED", "ENFORCED", "OPERATIONAL", "HEALTHY", "RESOLVED"].includes(s)) {
     return "success";
   }
-  if (["TRIAL", "TRIALING", "OPEN", "SCHEDULED", "PENDING", "INVITED", "PARTIALLY_REFUNDED", "UNTESTED", "MONITORING", "DRAFT"].includes(s)) {
+  if (["TRIAL", "TRIALING", "OPEN", "SCHEDULED", "PENDING", "INVITED", "PARTIALLY_REFUNDED", "UNTESTED", "NOT_TESTED", "NOT_CONFIGURED", "NOT_SENT", "QUEUED", "PROCESSING", "RETRY_PENDING", "MONITORING", "DRAFT"].includes(s)) {
     return "warning";
   }
-  if (["SUSPENDED", "FAILED", "OVERDUE", "CANCELLED", "REFUNDED", "FAILED_SIMULATED", "CRITICAL", "DENIED", "INACTIVE"].includes(s)) {
+  if (["SUSPENDED", "FAILED", "OVERDUE", "CANCELLED", "REFUNDED", "FAILED_SIMULATED", "DISCONNECTED", "AUTHENTICATION_FAILED", "TLS_FAILURE", "CONNECTION_TIMEOUT", "SERVER_UNAVAILABLE", "SENDER_REJECTED", "RECIPIENT_REJECTED", "RATE_LIMITED", "CRITICAL", "DENIED", "INACTIVE"].includes(s)) {
     return "danger";
   }
   if (["RELEASE", "INFO", "SYSTEM"].includes(s)) {

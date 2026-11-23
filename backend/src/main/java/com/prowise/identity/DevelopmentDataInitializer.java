@@ -12,26 +12,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
-<<<<<<< HEAD
- * Initializes development login accounts for Super Admin, Platform Operator, and Developer
- * in the local {@code dev} profile only (SPRING_PROFILES_ACTIVE=dev). It replaces the former Flyway
- * migration V12__seed_development_logins (now database/seeds/legacy), so test and production databases never
- * get known-password accounts and an empty database never depends on seed data.
-=======
  * Local development demo data, active only under the {@code dev} profile.
->>>>>>> b46fd9c (Update ProWise application)
  *
  * <p>It creates no login accounts and sets no passwords in any profile (approved decision D4, Phase 2). The
- * accounts it used to create had passwords published in this repository; migration V18 disables any that
+ * accounts it used to create had passwords published in this repository; migration V22 disables any that
  * still use them, and this class never re-enables or recreates them. Developers sign in through the Super
  * Admin bootstrap ({@code PROWISE_BOOTSTRAP_SUPER_ADMIN_EMAIL}) and accounts provisioned through the users API.
  */
 @Component
-<<<<<<< HEAD
-@org.springframework.context.annotation.Profile("dev")
-=======
 @Profile("dev")
->>>>>>> b46fd9c (Update ProWise application)
 public class DevelopmentDataInitializer implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DevelopmentDataInitializer.class);

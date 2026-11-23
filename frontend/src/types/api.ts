@@ -24,6 +24,13 @@ export interface HealthResponse {
 export interface MeResponse {
   id: string;
   email: string;
+  name?: string;
+  /** The role of this session: the membership role in the bound organization, or a platform role; null when unbound. */
+  role?: string | null;
+  organization_id?: string | null;
+  organization_name?: string | null;
+  target_dashboard_url?: string;
+  must_change_password?: boolean;
   memberships: Array<{
     id: string;
     org_id: string;

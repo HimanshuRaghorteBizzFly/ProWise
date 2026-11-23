@@ -88,6 +88,7 @@ const ROUTE_TITLES: Record<string, { section: string; label: string }> = {
   "/super-admin/api-monitoring": { section: "Integrations & API", label: "API Monitoring" },
   "/super-admin/integration-settings": { section: "Integrations & API", label: "Integration Settings" },
   "/super-admin/security": { section: "Security & Governance", label: "Security Center" },
+  "/super-admin/security-keys": { section: "Security & Governance", label: "Platform Keys & JWT" },
   "/super-admin/access-approvals": { section: "Security & Governance", label: "Support Access Approvals" },
   "/super-admin/incidents": { section: "Security & Governance", label: "Incident Governance" },
   "/super-admin/audit": { section: "Security & Governance", label: "Audit & Compliance" },
@@ -339,6 +340,13 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
             href: "/super-admin/security",
             icon: ShieldCheck,
             requiredAny: ["security.manage", "audit.view"],
+          },
+          {
+            title: "Platform Keys & JWT",
+            href: "/super-admin/security-keys",
+            matchPaths: ["/super-admin/security-keys", "/super-admin/security/keys"],
+            icon: KeyRound,
+            requiredAny: ["security.manage", "config.manage"],
           },
           {
             title: "Support Access Approvals",

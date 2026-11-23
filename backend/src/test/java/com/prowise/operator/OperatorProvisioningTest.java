@@ -48,7 +48,7 @@ class OperatorProvisioningTest {
         emailCredentialService = mock(EmailCredentialService.class);
         when(operatorRepository.save(any(PlatformOperatorEntity.class))).thenAnswer(inv -> inv.getArgument(0));
         when(emailCredentialService.sendOperatorInvitationEmail(anyString(), anyString(), anyString()))
-                .thenReturn(new EmailCredentialService.EmailDeliveryResult(true, "DELIVERED", "Invitation email sent."));
+                .thenReturn(new EmailCredentialService.EmailDeliveryResult(true, "SMTP_ACCEPTED", "Invitation email sent."));
 
         operatorService = new OperatorService(
                 operatorRepository, mock(OperatorDepartmentRepository.class), mock(OperatorDepartmentPermissionRepository.class),

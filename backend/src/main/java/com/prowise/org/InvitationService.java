@@ -76,11 +76,17 @@ public class InvitationService {
     private final ChangeRecorder changes;
     private final PeopleHistory history;
     private final EmailSender emailSender;
+    private final org.springframework.beans.factory.ObjectProvider<com.prowise.identity.EmailCredentialService> credentialEmails;
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
     private final String frontendUrl;
 
     public InvitationService(JdbcTemplate jdbc, PermissionService permissions, RoleService roles,
             ChangeRecorder changes, PeopleHistory history, EmailSender emailSender,
+            org.springframework.beans.factory.ObjectProvider<com.prowise.identity.EmailCredentialService> credentialEmails,
+            org.springframework.security.crypto.password.PasswordEncoder passwordEncoder,
             @Value("${prowise.mail.frontend-url:http://localhost:3000}") String frontendUrl) {
+        this.credentialEmails = credentialEmails;
+        this.passwordEncoder = passwordEncoder;
         this.jdbc = jdbc;
         this.permissions = permissions;
         this.roles = roles;
@@ -205,8 +211,6 @@ public class InvitationService {
         // FOR UPDATE: a concurrent accept of the same invitation waits here, then sees ACCEPTED and gets 404.
         Map<String, Object> row = validInvitation(principal, request, true);
         UUID organizationId = (UUID) row.get("org_id");
-        UUID invitationId = (UUID) row.get("id");
-        String roleName = (String) row.get("role_name");
         List<String> statuses = jdbc.queryForList(
                 "SELECT status FROM memberships WHERE org_id = ? AND user_id = ?", String.class, organizationId,
                 principal.userId());
@@ -216,9 +220,17 @@ public class InvitationService {
                     : new ApiException(HttpStatus.CONFLICT, "MEMBERSHIP_DISABLED",
                             "Your membership in this workspace is disabled. Ask an administrator to re-enable it.");
         }
+        return join(row, principal.userId(), "Accepted invitation");
+    }
+
+    /** Membership + ORG grant of the invited role (+ team), invitation closed, history, audit and outbox: one transaction. */
+    private AcceptResponse join(Map<String, Object> row, UUID userId, String note) {
+        UUID organizationId = (UUID) row.get("org_id");
+        UUID invitationId = (UUID) row.get("id");
+        String roleName = (String) row.get("role_name");
         UUID membershipId = UUID.randomUUID();
         jdbc.update("INSERT INTO memberships (id, org_id, user_id, role_template) VALUES (?, ?, ?, ?)",
-                membershipId, organizationId, principal.userId(), roleName);
+                membershipId, organizationId, userId, roleName);
         jdbc.update("""
                 INSERT INTO grants (id, org_id, membership_id, template_role_id, scope, granted_by)
                 VALUES (?, ?, ?, ?, 'ORG', ?)
@@ -232,38 +244,99 @@ public class InvitationService {
                 UPDATE invitations SET status = 'ACCEPTED', accepted_by = ?, accepted_at = now(), version = version + 1,
                     updated_at = now()
                 WHERE id = ? AND status = 'PENDING'
-                """, principal.userId(), invitationId);
-        history.membership(organizationId, membershipId, principal.userId(), "JOINED", null, "ACTIVE", null, roleName,
-                principal.userId(), "Accepted invitation");
+                """, userId, invitationId);
+        history.membership(organizationId, membershipId, userId, "JOINED", null, "ACTIVE", null, roleName,
+                userId, note);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("membership_id", membershipId.toString());
         payload.put("invitation_id", invitationId.toString());
         payload.put("role", roleName);
         changes.record(
-                new ChangeRecorder.AuditEntry(organizationId, principal.userId(), "invitation.accepted", "MEMBERSHIP",
+                new ChangeRecorder.AuditEntry(organizationId, userId, "invitation.accepted", "MEMBERSHIP",
                         membershipId, null, null, payload),
                 new ChangeRecorder.DomainEvent(organizationId, "MEMBERSHIP", membershipId, 0L, "MemberJoined", payload));
         return new AcceptResponse(organizationId, (String) row.get("org_name"), membershipId, roleName);
     }
 
+    /**
+     * What an invitation link is for, before signing in: the person opening the emailed link sees the organization,
+     * role and invited address, and whether that address already has an account (sign in and accept) or not (choose
+     * a password). Any invalid case is the same 404, so the endpoint reveals nothing without a valid link.
+     */
+    public PublicInvitationPreview publicPreview(TokenRequest request) {
+        Map<String, Object> row = usableInvitation(request, false);
+        String email = (String) row.get("email");
+        Integer accounts = jdbc.queryForObject("SELECT count(*) FROM users WHERE lower(email) = lower(?)", Integer.class, email);
+        return new PublicInvitationPreview((String) row.get("org_name"), (String) row.get("role_name"),
+                (String) row.get("team_name"), (String) row.get("inviter_email"), email,
+                ((Timestamp) row.get("expires_at")).toInstant(), accounts != null && accounts > 0);
+    }
+
+    /**
+     * An Owner/Admin added someone who has no Prowise account: the single-use invitation link creates the account
+     * with the password the person chooses (it proves they control the invited address), activates it and joins
+     * the organization in one transaction. An address that already has an account must sign in and accept instead.
+     * A weak password is refused before the link is used, so the person can try again.
+     */
+    @Transactional
+    public AcceptResponse activate(ActivateRequest request) {
+        if (request == null) throw invalid();
+        String password = request.password();
+        if (!com.prowise.identity.PasswordPolicy.isAcceptable(password)) {
+            throw validation("password", com.prowise.identity.PasswordPolicy.SUMMARY);
+        }
+        Map<String, Object> row = usableInvitation(new TokenRequest(request.token()), true);
+        String email = ((String) row.get("email")).toLowerCase(Locale.ROOT);
+        String name = request.name() == null || request.name().isBlank() ? email.split("@")[0] : request.name().trim();
+        if (name.length() > 200) name = name.substring(0, 200);
+        UUID userId = UUID.randomUUID();
+        int inserted = jdbc.update("""
+                INSERT INTO users (id, email, password_hash, name, role, status, must_change_password)
+                VALUES (?, ?, ?, ?, 'VIEWER', 'ACTIVE', false)
+                ON CONFLICT (lower(email)) DO NOTHING
+                """, userId, email, passwordEncoder.encode(password), name);
+        if (inserted != 1) {
+            throw new ApiException(HttpStatus.CONFLICT, "ACCOUNT_EXISTS",
+                    "This email already has a Prowise account. Sign in with it, then open the invitation link again to accept.");
+        }
+        return join(row, userId, "Activated account from invitation");
+    }
+
+    private Map<String, Object> usableInvitation(TokenRequest request, boolean lock) {
+        if (request == null || request.token() == null || request.token().isBlank() || request.token().length() > 200) {
+            throw invalid();
+        }
+        List<Map<String, Object>> rows = jdbc.queryForList(INVITATION_ROW + (lock ? " FOR UPDATE OF i" : ""),
+                hash(request.token().trim()));
+        if (rows.isEmpty()) throw invalid();
+        Map<String, Object> row = rows.get(0);
+        boolean usable = "PENDING".equals(row.get("status")) && !Boolean.TRUE.equals(row.get("expired"))
+                && "ACTIVE".equals(row.get("org_state"));
+        if (!usable) throw invalid();
+        return row;
+    }
+
     /* ------------------------------------------------------------------ helpers */
+
+    private static final String INVITATION_ROW = """
+            SELECT i.id, i.org_id, i.email, i.status, i.expires_at, (i.expires_at <= now()) AS expired,
+                   i.template_role_id, i.team_id, i.invited_by, r.name AS role_name, o.name AS org_name,
+                   o.state AS org_state, t.name AS team_name, t.status AS team_status, u.email AS inviter_email
+            FROM invitations i
+            JOIN organizations o ON o.id = i.org_id
+            JOIN roles r ON r.id = i.template_role_id
+            JOIN users u ON u.id = i.invited_by
+            LEFT JOIN teams t ON t.id = i.team_id AND t.org_id = i.org_id
+            WHERE i.token_hash = ?
+            """;
 
     private Map<String, Object> validInvitation(AuthPrincipal principal, TokenRequest request, boolean lock) {
         if (principal.isOperator() || request == null || request.token() == null || request.token().isBlank()
                 || request.token().length() > 200) {
             throw invalid();
         }
-        List<Map<String, Object>> rows = jdbc.queryForList("""
-                SELECT i.id, i.org_id, i.email, i.status, i.expires_at, (i.expires_at <= now()) AS expired,
-                       i.template_role_id, i.team_id, i.invited_by, r.name AS role_name, o.name AS org_name,
-                       o.state AS org_state, t.name AS team_name, t.status AS team_status, u.email AS inviter_email
-                FROM invitations i
-                JOIN organizations o ON o.id = i.org_id
-                JOIN roles r ON r.id = i.template_role_id
-                JOIN users u ON u.id = i.invited_by
-                LEFT JOIN teams t ON t.id = i.team_id AND t.org_id = i.org_id
-                WHERE i.token_hash = ?
-                """ + (lock ? " FOR UPDATE OF i" : ""), hash(request.token().trim()));
+        List<Map<String, Object>> rows = jdbc.queryForList(INVITATION_ROW + (lock ? " FOR UPDATE OF i" : ""),
+                hash(request.token().trim()));
         if (rows.isEmpty()) throw invalid();
         Map<String, Object> row = rows.get(0);
         String callerEmail = jdbc.queryForObject("SELECT lower(email) FROM users WHERE id = ?", String.class,
@@ -325,18 +398,27 @@ public class InvitationService {
         return snapshot;
     }
 
-    /** The link travels only by email, after the invitation is committed; it is never logged. */
+    /**
+     * The link travels only by email, after the invitation is committed; it is never logged. It goes through the
+     * account email service (SMTP from environment configuration, delivery logged with an honest status); the
+     * fallback sender is used only where that service is not available.
+     */
     private void sendAfterCommit(UUID organizationId, String email, String roleName, String token, Instant expiresAt) {
         String orgName = jdbc.queryForObject("SELECT name FROM organizations WHERE id = ?", String.class, organizationId);
-        EmailMessage message = new EmailMessage(email, "You're invited to join " + orgName + " on Prowise",
-                "You have been invited to join " + orgName + " as " + roleLabel(roleName) + ".\n\n"
-                        + "Accept the invitation (sign in with this email address):\n"
-                        + frontendUrl + "/invitations/accept#token=" + token + "\n\n"
-                        + "This link works once and expires on " + expiresAt + " (UTC). "
-                        + "If you did not expect it, ignore this email.");
+        Integer accounts = jdbc.queryForObject("SELECT count(*) FROM users WHERE lower(email) = lower(?)", Integer.class, email);
+        boolean accountExists = accounts != null && accounts > 0;
+        String link = frontendUrl + "/invitations/accept#token=" + token;
         Runnable send = () -> {
             try {
-                emailSender.send(message);
+                com.prowise.identity.EmailCredentialService service = credentialEmails.getIfAvailable();
+                if (service != null && service.isConfigured()) {
+                    service.sendOrganizationInvitationEmail(email, orgName, roleLabel(roleName), link, expiresAt, accountExists);
+                } else {
+                    emailSender.send(new EmailMessage(email, "You're invited to join " + orgName + " on Prowise",
+                            "You have been invited to join " + orgName + " as " + roleLabel(roleName) + ".\n\n"
+                                    + "Open this single-use link to " + (accountExists ? "accept" : "create your account") + ":\n"
+                                    + link + "\n\nIt expires on " + expiresAt + " (UTC). If you did not expect it, ignore this email."));
+                }
             } catch (RuntimeException exception) {
                 log.warn("Invitation email could not be sent ({})", exception.getClass().getSimpleName());
             }
@@ -406,6 +488,11 @@ public class InvitationService {
 
     public record InvitationPreview(UUID organizationId, String organizationName, String roleName, String teamName,
             String invitedByEmail, Instant expiresAt) {}
+
+    public record ActivateRequest(String token, String password, String name) {}
+
+    public record PublicInvitationPreview(String organizationName, String roleName, String teamName, String invitedByEmail,
+            String email, Instant expiresAt, boolean accountExists) {}
 
     public record AcceptResponse(UUID organizationId, String organizationName, UUID membershipId, String roleTemplate) {}
 }

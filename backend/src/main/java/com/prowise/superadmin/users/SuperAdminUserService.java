@@ -121,11 +121,22 @@ public class SuperAdminUserService {
             Integer orgExists = jdbc.queryForObject("SELECT count(*) FROM organizations WHERE id = ?",
                     Integer.class, request.organizationId());
             if (orgExists != null && orgExists > 0) {
-                jdbc.update("""
+                UUID membershipId = jdbc.queryForObject("""
                         INSERT INTO memberships (id, org_id, user_id, role_template, status)
                         VALUES (?, ?, ?, ?, 'ACTIVE')
                         ON CONFLICT (org_id, user_id) DO UPDATE SET role_template = EXCLUDED.role_template
-                        """, UUID.randomUUID(), request.organizationId(), userId, role);
+                        RETURNING id
+                        """, UUID.class, UUID.randomUUID(), request.organizationId(), userId, role);
+                // A role name grants nothing by itself (rule 12): the membership also gets the matching template role
+                // at organization scope, or the person could sign in and then be refused on every page.
+                jdbc.update("""
+                        INSERT INTO grants (id, org_id, membership_id, template_role_id, scope, granted_by)
+                        SELECT ?, ?, ?, r.id, 'ORG', COALESCE((SELECT u.id FROM users u WHERE u.id = ?), ?)
+                        FROM roles r
+                        WHERE r.is_template AND r.name = ?
+                          AND NOT EXISTS (SELECT 1 FROM grants g WHERE g.membership_id = ? AND g.template_role_id = r.id
+                                          AND g.scope = 'ORG')
+                        """, UUID.randomUUID(), request.organizationId(), membershipId, actorId, userId, role, membershipId);
             } else {
                 log.warn("Organization {} not found; user {} created without a membership", request.organizationId(), userId);
             }
@@ -295,7 +306,7 @@ public class SuperAdminUserService {
             if (latest != null) {
                 status = latest.getStatus();
                 message = switch (latest.getStatus()) {
-                    case EmailCredentialService.STATUS_DELIVERED -> "Setup email sent " + latest.getCreatedAt() + ".";
+                    case EmailCredentialService.STATUS_ACCEPTED -> "Setup email accepted by the SMTP server at " + latest.getSentAt() + ".";
                     case EmailCredentialService.STATUS_NOT_SENT -> EmailCredentialService.NOT_CONFIGURED_MESSAGE;
                     default -> EmailCredentialService.SAFE_FAILURE_MESSAGE;
                 };

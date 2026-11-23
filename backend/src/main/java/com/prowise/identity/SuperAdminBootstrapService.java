@@ -136,7 +136,7 @@ public class SuperAdminBootstrapService {
         boolean delivered = deliveryLogRepository
                 .findFirstByUserIdAndEmailTypeOrderByCreatedAtDesc(userId, EmailCredentialService.TYPE_ACCOUNT_SETUP)
                 .map(EmailDeliveryLogEntity::getStatus)
-                .filter(EmailCredentialService.STATUS_DELIVERED::equals)
+                .filter(EmailCredentialService.STATUS_ACCEPTED::equals)
                 .isPresent();
         Integer openLinks = jdbc.queryForObject("""
                 SELECT count(*) FROM password_reset_tokens
@@ -144,7 +144,7 @@ public class SuperAdminBootstrapService {
                 """, Integer.class, userId);
         if (delivered && openLinks != null && openLinks > 0) {
             log.info("Super Admin bootstrap: the pending account already has a delivered, unexpired setup link");
-            return new Result(Outcome.SETUP_LINK_STILL_VALID, userId, EmailCredentialService.STATUS_DELIVERED);
+            return new Result(Outcome.SETUP_LINK_STILL_VALID, userId, EmailCredentialService.STATUS_ACCEPTED);
         }
         String status = sendSetupLink(userId, email);
         audit("SUPER_ADMIN_BOOTSTRAP_RESENT", userId, "{\"email_delivery_status\":\"" + status + "\"}");

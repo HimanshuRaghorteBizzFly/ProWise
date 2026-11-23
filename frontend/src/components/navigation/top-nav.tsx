@@ -12,6 +12,8 @@ import { GlobalSearchModal } from "./global-search-modal";
 import { SampleDataBadge } from "./sample-data-badge";
 import { SEEDED_ORGS } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+import { apiClient } from "@/lib/api";
+import { switchWorkspace } from "@/lib/workspace-switch";
 
 interface TopNavProps {
   title?: string;
@@ -51,7 +53,9 @@ export function TopNav({
   navigationButtonRef,
 }: TopNavProps) {
   const router = useRouter();
-  const { currentUser, currentRole, currentOrg, setCurrentOrg, switchRoleAndNavigate, logout } = useAuthStore();
+  const { currentUser, currentRole, currentOrg, setCurrentOrg, switchRoleAndNavigate, logout, organizations, isAuthenticated, isRolePreview } = useAuthStore();
+  // A signed-in member switches between their own organizations; the demo list is only for preview (development).
+  const switchableOrgs = isAuthenticated && !isRolePreview ? organizations : SEEDED_ORGS;
   const { setTheme, resolvedTheme } = useThemeStore();
   const { notifications, markNotificationRead, markAllNotificationsRead } = useProjectStore();
 
@@ -308,14 +312,21 @@ export function TopNav({
                 <div className="border-b border-app-border py-2">
                   <p className={MENU_SECTION_TITLE}>Switch organization</p>
                   <div className="space-y-0.5">
-                    {SEEDED_ORGS.map((org) => (
+                    {switchableOrgs.map((org) => (
                       <button
                         key={org.id}
                         type="button"
-                        onClick={() => {
-                          setCurrentOrg(org);
+                        onClick={async () => {
                           setOpenMenu(null);
-                          router.push(getRoleDashboardPath(currentRole, org.id));
+                          if (isRolePreview || !isAuthenticated) {
+                            setCurrentOrg(org);
+                            router.push(getRoleDashboardPath(currentRole, org.id));
+                            return;
+                          }
+                          // Real session: a token bound to that organization and the role held there (server).
+                          const result = await switchWorkspace(org.id);
+                          if (!result.ok) return;
+                          router.push(result.targetDashboardUrl || getRoleDashboardPath(currentRole, org.id));
                         }}
                         aria-current={currentOrg.id === org.id ? "true" : undefined}
                         className={cn(MENU_ITEM, currentOrg.id === org.id ? MENU_ITEM_ACTIVE : MENU_ITEM_IDLE)}
@@ -331,8 +342,25 @@ export function TopNav({
                   <button
                     type="button"
                     onClick={() => {
-                      logout();
                       setOpenMenu(null);
+                      router.push("/account/sessions");
+                    }}
+                    className={cn(MENU_ITEM, MENU_ITEM_IDLE, "justify-start gap-2")}
+                  >
+                    <Shield className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>My sessions</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setOpenMenu(null);
+                      // Revoke the session on the server too; local state alone would leave the refresh token usable.
+                      try {
+                        await apiClient.signout();
+                      } catch {
+                        /* already signed out or offline preview: clearing local state below is enough */
+                      }
+                      logout();
                       router.push("/login");
                     }}
                     className={cn(MENU_ITEM, "justify-start font-medium text-rose-600 hover:bg-rose-500/10 dark:text-rose-400")}

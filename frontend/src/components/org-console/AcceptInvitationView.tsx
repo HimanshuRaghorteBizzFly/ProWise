@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, LogIn, MailX, UserPlus } from "lucide-react";
 
-import { ApiError, apiClient } from "@/lib/api";
+import { ApiError, apiClient, type PublicInvitationPreview } from "@/lib/api";
 import { switchWorkspace } from "@/lib/workspace-switch";
 import { getRoleDashboardPath } from "@/store/auth-store";
 import type { InvitationPreviewDto } from "@/types/api";
-import { AdminButton, PageSkeleton, Panel, StatPill, formatDateTime } from "@/components/delivery/DeliveryUI";
+import { AdminButton, AdminInput, PageSkeleton, Panel, StatPill, formatDateTime } from "@/components/delivery/DeliveryUI";
 import { roleDisplayName } from "./permission-key-catalog";
 
 /**
@@ -25,7 +25,18 @@ type View =
   | { kind: "invalid"; requestId: string }
   | { kind: "error"; message: string; requestId: string }
   | { kind: "ready"; preview: InvitationPreviewDto }
-  | { kind: "accepted"; organizationName: string };
+  | { kind: "accepted"; organizationName: string }
+  | { kind: "create"; preview: PublicInvitationPreview }
+  | { kind: "signin-existing"; preview: PublicInvitationPreview }
+  | { kind: "activated"; organizationName: string; email: string };
+
+/** Mirrors the server rule: 12 to 200 characters. */
+export function validateNewPassword(password: string, confirm: string): string | null {
+  if (password.length < 12) return "Use at least 12 characters.";
+  if (password.length > 200) return "Use at most 200 characters.";
+  if (password !== confirm) return "The two passwords do not match.";
+  return null;
+}
 
 function readToken(): string | null {
   try {
@@ -56,7 +67,7 @@ export function AcceptInvitationView() {
   const [accepting, setAccepting] = useState(false);
 
   const fail = (error: unknown) => {
-    if (error instanceof ApiError && error.status === 401) return setView({ kind: "signin" });
+    if (error instanceof ApiError && error.status === 401) return void signedOutPreview();
     if (error instanceof ApiError && error.status === 404) return setView({ kind: "invalid", requestId: error.requestId });
     const requestId = error instanceof ApiError ? error.requestId : "";
     const message = error instanceof ApiError && error.code === "ALREADY_MEMBER"
@@ -65,6 +76,18 @@ export function AcceptInvitationView() {
         ? "Your membership in this workspace is disabled. Ask an administrator to re-enable it."
         : "The invitation could not be processed.";
     setView({ kind: "error", message, requestId });
+  };
+
+  /** Not signed in: read what the link is for, then offer "create my account" or "sign in and accept". */
+  const signedOutPreview = async (found = token ?? readToken()) => {
+    if (!found) return setView({ kind: "missing" });
+    try {
+      const preview = await apiClient.publicInvitationPreview(found);
+      setView(preview.account_exists ? { kind: "signin-existing", preview } : { kind: "create", preview });
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return setView({ kind: "invalid", requestId: error.requestId });
+      setView({ kind: "signin" });
+    }
   };
 
   useEffect(() => {
@@ -140,6 +163,36 @@ export function AcceptInvitationView() {
             </div>
           </Panel>
         )}
+        {view.kind === "create" && token && (
+          <CreateAccountPanel
+            token={token}
+            preview={view.preview}
+            onDone={(organizationName) => {
+              forget();
+              setView({ kind: "activated", organizationName, email: view.preview.email });
+            }}
+            onInvalid={(requestId) => setView({ kind: "invalid", requestId })}
+          />
+        )}
+        {view.kind === "signin-existing" && (
+          <Panel title={`Join ${view.preview.organization_name}`} icon={LogIn} description={`Invited by ${view.preview.invited_by_email}`}>
+            <p className="text-xs">
+              {view.preview.email} already has a ProWise account. Sign in with it, then come back to this page to accept
+              the {roleDisplayName(view.preview.role_name)} invitation.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <Link className="text-xs font-semibold text-blue-600 hover:underline" href="/login">Sign in</Link>
+              <Link className="text-xs font-semibold text-blue-600 hover:underline" href="/invitations/accept">I signed in, continue</Link>
+              <Link className="text-xs font-semibold text-blue-600 hover:underline" href="/forgot-password">Forgot password</Link>
+            </div>
+          </Panel>
+        )}
+        {view.kind === "activated" && (
+          <Panel title="Your account is ready" icon={CheckCircle2} iconTone="emerald">
+            <p className="text-xs">You joined {view.organizationName}. Sign in with {view.email} and the password you just chose.</p>
+            <Link className="mt-3 inline-block text-xs font-semibold text-blue-600 hover:underline" href="/login">Go to sign in</Link>
+          </Panel>
+        )}
         {view.kind === "accepted" && (
           <Panel title="You joined" icon={CheckCircle2} iconTone="emerald">
             <p className="text-xs">You are now a member of {view.organizationName}.</p>
@@ -148,5 +201,56 @@ export function AcceptInvitationView() {
         )}
       </div>
     </div>
+  );
+}
+
+/** A new person chooses their own password; the single-use link creates and activates the account and joins. */
+function CreateAccountPanel({ token, preview, onDone, onInvalid }: {
+  token: string;
+  preview: PublicInvitationPreview;
+  onDone: (organizationName: string) => void;
+  onInvalid: (requestId: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const problem = validateNewPassword(password, confirm);
+    if (problem) return setError(problem);
+    setError(null);
+    setSaving(true);
+    try {
+      const result = await apiClient.activateInvitation({ token, password, name: name.trim() || undefined });
+      onDone(result.organization_name);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return onInvalid(err.requestId);
+      setError(err instanceof ApiError ? err.message : "Your account could not be created. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Panel title={`Join ${preview.organization_name}`} icon={UserPlus} description={`Invited by ${preview.invited_by_email}`}>
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <StatPill label="Role" value={roleDisplayName(preview.role_name)} />
+        <StatPill label="Expires" value={formatDateTime(preview.expires_at)} />
+      </div>
+      <form onSubmit={submit} className="space-y-3" noValidate>
+        <AdminInput label="Email" value={preview.email} readOnly disabled />
+        <AdminInput label="Your name" value={name} maxLength={200} autoComplete="name" onChange={(e) => setName(e.target.value)} />
+        <AdminInput label="Choose a password" type="password" autoComplete="new-password" value={password}
+          helperText="At least 12 characters. Nobody at ProWise will ever ask you for it."
+          onChange={(e) => setPassword(e.target.value)} />
+        <AdminInput label="Repeat the password" type="password" autoComplete="new-password" value={confirm}
+          onChange={(e) => setConfirm(e.target.value)} />
+        {error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+        <AdminButton type="submit" isLoading={saving}><UserPlus className="w-3.5 h-3.5" /> Create my account</AdminButton>
+      </form>
+    </Panel>
   );
 }

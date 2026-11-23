@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import { Organization, SystemRole, User } from "@/types";
 import { apiClient } from "@/lib/api";
+import { mocksAllowed, readPermissionEnv } from "@/lib/permissions";
 import { useWorkspaceStore } from "@/store/workspace-store";
 
 interface AuthContextValue {
@@ -37,15 +38,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const user: User = {
         id: me.id,
         email: me.email,
-        name: me.email.split("@")[0],
+        name: me.name || me.email.split("@")[0],
         timezone: organizations[0]?.timezone || "UTC",
         createdAt: "",
       };
-      const role = toSystemRole(me.memberships[0]?.role_template);
-      hydrate(user, organizations, role);
+      // The role of this session (membership role in the bound organization, or a platform role), never just
+      // the first membership: the same person can hold different roles in different organizations.
+      const bound = me.organization_id ? organizations.find((o) => o.id === me.organization_id) : undefined;
+      const ordered = bound ? [bound, ...organizations.filter((o) => o.id !== bound.id)] : organizations;
+      const role = toSystemRole(me.role ?? (organizations.length === 1 ? me.memberships[0]?.role_template : undefined));
+      hydrate(user, ordered, role);
       setOrganizations(organizations);
     }).catch(() => {
       if (active) {
+        // Production never invents a session: no API answer means signed out.
+        if (!mocksAllowed(readPermissionEnv())) return;
         const store = useAuthStore.getState();
         // If user already signed in or has an active non-viewer role, preserve their authenticated session
         if (store.isAuthenticated && store.currentRole && store.currentRole !== "VIEWER") {
