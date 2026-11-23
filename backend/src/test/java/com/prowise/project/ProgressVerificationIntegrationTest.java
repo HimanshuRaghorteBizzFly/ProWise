@@ -35,6 +35,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.prowise.testsupport.TestAccounts;
 import com.prowise.authz.TestDatabase;
 
 /**
@@ -53,9 +54,14 @@ class ProgressVerificationIntegrationTest {
     private static final UUID TEAM_LEAD_ROLE = UUID.fromString("10000000-0000-0000-0000-000000000004");
     private static final UUID DEVELOPER_ROLE = UUID.fromString("10000000-0000-0000-0000-000000000005");
 
-    @Autowired private MockMvc mockMvc;
-    @Autowired private JdbcTemplate jdbc;
-    @Autowired private ObjectMapper objectMapper;
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @BeforeEach
     @AfterEach
@@ -451,12 +457,20 @@ class ProgressVerificationIntegrationTest {
     /* ================================================================== fixture */
 
     private record Person(UUID id, String email, String token) {}
+    private record Workspace(UUID id, UUID ownerId, String ownerEmail, String ownerToken) {}
 
-    private record World(UUID org, UUID ownerId, String ownerToken, UUID devMembership, String devEmail, String devToken,
-            UUID leadMembership, String leadEmail, String leadToken, UUID team, String project) {}
+    private Person person(String name) throws Exception {
+        String email = name + "-" + UUID.randomUUID().toString().substring(0, 8) + "@example.test";
+        MvcResult res = mockMvc.perform(post("/v1/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"" + email + "\",\"password\":\"correct-horse-battery\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        JsonNode signup = json(res);
+        UUID id = jdbc.queryForObject("SELECT id FROM users WHERE lower(email) = lower(?)", UUID.class, email);
+        return new Person(id, email, signup.path("access_token").asText());
+    }
 
-    /** Owner, accountable developer, Team Lead leading the project's team, one ACTIVE Individual project. */
-    private World world(String slug) throws Exception {
+    private Workspace workspace(String slug) throws Exception {
         Person owner = person(slug + "-owner");
         String unique = slug + "-" + UUID.randomUUID().toString().substring(0, 6);
         UUID org = UUID.fromString(json(mockMvc.perform(auth(post("/v1/organizations"), owner.token())

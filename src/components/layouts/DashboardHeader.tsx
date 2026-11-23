@@ -33,7 +33,6 @@ export function DashboardHeader({ title }: DashboardHeaderProps) {
       <div className="flex items-center gap-3">
         <GlobalSearch />
         <WorkspaceSwitcher />
-        <RoleSwitcher />
 
         <button
           onClick={toggleTheme}

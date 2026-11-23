@@ -40,6 +40,7 @@ class AuthorizationArchitectureTest {
             "com.prowise.common.api.HealthController.health",
             "com.prowise.common.api.JsonErrorController.error",
             "com.prowise.identity.AuthController.signup",
+            "com.prowise.identity.AuthController.verifyEmail",
             "com.prowise.identity.AuthController.signin",
             "com.prowise.identity.AuthController.login",
             "com.prowise.identity.AuthController.refresh",

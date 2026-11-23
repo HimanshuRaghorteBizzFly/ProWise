@@ -2,11 +2,43 @@
 
 import { resolveApiBaseUrl } from "@/lib/api";
 
+/**
+ * The API reads and writes snake_case JSON (Jackson SNAKE_CASE); this client and its callers use camelCase.
+ * Request bodies are converted to snake_case and responses to camelCase in one place, so a field such as
+ * `authorized_modules` can never silently arrive as `undefined` (it used to break the operator sign-in page).
+ */
+export function toSnakeCaseKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toSnakeCaseKeys);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, inner]) => [
+        key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`),
+        toSnakeCaseKeys(inner),
+      ]),
+    );
+  }
+  return value;
+}
+
+export function toCamelCaseKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toCamelCaseKeys);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, inner]) => [
+        key.replace(/_([a-z0-9])/g, (_match, letter: string) => letter.toUpperCase()),
+        toCamelCaseKeys(inner),
+      ]),
+    );
+  }
+  return value;
+}
+
 export interface OperatorInfo {
   id: string;
   name: string;
   email: string;
   roleId: string;
+  accessLevel?: string;
   departmentId: string;
   departmentName: string;
   status: string;
@@ -110,7 +142,7 @@ class OperatorAuthService {
       method: options.method || "GET",
       headers,
       credentials: "include",
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body: options.body !== undefined ? JSON.stringify(toSnakeCaseKeys(options.body)) : undefined,
     });
 
     if (!response.ok) {
@@ -124,7 +156,7 @@ class OperatorAuthService {
       throw new Error(errorMessage);
     }
 
-    return (await response.json()) as T;
+    return toCamelCaseKeys(await response.json()) as T;
   }
 
   public async login(
@@ -174,17 +206,15 @@ class OperatorAuthService {
     return res.message;
   }
 
-  public async acceptInvitation(
-    token: string,
-    newPassword: string,
-    name?: string
-  ): Promise<OperatorAuthResponse> {
-    const res = await this.request<OperatorAuthResponse>("/v1/auth/operator/accept-invitation", {
+  /**
+   * Accepts a 72-hour single-use invitation and sets the operator's own password.
+   * No token is kept here; the operator signs in afterwards.
+   */
+  public async acceptInvitation(token: string, newPassword: string, name?: string): Promise<void> {
+    await this.request<unknown>("/v1/auth/operator/accept-invitation", {
       method: "POST",
       body: { token, newPassword, name },
     });
-    this.setToken(res.accessToken);
-    return res;
   }
 
   public async getProfile(): Promise<OperatorInfo> {

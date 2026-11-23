@@ -84,11 +84,11 @@ export interface SuperAdminUserItem {
   organization_id?: string | null;
   organization_name?: string | null;
   phone?: string | null;
-  status: "ACTIVE" | "DISABLED" | string;
+  status: "ACTIVE" | "DISABLED" | "PENDING_ACTIVATION" | string;
   must_change_password: boolean;
   last_login_at?: string | null;
   created_at: string;
-  temp_password?: string | null;
+  /** Latest setup email for a pending account: DELIVERED, FAILED, NOT_SENT or NOT_REQUESTED. Never a credential. */
   email_delivery_status?: string | null;
   email_delivery_message?: string | null;
 }
@@ -112,7 +112,6 @@ export interface CreateSuperAdminUserPayload {
   organization_id?: string;
   phone?: string;
   send_email?: boolean;
-  custom_password?: string;
 }
 
 export interface UpdateSuperAdminUserPayload {
@@ -123,10 +122,10 @@ export interface UpdateSuperAdminUserPayload {
   phone?: string;
 }
 
-export interface ResetPasswordResult {
+/** Result of sending a setup or reset link. The API never returns a password. */
+export interface CredentialDeliveryResult {
   user_id: string;
   email: string;
-  temp_password?: string;
   email_delivery_status: string;
   email_delivery_message?: string;
 }
@@ -246,6 +245,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
   return {
     health,
+<<<<<<< HEAD
     signup: (body: {
       email: string;
       password: string;
@@ -261,18 +261,28 @@ export function createApiClient(options: ApiClientOptions = {}) {
         accessToken = tokens.access_token;
         return tokens;
       }),
+=======
+    /**
+     * Public signup (approved decision D9). The account stays pending and no session is issued: the API emails a
+     * single-use link, the owner opens it (verifyEmail), then signs in. The answer is the same for known addresses.
+     */
+    signup: (body: { email: string; password: string; name?: string }) =>
+      json<{ message: string }>("/v1/auth/signup", { method: "POST", body }),
+    /** Activates a self-registered account from the token in its emailed link. Single use. */
+    verifyEmail: (token: string) => request("/v1/auth/verify-email", { method: "POST", body: { token } }),
+>>>>>>> b46fd9c (Update ProWise application)
     signin: (body: { email: string; password: string }) =>
       json<{ access_token: string }>("/v1/auth/signin", { method: "POST", body }).then((tokens) => {
         accessToken = tokens.access_token;
         return tokens;
       }),
     login: (body: { email: string; password: string }) =>
-      json<AuthLoginResponse>("/api/auth/login", { method: "POST", body }).then((res) => {
+      json<AuthLoginResponse>("/v1/auth/login", { method: "POST", body }).then((res) => {
         accessToken = res.access_token;
         return res;
       }),
     changePassword: (body: { currentPassword?: string; newPassword: string }) =>
-      json<{ access_token: string; refresh_token: string }>("/api/auth/change-password", {
+      json<{ access_token: string; refresh_token: string }>("/v1/auth/change-password", {
         method: "POST",
         body: {
           current_password: body.currentPassword,
@@ -498,28 +508,30 @@ export function createApiClient(options: ApiClientOptions = {}) {
         if (params?.page !== undefined) query.set("page", String(params.page));
         if (params?.size !== undefined) query.set("size", String(params.size));
         const qs = query.toString() ? `?${query.toString()}` : "";
-        return json<SuperAdminUserPageResponse>(`/api/super-admin/users${qs}`);
+        return json<SuperAdminUserPageResponse>(`/v1/admin/users${qs}`);
       },
-      get: (id: string) => json<SuperAdminUserItem>(`/api/super-admin/users/${id}`),
+      get: (id: string) => json<SuperAdminUserItem>(`/v1/admin/users/${id}`),
       create: (body: CreateSuperAdminUserPayload) =>
-        json<SuperAdminUserItem>("/api/super-admin/users", { method: "POST", body }),
+        json<SuperAdminUserItem>("/v1/admin/users", { method: "POST", body }),
       update: (id: string, body: UpdateSuperAdminUserPayload) =>
-        json<SuperAdminUserItem>(`/api/super-admin/users/${id}`, { method: "PUT", body }),
+        json<SuperAdminUserItem>(`/v1/admin/users/${id}`, { method: "PUT", body }),
       updateStatus: (id: string, status: "ACTIVE" | "DISABLED", reason?: string) =>
-        request(`/api/super-admin/users/${id}/status`, {
+        request(`/v1/admin/users/${id}/status`, {
           method: "PATCH",
           body: { status, reason },
         }),
-      resetPassword: (id: string) =>
-        json<ResetPasswordResult>(`/api/super-admin/users/${id}/reset-password`, {
+      /** Emails a 30-minute reset link to an active account and signs it out everywhere. */
+      sendResetLink: (id: string) =>
+        json<CredentialDeliveryResult>(`/v1/admin/users/${id}/reset-password`, {
           method: "POST",
         }),
-      resendInvitation: (id: string) =>
-        json<ResetPasswordResult>(`/api/super-admin/users/${id}/resend-invitation`, {
+      /** Emails a new 72-hour setup link to a pending account; earlier links stop working. */
+      resendSetupLink: (id: string) =>
+        json<CredentialDeliveryResult>(`/v1/admin/users/${id}/resend-invitation`, {
           method: "POST",
         }),
       loginHistory: (id: string) =>
-        json<UserLoginHistoryItem[]>(`/api/super-admin/users/${id}/login-history`),
+        json<UserLoginHistoryItem[]>(`/v1/admin/users/${id}/login-history`),
     },
   };
 }

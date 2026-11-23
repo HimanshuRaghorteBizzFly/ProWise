@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Menu, Bell, Sun, Moon, ChevronDown, ChevronRight, LogOut, Shield, Check, CheckCheck } from "lucide-react";
+import { Search, Menu, Bell, Sun, Moon, ChevronDown, ChevronRight, LogOut, Shield, Check, CheckCheck, Settings, GitBranch } from "lucide-react";
 import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
 import { useThemeStore } from "@/store/theme-store";
 import { useProjectStore } from "@/store/project-store";
@@ -264,29 +264,45 @@ export function TopNav({
             {openMenu === "profile" && (
               <div className="absolute right-0 z-50 mt-2 w-64 max-w-[92vw] rounded-xl border border-app-border bg-app-surface p-2 shadow-2xl">
                 <div className="border-b border-app-border px-2.5 py-2">
-                  <p className="truncate text-xs font-bold text-app-text-primary">{currentUser.name}</p>
-                  <p className="truncate text-[11px] text-app-text-muted">{currentUser.email}</p>
+                  <div className="flex items-center justify-between gap-1">
+                    <p className="truncate text-xs font-bold text-app-text-primary">{currentUser.name}</p>
+                    <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400 border border-blue-500/20 shrink-0">
+                      {roleLabel}
+                    </span>
+                  </div>
+                  <p className="truncate text-[11px] text-app-text-muted mt-0.5">{currentUser.email}</p>
                 </div>
 
-                <div className="border-b border-app-border py-2">
-                  <p className={MENU_SECTION_TITLE}>Switch active panel / role</p>
-                  <div className="max-h-48 space-y-0.5 overflow-y-auto">
-                    {ROLES.map((r) => (
-                      <button
-                        key={r.role}
-                        type="button"
-                        onClick={() => {
-                          switchRoleAndNavigate(r.role, router.push);
-                          setOpenMenu(null);
-                        }}
-                        aria-current={currentRole === r.role ? "true" : undefined}
-                        className={cn(MENU_ITEM, currentRole === r.role ? MENU_ITEM_ACTIVE : MENU_ITEM_IDLE)}
-                      >
-                        <span>{r.label}</span>
-                        {currentRole === r.role && <Check className="h-3.5 w-3.5 text-blue-600" aria-hidden="true" />}
-                      </button>
-                    ))}
-                  </div>
+                <div className="border-b border-app-border py-1.5 space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenu(null);
+                      if (currentRole === "DEVELOPER") {
+                        router.push(`/org/${currentOrg.id}/developer/settings`);
+                      } else {
+                        router.push(getRoleDashboardPath(currentRole, currentOrg.id));
+                      }
+                    }}
+                    className={cn(MENU_ITEM, MENU_ITEM_IDLE, "justify-start gap-2")}
+                  >
+                    <Settings className="h-3.5 w-3.5 text-app-text-muted" aria-hidden="true" />
+                    <span>Settings &amp; Preferences</span>
+                  </button>
+
+                  {currentRole === "DEVELOPER" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenMenu(null);
+                        router.push(`/org/${currentOrg.id}/developer/github`);
+                      }}
+                      className={cn(MENU_ITEM, MENU_ITEM_IDLE, "justify-start gap-2")}
+                    >
+                      <GitBranch className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" aria-hidden="true" />
+                      <span>GitHub Repositories</span>
+                    </button>
+                  )}
                 </div>
 
                 <div className="border-b border-app-border py-2">

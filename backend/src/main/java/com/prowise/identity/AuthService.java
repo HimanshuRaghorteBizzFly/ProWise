@@ -1,11 +1,6 @@
 package com.prowise.identity;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -18,7 +13,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -37,7 +31,6 @@ import com.prowise.org.OrganizationService;
 public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
-    private static final SecureRandom RANDOM = new SecureRandom();
     private static final int MAX_ATTEMPTS_PER_WINDOW = 10;
     private static final long RATE_WINDOW_MILLIS = 60_000L;
     private static final Map<String, RateAttempt> RATE_ATTEMPTS = new ConcurrentHashMap<>();
@@ -48,8 +41,10 @@ public class AuthService {
     private final OrganizationService organizationService;
     private final EmailSender emailSender;
     private final ObjectProvider<EmailCredentialService> emailCredentialServiceProvider;
+    private final AccountTokenService accountTokenService;
     private final long refreshTokenDays;
     private final long accessTokenMinutes;
+    private final int signupMaxPerIpPerMinute;
 
     public AuthService(
             JdbcTemplate jdbc,
@@ -58,19 +53,34 @@ public class AuthService {
             OrganizationService organizationService,
             EmailSender emailSender,
             ObjectProvider<EmailCredentialService> emailCredentialServiceProvider,
+            AccountTokenService accountTokenService,
             @Value("${prowise.auth.refresh-token-days:30}") long refreshTokenDays,
-            @Value("${prowise.auth.access-token-minutes:15}") long accessTokenMinutes) {
+            @Value("${prowise.auth.access-token-minutes:15}") long accessTokenMinutes,
+            @Value("${prowise.auth.signup-max-per-ip-per-minute:20}") int signupMaxPerIpPerMinute) {
         this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.organizationService = organizationService;
         this.emailSender = emailSender;
         this.emailCredentialServiceProvider = emailCredentialServiceProvider;
+        this.accountTokenService = accountTokenService;
         this.refreshTokenDays = refreshTokenDays;
         this.accessTokenMinutes = accessTokenMinutes;
+        this.signupMaxPerIpPerMinute = signupMaxPerIpPerMinute;
     }
 
+    /**
+     * Public self-service registration (approved decision D9). The account is created PENDING_ACTIVATION with the
+     * chosen password and the default VIEWER role, which carries no platform authority and no organization; the
+     * owner gets organization rights only by creating a workspace after verifying. No session is issued: the
+     * emailed single-use 72-hour link activates the account, then the owner signs in.
+     *
+     * <p>The response is identical whether or not the address is already registered, and an existing account is
+     * never changed. A repeated signup for a self-registered account that is still pending re-sends the link
+     * (superseding the previous one). Attempts are rate limited per email and per client address.
+     */
     @Transactional
+<<<<<<< HEAD
     public TokenPair signup(String email, String password, String name,
             OrganizationService.CreateOrganizationRequest organization) {
         validateCredentials(email, password);
@@ -94,6 +104,67 @@ public class AuthService {
                 created.id(), userId);
         return issueSession(userId, normalizedEmail, UUID.randomUUID(), created.id(),
                 "ORGANIZATION_OWNER", displayName, false);
+=======
+    public void signup(String email, String password, String name, String ip) {
+        validateCredentials(email, password);
+        String normalizedEmail = normalize(email);
+        enforceRateLimit("signup:" + normalizedEmail, MAX_ATTEMPTS_PER_WINDOW);
+        enforceRateLimit("signup-ip:" + (ip == null ? "" : ip), signupMaxPerIpPerMinute);
+
+        List<Map<String, Object>> existing = jdbc.queryForList(
+                "SELECT id, name, status FROM users WHERE lower(email) = lower(?)", normalizedEmail);
+        if (!existing.isEmpty()) {
+            Map<String, Object> row = existing.get(0);
+            UUID existingId = (UUID) row.get("id");
+            Integer selfRegistered = jdbc.queryForObject(
+                    "SELECT count(*) FROM password_reset_tokens WHERE user_id = ? AND purpose = 'VERIFY'",
+                    Integer.class, existingId);
+            if ("PENDING_ACTIVATION".equals(row.get("status")) && selfRegistered != null && selfRegistered > 0) {
+                sendVerificationLink(existingId, normalizedEmail, (String) row.get("name"), "SIGNUP_VERIFICATION_RESENT", ip);
+            } else {
+                recordAuditLog("SIGNUP_EXISTING_EMAIL", null, null, existingId, "{\"changed\":false}", ip);
+            }
+            return;
+        }
+
+        UUID userId = UUID.randomUUID();
+        String displayName = (name == null || name.isBlank()) ? normalizedEmail.split("@")[0] : name.trim();
+        if (displayName.length() > 200) {
+            displayName = displayName.substring(0, 200);
+        }
+        int inserted = jdbc.update("""
+                INSERT INTO users (id, email, password_hash, name, role, status, must_change_password)
+                VALUES (?, ?, ?, ?, 'VIEWER', 'PENDING_ACTIVATION', false)
+                ON CONFLICT (lower(email)) DO NOTHING
+                """, userId, normalizedEmail, passwordEncoder.encode(password), displayName);
+        if (inserted != 1) {
+            return; // a concurrent signup for the same address won; same response
+        }
+        sendVerificationLink(userId, normalizedEmail, displayName, "SIGNUP_REGISTERED", ip);
+    }
+
+    /** Activates a self-registered account from its emailed link. Single use; the account must still be pending. */
+    @Transactional
+    public void verifyEmail(String token) {
+        AccountTokenService.ConsumedToken consumed = accountTokenService.consume(token, AccountTokenService.Purpose.VERIFY)
+                .orElseThrow(AuthService::invalidLink);
+        int updated = jdbc.update("UPDATE users SET status = 'ACTIVE', version = version + 1, updated_at = now() "
+                + "WHERE id = ? AND status = 'PENDING_ACTIVATION'", consumed.userId());
+        if (updated != 1) {
+            throw invalidLink(); // rolls back the token consumption with the rest of the transaction
+        }
+        recordAuditLog("EMAIL_VERIFIED", consumed.userId(), null, consumed.userId(), "{\"via\":\"signup_link\"}", null);
+    }
+
+    private void sendVerificationLink(UUID userId, String email, String name, String auditAction, String ip) {
+        String token = accountTokenService.issue(userId, AccountTokenService.Purpose.VERIFY);
+        String status = EmailCredentialService.STATUS_NOT_SENT;
+        EmailCredentialService credService = emailCredentialServiceProvider.getIfAvailable();
+        if (credService != null) {
+            status = credService.sendEmailVerificationEmail(userId, email, name, token).status();
+        }
+        recordAuditLog(auditAction, null, null, userId, "{\"email_delivery_status\":\"" + status + "\"}", ip);
+>>>>>>> b46fd9c (Update ProWise application)
     }
 
     @Transactional
@@ -170,11 +241,23 @@ public class AuthService {
             throw invalidCredentials();
         }
 
+<<<<<<< HEAD
         // A Platform Administrator works outside every tenant: never bind that session to an organization.
         if ("SUPER_ADMIN".equalsIgnoreCase(role)) {
             organizationId = null;
         } else if (organizationId == null) {
             // If organizationId is null, look up first active membership
+=======
+        // Checked after the password so the response does not reveal that a pending account exists.
+        if ("PENDING_ACTIVATION".equalsIgnoreCase(status)) {
+            recordLoginAttempt(userId, normalizedEmail, ip, userAgent, "FAILED", "Account pending activation");
+            throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_PENDING_ACTIVATION",
+                    "Activate your account using the link we emailed you, then sign in.");
+        }
+
+        // If organizationId is null, look up first active membership
+        if (organizationId == null) {
+>>>>>>> b46fd9c (Update ProWise application)
             List<UUID> orgs = jdbc.query("SELECT org_id FROM memberships WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1",
                     (rs, rowNum) -> rs.getObject("org_id", UUID.class), userId);
             if (!orgs.isEmpty()) {
@@ -270,6 +353,7 @@ public class AuthService {
         }
         UUID userId = (UUID) row.get("user_id");
         jdbc.update("UPDATE sessions SET revoked_at = now() WHERE id = ?", row.get("id"));
+<<<<<<< HEAD
         Map<String, Object> user = jdbc.queryForMap(
                 "SELECT email, role, name, must_change_password FROM users WHERE id = ?", userId);
         // Keep the organization binding only while the membership is still active (task 1.3, T06).
@@ -280,6 +364,15 @@ public class AuthService {
         // Role and name come from the user row now, so a changed role takes effect on the next refresh.
         return issueSession(userId, (String) user.get("email"), familyId, organizationId, (String) user.get("role"),
                 (String) user.get("name"), Boolean.TRUE.equals(user.get("must_change_password")));
+=======
+        Map<String, Object> owner = jdbc.queryForMap("SELECT email, status FROM users WHERE id = ?", userId);
+        if (!"ACTIVE".equals(owner.get("status"))) {
+            // A disabled or pending account gets no new session; its whole refresh family is closed.
+            jdbc.update("UPDATE sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE family_id = ?", familyId);
+            throw invalidCredentials();
+        }
+        return issueSession(userId, (String) owner.get("email"), familyId);
+>>>>>>> b46fd9c (Update ProWise application)
     }
 
     @Transactional
@@ -358,20 +451,19 @@ public class AuthService {
     @Transactional
     public void requestPasswordReset(String email) {
         enforceRateLimit("password-reset:" + normalizeForRateLimit(email));
+        // Pending accounts finish setup through their invitation link (or an administrator's resend),
+        // so a reset request for them silently issues nothing, like an unknown address.
         List<Map<String, Object>> users = jdbc.queryForList(
-                "SELECT id, name FROM users WHERE lower(email) = lower(?)", email);
+                "SELECT id, name FROM users WHERE lower(email) = lower(?) AND status <> 'PENDING_ACTIVATION'", email);
         if (!users.isEmpty()) {
             Map<String, Object> u = users.get(0);
             UUID userId = (UUID) u.get("id");
             String name = (String) u.get("name");
-            String token = randomToken();
-            jdbc.update("INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at) "
-                            + "VALUES (?, ?, ?, now() + interval '30 minutes')",
-                    UUID.randomUUID(), userId, hash(token));
+            String token = accountTokenService.issue(userId, AccountTokenService.Purpose.RESET);
 
             EmailCredentialService credService = emailCredentialServiceProvider.getIfAvailable();
             if (credService != null) {
-                credService.sendPasswordResetEmail(email, name, token, null);
+                credService.sendPasswordResetEmail(userId, email, name, token);
             } else {
                 emailSender.send(new EmailMessage(email, "ProWise password reset",
                         "Use this password reset token within 30 minutes: " + token));
@@ -381,17 +473,26 @@ public class AuthService {
 
     @Transactional
     public void confirmPasswordReset(String token, String password) {
+        // Validate first so a weak password does not burn the single-use token.
         validatePassword(password);
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT id, user_id FROM password_reset_tokens WHERE token_hash = ? "
-                        + "AND used_at IS NULL AND expires_at > now()", hash(token));
-        if (rows.isEmpty()) {
-            throw invalidCredentials();
+        // A signup verification link can never set a password through this endpoint.
+        AccountTokenService.ConsumedToken consumed = accountTokenService.consume(token,
+                        AccountTokenService.Purpose.SETUP, AccountTokenService.Purpose.RESET)
+                .orElseThrow(AuthService::invalidCredentials);
+        UUID userId = consumed.userId();
+        String encoded = passwordEncoder.encode(password);
+        int updated;
+        if (consumed.purpose() == AccountTokenService.Purpose.SETUP) {
+            // Setup activates only an account that is still pending; a disabled account stays disabled.
+            updated = jdbc.update("UPDATE users SET password_hash = ?, must_change_password = false, status = 'ACTIVE', "
+                    + "version = version + 1, updated_at = now() WHERE id = ? AND status = 'PENDING_ACTIVATION'", encoded, userId);
+        } else {
+            updated = jdbc.update("UPDATE users SET password_hash = ?, must_change_password = false, "
+                    + "version = version + 1, updated_at = now() WHERE id = ?", encoded, userId);
         }
-        UUID userId = (UUID) rows.get(0).get("user_id");
-        jdbc.update("UPDATE users SET password_hash = ?, must_change_password = false, version = version + 1, updated_at = now() WHERE id = ?",
-                passwordEncoder.encode(password), userId);
-        jdbc.update("UPDATE password_reset_tokens SET used_at = now() WHERE id = ?", rows.get(0).get("id"));
+        if (updated != 1) {
+            throw invalidCredentials(); // rolls back the token consumption with the rest of the transaction
+        }
         jdbc.update("UPDATE sessions SET revoked_at = now() WHERE user_id = ? AND revoked_at IS NULL", userId);
     }
 
@@ -411,7 +512,7 @@ public class AuthService {
             case "TEAM_LEAD" -> organizationId != null ? "/org/" + orgStr + "/lead/dashboard" : "/select-org";
             case "DEVELOPER" -> organizationId != null ? "/org/" + orgStr + "/developer/dashboard" : "/select-org";
             case "QA_REVIEWER" -> organizationId != null ? "/org/" + orgStr + "/reviewer/dashboard" : "/select-org";
-            default -> organizationId != null ? "/org/" + orgStr + "/viewer/dashboard" : "/dashboard";
+            default -> organizationId != null ? "/org/" + orgStr + "/viewer/dashboard" : "/create-organization"; // a verified self-registered owner creates the first workspace
         };
     }
 
@@ -430,12 +531,44 @@ public class AuthService {
     private TokenPair issueSession(UUID userId, String email, UUID familyId, UUID organizationId, String role, String name, boolean mustChangePassword) {
         String refreshToken = randomToken();
         UUID sessionId = UUID.randomUUID();
+<<<<<<< HEAD
         // The session remembers its organization (task 1.3, T06) so refresh keeps the binding.
         jdbc.update("INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, org_id, expires_at) "
                         + "VALUES (?, ?, ?, ?, ?, now() + (? * interval '1 day'))",
                 sessionId, userId, hash(refreshToken), familyId, organizationId, refreshTokenDays);
         String accessToken = jwtService.issueAccessToken(new AuthPrincipal(userId, sessionId, email, organizationId,
                 null, role, null, null, mustChangePassword, name));
+=======
+        jdbc.update("INSERT INTO sessions (id, user_id, refresh_token_hash, family_id, expires_at) "
+                        + "VALUES (?, ?, ?, ?, now() + (? * interval '1 day'))",
+                sessionId, userId, hash(refreshToken), familyId, refreshTokenDays);
+
+        // A users-table platform operator acts with the access level and department of its own active
+        // platform_operators row. Without such a row the token carries no operator claims at all (it used to be
+        // given MAIN_PLATFORM_OPERATOR unconditionally).
+        String opId = null;
+        String dept = null;
+        String accessLevel = null;
+        if ("PLATFORM_OPERATOR".equalsIgnoreCase(role)) {
+            List<Map<String, Object>> ops = jdbc.queryForList("""
+                    SELECT id, department_id, access_level FROM platform_operators
+                    WHERE (user_id = ? OR lower(email) = lower(?)) AND status = 'ACTIVE' AND password_setup_completed
+                    ORDER BY id LIMIT 1
+                    """, userId, email);
+            if (!ops.isEmpty()) {
+                opId = Objects.toString(ops.get(0).get("id"), null);
+                dept = Objects.toString(ops.get(0).get("department_id"), null);
+                accessLevel = Objects.toString(ops.get(0).get("access_level"), null);
+            }
+        }
+
+        AuthPrincipal principal = new AuthPrincipal(
+                userId, sessionId, email, organizationId, opId, role, dept,
+                accessLevel, mustChangePassword, name
+        );
+
+        String accessToken = jwtService.issueAccessToken(principal);
+>>>>>>> b46fd9c (Update ProWise application)
         return new TokenPair(accessToken, refreshToken);
     }
 
@@ -477,6 +610,11 @@ public class AuthService {
                 "The credentials are invalid.");
     }
 
+    private static ApiException invalidLink() {
+        return new ApiException(HttpStatus.BAD_REQUEST, "INVALID_TOKEN",
+                "This link is invalid, already used or expired.");
+    }
+
     private static void validateCredentials(String email, String password) {
         if (email == null || !email.contains("@")) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED,
@@ -501,6 +639,10 @@ public class AuthService {
     }
 
     private static void enforceRateLimit(String key) {
+        enforceRateLimit(key, MAX_ATTEMPTS_PER_WINDOW);
+    }
+
+    private static void enforceRateLimit(String key, int maxAttempts) {
         long now = System.currentTimeMillis();
         RateAttempt attempt = RATE_ATTEMPTS.compute(key, (ignored, current) -> {
             if (current == null || now - current.startedAt() >= RATE_WINDOW_MILLIS) {
@@ -508,25 +650,18 @@ public class AuthService {
             }
             return new RateAttempt(current.startedAt(), current.count() + 1);
         });
-        if (attempt.count() > MAX_ATTEMPTS_PER_WINDOW) {
+        if (attempt.count() > maxAttempts) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, ErrorCodes.RATE_LIMITED,
                     "Too many attempts. Try again later.");
         }
     }
 
     private static String randomToken() {
-        byte[] bytes = new byte[48];
-        RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        return AccountTokenService.randomToken();
     }
 
     static String hash(String value) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (java.security.NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is unavailable.", exception);
-        }
+        return AccountTokenService.hash(value);
     }
 
     public record TokenPair(String accessToken, String refreshToken) {}

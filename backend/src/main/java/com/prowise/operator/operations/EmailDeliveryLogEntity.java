@@ -1,6 +1,7 @@
 package com.prowise.operator.operations;
 
 import java.time.Instant;
+import java.util.UUID;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -41,7 +42,20 @@ public class EmailDeliveryLogEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    /** Account the email concerns (null for operator emails and older rows). */
+    @Column(name = "user_id")
+    private UUID userId;
+
+    /** ACCOUNT_SETUP, PASSWORD_RESET, OPERATOR_INVITATION (null for older rows). */
+    @Column(name = "email_type", length = 40)
+    private String emailType;
+
     public EmailDeliveryLogEntity() {}
+
+    public UUID getUserId() { return userId; }
+    public void setUserId(UUID userId) { this.userId = userId; }
+    public String getEmailType() { return emailType; }
+    public void setEmailType(String emailType) { this.emailType = emailType; }
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }

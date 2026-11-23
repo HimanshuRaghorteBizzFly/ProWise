@@ -75,7 +75,13 @@ prowise:
     frontend-url: ${FRONTEND_URL:http://localhost:3000}
   worker:
     outbox-delay-ms: ${OUTBOX_POLL_DELAY_MS:5000}
+  bootstrap:
+    # Optional, set only by deployment configuration. When set and no legitimate Super Admin exists, startup
+    # creates one pending Super Admin and emails a single-use 72-hour setup link (SuperAdminBootstrapService).
+    # There is no HTTP endpoint for this. Remove the variable once the account is active.
+    super-admin-email: ${PROWISE_BOOTSTRAP_SUPER_ADMIN_EMAIL:}
   auth:
-    jwt-signing-key: ${JWT_SIGNING_KEY:test-default-signing-key-that-is-at-least-32-bytes-long}
+    # No default: RequiredEnvironmentValidator stops startup when JWT_SIGNING_KEY is missing.
+    jwt-signing-key: ${JWT_SIGNING_KEY:}
     access-token-minutes: ${ACCESS_TOKEN_MINUTES:15}
     refresh-token-days: ${REFRESH_TOKEN_DAYS:30}

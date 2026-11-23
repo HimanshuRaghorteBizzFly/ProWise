@@ -146,7 +146,11 @@ public class AuthFilter extends OncePerRequestFilter {
                         .setParameter("orgId", principal.organizationId());
             }
             List<GrantedAuthority> userAuthorities = new ArrayList<>();
-            if (principal.role() != null && !principal.role().isBlank()) {
+            // Operator authority comes only from an operator token (an active platform_operators row with a
+            // completed setup, see AuthService.issueSession). A plain user token whose users.role still says
+            // PLATFORM_OPERATOR gets no operator authority from that column.
+            if (principal.role() != null && !principal.role().isBlank()
+                    && !"PLATFORM_OPERATOR".equalsIgnoreCase(principal.role().trim())) {
                 String cleanRole = principal.role().toUpperCase().replace("-", "_");
                 userAuthorities.add(new SimpleGrantedAuthority("ROLE_" + cleanRole));
                 userAuthorities.add(new SimpleGrantedAuthority(cleanRole));

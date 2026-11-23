@@ -20,7 +20,6 @@ import {
   Mail,
   Server,
   Layers,
-  Sparkles,
   ArrowRight,
   UserCheck,
 } from "lucide-react";
@@ -40,7 +39,7 @@ export default function OperatorLoginPage() {
   const { setCurrentRole, login: authLogin } = useAuthStore();
   const updateAccountSettings = usePlatformOperatorStore((s) => s.updateAccountSettings);
 
-  const [mode, setMode] = useState<"login" | "forgot" | "invite">("login");
+  const [mode, setMode] = useState<"login" | "forgot" | "invite" | "reset">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -51,22 +50,30 @@ export default function OperatorLoginPage() {
   const [inviteToken, setInviteToken] = useState("");
   const [inviteName, setInviteName] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  // Password reset link state (?reset=<token>, single use, 30 minutes)
+  const [resetToken, setResetToken] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
-  // Load remembered email
+  // Load remembered email. An emailed invitation link (?invite=<token>) opens the invite form; an emailed reset
+  // link (?reset=<token>) opens the new-password form.
   useEffect(() => {
     if (typeof window !== "undefined") {
       const savedEmail = localStorage.getItem("prowise_operator_saved_email");
       if (savedEmail) {
         setEmail(savedEmail);
       }
+      const invite = new URLSearchParams(window.location.search).get("invite");
+      if (invite) {
+        setInviteToken(invite);
+        setMode("invite");
+      }
+      const reset = new URLSearchParams(window.location.search).get("reset");
+      if (reset) {
+        setResetToken(reset);
+        setMode("reset");
+      }
     }
   }, []);
-
-  const handleFillDemo = (department = "Platform Operations") => {
-    setEmail("operator@prowise.io");
-    setPassword("Operator2026!");
-    toast.info(`Filled credentials for ${department}`);
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,35 +138,52 @@ export default function OperatorLoginPage() {
     }
   };
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 12) {
+      toast.error("Password must be at least 12 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await operatorAuthService.resetPassword(resetToken, newPassword);
+      toast.success("Your password was reset. Sign in with the new password.");
+      setResetToken("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setMode("login");
+    } catch {
+      toast.error("This reset link is invalid, already used or expired. Request a new one.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleAcceptInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteToken || !newPassword) {
       toast.error("Invitation token and new password are required.");
       return;
     }
+    if (newPassword.length < 12) {
+      toast.error("Password must be at least 12 characters.");
+      return;
+    }
     setIsLoading(true);
     try {
-      const res = await operatorAuthService.acceptInvitation(inviteToken, newPassword, inviteName);
-
-      updateAccountSettings({
-        name: res.operator.name,
-        email: res.operator.email,
-        department: res.operator.departmentName as any,
-        shiftName: res.operator.shiftName,
-        mfaEnabled: res.operator.mfaEnabled,
-        activeOperatorId: res.operator.id,
-      });
-
-      setCurrentRole("PLATFORM_OPERATOR");
-      authLogin(res.operator.email, "PLATFORM_OPERATOR");
-
-      toast.success("Account activated successfully!", {
-        description: `Assigned to ${res.operator.departmentName}`,
-      });
-
-      router.push("/platform-operator/dashboard");
+      // The invitation sets the operator's own password; the session starts with a normal sign-in.
+      await operatorAuthService.acceptInvitation(inviteToken, newPassword, inviteName);
+      toast.success("Invitation accepted. Sign in with your new password.");
+      setInviteToken("");
+      setNewPassword("");
+      setPassword("");
+      setMode("login");
     } catch (err: any) {
-      toast.error(err.message || "Invalid or expired invitation token.");
+      toast.error(err.message || "This invitation link is invalid or has expired. Ask your Super Admin to resend it.");
     } finally {
       setIsLoading(false);
     }
@@ -255,13 +279,6 @@ export default function OperatorLoginPage() {
                   />
                   Remember my email
                 </label>
-                <button
-                  type="button"
-                  onClick={() => handleFillDemo()}
-                  className="text-xs text-slate-400 hover:text-blue-400 flex items-center gap-1 transition-colors"
-                >
-                  <Sparkles className="h-3 w-3 text-amber-400" /> Fill Demo Credentials
-                </button>
               </div>
 
               <Button
@@ -279,7 +296,7 @@ export default function OperatorLoginPage() {
               <div className="text-left mb-2">
                 <h3 className="text-sm font-semibold text-white">Reset Operator Password</h3>
                 <p className="text-xs text-slate-400">
-                  Enter your registered corporate email to receive a password reset token.
+                  Enter your registered corporate email to receive a single-use reset link (valid 30 minutes).
                 </p>
               </div>
 
@@ -309,7 +326,7 @@ export default function OperatorLoginPage() {
                   className="flex-1 bg-blue-600 hover:bg-blue-500 text-white"
                   isLoading={isLoading}
                 >
-                  Send Reset Token
+                  Send Reset Link
                 </Button>
               </div>
             </form>
@@ -348,14 +365,14 @@ export default function OperatorLoginPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-300">Set Initial Password (min 8 chars)</label>
+                <label className="text-xs font-medium text-slate-300">Set Initial Password (min 12 chars)</label>
                 <input
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="••••••••••••"
                   required
-                  minLength={8}
+                  minLength={12}
                   className="w-full h-10 px-3 py-2 text-sm bg-slate-950 border border-slate-700/80 rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 />
               </div>
@@ -375,6 +392,61 @@ export default function OperatorLoginPage() {
                   isLoading={isLoading}
                 >
                   Activate & Sign In
+                </Button>
+              </div>
+            </form>
+          )}
+
+          {mode === "reset" && (
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="text-left mb-2">
+                <h3 className="text-sm font-semibold text-white">Choose a New Password</h3>
+                <p className="text-xs text-slate-400">
+                  This reset link works once and expires 30 minutes after it was requested.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">New Password (min 12 chars)</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="At least 12 characters"
+                  required
+                  minLength={12}
+                  className="w-full h-10 px-3 py-2 text-sm bg-slate-950 border border-slate-700/80 rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repeat the new password"
+                  required
+                  minLength={12}
+                  className="w-full h-10 px-3 py-2 text-sm bg-slate-950 border border-slate-700/80 rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700"
+                  onClick={() => setMode("login")}
+                >
+                  Back to Sign In
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white"
+                  isLoading={isLoading}
+                >
+                  Reset Password
                 </Button>
               </div>
             </form>

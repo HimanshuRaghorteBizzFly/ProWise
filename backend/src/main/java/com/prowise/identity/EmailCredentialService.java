@@ -10,12 +10,34 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.HtmlUtils;
 
 import com.prowise.operator.operations.EmailDeliveryLogEntity;
 import com.prowise.operator.operations.EmailDeliveryLogRepository;
 
+/**
+ * Account emails. They carry single-use links only: never a password. Every attempt is recorded in
+ * {@code email_delivery_logs} with an honest status (DELIVERED, FAILED or NOT_SENT) so administrators can resend.
+ * Links and tokens are never written to the application log.
+ */
 @Service
 public class EmailCredentialService {
+
+    public static final String TYPE_ACCOUNT_SETUP = "ACCOUNT_SETUP";
+    public static final String TYPE_PASSWORD_RESET = "PASSWORD_RESET";
+    public static final String TYPE_OPERATOR_INVITATION = "OPERATOR_INVITATION";
+    public static final String TYPE_EMAIL_VERIFICATION = "EMAIL_VERIFICATION";
+    public static final String TYPE_OPERATOR_PASSWORD_RESET = "OPERATOR_PASSWORD_RESET";
+
+    public static final String STATUS_DELIVERED = "DELIVERED";
+    public static final String STATUS_FAILED = "FAILED";
+    public static final String STATUS_NOT_SENT = "NOT_SENT";
+
+    /** Shown to administrators; deliberately free of SMTP host, user or provider error text. */
+    public static final String SAFE_FAILURE_MESSAGE =
+            "The email could not be delivered. The account stays pending; use Resend once email delivery works.";
+    public static final String NOT_CONFIGURED_MESSAGE =
+            "No email was sent because outgoing email is not configured. The account stays pending; use Resend once it is.";
 
     private static final Logger log = LoggerFactory.getLogger(EmailCredentialService.class);
 
@@ -39,25 +61,69 @@ public class EmailCredentialService {
         this.frontendUrl = frontendUrl;
     }
 
-    public EmailDeliveryResult sendWelcomeCredentials(String recipient, String userName, String tempPassword, String customLoginUrl) {
-        String loginUrl = (customLoginUrl != null && !customLoginUrl.isBlank()) ? customLoginUrl : (frontendUrl + "/login");
-        String subject = "Welcome to ProWise — Your Login Credentials";
-        String htmlBody = buildWelcomeHtml(userName, recipient, tempPassword, loginUrl);
-
-        return sendHtmlEmail(recipient, subject, htmlBody, "Welcome Credentials");
+    /** First-password link for a pending account (valid 72 hours, single use). */
+    public EmailDeliveryResult sendAccountSetupEmail(UUID userId, String recipient, String userName, String setupToken) {
+        String setupUrl = frontendUrl + "/reset-password?token=" + setupToken + "&setup=1";
+        String body = """
+                <p>Hello %s, an administrator has created a ProWise account for you.</p>
+                <p>Choose your own password to activate it. You will never be sent a password by email.</p>
+                %s
+                <p class="small">This link works once and expires in 72 hours. If it expires, ask your administrator to resend it.</p>
+                """.formatted(escape(userName, "there"), button(setupUrl, "Set up my account"));
+        return sendHtmlEmail(userId, recipient, "Set up your ProWise account", page("Set up your ProWise account", body),
+                TYPE_ACCOUNT_SETUP);
     }
 
-    public EmailDeliveryResult sendPasswordResetEmail(String recipient, String userName, String resetToken, String customResetUrl) {
-        String resetUrl = (customResetUrl != null && !customResetUrl.isBlank())
-                ? customResetUrl
-                : (frontendUrl + "/reset-password?token=" + resetToken);
-        String subject = "ProWise — Password Reset Request";
-        String htmlBody = buildPasswordResetHtml(userName, recipient, resetToken, resetUrl);
-
-        return sendHtmlEmail(recipient, subject, htmlBody, "Password Reset");
+    /** Password reset link (valid 30 minutes, single use). */
+    public EmailDeliveryResult sendPasswordResetEmail(UUID userId, String recipient, String userName, String resetToken) {
+        String resetUrl = frontendUrl + "/reset-password?token=" + resetToken;
+        String body = """
+                <p>Hello %s, we received a request to reset your ProWise password.</p>
+                %s
+                <p class="small">This link works once and expires in 30 minutes. If you did not request this reset, you can ignore this email.</p>
+                """.formatted(escape(userName, "there"), button(resetUrl, "Reset my password"));
+        return sendHtmlEmail(userId, recipient, "ProWise password reset", page("Password reset", body), TYPE_PASSWORD_RESET);
     }
 
-    private EmailDeliveryResult sendHtmlEmail(String recipient, String subject, String htmlBody, String emailType) {
+    /** Platform operator invitation link (valid 72 hours, single use). Operators have no row in {@code users}. */
+    public EmailDeliveryResult sendOperatorInvitationEmail(String recipient, String operatorName, String invitationToken) {
+        String acceptUrl = frontendUrl + "/operator/login?invite=" + invitationToken;
+        String body = """
+                <p>Hello %s, you have been invited to operate the ProWise platform.</p>
+                <p>Choose your own password to accept the invitation.</p>
+                %s
+                <p class="small">This link works once and expires in 72 hours.</p>
+                """.formatted(escape(operatorName, "there"), button(acceptUrl, "Accept invitation"));
+        return sendHtmlEmail(null, recipient, "Your ProWise operator invitation", page("Operator invitation", body),
+                TYPE_OPERATOR_INVITATION);
+    }
+
+    /** Email verification after public signup (valid 72 hours, single use). The account stays pending until used. */
+    public EmailDeliveryResult sendEmailVerificationEmail(UUID userId, String recipient, String userName, String verifyToken) {
+        String verifyUrl = frontendUrl + "/verify-email?token=" + verifyToken;
+        String body = """
+                <p>Hello %s, thanks for signing up for ProWise.</p>
+                <p>Confirm this email address to activate your account. You can sign in once it is confirmed.</p>
+                %s
+                <p class="small">This link works once and expires in 72 hours. If you did not sign up, you can ignore this email.</p>
+                """.formatted(escape(userName, "there"), button(verifyUrl, "Confirm my email"));
+        return sendHtmlEmail(userId, recipient, "Confirm your ProWise email", page("Confirm your email", body),
+                TYPE_EMAIL_VERIFICATION);
+    }
+
+    /** Platform operator password reset link (valid 30 minutes, single use). Operators have no row in {@code users}. */
+    public EmailDeliveryResult sendOperatorPasswordResetEmail(String recipient, String operatorName, String resetToken) {
+        String resetUrl = frontendUrl + "/operator/login?reset=" + resetToken;
+        String body = """
+                <p>Hello %s, we received a request to reset your ProWise platform operator password.</p>
+                %s
+                <p class="small">This link works once and expires in 30 minutes. If you did not request this reset, you can ignore this email.</p>
+                """.formatted(escape(operatorName, "there"), button(resetUrl, "Reset my password"));
+        return sendHtmlEmail(null, recipient, "ProWise operator password reset", page("Operator password reset", body),
+                TYPE_OPERATOR_PASSWORD_RESET);
+    }
+
+    private EmailDeliveryResult sendHtmlEmail(UUID userId, String recipient, String subject, String htmlBody, String emailType) {
         JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
         boolean hasSmtpConfig = smtpUsername != null && !smtpUsername.isBlank();
 
@@ -65,20 +131,19 @@ public class EmailCredentialService {
         logEntity.setId("eml_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16));
         logEntity.setRecipient(recipient);
         logEntity.setSubject(subject);
-        logEntity.setProvider(hasSmtpConfig ? "Gmail-SMTP" : "Simulated-Dev");
+        logEntity.setProvider(hasSmtpConfig ? "SMTP" : "Not configured");
+        logEntity.setUserId(userId);
+        logEntity.setEmailType(emailType);
+        logEntity.setAttempts(1);
         logEntity.setCreatedAt(Instant.now());
         logEntity.setSentAt(Instant.now());
 
         if (mailSender == null || !hasSmtpConfig) {
-            log.info("Simulated delivery of {} email to {} (SMTP username not configured)", emailType, recipient);
-            logEntity.setStatus("DELIVERED");
-            logEntity.setAttempts(1);
-            try {
-                deliveryLogRepository.save(logEntity);
-            } catch (Exception e) {
-                log.warn("Could not record email delivery log: {}", e.getMessage());
-            }
-            return new EmailDeliveryResult(true, "DELIVERED", "Email sent via local dispatch simulation.");
+            log.warn("{} email to {} was not sent: outgoing email is not configured", emailType, recipient);
+            logEntity.setStatus(STATUS_NOT_SENT);
+            logEntity.setErrorCode("SMTP_NOT_CONFIGURED");
+            record(logEntity);
+            return new EmailDeliveryResult(false, STATUS_NOT_SENT, NOT_CONFIGURED_MESSAGE);
         }
 
         try {
@@ -91,120 +156,63 @@ public class EmailCredentialService {
 
             mailSender.send(message);
 
-            logEntity.setStatus("DELIVERED");
-            logEntity.setAttempts(1);
-            deliveryLogRepository.save(logEntity);
-
-            log.info("Successfully sent {} email to {}", emailType, recipient);
-            return new EmailDeliveryResult(true, "DELIVERED", "Email successfully delivered to " + recipient);
+            logEntity.setStatus(STATUS_DELIVERED);
+            record(logEntity);
+            log.info("{} email sent to {}", emailType, recipient);
+            return new EmailDeliveryResult(true, STATUS_DELIVERED, "The email was sent to " + recipient + ".");
         } catch (Exception ex) {
-            log.error("Failed to deliver {} email to {}: {}", emailType, recipient, ex.getMessage());
-            logEntity.setStatus("FAILED");
-            logEntity.setAttempts(1);
+            // The exception class is enough to diagnose; its message can echo SMTP hosts or user names.
+            log.error("{} email to {} failed: {}", emailType, recipient, ex.getClass().getSimpleName());
+            logEntity.setStatus(STATUS_FAILED);
             logEntity.setErrorCode("SMTP_SEND_FAILURE");
-            logEntity.setErrorMessage(ex.getMessage() != null && ex.getMessage().length() > 500
-                    ? ex.getMessage().substring(0, 500)
-                    : ex.getMessage());
-            try {
-                deliveryLogRepository.save(logEntity);
-            } catch (Exception ignored) {}
-
-            return new EmailDeliveryResult(false, "FAILED", "SMTP error: " + ex.getMessage());
+            logEntity.setErrorMessage(ex.getClass().getSimpleName());
+            record(logEntity);
+            return new EmailDeliveryResult(false, STATUS_FAILED, SAFE_FAILURE_MESSAGE);
         }
     }
 
-    private String buildWelcomeHtml(String name, String email, String tempPassword, String loginUrl) {
-        String displayName = (name != null && !name.isBlank()) ? name : "Team Member";
-        return """
-                <!DOCTYPE html>
-                <html>
-                <head>
-                  <meta charset="utf-8">
-                  <title>Welcome to ProWise</title>
-                  <style>
-                    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
-                    .container { max-width: 600px; margin: 0 auto; background: #1e293b; border-radius: 12px; padding: 32px; border: 1px solid #334155; }
-                    .header { text-align: center; margin-bottom: 24px; }
-                    .logo { display: inline-block; width: 44px; height: 44px; line-height: 44px; background: #2563eb; color: #fff; font-weight: bold; font-size: 20px; border-radius: 10px; text-align: center; }
-                    h1 { color: #f8fafc; font-size: 22px; margin-top: 12px; }
-                    p { color: #94a3b8; font-size: 14px; line-height: 1.6; }
-                    .cred-box { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin: 20px 0; }
-                    .cred-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
-                    .cred-label { color: #64748b; font-weight: 500; }
-                    .cred-val { color: #38bdf8; font-family: monospace; font-size: 15px; font-weight: 600; }
-                    .btn { display: inline-block; background: #2563eb; color: #ffffff !important; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px; margin: 20px 0; text-align: center; }
-                    .notice { background: #1e1b4b; border-left: 4px solid #6366f1; padding: 12px; border-radius: 4px; font-size: 13px; color: #c7d2fe; margin-top: 16px; }
-                    .footer { text-align: center; margin-top: 28px; font-size: 12px; color: #64748b; border-top: 1px solid #334155; padding-top: 16px; }
-                  </style>
-                </head>
-                <body>
-                  <div class="container">
-                    <div class="header">
-                      <div class="logo">P</div>
-                      <h1>Welcome to ProWise SaaS</h1>
-                      <p>Hello %s, an administrator has provisioned an account for you.</p>
-                    </div>
-                    <div class="cred-box">
-                      <div class="cred-row"><span class="cred-label">Login Email:</span> <span class="cred-val">%s</span></div>
-                      <div class="cred-row"><span class="cred-label">Temporary Password:</span> <span class="cred-val">%s</span></div>
-                    </div>
-                    <div style="text-align: center;">
-                      <a href="%s" class="btn">Sign In to ProWise</a>
-                    </div>
-                    <div class="notice">
-                      <strong>Important Security Requirement:</strong> This is a single-use temporary password. Upon signing in, you will be required to change your password before accessing the platform.
-                    </div>
-                    <div class="footer">
-                      &copy; 2026 ProWise Inc. Enterprise Project Delivery Platform. All rights reserved.
-                    </div>
-                  </div>
-                </body>
-                </html>
-                """.formatted(displayName, email, tempPassword, loginUrl);
+    private void record(EmailDeliveryLogEntity logEntity) {
+        try {
+            deliveryLogRepository.save(logEntity);
+        } catch (Exception e) {
+            log.warn("Could not record email delivery log: {}", e.getClass().getSimpleName());
+        }
     }
 
-    private String buildPasswordResetHtml(String name, String email, String token, String resetUrl) {
-        String displayName = (name != null && !name.isBlank()) ? name : "User";
+    private static String escape(String value, String fallback) {
+        return HtmlUtils.htmlEscape(value != null && !value.isBlank() ? value : fallback);
+    }
+
+    private static String button(String url, String label) {
+        return "<p style=\"text-align:center\"><a class=\"btn\" href=\"" + HtmlUtils.htmlEscape(url) + "\">" + label + "</a></p>";
+    }
+
+    private static String page(String title, String body) {
         return """
                 <!DOCTYPE html>
                 <html>
                 <head>
                   <meta charset="utf-8">
-                  <title>ProWise Password Reset</title>
+                  <title>%s</title>
                   <style>
                     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
                     .container { max-width: 600px; margin: 0 auto; background: #1e293b; border-radius: 12px; padding: 32px; border: 1px solid #334155; }
-                    .header { text-align: center; margin-bottom: 24px; }
-                    .logo { display: inline-block; width: 44px; height: 44px; line-height: 44px; background: #2563eb; color: #fff; font-weight: bold; font-size: 20px; border-radius: 10px; text-align: center; }
-                    h1 { color: #f8fafc; font-size: 22px; margin-top: 12px; }
-                    p { color: #94a3b8; font-size: 14px; line-height: 1.6; }
-                    .btn { display: inline-block; background: #2563eb; color: #ffffff !important; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px; margin: 20px 0; text-align: center; }
-                    .code-box { background: #0f172a; border: 1px solid #334155; padding: 12px; text-align: center; font-family: monospace; font-size: 18px; color: #38bdf8; border-radius: 6px; letter-spacing: 2px; }
+                    h1 { color: #f8fafc; font-size: 22px; margin: 0 0 16px; text-align: center; }
+                    p { color: #cbd5e1; font-size: 14px; line-height: 1.6; }
+                    .small { color: #94a3b8; font-size: 13px; }
+                    .btn { display: inline-block; background: #2563eb; color: #ffffff !important; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px; margin: 12px 0; }
                     .footer { text-align: center; margin-top: 28px; font-size: 12px; color: #64748b; border-top: 1px solid #334155; padding-top: 16px; }
                   </style>
                 </head>
                 <body>
                   <div class="container">
-                    <div class="header">
-                      <div class="logo">P</div>
-                      <h1>Password Reset Request</h1>
-                      <p>Hello %s, we received a request to reset your ProWise password.</p>
-                    </div>
-                    <div style="text-align: center;">
-                      <a href="%s" class="btn">Reset My Password</a>
-                    </div>
-                    <p style="text-align: center;">Or enter this verification token:</p>
-                    <div class="code-box">%s</div>
-                    <p style="margin-top: 16px; font-size: 13px; color: #94a3b8;">
-                      This link and code expire in 30 minutes. If you did not request this reset, you can safely ignore this email.
-                    </p>
-                    <div class="footer">
-                      &copy; 2026 ProWise Inc. All rights reserved.
-                    </div>
+                    <h1>%s</h1>
+                    %s
+                    <div class="footer">ProWise</div>
                   </div>
                 </body>
                 </html>
-                """.formatted(displayName, resetUrl, token);
+                """.formatted(HtmlUtils.htmlEscape(title), HtmlUtils.htmlEscape(title), body);
     }
 
     public record EmailDeliveryResult(boolean success, String status, String message) {}

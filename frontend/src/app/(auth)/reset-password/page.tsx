@@ -17,6 +17,10 @@ export default function ResetPasswordPage() {
   const [token] = useState(() =>
     typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("token") || "",
   );
+  // Account setup links (72 hours) and reset links (30 minutes) share this page and the same single-use flow.
+  const [isSetup] = useState(() =>
+    typeof window === "undefined" ? false : new URLSearchParams(window.location.search).get("setup") === "1",
+  );
   const [isSuccess, setIsSuccess] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -33,10 +37,16 @@ export default function ResetPasswordPage() {
     apiClient.confirmPasswordReset(token, password)
       .then(() => {
         setIsSuccess(true);
-        toast.success("Password reset successfully!");
+        toast.success(isSetup ? "Your account is ready." : "Your password was reset.");
         setTimeout(() => router.push("/login"), 1500);
       })
-      .catch((error) => toast.error(error instanceof Error ? error.message : "Unable to reset the password."));
+      .catch(() =>
+        toast.error(
+          isSetup
+            ? "This setup link is invalid, already used or expired. Ask your administrator to resend it."
+            : "This reset link is invalid, already used or expired. Request a new one.",
+        ),
+      );
   };
 
   return (
@@ -46,9 +56,11 @@ export default function ResetPasswordPage() {
           <span className="text-2xl font-black tracking-tight text-primary-600 dark:text-primary-400">
             ProWise
           </span>
-          <h1 className="text-xl font-bold mt-2">Reset your password</h1>
+          <h1 className="text-xl font-bold mt-2">{isSetup ? "Set up your account" : "Reset your password"}</h1>
           <p className="text-xs text-[var(--color-text-secondary)] mt-1">
-            Enter a strong new password for your account.
+            {isSetup
+              ? "Choose your own password to activate your account. This link works once."
+              : "Enter a strong new password for your account."}
           </p>
         </div>
 
@@ -56,7 +68,7 @@ export default function ResetPasswordPage() {
           {isSuccess ? (
             <div className="text-center py-6">
               <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
-              <h3 className="text-base font-semibold">Password Updated</h3>
+              <h3 className="text-base font-semibold">{isSetup ? "Account activated" : "Password updated"}</h3>
               <p className="text-xs text-[var(--color-text-secondary)] mt-1">
                 Redirecting you to login...
               </p>
@@ -73,7 +85,7 @@ export default function ResetPasswordPage() {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="At least 8 characters"
+                    placeholder="At least 12 characters"
                     className="pl-9"
                     required
                   />
@@ -98,7 +110,7 @@ export default function ResetPasswordPage() {
               </div>
 
               <Button type="submit" className="w-full">
-                <span>Update Password</span>
+                <span>{isSetup ? "Activate account" : "Update password"}</span>
                 <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
             </form>

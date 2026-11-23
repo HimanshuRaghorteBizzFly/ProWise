@@ -35,10 +35,26 @@ public class AuthController {
 
     @PostMapping("/auth/signup")
     @PreAuthorize("permitAll()")
+<<<<<<< HEAD
     @Operation(summary = "Create an organization owner and workspace, then start a session")
     public ResponseEntity<AccessTokenResponse> signup(@RequestBody SignupRequest request) {
         return withRefreshCookie(authService.signup(request.email(), request.password(), request.name(),
                 request.organization()), 201);
+=======
+    @Operation(summary = "Register an account; a single-use link emailed to the address activates it (no session is issued)")
+    public ResponseEntity<MessageResponse> signup(HttpServletRequest httpRequest, @RequestBody SignupRequest request) {
+        authService.signup(request.email(), request.password(), request.name(), extractClientIp(httpRequest));
+        // Same answer whether or not the address was already registered.
+        return ResponseEntity.accepted().body(new MessageResponse(SIGNUP_ACCEPTED));
+    }
+
+    @PostMapping({"/auth/verify-email", "/auth/email-verification/confirm"})
+    @PreAuthorize("permitAll()")
+    @Operation(summary = "Activate a self-registered account with its single-use emailed link")
+    public ResponseEntity<Void> verifyEmail(@RequestBody TokenRequest request) {
+        authService.verifyEmail(request.token());
+        return ResponseEntity.noContent().build();
+>>>>>>> b46fd9c (Update ProWise application)
     }
 
     @PostMapping("/auth/signin")
@@ -162,9 +178,18 @@ public class AuthController {
         return authService.me(AuthPrincipal.require(request).userId());
     }
 
+<<<<<<< HEAD
     public record SignupRequest(String email, String password, String name,
             OrganizationService.CreateOrganizationRequest organization) {}
+=======
+    static final String SIGNUP_ACCEPTED =
+            "If this address can be registered, we have emailed a link to activate the account. Use it, then sign in.";
+
+>>>>>>> b46fd9c (Update ProWise application)
     public record Credentials(String email, String password) {}
+    public record SignupRequest(String email, String password, String name) {}
+    public record TokenRequest(String token) {}
+    public record MessageResponse(String message) {}
     public record RefreshRequest(String refreshToken) {}
     public record EmailRequest(String email) {}
     public record PasswordResetRequest(String token, String password) {}

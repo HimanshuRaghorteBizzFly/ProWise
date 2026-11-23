@@ -62,6 +62,35 @@ const ALL_ROLES = [
   { value: "VIEWER", label: "Viewer", color: "slate" },
 ];
 
+/**
+ * Platform roles are never assigned from this page (approved decisions 5 and 6): operators are created
+ * through Operator Management and Super Admins only through the controlled bootstrap process.
+ */
+const NON_ASSIGNABLE_ROLES = new Set(["SUPER_ADMIN", "PLATFORM_OPERATOR"]);
+const ASSIGNABLE_ROLES = ALL_ROLES.filter((r) => !NON_ASSIGNABLE_ROLES.has(r.value));
+
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "Active",
+  DISABLED: "Deactivated",
+  PENDING_ACTIVATION: "Pending activation",
+};
+
+/** Plain-language label for the latest setup email of a pending account. */
+const SETUP_EMAIL_LABELS: Record<string, { label: string; tone: "ok" | "warn" | "bad" }> = {
+  DELIVERED: { label: "Setup email sent", tone: "ok" },
+  FAILED: { label: "Setup email failed", tone: "bad" },
+  NOT_SENT: { label: "Email not configured", tone: "warn" },
+  NOT_REQUESTED: { label: "No setup email sent", tone: "warn" },
+};
+
+type DeliveryAction = "CREATE" | "RESEND" | "RESET";
+
+const DELIVERY_TITLES: Record<DeliveryAction, string> = {
+  CREATE: "Account created and waiting for setup",
+  RESEND: "Setup link sent",
+  RESET: "Password reset link sent",
+};
+
 const DEPARTMENT_OPTIONS = [
   "Platform Operations",
   "Site Reliability",
@@ -107,16 +136,15 @@ export default function SuperAdminUsersPage() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<SuperAdminUserItem | null>(null);
 
-  // Credentials popup after create or reset
+  // Delivery result after create, resend or reset. Never holds a credential.
   const [credentialsModalOpen, setCredentialsModalOpen] = useState(false);
   const [credentialDetails, setCredentialDetails] = useState<{
     email: string;
-    tempPassword?: string;
     deliveryStatus: string;
     deliveryMessage?: string;
-    actionType: "CREATE" | "RESET";
+    actionType: DeliveryAction;
   } | null>(null);
-  const [copiedPassword, setCopiedPassword] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Login History modal
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -136,7 +164,6 @@ export default function SuperAdminUsersPage() {
     organizationId: "",
     phone: "",
     sendEmail: true,
-    customPassword: "",
   });
 
   // Form Fields for Edit
@@ -166,23 +193,15 @@ export default function SuperAdminUsersPage() {
         setTotalElements(res.total_elements);
         setTotalPages(res.total_pages || 1);
       }
-    } catch {
-      // Fallback fallback seed if backend is unreachable
-      toast.error("Could not reach backend API. Showing offline user list.");
-      setUsers([
-        {
-          id: "00000000-0000-0000-0000-000000000001",
-          email: "superadmin@prowise.com",
-          name: "Super Administrator",
-          role: "SUPER_ADMIN",
-          status: "ACTIVE",
-          must_change_password: false,
-          created_at: new Date().toISOString(),
-          last_login_at: new Date().toISOString(),
-        },
-      ]);
-      setTotalElements(1);
+      setLoadError(null);
+    } catch (error) {
+      // No sample fallback: an empty table with the real error is the honest state.
+      const message = error instanceof Error ? error.message : "Could not load users.";
+      setLoadError(message);
+      setUsers([]);
+      setTotalElements(0);
       setTotalPages(1);
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -194,7 +213,7 @@ export default function SuperAdminUsersPage() {
 
   // Statistics
   const activeCount = useMemo(() => users.filter((u) => u.status === "ACTIVE").length, [users]);
-  const pendingPasswordCount = useMemo(() => users.filter((u) => u.must_change_password).length, [users]);
+  const pendingActivationCount = useMemo(() => users.filter((u) => u.status === "PENDING_ACTIVATION").length, [users]);
   const disabledCount = useMemo(() => users.filter((u) => u.status === "DISABLED").length, [users]);
 
   // Handle Create User Submit
@@ -214,27 +233,22 @@ export default function SuperAdminUsersPage() {
         name: createForm.name.trim(),
         email: createForm.email.trim(),
         role: createForm.role,
-        department: createForm.role === "PLATFORM_OPERATOR" ? createForm.department : undefined,
         organization_id: createForm.organizationId || undefined,
         phone: createForm.phone.trim() || undefined,
         send_email: createForm.sendEmail,
-        custom_password: createForm.customPassword.trim() || undefined,
       });
 
-      toast.success(`User ${res.email} successfully created.`);
+      toast.success(`Account created for ${res.email}. It stays pending until the owner sets a password.`);
       setCreateModalOpen(false);
 
-      // Open credentials popup
       setCredentialDetails({
         email: res.email,
-        tempPassword: res.temp_password || undefined,
-        deliveryStatus: res.email_delivery_status || "DELIVERED",
+        deliveryStatus: res.email_delivery_status || "NOT_REQUESTED",
         deliveryMessage: res.email_delivery_message || undefined,
         actionType: "CREATE",
       });
       setCredentialsModalOpen(true);
 
-      // Reset form
       setCreateForm({
         name: "",
         email: "",
@@ -243,7 +257,6 @@ export default function SuperAdminUsersPage() {
         organizationId: "",
         phone: "",
         sendEmail: true,
-        customPassword: "",
       });
 
       fetchUsers();
@@ -260,8 +273,9 @@ export default function SuperAdminUsersPage() {
     try {
       await apiClient.superAdminUsers.update(selectedUser.id, {
         name: editForm.name.trim(),
-        role: editForm.role,
-        department: editForm.role === "PLATFORM_OPERATOR" ? editForm.department : undefined,
+        // A platform role is shown read-only and never sent back.
+        role: NON_ASSIGNABLE_ROLES.has(editForm.role) ? undefined : editForm.role,
+        department: editForm.department || undefined,
         organization_id: editForm.organizationId || undefined,
         phone: editForm.phone.trim() || undefined,
       });
@@ -274,14 +288,12 @@ export default function SuperAdminUsersPage() {
     }
   };
 
-  // Handle Reset Password
-  const handleResetPassword = async (user: SuperAdminUserItem) => {
+  // Send a 30-minute password reset link (active accounts only)
+  const handleSendResetLink = async (user: SuperAdminUserItem) => {
     try {
-      const res = await apiClient.superAdminUsers.resetPassword(user.id);
-      toast.success(`Password reset for ${user.email}.`);
+      const res = await apiClient.superAdminUsers.sendResetLink(user.id);
       setCredentialDetails({
         email: user.email,
-        tempPassword: res.temp_password,
         deliveryStatus: res.email_delivery_status,
         deliveryMessage: res.email_delivery_message,
         actionType: "RESET",
@@ -289,33 +301,31 @@ export default function SuperAdminUsersPage() {
       setCredentialsModalOpen(true);
       fetchUsers();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to reset password.");
+      toast.error(error instanceof Error ? error.message : "Could not send the reset link.");
     }
   };
 
-  // Handle Resend Invitation
-  const handleResendInvitation = async (user: SuperAdminUserItem) => {
+  // Resend the 72-hour setup link (pending accounts only); earlier links stop working
+  const handleResendSetupLink = async (user: SuperAdminUserItem) => {
     try {
-      const res = await apiClient.superAdminUsers.resendInvitation(user.id);
-      toast.success(`Login credentials resent to ${user.email}.`);
+      const res = await apiClient.superAdminUsers.resendSetupLink(user.id);
       setCredentialDetails({
         email: user.email,
-        tempPassword: res.temp_password,
         deliveryStatus: res.email_delivery_status,
         deliveryMessage: res.email_delivery_message,
-        actionType: "RESET",
+        actionType: "RESEND",
       });
       setCredentialsModalOpen(true);
       fetchUsers();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to resend invitation.");
+      toast.error(error instanceof Error ? error.message : "Could not resend the setup link.");
     }
   };
 
-  // Handle Status Toggle (Activate / Deactivate)
+  // Handle Status Toggle (Activate / Deactivate). A pending account can only be deactivated.
   const handleConfirmStatusToggle = async () => {
     if (!statusActionTarget) return;
-    const nextStatus = statusActionTarget.status === "ACTIVE" ? "DISABLED" : "ACTIVE";
+    const nextStatus = statusActionTarget.status === "DISABLED" ? "ACTIVE" : "DISABLED";
     try {
       await apiClient.superAdminUsers.updateStatus(statusActionTarget.id, nextStatus as any);
       toast.success(
@@ -360,21 +370,12 @@ export default function SuperAdminUsersPage() {
     setEditModalOpen(true);
   };
 
-  // Copy temporary password
-  const copyTempPassword = (pwd?: string) => {
-    if (!pwd) return;
-    navigator.clipboard.writeText(pwd);
-    setCopiedPassword(true);
-    toast.success("Temporary password copied to clipboard.");
-    setTimeout(() => setCopiedPassword(false), 2000);
-  };
-
   return (
     <div className="space-y-6">
       {/* 1. Header */}
       <PageHeader
-        title="User Management & Credentials"
-        description="Provision platform users, auto-generate temporary credentials, deliver Gmail onboarding instructions, and govern access across all roles."
+        title="User Management"
+        description="Create accounts and email each owner a single-use link to set their own password. Platform operators are created in Operator Management."
         badge={`${totalElements} Registered`}
         actions={
           <div className="flex items-center gap-2">
@@ -414,11 +415,11 @@ export default function SuperAdminUsersPage() {
           sublabel="Can sign in and access dashboards"
         />
         <KpiCard
-          label="Pending 1st Login Change"
-          value={pendingPasswordCount}
+          label="Pending Activation"
+          value={pendingActivationCount}
           icon={KeyRound}
           tone="amber"
-          sublabel="Must change temporary password"
+          sublabel="Waiting for the owner to set a password"
         />
         <KpiCard
           label="Deactivated Users"
@@ -470,6 +471,7 @@ export default function SuperAdminUsersPage() {
                 options={[
                   { value: "ALL", label: "All Statuses" },
                   { value: "ACTIVE", label: "Active" },
+                  { value: "PENDING_ACTIVATION", label: "Pending activation" },
                   { value: "DISABLED", label: "Deactivated" },
                 ]}
               />
@@ -493,7 +495,15 @@ export default function SuperAdminUsersPage() {
 
       {/* 4. Users Table */}
       <SurfaceCard className="overflow-hidden">
-        {users.length === 0 && !isLoading ? (
+        {users.length === 0 && !isLoading && loadError ? (
+          <EmptyStateView
+            icon={AlertCircle}
+            title="Could not load users"
+            description={loadError}
+            actionLabel="Try again"
+            onAction={() => fetchUsers()}
+          />
+        ) : users.length === 0 && !isLoading ? (
           <EmptyStateView
             icon={Users}
             title="No Users Found"
@@ -510,7 +520,7 @@ export default function SuperAdminUsersPage() {
                   <th className="py-3 px-4">Assigned Role</th>
                   <th className="py-3 px-4">Organization / Department</th>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Password State</th>
+                  <th className="py-3 px-4">Account Setup</th>
                   <th className="py-3 px-4">Last Login</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
@@ -570,22 +580,49 @@ export default function SuperAdminUsersPage() {
                       {/* Status */}
                       <td className="py-3 px-4">
                         <StatusBadge
-                          label={user.status}
-                          tone={user.status === "ACTIVE" ? "success" : "danger"}
+                          label={STATUS_LABELS[user.status] ?? user.status}
+                          tone={
+                            user.status === "ACTIVE"
+                              ? "success"
+                              : user.status === "PENDING_ACTIVATION"
+                                ? "warning"
+                                : "danger"
+                          }
                         />
                       </td>
 
-                      {/* Password State */}
+                      {/* Account setup: latest setup email for pending accounts */}
                       <td className="py-3 px-4">
-                        {user.must_change_password ? (
+                        {user.status === "PENDING_ACTIVATION" ? (
+                          (() => {
+                            const setup =
+                              SETUP_EMAIL_LABELS[user.email_delivery_status ?? "NOT_REQUESTED"] ??
+                              SETUP_EMAIL_LABELS.NOT_REQUESTED;
+                            const toneClass =
+                              setup.tone === "ok"
+                                ? "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                                : setup.tone === "bad"
+                                  ? "text-rose-600 dark:text-rose-400 bg-rose-500/10 border-rose-500/20"
+                                  : "text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/20";
+                            return (
+                              <span
+                                title={user.email_delivery_message ?? undefined}
+                                className={`inline-flex items-center gap-1 text-[11px] font-medium border rounded-md px-2 py-0.5 ${toneClass}`}
+                              >
+                                <Mail className="w-3 h-3" />
+                                {setup.label}
+                              </span>
+                            );
+                          })()
+                        ) : user.must_change_password ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-md px-2 py-0.5">
                             <KeyRound className="w-3 h-3" />
-                            Temporary (Must Change)
+                            Must change password
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md px-2 py-0.5">
                             <CheckCircle2 className="w-3 h-3" />
-                            Active Password
+                            Password set
                           </span>
                         )}
                       </td>
@@ -598,20 +635,26 @@ export default function SuperAdminUsersPage() {
                       {/* Actions */}
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            title="Resend Credentials Email"
-                            onClick={() => handleResendInvitation(user)}
-                            className="p-1.5 rounded-md hover:bg-[var(--color-elevated)] text-[var(--color-text-secondary)] hover:text-blue-500 transition-colors"
-                          >
-                            <Send className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            title="Reset Password"
-                            onClick={() => handleResetPassword(user)}
-                            className="p-1.5 rounded-md hover:bg-[var(--color-elevated)] text-[var(--color-text-secondary)] hover:text-amber-500 transition-colors"
-                          >
-                            <KeyRound className="w-3.5 h-3.5" />
-                          </button>
+                          {user.status === "PENDING_ACTIVATION" && (
+                            <button
+                              title="Resend setup link"
+                              aria-label={`Resend setup link to ${user.email}`}
+                              onClick={() => handleResendSetupLink(user)}
+                              className="p-1.5 rounded-md hover:bg-[var(--color-elevated)] text-[var(--color-text-secondary)] hover:text-blue-500 transition-colors"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {user.status === "ACTIVE" && (
+                            <button
+                              title="Send password reset link"
+                              aria-label={`Send password reset link to ${user.email}`}
+                              onClick={() => handleSendResetLink(user)}
+                              className="p-1.5 rounded-md hover:bg-[var(--color-elevated)] text-[var(--color-text-secondary)] hover:text-amber-500 transition-colors"
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             title="View Login History"
                             onClick={() => handleOpenLoginHistory(user)}
@@ -627,13 +670,13 @@ export default function SuperAdminUsersPage() {
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            title={user.status === "ACTIVE" ? "Deactivate Account" : "Activate Account"}
+                            title={user.status === "DISABLED" ? "Activate Account" : "Deactivate Account"}
                             onClick={() => {
                               setStatusActionTarget(user);
                               setConfirmStatusModalOpen(true);
                             }}
                             className={`p-1.5 rounded-md hover:bg-[var(--color-elevated)] transition-colors ${
-                              user.status === "ACTIVE"
+                              user.status !== "DISABLED"
                                 ? "text-rose-500 hover:text-rose-600"
                                 : "text-emerald-500 hover:text-emerald-600"
                             }`}
@@ -672,7 +715,7 @@ export default function SuperAdminUsersPage() {
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         title="Create New User"
-        description="Provision credentials and deliver automated onboarding instructions to user's Gmail."
+        description="The account stays pending until its owner opens the emailed link and chooses a password. No password is set or shown here."
       >
         <form onSubmit={handleCreateSubmit} className="space-y-4">
           <AdminInput
@@ -697,7 +740,7 @@ export default function SuperAdminUsersPage() {
               label="Assigned Role"
               value={createForm.role}
               onChange={(e) => setCreateForm({ ...createForm, role: e.target.value })}
-              options={ALL_ROLES.map((r) => ({ value: r.value, label: r.label }))}
+              options={ASSIGNABLE_ROLES.map((r) => ({ value: r.value, label: r.label }))}
             />
 
             <AdminInput
@@ -708,40 +751,14 @@ export default function SuperAdminUsersPage() {
             />
           </div>
 
-          {/* Department if PLATFORM_OPERATOR */}
-          {createForm.role === "PLATFORM_OPERATOR" && (
-            <AdminSelect
-              label="Operator Department"
-              value={createForm.department}
-              onChange={(e) => setCreateForm({ ...createForm, department: e.target.value })}
-              options={[
-                { value: "", label: "Select Department..." },
-                ...DEPARTMENT_OPTIONS.map((d) => ({ value: d, label: d })),
-              ]}
-              required
-            />
-          )}
-
-          {/* Organization if Org Role */}
-          {createForm.role !== "SUPER_ADMIN" && createForm.role !== "PLATFORM_OPERATOR" && (
-            <AdminSelect
-              label="Organization Workspace"
-              value={createForm.organizationId}
-              onChange={(e) => setCreateForm({ ...createForm, organizationId: e.target.value })}
-              options={[
-                { value: "", label: "No Organization (Viewer / Global)" },
-                ...organizations.map((org) => ({ value: org.id, label: org.name })),
-              ]}
-            />
-          )}
-
-          {/* Custom Password (Optional) */}
-          <AdminInput
-            label="Custom Initial Password (Leave blank to auto-generate)"
-            type="password"
-            placeholder="Auto-generate 14-char secure temporary password"
-            value={createForm.customPassword}
-            onChange={(e) => setCreateForm({ ...createForm, customPassword: e.target.value })}
+          <AdminSelect
+            label="Organization Workspace"
+            value={createForm.organizationId}
+            onChange={(e) => setCreateForm({ ...createForm, organizationId: e.target.value })}
+            options={[
+              { value: "", label: "No Organization (Viewer / Global)" },
+              ...organizations.map((org) => ({ value: org.id, label: org.name })),
+            ]}
           />
 
           {/* Send Email Checkbox */}
@@ -757,7 +774,7 @@ export default function SuperAdminUsersPage() {
               htmlFor="sendEmailCheck"
               className="text-xs font-medium text-[var(--color-text-primary)] cursor-pointer"
             >
-              Automatically send welcome email with credentials via Gmail SMTP
+              Email the owner a setup link now (valid 72 hours). You can resend it later.
             </label>
           </div>
 
@@ -767,7 +784,7 @@ export default function SuperAdminUsersPage() {
             </AdminButton>
             <AdminButton variant="primary" type="submit">
               <UserPlus className="w-3.5 h-3.5 mr-1.5" />
-              Create &amp; Deliver Credentials
+              Create account
             </AdminButton>
           </div>
         </form>
@@ -777,64 +794,37 @@ export default function SuperAdminUsersPage() {
       <AdminModal
         isOpen={credentialsModalOpen}
         onClose={() => setCredentialsModalOpen(false)}
-        title={
-          credentialDetails?.actionType === "CREATE"
-            ? "User Provisioned & Credentials Generated"
-            : "Password Reset & Credentials Generated"
-        }
-        description="The temporary password has been hashed and saved. Copy it now if you wish to share it manually."
+        title={credentialDetails ? DELIVERY_TITLES[credentialDetails.actionType] : ""}
+        description="Only the account owner receives the link. No password is created, stored for you, or shown here."
       >
         <div className="space-y-4">
-          <div className="p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-xs flex items-start gap-2.5">
-            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold">Credentials Created Successfully</p>
-              <p className="mt-0.5 text-[11px]">
-                Target User: <span className="font-bold">{credentialDetails?.email}</span>
-              </p>
-            </div>
+          <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-elevated)] text-xs flex items-start gap-2.5">
+            <Mail className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+            <p>
+              Account: <span className="font-semibold">{credentialDetails?.email}</span>
+            </p>
           </div>
-
-          {/* Temporary Password Box */}
-          {credentialDetails?.tempPassword && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                Temporary Password:
-              </label>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 font-mono text-sm font-bold bg-[var(--color-elevated)] border border-[var(--color-border)] rounded-md px-3 py-2 text-[var(--color-text-primary)] select-all tracking-wider">
-                  {credentialDetails.tempPassword}
-                </div>
-                <AdminButton
-                  variant="secondary"
-                  onClick={() => copyTempPassword(credentialDetails.tempPassword)}
-                >
-                  {copiedPassword ? (
-                    <Check className="w-3.5 h-3.5 mr-1.5" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5 mr-1.5" />
-                  )}
-                  {copiedPassword ? "Copied" : "Copy"}
-                </AdminButton>
-              </div>
-              <p className="text-[11px] text-[var(--color-text-muted)]">
-                The user will be required to change this temporary password upon first login.
-              </p>
-            </div>
-          )}
 
           {/* Email Delivery Status */}
           <div className="p-3 rounded-lg bg-[var(--color-elevated)] border border-[var(--color-border)] space-y-1">
             <div className="flex items-center justify-between text-xs">
               <span className="font-medium text-[var(--color-text-secondary)]">Email Delivery:</span>
               <span
-                className={`font-semibold uppercase text-[11px] ${
-                  credentialDetails?.deliveryStatus === "DELIVERED" || credentialDetails?.deliveryStatus === "SENT"
+                className={`font-semibold text-[11px] ${
+                  credentialDetails?.deliveryStatus === "DELIVERED"
                     ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-amber-600 dark:text-amber-400"
+                    : credentialDetails?.deliveryStatus === "FAILED"
+                      ? "text-rose-600 dark:text-rose-400"
+                      : "text-amber-600 dark:text-amber-400"
                 }`}
               >
-                {credentialDetails?.deliveryStatus}
+                {credentialDetails?.deliveryStatus === "DELIVERED"
+                  ? "Sent"
+                  : credentialDetails?.deliveryStatus === "FAILED"
+                    ? "Failed"
+                    : credentialDetails?.deliveryStatus === "NOT_SENT"
+                      ? "Not sent"
+                      : "Not requested"}
               </span>
             </div>
             {credentialDetails?.deliveryMessage && (
@@ -872,7 +862,12 @@ export default function SuperAdminUsersPage() {
               label="Assigned Role"
               value={editForm.role}
               onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-              options={ALL_ROLES.map((r) => ({ value: r.value, label: r.label }))}
+              disabled={NON_ASSIGNABLE_ROLES.has(editForm.role)}
+              options={
+                NON_ASSIGNABLE_ROLES.has(editForm.role)
+                  ? ALL_ROLES.filter((r) => r.value === editForm.role).map((r) => ({ value: r.value, label: r.label }))
+                  : ASSIGNABLE_ROLES.map((r) => ({ value: r.value, label: r.label }))
+              }
             />
 
             <AdminInput
@@ -990,17 +985,19 @@ export default function SuperAdminUsersPage() {
         onClose={() => setConfirmStatusModalOpen(false)}
         onConfirm={handleConfirmStatusToggle}
         title={
-          statusActionTarget?.status === "ACTIVE"
+          statusActionTarget?.status !== "DISABLED"
             ? `Deactivate User Account`
             : `Reactivate User Account`
         }
         description={
-          statusActionTarget?.status === "ACTIVE"
-            ? `Are you sure you want to deactivate ${statusActionTarget?.email}? The user will immediately be blocked from logging in and all active sessions will be terminated.`
-            : `Are you sure you want to reactivate ${statusActionTarget?.email}? The user will once again be able to log in to their dashboard.`
+          statusActionTarget?.status === "PENDING_ACTIVATION"
+            ? `Deactivate ${statusActionTarget?.email}? Its setup link stops working and the account cannot be activated until you re-enable it.`
+            : statusActionTarget?.status === "ACTIVE"
+              ? `Are you sure you want to deactivate ${statusActionTarget?.email}? The user will immediately be blocked from logging in and all active sessions will be terminated.`
+              : `Are you sure you want to reactivate ${statusActionTarget?.email}? The user will once again be able to log in to their dashboard.`
         }
-        confirmLabel={statusActionTarget?.status === "ACTIVE" ? "Deactivate" : "Activate"}
-        variant={statusActionTarget?.status === "ACTIVE" ? "danger" : "primary"}
+        confirmLabel={statusActionTarget?.status !== "DISABLED" ? "Deactivate" : "Activate"}
+        variant={statusActionTarget?.status !== "DISABLED" ? "danger" : "primary"}
       />
     </div>
   );

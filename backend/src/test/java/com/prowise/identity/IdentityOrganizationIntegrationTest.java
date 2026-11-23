@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.prowise.testsupport.TestAccounts;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @SpringBootTest
@@ -35,6 +36,9 @@ class IdentityOrganizationIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private com.prowise.identity.AccountTokenService accountTokens;
 
     @BeforeEach
     void cleanDatabase() {
@@ -262,7 +266,9 @@ class IdentityOrganizationIntegrationTest {
                 Integer.class)).isZero();
     }
 
+    /** Signup returns 202 without a session (D9): verify through the real endpoint and sign in. */
     private JsonNode signup(String email) throws Exception {
+<<<<<<< HEAD
         String slug = "identity-" + UUID.randomUUID().toString().replace("-", "");
         return signup(email, slug, "UTC");
     }
@@ -273,6 +279,11 @@ class IdentityOrganizationIntegrationTest {
                         .content(registrationBody(email, slug, null, timezone)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString());
+=======
+        TestAccounts.Account account = TestAccounts.signUpVerifyAndLogin(
+                mockMvc, jdbc, accountTokens, objectMapper, email, "CorrectHorseBatteryStaple!");
+        return objectMapper.createObjectNode().put("access_token", account.accessToken());
+>>>>>>> b46fd9c (Update ProWise application)
     }
 
     private String registrationBody(String email, String slug, String requestedRole) {

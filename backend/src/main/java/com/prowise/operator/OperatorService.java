@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.prowise.common.api.ApiException;
 import com.prowise.common.api.ErrorCodes;
+import com.prowise.identity.EmailCredentialService;
 import com.prowise.operator.auth.OperatorAuthService;
 
 @Service
@@ -32,6 +33,10 @@ public class OperatorService {
     private final OperatorAuditLogRepository auditLogRepository;
     private final OperatorInvitationRepository invitationRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EmailCredentialService emailCredentialService;
+
+    /** Approved decision 2: setup links, including operator invitations, expire after 72 hours. */
+    static final java.time.Duration INVITATION_LIFETIME = java.time.Duration.ofHours(72);
 
     public OperatorService(
             PlatformOperatorRepository operatorRepository,
@@ -53,7 +58,6 @@ public class OperatorService {
         );
     }
 
-    @Autowired
     public OperatorService(
             PlatformOperatorRepository operatorRepository,
             OperatorDepartmentRepository departmentRepository,
@@ -64,6 +68,23 @@ public class OperatorService {
             OperatorInvitationRepository invitationRepository,
             PasswordEncoder passwordEncoder
     ) {
+        this(operatorRepository, departmentRepository, departmentPermissionRepository, overrideRepository,
+                sessionRepository, auditLogRepository, invitationRepository, passwordEncoder, null);
+    }
+
+    @Autowired
+    public OperatorService(
+            PlatformOperatorRepository operatorRepository,
+            OperatorDepartmentRepository departmentRepository,
+            OperatorDepartmentPermissionRepository departmentPermissionRepository,
+            OperatorOverrideRepository overrideRepository,
+            OperatorSessionRepository sessionRepository,
+            OperatorAuditLogRepository auditLogRepository,
+            OperatorInvitationRepository invitationRepository,
+            PasswordEncoder passwordEncoder,
+            EmailCredentialService emailCredentialService
+    ) {
+        this.emailCredentialService = emailCredentialService;
         this.operatorRepository = operatorRepository;
         this.departmentRepository = departmentRepository;
         this.departmentPermissionRepository = departmentPermissionRepository;
@@ -92,6 +113,8 @@ public class OperatorService {
         return toResponse(op);
     }
 
+    /** noRollbackFor: a refused role assignment keeps its OPERATOR_ROLE_REFUSED audit row (nothing is saved before validation). */
+    @Transactional(noRollbackFor = ApiException.class)
     public OperatorDTOs.OperatorResponse createOperator(OperatorDTOs.CreateOperatorRequest req, String actor) {
         if (req.email() == null || !req.email().contains("@")) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, "Valid corporate email is required.");
@@ -100,24 +123,37 @@ public class OperatorService {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VALIDATION_FAILED, "Operator with this email already exists.");
         }
 
-        OperatorAccessLevel accessLevel = OperatorAccessLevel.fromString(req.accessLevel());
-        String deptId = (accessLevel == OperatorAccessLevel.MAIN_PLATFORM_OPERATOR && (req.department() == null || req.department().isBlank()))
-                ? null
-                : OperatorDepartment.fromId(req.department()).getId();
+        OperatorAccessLevel accessLevel = (req.accessLevel() == null || req.accessLevel().isBlank())
+                ? OperatorAccessLevel.DEPARTMENT_OPERATOR
+                : strictAccessLevel(req.accessLevel());
+        String deptId;
+        if (req.department() == null || req.department().isBlank()) {
+            if (accessLevel != OperatorAccessLevel.MAIN_PLATFORM_OPERATOR) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED,
+                        "A department operator needs one of the existing departments.");
+            }
+            deptId = null;
+        } else {
+            deptId = strictDepartment(req.department());
+        }
+        String roleId = assignableRoleId(req.roleId(), actor, req.email().trim().toLowerCase());
 
         PlatformOperatorEntity entity = new PlatformOperatorEntity();
         entity.setId("op-" + UUID.randomUUID().toString().substring(0, 8));
         entity.setName(req.name() != null ? req.name().trim() : "New Operator");
         entity.setEmail(req.email().trim().toLowerCase());
-        entity.setRoleId(req.roleId() != null ? req.roleId() : "role-platform-operator");
+        entity.setRoleId(roleId);
         entity.setAccessLevel(accessLevel);
         entity.setDepartmentId(deptId);
-        entity.setStatus(req.status() != null ? req.status() : "INVITED");
+        // Always INVITED: an operator becomes ACTIVE only by accepting the emailed invitation.
+        entity.setStatus("INVITED");
         entity.setMfaEnabled(req.mfaEnabled() != null ? req.mfaEnabled() : true);
         entity.setOnCall(req.onCall() != null ? req.onCall() : false);
         entity.setShiftName(req.shiftName() != null ? req.shiftName() : "Americas Primary (08:00 - 17:00)");
         if (passwordEncoder != null) {
-            entity.setPasswordHash(passwordEncoder.encode("Operator2026!"));
+            // No shared default password: the hash protects a random value nobody knows. The operator
+            // chooses a password by accepting the emailed invitation.
+            entity.setPasswordHash(passwordEncoder.encode(OperatorAuthService.randomToken()));
             entity.setPasswordSetupCompleted(false);
         }
         entity.setLastActiveAt(Instant.now());
@@ -125,25 +161,19 @@ public class OperatorService {
         entity.setUpdatedAt(Instant.now());
 
         PlatformOperatorEntity saved = operatorRepository.save(entity);
-
-        if (invitationRepository != null) {
-            String rawInviteToken = OperatorAuthService.randomToken();
-            invitationRepository.save(new OperatorInvitationEntity(
-                    saved.getId(),
-                    saved.getEmail(),
-                    OperatorAuthService.hash(rawInviteToken),
-                    Instant.now().plus(7, ChronoUnit.DAYS)
-            ));
-        }
+        String emailStatus = issueInvitation(saved);
 
         auditLogRepository.save(new OperatorAuditLogEntity(
                 saved.getId(), actor, "OPERATOR_CREATED", "operators",
                 "Created new operator " + saved.getName() + " in department " + saved.getDepartmentId()
+                        + "; invitation email " + emailStatus
         ));
 
         return toResponse(saved);
     }
 
+    /** noRollbackFor: a refused role assignment keeps its OPERATOR_ROLE_REFUSED audit row (validation runs before any change). */
+    @Transactional(noRollbackFor = ApiException.class)
     public OperatorDTOs.OperatorResponse updateOperator(String id, OperatorDTOs.UpdateOperatorRequest req, String actor) {
         PlatformOperatorEntity op = operatorRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + id));
@@ -155,17 +185,31 @@ public class OperatorService {
             }
         }
 
+        // Validate everything before touching the entity: a refused request changes nothing except its audit row.
+        String newRoleId = (req.roleId() != null && !req.roleId().trim().isEmpty() && !req.roleId().trim().equalsIgnoreCase(op.getRoleId()))
+                ? assignableRoleId(req.roleId(), actor, id)
+                : null;
+        if (req.status() != null) {
+            validateStatus(req.status());
+        }
+        OperatorAccessLevel requestedLevel = (req.accessLevel() != null && !req.accessLevel().trim().isEmpty())
+                ? strictAccessLevel(req.accessLevel())
+                : null;
+        String requestedDept = (req.department() != null && !req.department().trim().isEmpty())
+                ? strictDepartment(req.department())
+                : null;
+
         if (req.name() != null && !req.name().trim().isEmpty()) {
             op.setName(req.name().trim());
         }
         if (req.email() != null && !req.email().trim().isEmpty()) {
             op.setEmail(req.email().trim().toLowerCase());
         }
-        if (req.roleId() != null && !req.roleId().trim().isEmpty()) {
-            op.setRoleId(req.roleId().trim());
+        if (newRoleId != null) {
+            op.setRoleId(newRoleId);
         }
-        if (req.accessLevel() != null && !req.accessLevel().trim().isEmpty()) {
-            OperatorAccessLevel newLevel = OperatorAccessLevel.fromString(req.accessLevel());
+        if (requestedLevel != null) {
+            OperatorAccessLevel newLevel = requestedLevel;
             if (op.getAccessLevel() != newLevel) {
                 op.setAccessLevel(newLevel);
                 if (newLevel == OperatorAccessLevel.MAIN_PLATFORM_OPERATOR && (req.department() == null || req.department().isBlank())) {
@@ -178,9 +222,9 @@ public class OperatorService {
                 ));
             }
         }
-        if (req.department() != null && !req.department().trim().isEmpty()) {
+        if (requestedDept != null) {
             String oldDept = op.getDepartmentId();
-            String newDept = OperatorDepartment.fromId(req.department()).getId();
+            String newDept = requestedDept;
             if (oldDept == null || !oldDept.equals(newDept)) {
                 op.setDepartmentId(newDept);
                 sessionRepository.revokeAllByOperatorId(id, "DEPARTMENT_CHANGED: " + newDept);
@@ -191,7 +235,7 @@ public class OperatorService {
             }
         }
         if (req.status() != null) {
-            op.setStatus(req.status());
+            op.setStatus(req.status().trim().toUpperCase(java.util.Locale.ROOT));
         }
         if (req.mfaEnabled() != null) {
             op.setMfaEnabled(req.mfaEnabled());
@@ -213,11 +257,71 @@ public class OperatorService {
         return toResponse(updated);
     }
 
+    /** Operator statuses allowed by ck_platform_operators_status. */
+    private static final java.util.Set<String> OPERATOR_STATUSES = java.util.Set.of("ACTIVE", "INACTIVE", "SUSPENDED", "INVITED");
+    /** Operator role ids that grant Super-Admin-level authority and are never assignable through operator management. */
+    static final String SUPER_ADMIN_OPERATOR_ROLE = "role-super-admin";
+
+    private static void validateStatus(String status) {
+        if (status == null || !OPERATOR_STATUSES.contains(status.trim().toUpperCase(java.util.Locale.ROOT))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED,
+                    "Status must be one of ACTIVE, INACTIVE, SUSPENDED or INVITED.");
+        }
+    }
+
+    /** Exact access level name only; an unknown value is rejected instead of silently becoming a default. */
+    private static OperatorAccessLevel strictAccessLevel(String value) {
+        if (value != null) {
+            for (OperatorAccessLevel level : OperatorAccessLevel.values()) {
+                if (level.name().equalsIgnoreCase(value.trim())) {
+                    return level;
+                }
+            }
+        }
+        throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED,
+                "Access level must be MAIN_PLATFORM_OPERATOR or DEPARTMENT_OPERATOR.");
+    }
+
+    /** One of the existing departments (by id or display name); never invented, never defaulted. */
+    private static String strictDepartment(String value) {
+        if (value != null) {
+            for (OperatorDepartment department : OperatorDepartment.values()) {
+                if (department.getId().equalsIgnoreCase(value.trim()) || department.getDisplayName().equalsIgnoreCase(value.trim())) {
+                    return department.getId();
+                }
+            }
+        }
+        throw new ApiException(HttpStatus.BAD_REQUEST, "UNKNOWN_DEPARTMENT", "The department does not exist.");
+    }
+
+    /**
+     * A listed operator role other than {@code role-super-admin}. That role grants Super-Admin-level authority in
+     * operations services, so assigning it through operator management is refused and audited.
+     */
+    private String assignableRoleId(String requested, String actor, String target) {
+        if (requested == null || requested.isBlank()) {
+            return "role-platform-operator";
+        }
+        String roleId = requested.trim();
+        if (SUPER_ADMIN_OPERATOR_ROLE.equalsIgnoreCase(roleId)) {
+            auditLogRepository.save(new OperatorAuditLogEntity(
+                    target.length() > 64 ? target.substring(0, 64) : target, actor, "OPERATOR_ROLE_REFUSED", "operators",
+                    "Refused to assign " + SUPER_ADMIN_OPERATOR_ROLE + " through operator management"));
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ROLE_NOT_ASSIGNABLE",
+                    "This role cannot be assigned through operator management.");
+        }
+        boolean listed = listRoles().stream().anyMatch(role -> role.id().equalsIgnoreCase(roleId));
+        if (!listed) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, "Unknown operator role.");
+        }
+        return roleId.toLowerCase(java.util.Locale.ROOT);
+    }
+
     public OperatorDTOs.OperatorResponse updateAccessLevel(String id, String targetLevel, String actor) {
         PlatformOperatorEntity op = operatorRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + id));
 
-        OperatorAccessLevel newLevel = OperatorAccessLevel.fromString(targetLevel);
+        OperatorAccessLevel newLevel = strictAccessLevel(targetLevel);
         if (op.getAccessLevel() != newLevel) {
             op.setAccessLevel(newLevel);
             if (newLevel == OperatorAccessLevel.MAIN_PLATFORM_OPERATOR) {
@@ -239,7 +343,7 @@ public class OperatorService {
         PlatformOperatorEntity op = operatorRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + id));
 
-        String targetDept = OperatorDepartment.fromId(newDepartment).getId();
+        String targetDept = strictDepartment(newDepartment);
         if (op.getDepartmentId() == null || !op.getDepartmentId().equals(targetDept)) {
             op.setDepartmentId(targetDept);
             op.setUpdatedAt(Instant.now());
@@ -442,20 +546,36 @@ public class OperatorService {
         PlatformOperatorEntity op = operatorRepository.findById(operatorId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + operatorId));
 
-        if (invitationRepository != null) {
-            String rawInviteToken = OperatorAuthService.randomToken();
-            invitationRepository.save(new OperatorInvitationEntity(
-                    op.getId(),
-                    op.getEmail(),
-                    OperatorAuthService.hash(rawInviteToken),
-                    Instant.now().plus(7, ChronoUnit.DAYS)
-            ));
-        }
+        String emailStatus = issueInvitation(op);
 
         auditLogRepository.save(new OperatorAuditLogEntity(
                 operatorId, actor, "INVITATION_RESENT", "operators",
-                "Resent platform operator invitation email to " + op.getEmail()
+                "Resent platform operator invitation to " + op.getEmail() + "; email " + emailStatus
         ));
+    }
+
+    /**
+     * Expires every open invitation of the operator, stores the hash of a new 72-hour token and emails the link.
+     * The raw token exists only in that email. Returns the delivery status for the audit trail.
+     */
+    private String issueInvitation(PlatformOperatorEntity op) {
+        if (invitationRepository == null) {
+            return "NOT_SENT";
+        }
+        Instant now = Instant.now();
+        for (OperatorInvitationEntity open : invitationRepository.findByOperatorIdAndAcceptedAtIsNull(op.getId())) {
+            if (open.getExpiresAt() == null || open.getExpiresAt().isAfter(now)) {
+                open.setExpiresAt(now);
+                invitationRepository.save(open);
+            }
+        }
+        String rawInviteToken = OperatorAuthService.randomToken();
+        invitationRepository.save(new OperatorInvitationEntity(
+                op.getId(), op.getEmail(), OperatorAuthService.hash(rawInviteToken), now.plus(INVITATION_LIFETIME)));
+        if (emailCredentialService == null) {
+            return "NOT_SENT";
+        }
+        return emailCredentialService.sendOperatorInvitationEmail(op.getEmail(), op.getName(), rawInviteToken).status();
     }
 
     public OperatorDTOs.OperatorResponse updateOperatorStatus(String id, String targetStatus, String actor) {
@@ -463,6 +583,7 @@ public class OperatorService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + id));
 
         String status = (targetStatus != null && !targetStatus.isBlank()) ? targetStatus.trim().toUpperCase() : "ACTIVE";
+        validateStatus(status);
 
         if ("INACTIVE".equalsIgnoreCase(status) || "SUSPENDED".equalsIgnoreCase(status)) {
             assertNotLastActiveSuperAdmin(id);

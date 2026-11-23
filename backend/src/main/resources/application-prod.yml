@@ -1,0 +1,27 @@
+# Production (SPRING_PROFILES_ACTIVE=prod, or prod,worker for the worker).
+# Every value comes from the environment or a secret manager. There are no fallbacks here on purpose:
+# RequiredEnvironmentValidator stops startup and names any missing variable (never its value), and refuses
+# signing keys that have been published in this repository.
+spring:
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+
+springdoc:
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    com.prowise: INFO
+
+prowise:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+  sandbox:
+    seed-enabled: false
+  mail:
+    from: ${SMTP_FROM:}
+    frontend-url: ${FRONTEND_URL:}

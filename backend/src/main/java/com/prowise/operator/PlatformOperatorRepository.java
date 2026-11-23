@@ -18,7 +18,7 @@ public interface PlatformOperatorRepository extends JpaRepository<PlatformOperat
            "(:dept IS NULL OR o.departmentId = :dept) AND " +
            "(:roleId IS NULL OR o.roleId = :roleId) AND " +
            "(:status IS NULL OR o.status = :status) AND " +
-           "(:query IS NULL OR LOWER(o.name) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(o.email) LIKE LOWER(CONCAT('%', :query, '%')))")
+           "(:query IS NULL OR LOWER(o.name) LIKE LOWER(CONCAT('%', CAST(:query AS String), '%')) OR LOWER(o.email) LIKE LOWER(CONCAT('%', CAST(:query AS String), '%')))")
     List<PlatformOperatorEntity> searchOperators(
             @Param("dept") String department,
             @Param("roleId") String roleId,

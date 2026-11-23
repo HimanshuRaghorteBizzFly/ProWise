@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,14 +17,19 @@ import {
   Search,
   Filter,
   RefreshCw,
+  Plus,
+  Settings,
 } from "lucide-react";
 import { developerApi } from "@/lib/developer-api";
 import { useProjectStore } from "@/store/project-store";
+import { useProjects } from "@/hooks/useProjects";
 
 export default function DeveloperGitHubPage() {
   const params = useParams();
+  const router = useRouter();
   const orgId = (params?.orgId as string) || "org-acme";
   const { gitEvents: storeGitEvents } = useProjectStore();
+  const { repositories: liveRepositories } = useProjects(orgId);
 
   const [events, setEvents] = useState<any[]>([]);
   const [repoFilter, setRepoFilter] = useState("ALL");
@@ -47,12 +52,22 @@ export default function DeveloperGitHubPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeGitEvents]);
 
-  const repositories = [
+  const fallbackRepositories = [
     { name: "prowise/prowise-backend", defaultBranch: "main", stars: 12, openPRs: 2, status: "Active" },
     { name: "prowise/prowise-frontend", defaultBranch: "main", stars: 8, openPRs: 1, status: "Active" },
     { name: "prowise/fhir-patient-service", defaultBranch: "main", stars: 4, openPRs: 0, status: "Active" },
     { name: "prowise/clinical-decision-engine", defaultBranch: "develop", stars: 15, openPRs: 3, status: "Active" },
   ];
+
+  const repositories = liveRepositories.length > 0
+    ? liveRepositories.map((r) => ({
+        name: r.name,
+        defaultBranch: r.defaultBranch || "main",
+        stars: 10,
+        openPRs: 2,
+        status: r.syncStatus === "SYNCED" ? "Active" : "Active",
+      }))
+    : fallbackRepositories;
 
   const filteredEvents = events.filter((evt) => {
     const repo = evt.repositoryName || evt.repo || "";
@@ -79,16 +94,35 @@ export default function DeveloperGitHubPage() {
                 GitHub organizations and engineering repositories linked to your assigned projects.
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={loadActivity}
-              disabled={loading}
-              className="gap-1.5 text-xs"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-              <span>Sync Webhooks</span>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push(`/org/${orgId}/developer/settings`)}
+                className="gap-1.5 text-xs"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span>Manage Settings</span>
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => router.push(`/org/${orgId}/developer/settings`)}
+                className="gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Connect Repo</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadActivity}
+                disabled={loading}
+                className="gap-1.5 text-xs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+                <span>Sync Webhooks</span>
+              </Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
