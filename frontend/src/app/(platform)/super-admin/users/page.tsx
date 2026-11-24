@@ -1,11 +1,6 @@
 "use client";
 
-<<<<<<< HEAD
-import { previewEnabled } from "@/lib/permissions";
-import React, { useEffect, useMemo, useState, useCallback } from "react";
-=======
 import React, { useEffect, useState, useCallback } from "react";
->>>>>>> 29db595 (Initial ProWise project upload)
 import {
   AlertCircle,
   ArrowUpDown,
@@ -127,16 +122,6 @@ function errorText(err: unknown, fallback: string): string {
 }
 
 export default function SuperAdminUsersPage() {
-<<<<<<< HEAD
-  const sampleOrganizations = useSuperAdminStore((s) => s.organizations);
-  // Real organizations for the filter; the sample list only in the dev preview.
-  const [realOrganizations, setRealOrganizations] = useState<{ id: string; name: string }[]>([]);
-  useEffect(() => {
-    if (previewEnabled()) return;
-    apiClient.adminOrganizations().then(setRealOrganizations).catch(() => setRealOrganizations([]));
-  }, []);
-  const organizations = previewEnabled() ? sampleOrganizations : realOrganizations;
-=======
   // Organization choices come from the server, never from local demo state.
   const [organizations, setOrganizations] = useState<{ id: string; name: string; slug: string; domain: string }[]>([]);
   useEffect(() => {
@@ -145,7 +130,6 @@ export default function SuperAdminUsersPage() {
       .then((orgs) => setOrganizations(orgs.map((o) => ({ id: o.id, name: o.name, slug: o.slug, domain: o.domain ?? "" }))))
       .catch(() => setOrganizations([]));
   }, []);
->>>>>>> 29db595 (Initial ProWise project upload)
 
   // Users state
   const [users, setUsers] = useState<SuperAdminUserItem[]>([]);
@@ -219,49 +203,6 @@ export default function SuperAdminUsersPage() {
         page,
         size: pageSize,
       });
-<<<<<<< HEAD
-
-      if (res && res.content && res.content.length > 0) {
-        setUsers(res.content);
-        setTotalElements(res.total_elements);
-        setTotalPages(res.total_pages || 1);
-        setAllUsersCount(res.total_elements);
-        setLoadError(null);
-        setIsLoading(false);
-        return;
-      }
-    } catch {
-<<<<<<< HEAD
-      if (!previewEnabled()) {
-        // Normal use: never an invented user list; show the real (empty) state and the error.
-        toast.error("Users could not be loaded from the server.");
-        setUsers([]);
-        setTotalElements(0);
-        setTotalPages(1);
-        return;
-      }
-      // Dev preview only (NEXT_PUBLIC_USE_MOCKS=true): offline sample list.
-      toast.error("Could not reach backend API. Showing offline user list.");
-      setUsers([
-        {
-          id: "00000000-0000-0000-0000-000000000001",
-          email: "superadmin@prowise.com",
-          name: "Super Administrator",
-          role: "SUPER_ADMIN",
-          status: "ACTIVE",
-          must_change_password: false,
-          created_at: new Date().toISOString(),
-          last_login_at: new Date().toISOString(),
-        },
-      ]);
-      setTotalElements(1);
-      setTotalPages(1);
-    } finally {
-      setIsLoading(false);
-=======
-      // Backend returned 404 or connection error: fall back to local platform users
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
-=======
       setUsers(res.content ?? []);
       setTotalElements(res.total_elements ?? 0);
       setTotalPages(Math.max(1, res.total_pages || 1));
@@ -273,7 +214,6 @@ export default function SuperAdminUsersPage() {
       setLoadError(errorText(err, "The user list could not be loaded."));
     } finally {
       setIsLoading(false);
->>>>>>> 29db595 (Initial ProWise project upload)
     }
   }, [searchTerm, selectedRole, selectedStatus, selectedOrg, page, pageSize]);
 

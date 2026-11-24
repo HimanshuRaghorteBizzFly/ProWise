@@ -5,22 +5,9 @@ import { useRouter } from "next/navigation";
 import { Search, Menu, Sun, Moon, ChevronDown, ChevronRight, LogOut, Shield, Check, Settings, GitBranch } from "lucide-react";
 import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
 import { useThemeStore } from "@/store/theme-store";
-<<<<<<< HEAD
-import { useProjectStore } from "@/store/project-store";
-import { Organization, SystemRole } from "@/types";
-import { Avatar } from "@/components/ui/avatar";
-import { GlobalSearchModal } from "./global-search-modal";
-import { SampleDataBadge } from "./sample-data-badge";
-import { SEEDED_ORGS } from "@/lib/mock-data";
-import { apiClient } from "@/lib/api";
-import { previewEnabled } from "@/lib/permissions";
-import { establishSession } from "@/lib/session";
-import { clearWorkspaceCaches, switchWorkspace } from "@/lib/workspace-switch";
-=======
 import { SystemRole } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
 import { GlobalSearchModal } from "./global-search-modal";
->>>>>>> 29db595 (Initial ProWise project upload)
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api";
 import { switchWorkspace } from "@/lib/workspace-switch";
@@ -63,55 +50,9 @@ export function TopNav({
   navigationButtonRef,
 }: TopNavProps) {
   const router = useRouter();
-<<<<<<< HEAD
-<<<<<<< HEAD
-  const { currentUser, currentRole, currentOrg, setCurrentOrg, switchRoleAndNavigate, logout } = useAuthStore();
-  const realOrganizations = useAuthStore((state) => state.organizations);
-  const preview = previewEnabled();
-  // Real memberships in normal use; the fixture organizations only in the dev preview.
-  const menuOrganizations: Organization[] = preview ? SEEDED_ORGS : realOrganizations;
-
-  const openOrganization = async (org: Organization) => {
-    if (preview) {
-      setCurrentOrg(org);
-      router.push(getRoleDashboardPath(currentRole, org.id));
-      return;
-    }
-    // Task 1.3: the server binds the session to the chosen organization; the landing follows that membership.
-    const switched = await switchWorkspace(org.id);
-    if (!switched.ok) {
-      router.push("/select-workspace");
-      return;
-    }
-    try {
-      router.push((await establishSession()).target);
-    } catch {
-      router.push("/select-workspace");
-    }
-  };
-
-  const signOut = async (everywhere = false) => {
-    try {
-      // Revokes this session (or every session of the user) and clears the httpOnly refresh cookie.
-      if (everywhere) await apiClient.signoutEverywhere();
-      else await apiClient.signout();
-    } catch {
-      // Already signed out or unreachable: the local session is cleared anyway.
-    }
-    clearWorkspaceCaches();
-    logout();
-    router.replace("/login");
-  };
-=======
-  const { currentUser, currentRole, currentOrg, setCurrentOrg, switchRoleAndNavigate, logout, organizations, isAuthenticated, isRolePreview } = useAuthStore();
-  // A signed-in member switches between their own organizations; the demo list is only for preview (development).
-  const switchableOrgs = isAuthenticated && !isRolePreview ? organizations : SEEDED_ORGS;
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
-=======
   const { currentUser, currentRole, currentOrg, logout, organizations, isAuthenticated } = useAuthStore();
   // Only the signed-in person's own memberships (from /v1/me) can be switched to.
   const switchableOrgs = isAuthenticated ? organizations : [];
->>>>>>> 29db595 (Initial ProWise project upload)
   const { setTheme, resolvedTheme } = useThemeStore();
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -255,51 +196,6 @@ export function TopNav({
                   <p className="truncate text-[11px] text-app-text-muted mt-0.5">{currentUser.email}</p>
                 </div>
 
-<<<<<<< HEAD
-                {preview && (
-                  <div className="border-b border-app-border py-2">
-                    <p className={MENU_SECTION_TITLE}>Switch active panel / role (preview)</p>
-                    <div className="max-h-48 space-y-0.5 overflow-y-auto">
-                      {ROLES.map((r) => (
-                        <button
-                          key={r.role}
-                          type="button"
-                          onClick={() => {
-                            switchRoleAndNavigate(r.role, router.push);
-                            setOpenMenu(null);
-                          }}
-                          aria-current={currentRole === r.role ? "true" : undefined}
-                          className={cn(MENU_ITEM, currentRole === r.role ? MENU_ITEM_ACTIVE : MENU_ITEM_IDLE)}
-                        >
-                          <span>{r.label}</span>
-                          {currentRole === r.role && <Check className="h-3.5 w-3.5 text-blue-600" aria-hidden="true" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {menuOrganizations.length > 1 && (
-                  <div className="border-b border-app-border py-2">
-                    <p className={MENU_SECTION_TITLE}>Switch organization</p>
-                    <div className="space-y-0.5">
-                      {menuOrganizations.map((org) => (
-                        <button
-                          key={org.id}
-                          type="button"
-                          onClick={() => {
-                            setOpenMenu(null);
-                            void openOrganization(org);
-                          }}
-                          aria-current={currentOrg.id === org.id ? "true" : undefined}
-                          className={cn(MENU_ITEM, currentOrg.id === org.id ? MENU_ITEM_ACTIVE : MENU_ITEM_IDLE)}
-                        >
-                          <span className="truncate">{org.name}</span>
-                          {currentOrg.id === org.id && <Check className="h-3.5 w-3.5 text-blue-600" aria-hidden="true" />}
-                        </button>
-                      ))}
-                    </div>
-=======
                 <div className="border-b border-app-border py-1.5 space-y-0.5">
                   <button
                     type="button"
@@ -354,12 +250,8 @@ export function TopNav({
                         {currentOrg.id === org.id && <Check className="h-3.5 w-3.5 text-blue-600" aria-hidden="true" />}
                       </button>
                     ))}
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
                   </div>
-<<<<<<< HEAD
-=======
                 </div>
->>>>>>> 29db595 (Initial ProWise project upload)
                 )}
 
                 <div className="pt-1">
@@ -367,9 +259,6 @@ export function TopNav({
                     type="button"
                     onClick={() => {
                       setOpenMenu(null);
-<<<<<<< HEAD
-                      void signOut();
-=======
                       router.push("/account/sessions");
                     }}
                     className={cn(MENU_ITEM, MENU_ITEM_IDLE, "justify-start gap-2")}
@@ -389,23 +278,11 @@ export function TopNav({
                       }
                       logout();
                       router.push("/login");
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
                     }}
                     className={cn(MENU_ITEM, "justify-start font-medium text-rose-600 hover:bg-rose-500/10 dark:text-rose-400")}
                   >
                     <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>Sign out</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(null);
-                      void signOut(true);
-                    }}
-                    className={cn(MENU_ITEM, "justify-start text-rose-600 hover:bg-rose-500/10 dark:text-rose-400")}
-                  >
-                    <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span>Sign out on all devices</span>
                   </button>
                 </div>
               </div>

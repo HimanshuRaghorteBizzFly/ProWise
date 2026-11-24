@@ -1,18 +1,9 @@
 "use client";
 
-<<<<<<< HEAD
-import { previewEnabled } from "@/lib/permissions";
-import { ProgressListView, ProjectProgressPageView } from "@/components/work/ReviewViews";
-import { RequireAnyKey } from "@/components/calendar/CalendarViews";
-
-import React, { useState, useMemo, useEffect } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-=======
 import React, { useState } from "react";
 import { useParams } from "next/navigation";
 import { FolderKanban } from "lucide-react";
 
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
 import { PanelLayout } from "@/components/layouts/panel-layout";
 import { EmptyStateView, PageFrame, SegmentTabs } from "@/components/delivery/DeliveryUI";
 import { MyCheckInProjectsView } from "@/components/progress/CheckInViews";
@@ -21,9 +12,6 @@ import { useDevProjects } from "@/components/developer/useDeveloperData";
 import { StructuredProgressView } from "@/components/developer/progress/StructuredProgressView";
 import { cn } from "@/lib/utils";
 
-<<<<<<< HEAD
-function PreviewDeveloperProgressTrackerPage() {
-=======
 type Mode = "INDIVIDUAL" | "STRUCTURED";
 
 /**
@@ -32,7 +20,6 @@ type Mode = "INDIVIDUAL" | "STRUCTURED";
  * from tasks, elapsed time or Git activity on this page.
  */
 export default function DeveloperProgressPage() {
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
   const params = useParams();
   const orgId = (params?.orgId as string) || "";
   const home = `/org/${orgId}/developer/dashboard`;
@@ -67,19 +54,6 @@ export default function DeveloperProgressPage() {
   );
 }
 
-<<<<<<< HEAD
-/** Task 3.5: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
-export default function DeveloperProgressTrackerPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "";
-  const home = `/org/${orgId}/developer`;
-  if (previewEnabled()) return <PreviewDeveloperProgressTrackerPage />;
-  return (
-    <RequireAnyKey keys={["project.read"]} backHref={home}>
-      <ProgressListView crumbs={[{ label: "Developer", href: home }]} back={{ href: home, label: "Back to dashboard" }}
-        projectHref={(p) => (p.mode === "STRUCTURED" ? `${home}/projects/${p.id}/structured/progress` : `${home}/projects/${p.id}/individual`)} />
-    </RequireAnyKey>
-=======
 function StructuredSection({ orgId, crumbs, back }: {
   orgId: string;
   crumbs: { label: string; href?: string }[];
@@ -120,6 +94,5 @@ function StructuredSection({ orgId, crumbs, back }: {
         }}
       </DevGate>
     </PageFrame>
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
   );
 }

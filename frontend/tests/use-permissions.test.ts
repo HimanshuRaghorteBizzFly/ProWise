@@ -102,23 +102,6 @@ describe("fixture grants follow the permission matrix", () => {
   });
 });
 
-<<<<<<< HEAD
-describe("mocksAllowed", () => {
-  it("is never true in a production build", () => {
-    expect(mocksAllowed({ nodeEnv: "production", useMocks: "true" })).toBe(false);
-    expect(mocksAllowed({ nodeEnv: "production", useMocks: undefined })).toBe(false);
-  });
-
-  it("is allowed outside production only with NEXT_PUBLIC_USE_MOCKS=true", () => {
-    expect(mocksAllowed({ nodeEnv: "development", useMocks: "true" })).toBe(true);
-    expect(mocksAllowed({ nodeEnv: "test", useMocks: "true" })).toBe(true);
-    // Normal use (no flag) never shows sample data, also in development.
-    expect(mocksAllowed({ nodeEnv: "development", useMocks: undefined })).toBe(false);
-  });
-});
-
-=======
->>>>>>> 29db595 (Initial ProWise project upload)
 describe("permission store", () => {
   const apiOk = (keys: string[]) => vi.fn().mockResolvedValue({ organizationId: ORG_A, permissions: keys });
   const apiFail = (error: unknown) => vi.fn().mockRejectedValue(error);
@@ -144,89 +127,9 @@ describe("permission store", () => {
     ]);
   });
 
-<<<<<<< HEAD
-  it("uses the fixture without calling the API when NEXT_PUBLIC_USE_MOCKS=true", async () => {
-    const store = createPermissionStore({ fetchPermissions, env: { nodeEnv: "development", useMocks: "true" } });
-    await store.getState().load(ORG_A, "ORGANIZATION_ADMIN");
-
-    expect(fetchPermissions).not.toHaveBeenCalled();
-    expect(store.getState().source).toBe("fixture");
-    expect(store.getState().scopeReported).toBe(true);
-    expect(store.getState().grants).toEqual(FIXTURE_GRANTS.ORGANIZATION_ADMIN);
-  });
-
-  it("never lets a role preview replace the server's permissions without NEXT_PUBLIC_USE_MOCKS=true", async () => {
-    const store = createPermissionStore({ fetchPermissions, env: devEnv });
-    await store.getState().load(ORG_A, "ORGANIZATION_OWNER", { preview: true });
-
-    expect(fetchPermissions).toHaveBeenCalledWith(ORG_A);
-    expect(store.getState().source).toBe("api");
-  });
-
-  it("uses role fixtures without calling the API in role preview mode (dev preview flag)", async () => {
-    const store = createPermissionStore({ fetchPermissions, env: { nodeEnv: "development", useMocks: "true" } });
-    await store.getState().load(ORG_A, "ORGANIZATION_OWNER", { preview: true });
-
-    expect(fetchPermissions).not.toHaveBeenCalled();
-    expect(store.getState().source).toBe("fixture");
-    expect(store.getState().grants).toEqual(FIXTURE_GRANTS.ORGANIZATION_OWNER);
-  });
-
-  it("does not allow role preview fixtures in production", async () => {
-    const store = createPermissionStore({
-      fetchPermissions,
-      env: { nodeEnv: "production", useMocks: undefined },
-    });
-    await store.getState().load(ORG_A, "ORGANIZATION_OWNER", { preview: true });
-
-    expect(fetchPermissions).toHaveBeenCalledWith(ORG_A);
-    expect(store.getState().source).toBe("api");
-  });
-
-  it("never falls back to the fixture without NEXT_PUBLIC_USE_MOCKS=true, even when the API is unreachable", async () => {
-    const store = createPermissionStore({
-      fetchPermissions: apiFail(new ApiError(0, "NETWORK_ERROR", "offline", "")),
-      env: devEnv,
-    });
-    await store.getState().load(ORG_A, "ORGANIZATION_OWNER");
-
-    expect(store.getState().status).toBe("error");
-    expect(store.getState().source).toBeNull();
-    expect(store.getState().grants).toEqual([]);
-  });
-
-  it("never uses the fixture in production, even when the API is unreachable", async () => {
-    const store = createPermissionStore({
-      fetchPermissions: apiFail(new ApiError(0, "NETWORK_ERROR", "offline", "")),
-      env: { nodeEnv: "production", useMocks: "true" },
-    });
-    await store.getState().load(ORG_A, "ORGANIZATION_OWNER");
-
-    expect(store.getState().status).toBe("error");
-    expect(store.getState().grants).toEqual([]);
-  });
-
-  it.each([502, 503, 504])("treats proxy %s as an error in development without the flag (no fixture)", async (status) => {
-    const store = createPermissionStore({
-      fetchPermissions: apiFail(new ApiError(status, `HTTP_${status}`, "bad gateway", "")),
-      env: devEnv,
-    });
-    await store.getState().load(ORG_A, "ORGANIZATION_ADMIN");
-
-    expect(store.getState().status).toBe("error");
-    expect(store.getState().source).toBeNull();
-    expect(store.getState().grants).toEqual([]);
-  });
-
-  it.each([502, 503, 504])("never uses the fixture for proxy %s in production", async (status) => {
-    const store = createPermissionStore({
-      fetchPermissions: apiFail(new ApiError(status, `HTTP_${status}`, "bad gateway", "")),
-      env: { nodeEnv: "production", useMocks: "true" },
-=======
   it.each([0, 502, 503, 504])("reports an error with no grants when the API is unreachable (status %s), never sample grants", async (status) => {
     const store = createPermissionStore({
       fetchPermissions: apiFail(new ApiError(status, status === 0 ? "NETWORK_ERROR" : `HTTP_${status}`, "unreachable", "")),
->>>>>>> 29db595 (Initial ProWise project upload)
     });
     await store.getState().load(ORG_A, "ORGANIZATION_OWNER");
 

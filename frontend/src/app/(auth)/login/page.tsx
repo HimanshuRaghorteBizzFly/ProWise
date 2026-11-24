@@ -1,26 +1,10 @@
 "use client";
 
-<<<<<<< HEAD
-import React, { useEffect, useState } from "react";
-=======
 import React, { useState, useEffect } from "react";
->>>>>>> 29db595 (Initial ProWise project upload)
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-<<<<<<< HEAD
-import { ApiError, apiClient } from "@/lib/api";
-import { establishSession } from "@/lib/session";
-import { previewEnabled } from "@/lib/permissions";
-=======
 import { apiClient, ApiError } from "@/lib/api";
-<<<<<<< HEAD
-import { isBackendUnreachable, mocksAllowed, readPermissionEnv } from "@/lib/permissions";
-import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
-import { useSuperAdminStore } from "@/app/(platform)/super-admin/_store/useSuperAdminStore";
-=======
 import { useAuthStore } from "@/store/auth-store";
->>>>>>> 29db595 (Initial ProWise project upload)
 import { usePlatformOperatorStore } from "@/app/(platform)/platform-operator/_store/usePlatformOperatorStore";
 import { operatorAuthService } from "@/app/(platform)/platform-operator/_services/operator-auth-service";
 import { applyLoginResponse } from "@/lib/auth-session";
@@ -36,124 +20,6 @@ import {
   ArrowRight,
 } from "lucide-react";
 
-<<<<<<< HEAD
-interface QuickCredential {
-  label: string;
-  role: string;
-  email: string;
-  target: string;
-  category: "Platform" | "Leadership" | "Delivery";
-  icon: React.ComponentType<{ className?: string }>;
-  color: string;
-}
-
-/** Sent only by the offline preview button; it is not the password of any account. */
-const OFFLINE_PREVIEW_PLACEHOLDER = "offline-preview-only";
-
-const QUICK_ACCOUNTS: QuickCredential[] = [
-  // Platform Section
-  {
-    label: "Super Admin",
-    role: "System Director",
-    email: "superadmin@prowise.com",
-    target: "/super-admin/dashboard",
-    category: "Platform",
-    icon: Crown,
-    color: "from-amber-500 to-rose-500",
-  },
-  {
-    label: "Platform Operator",
-    role: "SRE & Operations",
-    email: "operator@prowise.io",
-    target: "/platform-operator/dashboard",
-    category: "Platform",
-    icon: Layers,
-    color: "from-blue-500 to-cyan-500",
-  },
-
-  // Organization Leadership Section
-  {
-    label: "Org Owner",
-    role: "Executive Owner",
-    email: "dr.sarah.lin@acmehealth.com",
-    target: "/org/org-acme/owner/dashboard",
-    category: "Leadership",
-    icon: Building2,
-    color: "from-purple-500 to-indigo-600",
-  },
-  {
-    label: "Org Admin",
-    role: "Workspace Admin",
-    email: "david.kim@acmehealth.com",
-    target: "/org/org-acme/admin/dashboard",
-    category: "Leadership",
-    icon: ShieldCheck,
-    color: "from-slate-600 to-indigo-500",
-  },
-
-  // Project Delivery Section
-  {
-    label: "Project Manager",
-    role: "Portfolio Manager",
-    email: "priya.raman@acmehealth.com",
-    target: "/org/org-acme/manager/dashboard",
-    category: "Delivery",
-    icon: FolderKanban,
-    color: "from-blue-600 to-indigo-600",
-  },
-  {
-    label: "Team Lead",
-    role: "Engineering Lead",
-    email: "marcus.chen@acmehealth.com",
-    target: "/org/org-acme/lead/dashboard",
-    category: "Delivery",
-    icon: Users,
-    color: "from-violet-500 to-purple-600",
-  },
-  {
-    label: "Developer",
-    role: "Full-Stack Dev",
-    email: "alex.rivera@acmehealth.com",
-    target: "/org/org-acme/developer/dashboard",
-    category: "Delivery",
-    icon: Cpu,
-    color: "from-emerald-500 to-teal-500",
-  },
-  {
-    label: "QA / Reviewer",
-    role: "Quality & Review",
-    email: "elena.ruiz@acmehealth.com",
-    target: "/org/org-acme/reviewer/dashboard",
-    category: "Delivery",
-    icon: CheckSquare,
-    color: "from-pink-500 to-rose-500",
-  },
-  {
-    label: "Viewer",
-    role: "Read-Only Stakeholder",
-    email: "jordan.lee@acmehealth.com",
-    target: "/org/org-acme/viewer/dashboard",
-    category: "Delivery",
-    icon: Eye,
-    color: "from-amber-500 to-orange-500",
-  },
-];
-
-/** One clear message per failure; never a guessed role or a fallback dashboard. */
-function loginFailureMessage(error: unknown): string {
-  if (error instanceof ApiError) {
-    const reference = error.requestId ? ` (Reference: ${error.requestId})` : "";
-    if (error.status === 401) return "The email or password is incorrect.";
-    if (error.status === 403) return `${error.message}${reference}`;
-    if (error.status === 429) return "Too many attempts. Wait a minute and try again.";
-    if (error.status === 0 || error.status >= 502) return "The ProWise server cannot be reached. Try again shortly.";
-    return `Sign-in failed: ${error.message}${reference}`;
-  }
-  return "Sign-in failed. Try again.";
-}
-
-=======
->>>>>>> 29db595 (Initial ProWise project upload)
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -162,18 +28,6 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-<<<<<<< HEAD
-  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
-  // Demo logins are a dev-preview aid only (NEXT_PUBLIC_USE_MOCKS=true, never in production).
-  const showDemoLogins = previewEnabled();
-
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("expired") === "1") {
-      setSessionNotice("Your session ended. Please sign in again.");
-    }
-  }, []);
-=======
->>>>>>> 29db595 (Initial ProWise project upload)
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -187,36 +41,17 @@ export default function LoginPage() {
     }
   }, []);
 
-<<<<<<< HEAD
-  const executeLogin = async (targetEmail: string, targetPass: string, _presetLabel?: string) => {
-=======
   const executeLogin = async (targetEmail: string, targetPass: string) => {
->>>>>>> 29db595 (Initial ProWise project upload)
     const cleanEmail = targetEmail.trim();
-    setLoginError(null);
     if (!cleanEmail || !targetPass) {
-      setLoginError("Enter both your email and password.");
+      toast.error("Please enter both email and password.");
       return;
     }
 
     setIsLoading(true);
     setLoginError(null);
     try {
-<<<<<<< HEAD
-<<<<<<< HEAD
-      // The server decides where this account lands: platform dashboards only for real platform accounts,
-      // otherwise from the ACTIVE memberships (one workspace, the workspace picker, or "no workspace yet").
-      const response = await apiClient.login({ email: cleanEmail, password: targetPass });
-      if (response.must_change_password) {
-        router.replace("/change-password");
-        return;
-=======
-      let destination = "";
-      let userRole: SystemRole = "VIEWER";
-      let userName = cleanEmail.split("@")[0];
-=======
       const attempt = await attemptLogin(apiClient.login, cleanEmail, targetPass);
->>>>>>> 29db595 (Initial ProWise project upload)
 
       if (!attempt.ok) {
         const backendError = attempt.error;
@@ -229,38 +64,14 @@ export default function LoginPage() {
             return;
           }
         }
-<<<<<<< HEAD
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
-=======
 
         const message = loginErrorMessage(backendError);
         setLoginError(message);
         toast.error(message);
         setIsLoading(false);
         return;
->>>>>>> 29db595 (Initial ProWise project upload)
       }
-      const session = await establishSession();
-      const destination = session.target || response.target_dashboard_url;
 
-<<<<<<< HEAD
-      if (session.platform && session.role === "SUPER_ADMIN") {
-        try {
-          useSuperAdminStore.getState().setActiveRolePreview("role-sa");
-        } catch {}
-      } else if (session.platform && session.role === "PLATFORM_OPERATOR") {
-        try {
-          usePlatformOperatorStore.getState().updateAccountSettings({
-            name: session.user.name,
-            email: cleanEmail,
-          });
-        } catch {}
-      }
-      router.replace(destination);
-    } catch (err) {
-      setLoginError(loginFailureMessage(err));
-    } finally {
-=======
       const response = attempt.response;
       if (response.must_change_password) {
         applyLoginResponse(response);
@@ -282,7 +93,6 @@ export default function LoginPage() {
       const message = err instanceof ApiError ? loginErrorMessage(err) : err instanceof Error ? err.message : "Unable to complete sign in.";
       setLoginError(message);
       toast.error(message);
->>>>>>> 29db595 (Initial ProWise project upload)
       setIsLoading(false);
     }
   };
@@ -326,134 +136,9 @@ export default function LoginPage() {
           </p>
         </div>
 
-<<<<<<< HEAD
-        {/* Quick-fill Account Selector for Seamless Development & Access across all sections */}
-<<<<<<< HEAD
-        {showDemoLogins && (
-=======
-        {showDemoPanel && (
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
-        <div className="mb-5 bg-white/85 dark:bg-slate-900/85 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3.5 sm:p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-2 px-0.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Development Preview Roles
-            </span>
-            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-full border border-blue-200/60 dark:border-blue-900/40">
-              All 9 Sections
-            </span>
-          </div>
-
-          {/* Category Filter Pills */}
-          <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-0.5 scrollbar-none">
-            {(["ALL", "Platform", "Leadership", "Delivery"] as const).map((cat) => {
-              const count =
-                cat === "ALL"
-                  ? QUICK_ACCOUNTS.length
-                  : QUICK_ACCOUNTS.filter((a) => a.category === cat).length;
-              const isCatActive = categoryFilter === cat;
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setCategoryFilter(cat)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
-                    isCatActive
-                      ? "bg-blue-600 text-white shadow-xs font-semibold"
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-                  }`}
-                >
-                  {cat === "ALL" ? "All" : cat} ({count})
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Quick Account Cards Grid */}
-          <div className="grid grid-cols-3 gap-2">
-            {visibleAccounts.map((account) => {
-              const Icon = account.icon;
-              const isSelected = selectedPreset === account.label;
-              return (
-                <button
-                  key={account.label}
-                  type="button"
-                  onClick={() => fillCredentials(account)}
-                  onDoubleClick={() => handleInstantSignIn(account)}
-                  title={`${account.label} (${account.role}) - double click for the offline preview`}
-                  className={`group relative flex flex-col items-center justify-center text-center p-2 rounded-xl border transition-all text-left ${
-                    isSelected
-                      ? "border-blue-600 bg-blue-50/90 dark:bg-blue-950/60 shadow-sm ring-1 ring-blue-600"
-                      : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  <div className={`w-7 h-7 rounded-lg bg-gradient-to-tr ${account.color} text-white flex items-center justify-center mb-1.5 shadow-sm group-hover:scale-105 transition-transform`}>
-                    <Icon className="w-3.5 h-3.5" />
-                  </div>
-                  <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200 leading-tight truncate w-full">
-                    {account.label}
-                  </span>
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5 truncate w-full">
-                    {account.role}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Selected Preset State Bar with Instant Login Action */}
-          {selectedPreset && (
-            <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-1">
-              <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium truncate max-w-[200px]">
-                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Ready as {selectedPreset}</span>
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedPreset(null);
-                    setEmail("");
-                    setPassword("");
-                  }}
-                  className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 underline"
-                >
-                  Clear
-                </button>
-                <Button
-                  size="sm"
-                  type="button"
-                  onClick={() => {
-                    const matched = QUICK_ACCOUNTS.find((a) => a.label === selectedPreset);
-                    if (matched) handleInstantSignIn(matched);
-                  }}
-                  disabled={isLoading}
-                  className="h-7 px-2.5 text-[11px] font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-xs flex items-center gap-1"
-                >
-                  <Zap className="w-3 h-3 text-amber-300" /> Offline Preview
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-        )}
-
-=======
->>>>>>> 29db595 (Initial ProWise project upload)
         {/* Main Login Card */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xl shadow-slate-200/40 dark:shadow-black/50 p-6 sm:p-7 backdrop-blur-md">
-          <form onSubmit={handleCustomLogin} className="space-y-4" noValidate>
-            {sessionNotice && !loginError && (
-              <p role="status" data-testid="session-expired"
-                className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-                {sessionNotice}
-              </p>
-            )}
-            {loginError && (
-              <p role="alert" data-testid="login-error"
-                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
-                {loginError}
-              </p>
-            )}
+          <form onSubmit={handleCustomLogin} className="space-y-4">
             {/* Work Email Field */}
             <div className="space-y-1.5">
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">

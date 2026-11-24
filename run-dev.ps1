@@ -33,11 +33,7 @@ Write-Host "Starting backend on http://localhost:8081..."
 $backendProcess = Start-Process `
     -FilePath (Join-Path $backend "mvnw.cmd") `
     -WorkingDirectory $backend `
-<<<<<<< HEAD
-    -ArgumentList "spring-boot:run", "-Dspring-boot.run.profiles=dev", "-Dspring-boot.run.arguments=--server.port=8080" `
-=======
     -ArgumentList "spring-boot:run", "-Dspring-boot.run.arguments=--server.port=8081" `
->>>>>>> 29db595 (Initial ProWise project upload)
     -PassThru
 
 Write-Host "Starting frontend on http://localhost:3000..."

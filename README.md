@@ -112,63 +112,13 @@ npm run build
 
 ---
 
-## 7. Development Demo Users and Credentials
-
-For local development and testing, demo users are automatically seeded under the organization owned by **Dipak Chavan**.
-
-### Organization Details
-- **Organization Name:** `example`
-- **Organization ID:** `6cea41af-fffd-4160-9e01-59e7d88e144d`
-- **Owner:** Dipak Chavan (`dc741094@gmail.com`)
-
-### Demo Credentials
-
-| Role | User | Email | Password | Must Change Password | Target Dashboard |
-|---|---|---|---|---|---|
-| `ORGANIZATION_OWNER` | Dipak Chavan | `dc741094@gmail.com` | `Owner@Pwise2026` | `false` | `/org/6cea41af-fffd-4160-9e01-59e7d88e144d/owner/dashboard` |
-| `ORGANIZATION_ADMIN` | Organization Admin | `orgadmin@pwise.demo` | `Admin@Pwise2026` | `false` | `/org/6cea41af-fffd-4160-9e01-59e7d88e144d/admin/dashboard` |
-| `PROJECT_MANAGER` | Project Manager | `manager@pwise.demo` | `Manager@Pwise2026` | `false` | `/org/6cea41af-fffd-4160-9e01-59e7d88e144d/manager/dashboard` |
-| `TEAM_LEAD` | Team Lead | `teamlead@pwise.demo` | `TeamLead@Pwise2026` | `false` | `/org/6cea41af-fffd-4160-9e01-59e7d88e144d/lead/dashboard` |
-| `DEVELOPER` | Developer | `developer@pwise.demo` | `Developer@Pwise2026` | `false` | `/org/6cea41af-fffd-4160-9e01-59e7d88e144d/developer/dashboard` |
-| `QA_REVIEWER` | QA Reviewer | `qa@pwise.demo` | `QA@Pwise2026` | `false` | `/org/6cea41af-fffd-4160-9e01-59e7d88e144d/reviewer/dashboard` |
-
-### Running the Seeder Locally
-
-The seeder runs automatically when the Spring Boot backend starts in the `dev` or `local` profile:
-
-```bash
-# Run backend with dev profile (Linux / macOS)
-cd backend && ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
-
-# Run backend with dev profile (Windows PowerShell)
-cd backend; .\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=dev"
-
-# Or start all services together on Windows
-.\run-dev.ps1
-```
-
-### Seeder Verification Tests
-
-To verify that the demo accounts, memberships, BCrypt password hashes, and permission grants are correctly configured:
-
-```bash
-cd backend && ./mvnw test -Dtest=DemoUserSeederTest
-```
-
-### Security & Idempotency Notes
-- **Profile Guard:** The seeder is annotated with `@Profile({"dev", "local"})` and will refuse to execute if a production profile (`prod` or `production`) is active.
-- **Idempotency:** Safe to run repeatedly without creating duplicate accounts, memberships, grants, or modifying the existing owner ID.
-- **BCrypt Encryption:** All passwords are encrypted with Spring Security's `PasswordEncoder`. No plain text or `pgcrypto` is used.
-
----
-
-## 8. Run it
+## Run it
 
 ### Development
 
 ```bash
 docker compose up -d
-cd backend && ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+cd backend && ./mvnw spring-boot:run
 cd frontend && npm run dev
 ```
 
@@ -176,12 +126,6 @@ On Windows, start PostgreSQL, the backend, and the frontend together:
 
 ```cmd
 run-dev.cmd
-```
-
-Or with PowerShell:
-
-```powershell
-.\run-dev.ps1
 ```
 
 ### Production-like
@@ -196,11 +140,10 @@ docker compose -f docker-compose.prod.yml up --build
 - `backend/`: Spring Boot application and Maven configuration.
 - `database/`: Flyway migrations, database initialization/seed notes and database scripts.
 - `database/migrations/`: migrations copied into the backend jar at `db/migration`.
-- `database/seed/`: Development seed data documentation.
 
 ---
 
-## 9. Implementation Checklist
+## 7. Implementation Checklist
 
 - [x] **Complete:** All 9 Role-Based Panels and Dashboards
 - [x] **Complete:** Mode A (Individual Solo Check-In) & Mode B (Structured Kanban, List & Timeline)
@@ -210,6 +153,6 @@ docker compose -f docker-compose.prod.yml up --build
 - [x] **Complete:** OWASP Spreadsheet Formula Injection Protection
 - [x] **Complete:** Top Role Test Banner for 1-click verification of all scenarios
 - [x] **Complete:** Production Build Verification (Next.js 14 App Router, 0 Type Errors)
-- [x] **Complete:** Backend Database Seeding Mechanism for Pwise Demo Users
 - [x] **Mocked:** Backend REST API adapter in `src/proxy.ts` (ready for direct Spring Boot `/v1` replacement)
-- [x] **Deferred:** Live GitHub App webhook callbacks (per frontend-only master prompt instructions)
+- [x] **Deferred:** Live Spring Boot backend, live PostgreSQL migrations, live GitHub App webhook callbacks (per frontend-only master prompt instructions)
+

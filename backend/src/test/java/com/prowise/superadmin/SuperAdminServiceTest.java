@@ -3,8 +3,8 @@ package com.prowise.superadmin;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -495,11 +495,6 @@ public class SuperAdminServiceTest {
         assertEquals(0, BigDecimal.ZERO.compareTo(dash.totalMrr()));
         assertEquals(0, BigDecimal.ZERO.compareTo(dash.totalArr()));
         assertEquals(4, dash.kpiCards().size());
-<<<<<<< HEAD
-        // Only stored data: no invented month-over-month trends and no fabricated revenue history.
-        assertTrue(dash.kpiCards().stream().allMatch(card -> card.change() == null && card.trend() == null));
-        assertEquals(0, dash.revenueHistory().size());
-=======
         // No revenue history is stored, so none is fabricated; no trend is invented for any card.
         assertTrue(dash.revenueHistory().isEmpty());
         dash.kpiCards().forEach(card -> {
@@ -530,6 +525,5 @@ public class SuperAdminServiceTest {
         assertEquals(0, BigDecimal.valueOf(27588).compareTo(real.totalArr()));
         assertEquals(15, real.totalSeatsAllocated());
         assertEquals(2, real.activeSubscriptions());
->>>>>>> 29db595 (Initial ProWise project upload)
     }
 }

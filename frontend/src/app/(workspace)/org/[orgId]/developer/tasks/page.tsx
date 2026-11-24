@@ -1,20 +1,10 @@
 "use client";
 
-<<<<<<< HEAD
-import { previewEnabled } from "@/lib/permissions";
-import { MyTasksView } from "@/components/work/ReviewViews";
-
-import React, { useEffect, useState } from "react";
-=======
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
 import { useParams } from "next/navigation";
 import { CheckSquare, Search } from "lucide-react";
 
-<<<<<<< HEAD
-function PreviewDeveloperTasksPage() {
-=======
 import { PanelLayout } from "@/components/layouts/panel-layout";
 import { AdminInput, EmptyStateView, PageFrame, SegmentTabs, StatusBadge, SurfaceCard } from "@/components/delivery/DeliveryUI";
 import { DevGate, WorkStateBadge, dateText, isOverdue } from "@/components/developer/DevUI";
@@ -38,7 +28,6 @@ const MATCH: Record<Filter, (w: WorkItemDto) => boolean> = {
  * compulsory tasks; their progress is the check-in on Progress & Tracker.
  */
 export default function DeveloperTasksPage() {
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
   const params = useParams();
   const orgId = (params?.orgId as string) || "";
   const base = `/org/${orgId}/developer`;
@@ -61,14 +50,6 @@ export default function DeveloperTasksPage() {
   );
 }
 
-<<<<<<< HEAD
-/** Task 3.3: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
-export default function DeveloperTasksPage() {
-  const params = useParams();
-  const home = `/org/${(params?.orgId as string) || ""}/developer`;
-  return previewEnabled() ? <PreviewDeveloperTasksPage /> : (
-    <MyTasksView crumbs={[{ label: "Developer", href: home }]} back={{ href: home, label: "Back to dashboard" }} />
-=======
 function TaskList({ items, base, filter, setFilter, search, setSearch }: {
   items: WorkItemDto[];
   base: string;
@@ -144,6 +125,5 @@ function TaskList({ items, base, filter, setFilter, search, setSearch }: {
         </SurfaceCard>
       )}
     </div>
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
   );
 }

@@ -44,8 +44,6 @@ class AuthorizationArchitectureTest {
             "com.prowise.identity.AuthController.signin",
             "com.prowise.identity.AuthController.login",
             "com.prowise.identity.AuthController.refresh",
-            // Sign-out must work with an expired access token: the session is found from the refresh cookie.
-            "com.prowise.identity.AuthController.logout",
             "com.prowise.identity.AuthController.forgotPassword",
             "com.prowise.identity.AuthController.resetPassword",
             "com.prowise.identity.AuthController.activateAccount",
@@ -60,7 +58,7 @@ class AuthorizationArchitectureTest {
 
     /** Identity-level routes with no tenant object: the service itself checks membership where it matters. */
     static final Set<String> AUTHENTICATED_ONLY_ENDPOINTS = Set.of(
-            "com.prowise.identity.AuthController.logoutEverywhere",
+            "com.prowise.identity.AuthController.logout",
             "com.prowise.identity.AuthController.changePassword",
             "com.prowise.identity.AuthController.me",
             "com.prowise.identity.AuthController.sessions",

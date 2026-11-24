@@ -26,20 +26,14 @@ public class AuditService {
             Instant fromDate,
             Instant toDate
     ) {
-        // Never null parameters: PostgreSQL cannot type a null bind in LOWER(...) or a comparison (500 before).
-        String safeCat = (category != null && !category.equals("ALL")) ? category : "";
-        String safeSev = (severity != null && !severity.equals("ALL")) ? severity : "";
-        String safeSearch = (search != null && !search.trim().isEmpty()) ? search.trim() : "";
-        Instant from = fromDate != null ? fromDate : Instant.EPOCH;
-        Instant to = toDate != null ? toDate : Instant.parse("9999-12-31T23:59:59Z");
+        String safeCat = (category != null && !category.equals("ALL")) ? category : null;
+        String safeSev = (severity != null && !severity.equals("ALL")) ? severity : null;
+        String safeSearch = (search != null && !search.trim().isEmpty()) ? search.trim() : null;
 
-<<<<<<< HEAD
-=======
         // Open bounds become fixed instants (the query cannot type a null timestamp parameter).
         Instant from = fromDate != null ? fromDate : OPEN_FROM;
         Instant to = toDate != null ? toDate : OPEN_TO;
 
->>>>>>> 29db595 (Initial ProWise project upload)
         List<AdminAuditLogEntity> list = repository.searchAuditLogs(safeCat, safeSev, safeSearch, from, to);
         return list.stream().map(this::toResponse).toList();
     }

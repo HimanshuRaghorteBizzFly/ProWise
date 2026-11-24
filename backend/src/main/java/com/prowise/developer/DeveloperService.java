@@ -128,11 +128,6 @@ public class DeveloperService {
 
     /** task.update on the project, and the caller is the assignee or may assign work there. */
     private void requireTaskEdit(Actor actor, WorkItemEntity item) {
-        if (workItemRepository.countBreakdownItems(item.getId()) > 0) {
-            // Breakdown tasks change only through submit / review / reopen (task 3.3): no direct Done, no PR shortcut.
-            throw new com.prowise.common.api.ApiException(org.springframework.http.HttpStatus.CONFLICT, "USE_TASK_REVIEW",
-                    "This task follows the review flow: submit it for review instead.");
-        }
         access.requireAction(actor, item.getProjectId(), PermissionKey.TASK_UPDATE);
         boolean assignee = actor.userId().equals(item.getPrimaryAssigneeId());
         if (!assignee && !access.can(actor, item.getProjectId(), PermissionKey.TASK_ASSIGN)) {
@@ -479,14 +474,7 @@ public class DeveloperService {
             codeReviewCommentRepository.save(comment);
         }
 
-        if ("APPROVED".equalsIgnoreCase(req.decision()) && review.getWorkItemId() != null
-                && workItemRepository.countBreakdownItems(review.getWorkItemId()) == 0) { // a merged PR never replaces review (AS-03)
-            workItemRepository.findByIdAndOrgId(review.getWorkItemId(), actor.orgId()).ifPresent(item -> {
-                item.setState("DONE");
-                item.setUpdatedAt(Instant.now());
-                workItemRepository.save(item);
-            });
-        }
+        // A code review (pull request) is evidence only: it never completes a work item (rule 9, task 3.3).
         return codeReviewRepository.save(review);
     }
 

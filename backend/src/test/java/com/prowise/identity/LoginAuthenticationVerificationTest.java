@@ -102,18 +102,20 @@ class LoginAuthenticationVerificationTest {
                 .isEqualTo(PublishedSeedCredentials.USER_ACCOUNTS.size());
     }
 
-        MvcResult result = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.access_token").isNotEmpty())
-                .andExpect(jsonPath("$.refresh_token").doesNotExist()) // only in the httpOnly cookie
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().httpOnly("prowise_refresh_token", true))
-                .andExpect(jsonPath("$.must_change_password").value(false))
-                .andExpect(jsonPath("$.target_dashboard_url").value("/super-admin/dashboard"))
-                .andExpect(jsonPath("$.user.email").value("superadmin@prowise.com"))
-                .andExpect(jsonPath("$.user.role").value("SUPER_ADMIN"))
-                .andReturn();
+    @Test
+    @DisplayName("Seeded platform operators with the published password are refused on the operator login")
+    void seededOperatorCredentialsCannotAuthenticate() throws Exception {
+        for (String email : List.of("main.operator@prowise.io", "operator@prowise.io")) {
+            mockMvc.perform(post("/v1/auth/operator/login").contentType(MediaType.APPLICATION_JSON)
+                            .content(credentials(email, PublishedSeedCredentials.OPERATOR)))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.access_token").doesNotExist());
+        }
+        assertThat(jdbc.queryForList("SELECT status FROM platform_operators WHERE id IN ('op-main-1', 'op-2')", String.class))
+                .containsOnly("SUSPENDED");
+        assertThat(jdbc.queryForList("SELECT password_setup_completed FROM platform_operators WHERE id IN ('op-main-1', 'op-2')", Boolean.class))
+                .containsOnly(false);
+    }
 
     @Test
     @DisplayName("V22 revokes sessions, writes audit rows, keeps hashes and is idempotent")
@@ -162,85 +164,14 @@ class LoginAuthenticationVerificationTest {
         mockMvc.perform(post("/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(credentials("admin-" + suffix + "@test.prowise", "Admin-Test-Password-1")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.access_token").isNotEmpty())
-                .andExpect(jsonPath("$.refresh_token").doesNotExist()) // only in the httpOnly cookie
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().httpOnly("prowise_refresh_token", true))
-                .andExpect(jsonPath("$.must_change_password").value(false))
-                .andExpect(jsonPath("$.target_dashboard_url").value("/platform-operator/dashboard"))
-                .andExpect(jsonPath("$.user.email").value("operator@prowise.io"))
-                .andExpect(jsonPath("$.user.role").value("PLATFORM_OPERATOR"))
-                .andReturn();
-
-        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-        String accessToken = response.get("access_token").asText();
-
-        // Verify authorized access to operational telemetry using the generated JWT Bearer token
-        mockMvc.perform(get("/api/v1/operator/dashboard/stats")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    @DisplayName("3. Platform Operator: Authenticate via dedicated POST /api/v1/auth/operator/login")
-    void testPlatformOperatorDedicatedLogin() throws Exception {
-        String payload = """
-                {
-                    "email": "operator@prowise.io",
-                    "password": "Operator2026!",
-                    "remember_me": true
-                }
-                """;
-
-        mockMvc.perform(post("/api/v1/auth/operator/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
+                .andExpect(jsonPath("$.target_dashboard_url").value("/super-admin/dashboard"));
+        mockMvc.perform(post("/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(credentials("dev-" + suffix + "@test.prowise", "Developer-Test-Pass-1")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.access_token").isNotEmpty())
-                .andExpect(jsonPath("$.operator.email").value("operator@prowise.io"))
-                .andExpect(jsonPath("$.operator.status").value("ACTIVE"));
-    }
-
-    @Test
-    @DisplayName("4. Developer: Authenticate via POST /api/auth/login and verify JWT + Organization workspace redirect")
-    void testDeveloperLogin() throws Exception {
-        String payload = objectMapper.writeValueAsString(new AuthController.Credentials(
-                "alex.rivera@acmehealth.com",
-                "Developer2026!"
-        ));
-
-        MvcResult result = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.access_token").isNotEmpty())
-                .andExpect(jsonPath("$.refresh_token").doesNotExist()) // only in the httpOnly cookie
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().httpOnly("prowise_refresh_token", true))
-                .andExpect(jsonPath("$.must_change_password").value(false))
-                .andExpect(jsonPath("$.target_dashboard_url").value("/org/0a000000-0000-4000-8000-00000000000a/developer/dashboard"))
-                .andExpect(jsonPath("$.user.email").value("alex.rivera@acmehealth.com"))
-                .andExpect(jsonPath("$.user.role").value("DEVELOPER"))
-                .andReturn();
-
-        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-        String accessToken = response.get("access_token").asText();
-
-        // Verify authorized access to developer projects endpoint
-        mockMvc.perform(get("/api/v1/developer/projects")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    @DisplayName("5. Password mismatch rejects with 401 UNAUTHORIZED")
-    void testInvalidCredentialsRejected() throws Exception {
-        String payload = objectMapper.writeValueAsString(new AuthController.Credentials(
-                "superadmin@prowise.com",
-                "WrongPassword123!"
-        ));
-
-        mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(payload))
+                .andExpect(jsonPath("$.target_dashboard_url").value("/org/" + orgId + "/developer/dashboard"))
+                .andExpect(jsonPath("$.user.role").value("DEVELOPER"));
+        mockMvc.perform(post("/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(credentials("dev-" + suffix + "@test.prowise", "Wrong-Password-123")))
                 .andExpect(status().isUnauthorized());
     }
 

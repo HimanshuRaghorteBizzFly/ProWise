@@ -1,305 +1,259 @@
 package com.prowise.work;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.prowise.authz.PermissionKey;
 import com.prowise.authz.PermissionService;
+import com.prowise.common.api.ApiError;
 import com.prowise.common.api.ApiException;
 import com.prowise.common.change.ChangeRecorder;
-import com.prowise.common.persistence.ExpectedVersion;
-import com.prowise.domain.DependencyGraph;
-import com.prowise.domain.DependencyGraph.Link;
-import com.prowise.domain.DependencyGraph.Problem;
-import com.prowise.domain.WorkBreakdown;
-import com.prowise.project.ProjectService;
-import com.prowise.project.ProjectService.ProjectResponse;
 
 /**
- * Task 3.4: Finish-to-Start links between tasks of one project. Graph changes are serialized per project (the project
- * row is locked), so two simultaneous reverse links cannot form a loop. Every change returns the affected successors.
- * A reopened accepted predecessor flags its successors for review; nothing is reversed and no date moves.
+ * Task 3.4: Finish-to-Start dependencies inside one project (FR-021, docs/domain-rules.md "Dependencies and blockers").
+ *
+ * <ul>
+ *   <li>Only planners ({@code task.create} or {@code task.assign}) link or unlink work. Self-links, duplicates, links
+ *       to another project and cycles are refused. Graph changes serialize on the project row, so two simultaneous
+ *       reverse links cannot both succeed.</li>
+ *   <li>A successor cannot start while any prerequisite is unfinished (409 BLOCKED_BY_DEPENDENCY).</li>
+ *   <li>When accepted work is reopened, every downstream item that is active or done is FLAGGED for review; states and
+ *       dates never change automatically. Flags clear once all prerequisites are accepted again.</li>
+ *   <li>Credit suspension (a done item whose prerequisite is not accepted earns nothing) is applied by the progress
+ *       calculation (task 3.5) using {@link #hasUnacceptedPrerequisite}.</li>
+ * </ul>
  */
 @Service
-public class DependencyService {
+public class DependencyService implements WorkItemStateListener {
 
     private final JdbcTemplate jdbc;
-    private final ProjectService projects;
-    private final PermissionService permissions;
+    private final WorkItemService workItems;
     private final ChangeRecorder changes;
-    private final WorkService work;
 
-    public DependencyService(JdbcTemplate jdbc, ProjectService projects, PermissionService permissions, ChangeRecorder changes,
-            WorkService work) {
+    public DependencyService(JdbcTemplate jdbc, WorkItemService workItems, ChangeRecorder changes) {
         this.jdbc = jdbc;
-        this.projects = projects;
-        this.permissions = permissions;
+        this.workItems = workItems;
         this.changes = changes;
-        this.work = work;
     }
 
-    public record ItemRef(String id, String key, String title, String state) {}
-
-    public record LinkView(UUID id, String predecessorId, String successorId, Instant createdAt) {}
-
-    public record Flag(String workItemId, String reason, Instant flaggedAt) {}
-
-    public record Board(List<LinkView> links, List<Flag> flags, List<BlockerService.Blocker> blockers) {}
-
-    public record Change(LinkView link, List<ItemRef> affected) {}
-
-    public record LinkRequest(String predecessorId, Long expectedVersion) {}
-
-    public record ReleaseRequest(String treatment, Long expectedVersion) {}
-
-    public record VersionRequest(Long expectedVersion) {}
-
-    /* ================================================================== reads */
-
-    /** Links, review flags and open blockers of a project (for the Breakdown tab: "Blocked by" / "Blocks"). */
-    @Transactional(readOnly = true)
-    public Board board(UUID orgId, String projectId, Authentication auth, BlockerService blockers) {
-        ProjectResponse project = projects.get(orgId, projectId, auth);
-        List<Flag> flags = jdbc.query("""
-                SELECT id, dependency_flag_reason, dependency_flagged_at FROM work_items
-                WHERE org_id = ? AND project_id = ? AND dependency_flagged_at IS NOT NULL AND retired_at IS NULL
-                ORDER BY dependency_flagged_at
-                """, (rs, n) -> new Flag(rs.getString(1), rs.getString(2), rs.getTimestamp(3).toInstant()), orgId, project.id());
-        return new Board(linkViews(orgId, project.id()), flags, blockers.openInProject(orgId, project.id()));
-    }
-
-    /* ================================================================== link changes */
+    /* ================================================================== link / unlink */
 
     @Transactional
-    public Change link(UUID orgId, String projectId, String successorId, Authentication auth, LinkRequest request) {
-        ProjectResponse project = work.editableStructured(orgId, projectId, auth);
-        if (request.expectedVersion() == null) throw WorkService.validation("expected_version", "is required");
-        if (request.predecessorId() == null || request.predecessorId().isBlank()) throw WorkService.validation("predecessor_id", "is required");
-        work.lockProject(orgId, project.id()); // serializes graph changes of this project
-        Map<String, WorkService.ItemRow> rows = work.rows(orgId, project.id());
-        WorkService.ItemRow successor = linkable(orgId, rows, successorId);
-        WorkService.ItemRow predecessor = linkable(orgId, rows, request.predecessorId());
-        ExpectedVersion.check(successor.version(), request.expectedVersion());
-        List<Link> links = links(orgId, project.id());
-        Optional<Problem> problem = DependencyGraph.canLink(links, predecessor.id(), successor.id());
-        if (problem.isPresent()) {
-            throw switch (problem.get()) {
-                case SELF_LINK -> WorkService.validation("predecessor_id", "A task cannot depend on itself.");
-                case DUPLICATE -> conflict("DUPLICATE_DEPENDENCY", "This link already exists.");
-                case CYCLE -> conflict("DEPENDENCY_CYCLE", "This link would make a loop: " + successor.key() + " already comes before "
-                        + predecessor.key() + ".");
-            };
+    public LinkResult link(Authentication authentication, String successorId, LinkRequest request) {
+        WorkItemService.Caller caller = workItems.caller(authentication);
+        WorkItemService.Item successor = workItems.visible(caller, successorId);
+        requirePlanner(caller, successor.projectId());
+        String predecessorId = request.predecessorId() == null ? "" : request.predecessorId().trim();
+
+        jdbc.queryForList("SELECT id FROM projects WHERE id = ? AND org_id = ? FOR UPDATE", successor.projectId(), caller.orgId());
+        WorkItemService.Item predecessor = predecessorId.isEmpty() ? null : workItems.find(caller.orgId(), predecessorId);
+        if (predecessor == null || !predecessor.projectId().equals(successor.projectId())
+                || predecessor.id().equals(successor.id()) || "RETIRED".equals(predecessor.planStatus())
+                || "RETIRED".equals(successor.planStatus())) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_DEPENDENCY",
+                    "A prerequisite must be other active work in the same project.",
+                    List.of(new ApiError.FieldError("predecessor_id", "is not other active work in this project")));
         }
-        UUID userId = permissions.principal(auth).userId();
+        // A cycle would appear if the predecessor already (transitively) depends on the successor.
+        Boolean cycle = jdbc.queryForObject("""
+                WITH RECURSIVE down(id, n) AS (
+                    SELECT successor_id, 1 FROM work_item_dependencies WHERE predecessor_id = ?
+                    UNION
+                    SELECT d.successor_id, down.n + 1 FROM work_item_dependencies d JOIN down ON d.predecessor_id = down.id
+                    WHERE down.n < 500)
+                SELECT EXISTS (SELECT 1 FROM down WHERE id = ?)
+                """, Boolean.class, successor.id(), predecessor.id());
+        if (Boolean.TRUE.equals(cycle)) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "DEPENDENCY_CYCLE",
+                    "This link would make the work wait for itself.",
+                    List.of(new ApiError.FieldError("predecessor_id", "would create a loop")));
+        }
         UUID id = UUID.randomUUID();
-        jdbc.update("INSERT INTO work_item_dependencies (id, org_id, project_id, predecessor_id, successor_id, created_by) VALUES (?, ?, ?, ?, ?, ?)",
-                id, orgId, project.id(), predecessor.id(), successor.id(), userId);
-        bump(orgId, successor.id(), request.expectedVersion());
-        List<Link> after = links(orgId, project.id());
-        List<ItemRef> affected = refs(orgId, withFirst(successor.id(), DependencyGraph.affected(after, successor.id())));
-        record(orgId, userId, project, "dependency.linked", successor.id(), null,
-                payload(predecessor.id(), successor.id(), affected), "DependencyLinked");
-        return new Change(view(orgId, id), affected);
-    }
-
-    @Transactional
-    public Change unlink(UUID orgId, String projectId, String successorId, UUID linkId, Authentication auth, VersionRequest request) {
-        ProjectResponse project = work.editableStructured(orgId, projectId, auth);
-        if (request.expectedVersion() == null) throw WorkService.validation("expected_version", "is required");
-        work.lockProject(orgId, project.id());
-        LinkView link = jdbc.query("SELECT id, predecessor_id, successor_id, created_at FROM work_item_dependencies WHERE id = ? AND org_id = ? AND project_id = ? AND successor_id = ?",
-                (rs, n) -> linkView(rs), linkId, orgId, project.id(), successorId).stream().findFirst().orElseThrow(PermissionService::notFound);
-        WorkService.ItemRow successor = work.rows(orgId, project.id()).get(successorId);
-        if (successor == null) throw PermissionService.notFound();
-        ExpectedVersion.check(successor.version(), request.expectedVersion());
-        List<ItemRef> affected = refs(orgId, withFirst(successorId, DependencyGraph.affected(links(orgId, project.id()), successorId)));
-        jdbc.update("DELETE FROM work_item_dependencies WHERE id = ? AND org_id = ?", linkId, orgId);
-        bump(orgId, successorId, request.expectedVersion());
-        UUID userId = permissions.principal(auth).userId();
-        record(orgId, userId, project, "dependency.removed", successorId, null,
-                payload(link.predecessorId(), link.successorId(), affected), "DependencyRemoved");
-        return new Change(link, affected);
-    }
-
-    /**
-     * Explicit treatment of an item's links before it is removed or cancelled: DROP removes them; BRIDGE also links each of
-     * its predecessors to each of its successors so the successors keep waiting on the same earlier work.
-     */
-    @Transactional
-    public Change release(UUID orgId, String projectId, String itemId, Authentication auth, ReleaseRequest request) {
-        ProjectResponse project = work.editableStructured(orgId, projectId, auth);
-        if (request.expectedVersion() == null) throw WorkService.validation("expected_version", "is required");
-        String treatment = request.treatment() == null ? "" : request.treatment().trim().toUpperCase();
-        if (!List.of("DROP", "BRIDGE").contains(treatment)) throw WorkService.validation("treatment", "must be DROP or BRIDGE");
-        work.lockProject(orgId, project.id());
-        WorkService.ItemRow item = work.rows(orgId, project.id()).get(itemId);
-        if (item == null) throw PermissionService.notFound();
-        ExpectedVersion.check(item.version(), request.expectedVersion());
-        List<Link> links = links(orgId, project.id());
-        List<ItemRef> affected = refs(orgId, DependencyGraph.affected(links, itemId));
-        UUID userId = permissions.principal(auth).userId();
-        List<Link> bridged = "BRIDGE".equals(treatment) ? DependencyGraph.bridge(links, itemId) : List.of();
-        jdbc.update("DELETE FROM work_item_dependencies WHERE org_id = ? AND project_id = ? AND (predecessor_id = ? OR successor_id = ?)",
-                orgId, project.id(), itemId, itemId);
-        for (Link link : bridged) {
-            jdbc.update("INSERT INTO work_item_dependencies (id, org_id, project_id, predecessor_id, successor_id, created_by) VALUES (?, ?, ?, ?, ?, ?)",
-                    UUID.randomUUID(), orgId, project.id(), link.predecessor(), link.successor(), userId);
-        }
-        bump(orgId, itemId, request.expectedVersion());
-        Map<String, Object> next = new LinkedHashMap<>();
-        next.put("treatment", treatment);
-        next.put("bridged", bridged.stream().map(l -> l.predecessor() + "->" + l.successor()).toList());
-        next.put("affected", affected.stream().map(ItemRef::id).toList());
-        record(orgId, userId, project, "dependency.links_released", itemId, Map.of("links", links.size()), next, "DependencyLinksReleased");
-        return new Change(null, affected);
-    }
-
-    /** The project manager or the assignee confirms a flagged successor was reviewed after its predecessor reopened. */
-    @Transactional
-    public ItemRef clearFlag(UUID orgId, String projectId, String itemId, Authentication auth, VersionRequest request) {
-        ProjectResponse project = projects.get(orgId, projectId, auth);
-        if (request.expectedVersion() == null) throw WorkService.validation("expected_version", "is required");
-        work.lockProject(orgId, project.id());
-        WorkService.ItemRow item = work.rows(orgId, project.id()).get(itemId);
-        if (item == null) throw PermissionService.notFound();
-        UUID membershipId = permissions.requireMembership(auth, orgId);
-        boolean assignee = membershipId.equals(item.assignee());
-        if (!assignee && !permissions.canOnProject(auth, orgId, project.id(), PermissionKey.PROJECT_EDIT.value())) throw PermissionService.forbidden();
-        ExpectedVersion.check(item.version(), request.expectedVersion());
-        String reason = jdbc.queryForObject("SELECT dependency_flag_reason FROM work_items WHERE id = ? AND org_id = ?", String.class, itemId, orgId);
-        if (reason == null) throw conflict("NOT_FLAGGED", "This task is not flagged for review.");
-        ExpectedVersion.requireUpdated(jdbc.update("""
-                UPDATE work_items SET dependency_flagged_at = NULL, dependency_flag_reason = NULL, version = version + 1, updated_at = now()
-                WHERE id = ? AND org_id = ? AND version = ?
-                """, itemId, orgId, request.expectedVersion()));
-        record(orgId, permissions.principal(auth).userId(), project, "dependency.flag_cleared", itemId, Map.of("reason", reason),
-                Map.of("work_item_id", itemId), "DependencyFlagCleared");
-        return refs(orgId, List.of(itemId)).get(0);
-    }
-
-    /* ================================================================== used by other services */
-
-    /** Predecessors of a task that are not accepted yet (Done with an approved revision). Empty = the task may start. */
-    List<ItemRef> unfinishedPredecessors(UUID orgId, String itemId) {
-        return jdbc.query("""
-                SELECT p.id, p.key, p.title, p.state FROM work_item_dependencies d
-                JOIN work_items p ON p.id = d.predecessor_id AND p.org_id = d.org_id
-                WHERE d.org_id = ? AND d.successor_id = ? AND NOT (p.state = 'DONE' AND p.accepted_revision IS NOT NULL)
-                ORDER BY p.key
-                """, (rs, n) -> new ItemRef(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4)), orgId, itemId);
-    }
-
-    /** Flags every successor (direct or further down) of a reopened task for review; returns them. */
-    @Transactional(propagation = Propagation.MANDATORY)
-    List<ItemRef> flagSuccessors(UUID orgId, String projectId, String itemId, String itemKey) {
-        List<String> affected = DependencyGraph.affected(links(orgId, projectId), itemId);
-        for (String id : affected) {
+        try {
             jdbc.update("""
-                    UPDATE work_items SET dependency_flagged_at = now(), dependency_flag_reason = ?, version = version + 1, updated_at = now()
-                    WHERE id = ? AND org_id = ? AND retired_at IS NULL
-                    """, "Predecessor " + itemKey + " was reopened. Check this work still holds.", id, orgId);
+                    INSERT INTO work_item_dependencies (id, org_id, project_id, predecessor_id, successor_id, created_by)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """, id, caller.orgId(), successor.projectId(), predecessor.id(), successor.id(), caller.userId());
+        } catch (DuplicateKeyException duplicate) {
+            throw WorkItemService.conflict("DUPLICATE_DEPENDENCY", "These items are already linked.");
         }
-        return refs(orgId, affected);
+        Map<String, Object> data = Map.of("predecessor_id", predecessor.id(), "successor_id", successor.id(),
+                "project_id", successor.projectId());
+        changes.record(
+                new ChangeRecorder.AuditEntry(caller.orgId(), caller.userId(), "dependency.added", "DEPENDENCY", id, null,
+                        null, data),
+                new ChangeRecorder.DomainEvent(caller.orgId(), "DEPENDENCY", id, 0L, "DependencyAdded", data));
+        return new LinkResult(dependency(id), affected(caller.orgId(), predecessor.id()));
     }
 
-    /** Refuses removing or cancelling a task that still has links: they need explicit treatment first (release). */
-    static void requireNoLinks(JdbcTemplate jdbc, UUID orgId, String itemId, String key) {
-        Integer count = jdbc.queryForObject(
-                "SELECT count(*) FROM work_item_dependencies WHERE org_id = ? AND (predecessor_id = ? OR successor_id = ?)",
-                Integer.class, orgId, itemId, itemId);
-        if (count != null && count > 0) {
-            throw conflict("LINKS_NEED_TREATMENT", (key == null ? "This task" : key)
-                    + " has dependency links. Drop them or bridge them to the surrounding tasks first.");
+    @Transactional
+    public void unlink(Authentication authentication, UUID dependencyId) {
+        WorkItemService.Caller caller = workItems.caller(authentication);
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT project_id, predecessor_id, successor_id FROM work_item_dependencies WHERE id = ? AND org_id = ?",
+                dependencyId, caller.orgId());
+        if (rows.isEmpty()) throw PermissionService.notFound();
+        String projectId = (String) rows.get(0).get("project_id");
+        workItems.readableProject(caller, projectId);
+        requirePlanner(caller, projectId);
+        jdbc.queryForList("SELECT id FROM projects WHERE id = ? AND org_id = ? FOR UPDATE", projectId, caller.orgId());
+        jdbc.update("DELETE FROM work_item_dependencies WHERE id = ?", dependencyId);
+        Map<String, Object> data = Map.of("predecessor_id", rows.get(0).get("predecessor_id"),
+                "successor_id", rows.get(0).get("successor_id"), "project_id", projectId);
+        changes.record(
+                new ChangeRecorder.AuditEntry(caller.orgId(), caller.userId(), "dependency.removed", "DEPENDENCY",
+                        dependencyId, null, data, null),
+                new ChangeRecorder.DomainEvent(caller.orgId(), "DEPENDENCY", dependencyId, 1L, "DependencyRemoved", data));
+    }
+
+    @Transactional(readOnly = true)
+    public DependencyView view(Authentication authentication, String workItemId) {
+        WorkItemService.Caller caller = workItems.caller(authentication);
+        WorkItemService.Item item = workItems.visible(caller, workItemId);
+        List<Link> blockedBy = jdbc.query(LINK_SELECT + " WHERE d.successor_id = ? AND d.org_id = ? ORDER BY p.key",
+                (rs, n) -> link(rs), item.id(), caller.orgId());
+        List<Link> blocks = jdbc.query(LINK_SELECT + " WHERE d.predecessor_id = ? AND d.org_id = ? ORDER BY s.key",
+                (rs, n) -> link(rs), item.id(), caller.orgId());
+        return new DependencyView(blockedBy, blocks, affected(caller.orgId(), item.id()));
+    }
+
+    /* ================================================================== workflow hooks (same transaction) */
+
+    @Override
+    public void beforeStart(UUID orgId, String workItemId) {
+        List<String> unfinished = jdbc.queryForList("""
+                SELECT p.key FROM work_item_dependencies d JOIN work_items p ON p.id = d.predecessor_id
+                WHERE d.successor_id = ? AND d.org_id = ? AND p.state NOT IN ('DONE', 'CANCELLED')
+                ORDER BY p.key
+                """, String.class, workItemId, orgId);
+        if (!unfinished.isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, "BLOCKED_BY_DEPENDENCY",
+                    "This work waits for " + String.join(", ", unfinished) + " to be finished first.");
+        }
+    }
+
+    @Override
+    public void afterReopen(UUID orgId, String workItemId, UUID actorId) {
+        String key = jdbc.queryForObject("SELECT key FROM work_items WHERE id = ?", String.class, workItemId);
+        jdbc.update("""
+                WITH RECURSIVE down(id, n) AS (
+                    SELECT successor_id, 1 FROM work_item_dependencies WHERE predecessor_id = ? AND org_id = ?
+                    UNION
+                    SELECT d.successor_id, down.n + 1 FROM work_item_dependencies d JOIN down ON d.predecessor_id = down.id
+                    WHERE down.n < 500)
+                UPDATE work_items SET dependency_flag = ?, dependency_flagged_at = now(), updated_at = now()
+                WHERE id IN (SELECT id FROM down) AND org_id = ? AND state IN ('IN_PROGRESS', 'IN_REVIEW', 'DONE')
+                """, workItemId, orgId, "Prerequisite " + key + " was reopened: review whether this work is still valid.",
+                orgId);
+    }
+
+    @Override
+    public void creditChanged(UUID orgId, String workItemId, String cause, UUID actorId) {
+        if (!"WORK_ACCEPTED".equals(cause)) return;
+        // Downstream flags clear once every prerequisite in their chain is accepted again.
+        jdbc.update("""
+                WITH RECURSIVE down(id, n) AS (
+                    SELECT successor_id, 1 FROM work_item_dependencies WHERE predecessor_id = ? AND org_id = ?
+                    UNION
+                    SELECT d.successor_id, down.n + 1 FROM work_item_dependencies d JOIN down ON d.predecessor_id = down.id
+                    WHERE down.n < 500)
+                UPDATE work_items w SET dependency_flag = NULL, dependency_flagged_at = NULL, updated_at = now()
+                WHERE w.id IN (SELECT id FROM down) AND w.org_id = ? AND w.dependency_flag IS NOT NULL
+                  AND NOT EXISTS (
+                      WITH RECURSIVE up(id, n) AS (
+                          SELECT predecessor_id, 1 FROM work_item_dependencies WHERE successor_id = w.id
+                          UNION
+                          SELECT d.predecessor_id, up.n + 1 FROM work_item_dependencies d JOIN up ON d.successor_id = up.id
+                          WHERE up.n < 500)
+                      SELECT 1 FROM up JOIN work_items p ON p.id = up.id WHERE p.state <> 'DONE')
+                """, workItemId, orgId, orgId);
+    }
+
+    /** True when any prerequisite in the item's chain is not accepted: its own credit is suspended (task 3.5). */
+    public boolean hasUnacceptedPrerequisite(String workItemId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                WITH RECURSIVE up(id, n) AS (
+                    SELECT predecessor_id, 1 FROM work_item_dependencies WHERE successor_id = ?
+                    UNION
+                    SELECT d.predecessor_id, up.n + 1 FROM work_item_dependencies d JOIN up ON d.successor_id = up.id
+                    WHERE up.n < 500)
+                SELECT EXISTS (SELECT 1 FROM up JOIN work_items p ON p.id = up.id WHERE p.state <> 'DONE')
+                """, Boolean.class, workItemId));
+    }
+
+    /** Links the item takes part in as a prerequisite: removing it needs explicit treatment of these first. */
+    static void requireNoSuccessorLinks(JdbcTemplate jdbc, String workItemId) {
+        List<String> successors = jdbc.queryForList("""
+                SELECT s.key FROM work_item_dependencies d JOIN work_items s ON s.id = d.successor_id
+                WHERE d.predecessor_id = ? ORDER BY s.key
+                """, String.class, workItemId);
+        if (!successors.isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, "DEPENDENCIES_EXIST",
+                    "Other work depends on this item (" + String.join(", ", successors)
+                            + "). Remove or replace those links first.");
         }
     }
 
     /* ================================================================== helpers */
 
-    private WorkService.ItemRow linkable(UUID orgId, Map<String, WorkService.ItemRow> rows, String itemId) {
-        WorkService.ItemRow row = rows.get(itemId);
-        if (row == null) throw PermissionService.notFound(); // unknown, foreign, other project, retired or proposed
-        boolean leaf = WorkBreakdown.measurable(row.level()) && rows.values().stream().noneMatch(r -> itemId.equals(r.parentId()));
-        if (!leaf) throw conflict("NOT_A_LEAF", "Only tasks and subtasks without children are linked.");
-        Boolean cancelled = jdbc.queryForObject("SELECT cancelled_at IS NOT NULL FROM work_items WHERE id = ? AND org_id = ?", Boolean.class, itemId, orgId);
-        if (Boolean.TRUE.equals(cancelled)) throw conflict("TASK_CANCELLED", "Cancelled tasks are not linked.");
-        return row;
+    private List<Affected> affected(UUID orgId, String workItemId) {
+        return jdbc.query("""
+                WITH RECURSIVE down(id, n) AS (
+                    SELECT successor_id, 1 FROM work_item_dependencies WHERE predecessor_id = ? AND org_id = ?
+                    UNION
+                    SELECT d.successor_id, down.n + 1 FROM work_item_dependencies d JOIN down ON d.predecessor_id = down.id
+                    WHERE down.n < 500)
+                SELECT w.id, w.key, w.title, w.state, min(down.n) AS distance
+                FROM down JOIN work_items w ON w.id = down.id
+                GROUP BY w.id, w.key, w.title, w.state ORDER BY min(down.n), w.key
+                """, (rs, n) -> new Affected(rs.getString("id"), rs.getString("key"), rs.getString("title"),
+                        rs.getString("state"), rs.getInt("distance")), workItemId, orgId);
     }
 
-    List<Link> links(UUID orgId, String projectId) {
-        return jdbc.query("SELECT predecessor_id, successor_id FROM work_item_dependencies WHERE org_id = ? AND project_id = ? ORDER BY created_at, id",
-                (rs, n) -> new Link(rs.getString(1), rs.getString(2)), orgId, projectId);
+    private static final String LINK_SELECT = """
+            SELECT d.id, d.predecessor_id, p.key AS p_key, p.title AS p_title, p.state AS p_state,
+                   d.successor_id, s.key AS s_key, s.title AS s_title, s.state AS s_state, d.created_at
+            FROM work_item_dependencies d
+            JOIN work_items p ON p.id = d.predecessor_id
+            JOIN work_items s ON s.id = d.successor_id
+            """;
+
+    private Link dependency(UUID id) {
+        return jdbc.queryForObject(LINK_SELECT + " WHERE d.id = ?", (rs, n) -> link(rs), id);
     }
 
-    private List<LinkView> linkViews(UUID orgId, String projectId) {
-        return jdbc.query("SELECT id, predecessor_id, successor_id, created_at FROM work_item_dependencies WHERE org_id = ? AND project_id = ? ORDER BY created_at, id",
-                (rs, n) -> linkView(rs), orgId, projectId);
+    private static Link link(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new Link(rs.getObject("id", UUID.class), rs.getString("predecessor_id"), rs.getString("p_key"),
+                rs.getString("p_title"), rs.getString("p_state"), rs.getString("successor_id"), rs.getString("s_key"),
+                rs.getString("s_title"), rs.getString("s_state"), rs.getTimestamp("created_at").toInstant());
     }
 
-    private LinkView view(UUID orgId, UUID id) {
-        return jdbc.queryForObject("SELECT id, predecessor_id, successor_id, created_at FROM work_item_dependencies WHERE id = ? AND org_id = ?",
-                (rs, n) -> linkView(rs), id, orgId);
+    private void requirePlanner(WorkItemService.Caller caller, String projectId) {
+        if (!workItems.can(caller, projectId, PermissionKey.TASK_CREATE)
+                && !workItems.can(caller, projectId, PermissionKey.TASK_ASSIGN)) {
+            throw PermissionService.forbidden();
+        }
     }
 
-    private static LinkView linkView(java.sql.ResultSet rs) throws java.sql.SQLException {
-        return new LinkView(rs.getObject("id", UUID.class), rs.getString("predecessor_id"), rs.getString("successor_id"),
-                rs.getTimestamp("created_at").toInstant());
-    }
+    /* ================================================================== API records */
 
-    private List<ItemRef> refs(UUID orgId, List<String> ids) {
-        if (ids.isEmpty()) return List.of();
-        Map<String, ItemRef> byId = new HashMap<>();
-        jdbc.query("SELECT id, key, title, state FROM work_items WHERE org_id = ? AND id = ANY (?)",
-                (org.springframework.jdbc.core.RowCallbackHandler) rs -> byId.put(rs.getString(1),
-                        new ItemRef(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4))),
-                orgId, ids.toArray(String[]::new));
-        List<ItemRef> ordered = new ArrayList<>();
-        for (String id : ids) if (byId.containsKey(id)) ordered.add(byId.get(id));
-        return ordered;
-    }
+    public record LinkRequest(String predecessorId) {}
 
-    private static List<String> withFirst(String first, List<String> rest) {
-        List<String> all = new ArrayList<>(List.of(first));
-        rest.stream().filter(id -> !id.equals(first)).forEach(all::add);
-        return all;
-    }
+    public record Link(UUID id, String predecessorId, String predecessorKey, String predecessorTitle, String predecessorState,
+            String successorId, String successorKey, String successorTitle, String successorState, Instant createdAt) {}
 
-    private void bump(UUID orgId, String itemId, long expectedVersion) {
-        ExpectedVersion.requireUpdated(jdbc.update("UPDATE work_items SET version = version + 1, updated_at = now() WHERE id = ? AND org_id = ? AND version = ?",
-                itemId, orgId, expectedVersion));
-    }
+    public record Affected(String workItemId, String key, String title, String state, int distance) {}
 
-    private static Map<String, Object> payload(String predecessorId, String successorId, List<ItemRef> affected) {
-        Map<String, Object> p = new LinkedHashMap<>();
-        p.put("predecessor_id", predecessorId);
-        p.put("successor_id", successorId);
-        p.put("affected", affected.stream().map(ItemRef::id).toList());
-        return p;
-    }
+    public record LinkResult(Link dependency, List<Affected> affectedSuccessors) {}
 
-    private void record(UUID orgId, UUID userId, ProjectResponse project, String action, String itemId, Map<String, ?> previous,
-            Map<String, Object> next, String eventType) {
-        Map<String, Object> payload = new LinkedHashMap<>(next);
-        payload.put("project_id", project.id());
-        payload.put("work_item_id", itemId);
-        changes.record(
-                new ChangeRecorder.AuditEntry(orgId, userId, action, "WORK_ITEM", UUID.fromString(itemId), null, previous, payload),
-                new ChangeRecorder.DomainEvent(orgId, "PROJECT", UUID.fromString(project.id()), project.version(), eventType, payload));
-    }
-
-    private static ApiException conflict(String code, String message) {
-        return new ApiException(HttpStatus.CONFLICT, code, message);
-    }
+    public record DependencyView(List<Link> blockedBy, List<Link> blocks, List<Affected> affected) {}
 }

@@ -43,10 +43,6 @@ public final class SuperAdminOrgDTOs {
                     org.getId(),
                     org.getName(),
                     org.getSlug(),
-<<<<<<< HEAD
-                    // Stored values only: missing fields stay null instead of invented defaults.
-=======
->>>>>>> 29db595 (Initial ProWise project upload)
                     org.getDomain(),
                     org.getIndustry(),
                     org.getCountry(),
@@ -56,17 +52,10 @@ public final class SuperAdminOrgDTOs {
                     org.getState(),
                     org.getPlanId(),
                     seatsUsed,
-<<<<<<< HEAD
-                    org.getSeatsLimit() != null ? org.getSeatsLimit() : 0,
-                    projectsCount,
-                    storageUsedGb,
-                    mrr != null ? mrr : BigDecimal.ZERO,
-=======
                     org.getSeatsLimit(),
                     projectsCount,
                     storageUsedGb,
                     mrr,
->>>>>>> 29db595 (Initial ProWise project upload)
                     org.getCreatedAt(),
                     org.getUpdatedAt(),
                     org.getSuspendedReason(),

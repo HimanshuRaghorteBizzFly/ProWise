@@ -31,12 +31,8 @@ public class JwtService {
     @org.springframework.beans.factory.annotation.Autowired
     public JwtService(
             @Value("${prowise.auth.jwt-signing-key}") String signingKey,
-<<<<<<< HEAD
-            @Value("${prowise.auth.access-token-minutes}") long accessTokenMinutes) {
-=======
             @Value("${prowise.auth.access-token-minutes:15}") long accessTokenMinutes,
             @Value("${prowise.auth.jwt-issuer:prowise}") String issuer) {
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
         if (signingKey == null || signingKey.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) {
             throw new IllegalStateException("JWT_SIGNING_KEY must contain at least 32 bytes.");
         }
@@ -54,11 +50,7 @@ public class JwtService {
     }
 
     public String issueAccessToken(AuthPrincipal principal) {
-        return issueAccessToken(principal, Instant.now());
-    }
-
-    /** Issued at {@code now} (tests use a past instant to get an already expired token). */
-    String issueAccessToken(AuthPrincipal principal, Instant now) {
+        Instant now = Instant.now();
         var builder = Jwts.builder()
                 .issuer(issuer)
                 .audience().add(AUDIENCE).and()

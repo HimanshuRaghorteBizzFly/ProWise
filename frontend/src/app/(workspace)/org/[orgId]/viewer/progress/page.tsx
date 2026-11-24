@@ -1,14 +1,6 @@
 "use client";
 
-<<<<<<< HEAD
-import { previewEnabled } from "@/lib/permissions";
-import { ProgressListView, ProjectProgressPageView } from "@/components/work/ReviewViews";
-import { RequireAnyKey } from "@/components/calendar/CalendarViews";
-
-import React, { useState, useMemo } from "react";
-=======
 import React, { useMemo } from "react";
->>>>>>> 29db595 (Initial ProWise project upload)
 import { useParams } from "next/navigation";
 import { Activity, CircleDashed, Gauge } from "lucide-react";
 import {
@@ -22,7 +14,7 @@ import {
 import { ViewerProjectTable } from "../_components/ViewerProjectTable";
 import { useViewerProjects } from "../_services/useViewerProjects";
 
-function PreviewViewerProgressPage() {
+export default function ViewerProgressPage() {
   const params = useParams();
   const orgId = (params?.orgId as string) || "";
   const { state, retry } = useViewerProjects(orgId);
@@ -60,18 +52,5 @@ function PreviewViewerProgressPage() {
         </>
       )}
     </div>
-  );
-}
-
-/** Task 3.5: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
-export default function ViewerProgressPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "";
-  const home = `/org/${orgId}/viewer`;
-  if (previewEnabled()) return <PreviewViewerProgressPage />;
-  return (
-    <RequireAnyKey keys={["project.read"]} backHref={home}>
-      <ProgressListView crumbs={[{ label: "Viewer", href: home }]} back={{ href: home, label: "Back to dashboard" }} />
-    </RequireAnyKey>
   );
 }

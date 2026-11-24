@@ -81,42 +81,13 @@ public class SuperAdminDashboardService {
             }
         }
 
-<<<<<<< HEAD
-        // If subs are empty, fall back to calculating from org plans
-        if (totalMrr.compareTo(BigDecimal.ZERO) == 0 && totalOrgs > 0) {
-            Map<String, BigDecimal> planPriceMap = new HashMap<>();
-            for (PlanEntity p : plans) {
-                planPriceMap.put(p.getId(), p.getMonthlyPrice() != null ? p.getMonthlyPrice() : BigDecimal.ZERO);
-            }
-            for (OrganizationEntity org : orgs) {
-                if (!"SUSPENDED".equalsIgnoreCase(org.getState())) {
-                    // Only stored values: no assumed price or seat quota for organizations without a plan.
-                    BigDecimal price = planPriceMap.getOrDefault(org.getPlanId(), BigDecimal.ZERO);
-                    totalMrr = totalMrr.add(price);
-                    totalSeats += (org.getSeatsLimit() != null ? org.getSeatsLimit() : 0);
-                }
-            }
-            activeSubs = activeOrgs;
-        }
-
-=======
         // Revenue comes only from real ACTIVE subscriptions; nothing is estimated from plan prices or defaults.
->>>>>>> 29db595 (Initial ProWise project upload)
         BigDecimal totalArr = totalMrr.multiply(BigDecimal.valueOf(12));
         long activeOperators = operatorRepository.countByStatus("ACTIVE");
 
         // Metric cards carry current values only. No history is stored yet, so there is no trend to show
         // (trend, direction and comparison are null rather than invented).
         List<SuperAdminDashboardDTOs.MetricCard> kpiCards = List.of(
-<<<<<<< HEAD
-                new SuperAdminDashboardDTOs.MetricCard("kpi-mrr", "Monthly Recurring Revenue (MRR)", "$" + totalMrr.toPlainString(), null, null, "from stored plans"),
-                new SuperAdminDashboardDTOs.MetricCard("kpi-arr", "Annual Run Rate (ARR)", "$" + totalArr.toPlainString(), null, null, "MRR x 12"),
-                new SuperAdminDashboardDTOs.MetricCard("kpi-orgs", "Active Tenant Workspaces", String.valueOf(activeOrgs), null, null, "stored organizations"),
-                new SuperAdminDashboardDTOs.MetricCard("kpi-seats", "Allocated Seat Quota", String.valueOf(totalSeats), null, null, "stored seat limits")
-        );
-
-        // No revenue history is stored yet, so none is shown (never scaled or invented values).
-=======
                 new SuperAdminDashboardDTOs.MetricCard("kpi-mrr", "Monthly Recurring Revenue (MRR)", "$" + totalMrr.toPlainString(), null, null, null),
                 new SuperAdminDashboardDTOs.MetricCard("kpi-arr", "Annual Run Rate (ARR)", "$" + totalArr.toPlainString(), null, null, null),
                 new SuperAdminDashboardDTOs.MetricCard("kpi-orgs", "Active Tenant Workspaces", String.valueOf(activeOrgs), null, null, null),
@@ -124,7 +95,6 @@ public class SuperAdminDashboardService {
         );
 
         // No revenue history is recorded yet; an empty series instead of a fabricated one.
->>>>>>> 29db595 (Initial ProWise project upload)
         List<SuperAdminDashboardDTOs.RevenueChartPoint> revenueHistory = List.of();
 
         // Plan distribution: organizations without a plan are not attributed to any plan.

@@ -75,11 +75,9 @@ public class ProjectService {
     private final PermissionService permissions;
     private final SecurityEvidenceService evidence;
     private final ChangeRecorder changes;
-    private final org.springframework.context.ApplicationEventPublisher events;
 
     public ProjectService(JdbcTemplate jdbc, PermissionService permissions, SecurityEvidenceService evidence,
-            ChangeRecorder changes, org.springframework.context.ApplicationEventPublisher events) {
-        this.events = events;
+            ChangeRecorder changes) {
         this.jdbc = jdbc;
         this.permissions = permissions;
         this.evidence = evidence;
@@ -100,9 +98,6 @@ public class ProjectService {
         String priority = oneOf("priority", request.priority(), PRIORITIES, "MEDIUM");
         String timezone = timezone(request.timezone(), organizationTimezone(organizationId));
         dateRange(request.startOn(), request.targetOn());
-        // A new project starts today or later (today in the project's time zone); the target is on or after the start.
-        com.prowise.domain.ProjectDates.forNewProject(request.startOn(), request.targetOn(), LocalDate.now(ZoneId.of(timezone)))
-                .ifPresent(problem -> { throw validation(problem.field(), problem.message()); });
         String description = description(request.description());
 
         Member pm = request.projectManagerMembershipId() == null ? null
@@ -141,7 +136,6 @@ public class ProjectService {
                         null, null, snapshot(created)),
                 new ChangeRecorder.DomainEvent(organizationId, "PROJECT", UUID.fromString(id), 0L, "ProjectCreated",
                         snapshot(created)));
-        events.publishEvent(new ProjectScheduleChanged(organizationId, id)); // task 2.3: first occurrences, same transaction
         return created;
     }
 
@@ -206,22 +200,6 @@ public class ProjectService {
 
     public ProjectResponse get(UUID organizationId, String projectId, Authentication authentication) {
         return find(organizationId, projectId, authentication);
-    }
-
-    /**
-     * Every project the caller may read (same rule as the list), optionally one mode, without archived ones. For
-     * cross-project views: unreadable projects are simply absent, never probed one by one.
-     */
-    public List<ProjectResponse> readable(UUID organizationId, Authentication authentication, String mode) {
-        List<ProjectResponse> all = new ArrayList<>();
-        String cursor = null;
-        do {
-            CursorPage<ProjectResponse> page = list(organizationId, authentication,
-                    new ListQuery(cursor, MAX_LIMIT, null, null, null, null, mode, null, null, false));
-            all.addAll(page.items());
-            cursor = page.hasMore() ? page.nextCursor() : null;
-        } while (cursor != null);
-        return all;
     }
 
     public List<DateChange> dateHistory(UUID organizationId, String projectId, Authentication authentication) {
@@ -363,8 +341,6 @@ public class ProjectService {
                         UUID.fromString(projectId), reason, previous, next),
                 new ChangeRecorder.DomainEvent(organizationId, "PROJECT", UUID.fromString(projectId), after.version(),
                         targetChanged ? "ProjectTargetDateChanged" : "ProjectUpdated", next));
-        // Task 2.3: a new target, start, zone or lifecycle supersedes and recomputes occurrences in this transaction.
-        events.publishEvent(new ProjectScheduleChanged(organizationId, projectId));
         return after;
     }
 
@@ -486,7 +462,7 @@ public class ProjectService {
             boolean canEdit = !r.archived() && (orgEdit
                     || permissions.canOnProject(authentication, organizationId, r.id(), PermissionKey.PROJECT_EDIT.value()));
             Progress progress = r.percent() == null
-                    ? new Progress(null, "STRUCTURED".equals(r.mode()) ? com.prowise.domain.AcceptedWork.NOT_MEASURABLE : NOT_REPORTED, null)
+                    ? new Progress(null, NOT_REPORTED, null)
                     : new Progress(r.percent(), "INDIVIDUAL".equals(r.mode()) ? IndividualProgress.LABEL : "Calculated", r.reportedAt());
             return new ProjectResponse(r.id(), r.key(), r.name(), r.description(), r.mode(), r.lifecycle(), r.archived(),
                     r.priority(), r.projectManager(), r.accountable(), members.getOrDefault(r.id(), List.of()), r.teamId(),

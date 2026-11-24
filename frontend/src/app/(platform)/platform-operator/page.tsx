@@ -1,7 +1,5 @@
 "use client";
 
-import { previewEnabled } from "@/lib/permissions";
-import { LiveOperatorDashboard } from "./_components/LiveOperatorDashboard";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -76,73 +74,6 @@ function getDepartmentBadgeClass(dept: string): string {
   return "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300";
 }
 
-<<<<<<< HEAD
-function PreviewPlatformOperatorDashboardPage() {
-  const orgHealth = usePlatformOperatorStore((s) => s.orgHealth);
-  const systemMetrics = usePlatformOperatorStore((s) => s.systemMetrics);
-  const incidents = usePlatformOperatorStore((s) => s.incidents);
-  const tickets = usePlatformOperatorStore((s) => s.tickets);
-  const webhooks = usePlatformOperatorStore((s) => s.webhooks);
-  const syncJobs = usePlatformOperatorStore((s) => s.syncJobs);
-  const apiEndpoints = usePlatformOperatorStore((s) => s.apiEndpoints);
-  const alerts = usePlatformOperatorStore((s) => s.alerts);
-  const accessRequests = usePlatformOperatorStore((s) => s.accessRequests);
-  const paymentFailures = usePlatformOperatorStore((s) => s.paymentFailures);
-  const invoiceDeliveries = usePlatformOperatorStore((s) => s.invoiceDeliveries);
-  const emailDeliveries = usePlatformOperatorStore((s) => s.emailDeliveries);
-  const emailDrafts = usePlatformOperatorStore((s) => s.emailDrafts);
-  const announcementDrafts = usePlatformOperatorStore((s) => s.announcementDrafts);
-  const subscriptions = usePlatformOperatorStore((s) => s.subscriptions);
-  const backups = usePlatformOperatorStore((s) => s.backups);
-  const maintenanceWindows = usePlatformOperatorStore((s) => s.maintenanceWindows);
-  const smtpHealth = usePlatformOperatorStore((s) => s.smtpHealth);
-  const activityLogs = usePlatformOperatorStore((s) => s.activityLogs);
-  const accountSettings = usePlatformOperatorStore((s) => s.accountSettings);
-  const setOperatorDepartment = usePlatformOperatorStore((s) => s.setOperatorDepartment);
-  const setActiveOperatorProfile = usePlatformOperatorStore((s) => s.setActiveOperatorProfile);
-  const lastTelemetryTickAt = usePlatformOperatorStore((s) => s.lastTelemetryTickAt);
-  const tickLiveDemoMetrics = usePlatformOperatorStore((s) => s.tickLiveDemoMetrics);
-  const acknowledgeAlert = usePlatformOperatorStore((s) => s.acknowledgeAlert);
-  const createIncidentFromAlert = usePlatformOperatorStore((s) => s.createIncidentFromAlert);
-  const retryWebhookEvent = usePlatformOperatorStore((s) => s.retryWebhookEvent);
-  const retryAllFailedWebhooks = usePlatformOperatorStore((s) => s.retryAllFailedWebhooks);
-  const retryPaymentFailure = usePlatformOperatorStore((s) => s.retryPaymentFailure);
-  const resendEmailDelivery = usePlatformOperatorStore((s) => s.resendEmailDelivery);
-
-  const superAdminOperators = useSuperAdminStore((s) => s.operators);
-
-  const [autoPulseEnabled, setAutoPulseEnabled] = useState(true);
-  const [deptPickerOpen, setDeptPickerOpen] = useState(false);
-
-  // Active department and operator resolution
-  const activeDepartmentRaw = accountSettings.department || "Site Reliability";
-  const activeDepartment = normalizeDepartmentName(activeDepartmentRaw);
-
-  const activeOperator = useMemo(() => {
-    const byId = superAdminOperators.find((o) => o.id === accountSettings.activeOperatorId);
-    if (byId) return byId;
-    const byDept = superAdminOperators.find((o) => o.department === activeDepartment);
-    if (byDept) return byDept;
-    return {
-      id: "op-current",
-      name: accountSettings.name,
-      email: accountSettings.email,
-      department: activeDepartment,
-      roleId: "role-platform-operator",
-      status: "ACTIVE" as const,
-      mfaEnabled: accountSettings.mfaEnabled,
-      onCall: true,
-      shiftName: accountSettings.shiftName,
-      permissionOverrides: [],
-      lastActiveAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-    };
-  }, [superAdminOperators, accountSettings, activeDepartment]);
-
-  const permissionOverrides = useMemo(
-    () => activeOperator.permissionOverrides || [],
-    [activeOperator.permissionOverrides]
-=======
 /** Placeholder shown inside a kept card whose data source has no backend yet. Never sample values. */
 function NotAvailablePanel({ reason }: { reason: string }) {
   return (
@@ -259,7 +190,6 @@ export default function PlatformOperatorDashboardPage() {
   const activityTodayRes = useOperatorResource(
     () => operatorApi.activityLogs({ from: todayStartIso, size: 1 }),
     `dash-activity-today:${todayStartIso}`
->>>>>>> 29db595 (Initial ProWise project upload)
   );
 
   const reloaders = [
@@ -2465,9 +2395,4 @@ export default function PlatformOperatorDashboardPage() {
       </div>
     </div>
   );
-}
-
-/** Stored operational counts by default; the sample dashboard only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
-export default function PlatformOperatorDashboardPage() {
-  return previewEnabled() ? <PreviewPlatformOperatorDashboardPage /> : <LiveOperatorDashboard />;
 }

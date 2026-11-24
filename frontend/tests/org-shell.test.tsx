@@ -1,6 +1,6 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/org/org-acme/owner/members",
@@ -116,20 +116,8 @@ describe("org shell top nav", () => {
   const renderTopNav = () =>
     renderToStaticMarkup(<TopNav title="Members" breadcrumb={[{ label: acme.name }, { label: "Owner" }]} onOpenNavigation={() => undefined} />);
 
-<<<<<<< HEAD
-  it("shows the Sample data badge while fixture permissions are in use", () => {
-    setup("ORGANIZATION_OWNER", "fixture");
-    expect(renderTopNav()).toContain("Sample data");
-  });
-
-  it("shows no badge for live API permissions in normal use (no NEXT_PUBLIC_USE_MOCKS)", () => {
-    vi.stubEnv("NEXT_PUBLIC_USE_MOCKS", "");
-    onTestFinished(() => { vi.unstubAllEnvs(); });
-    setup("ORGANIZATION_OWNER", "api");
-=======
   it("never shows a sample-data badge", () => {
     setup("ORGANIZATION_OWNER");
->>>>>>> 29db595 (Initial ProWise project upload)
     expect(renderTopNav()).not.toContain("Sample data");
   });
 

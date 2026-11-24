@@ -1,30 +1,6 @@
 "use client";
 
-<<<<<<< HEAD
-import { previewEnabled } from "@/lib/permissions";
-import { LivePlatformOrganizations } from "../_components/LivePlatformViews";
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import {
-  ArrowUpDown,
-  Ban,
-  Building2,
-  CheckCircle2,
-  ChevronDown,
-  Clock,
-  Download,
-  Edit3,
-  Eye,
-  FileSpreadsheet,
-  FileText,
-  Plus,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
-=======
 import React, { useState } from "react";
->>>>>>> 29db595 (Initial ProWise project upload)
 import { toast } from "sonner";
 import { commercialApi } from "@/lib/admin-api/commercial";
 import { downloadCsv, generateCsv } from "@/lib/csv";
@@ -43,28 +19,7 @@ type Pending =
   | { kind: Exclude<OrganizationAction, "view">; org: CommercialOrganization }
   | { kind: "bulk-suspend"; orgs: CommercialOrganization[] };
 
-<<<<<<< HEAD
-function PreviewSuperAdminOrganizationsPage() {
-  const organizations = useSuperAdminStore((s) => s.organizations);
-  const plans = useSuperAdminStore((s) => s.plans);
-  const subscriptions = useSuperAdminStore((s) => s.subscriptions);
-  const invoices = useSuperAdminStore((s) => s.invoices);
-  const payments = useSuperAdminStore((s) => s.payments);
-
-  const createOrganization = useSuperAdminStore((s) => s.createOrganization);
-  const updateOrganization = useSuperAdminStore((s) => s.updateOrganization);
-  const suspendOrganization = useSuperAdminStore((s) => s.suspendOrganization);
-  const reactivateOrganization = useSuperAdminStore((s) => s.reactivateOrganization);
-  const deleteOrganization = useSuperAdminStore((s) => s.deleteOrganization);
-  const generateInvoice = useSuperAdminStore((s) => s.generateInvoice);
-  const changeSubscriptionPlan = useSuperAdminStore((s) => s.changeSubscriptionPlan);
-  const assignSubscription = useSuperAdminStore((s) => s.assignSubscription);
-
-  const { can } = useAdminPermissions();
-
-=======
 export default function SuperAdminOrganizationsPage() {
->>>>>>> 29db595 (Initial ProWise project upload)
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("ALL");
   const [planId, setPlanId] = useState("ALL");
@@ -279,9 +234,4 @@ export default function SuperAdminOrganizationsPage() {
       </CommercialFormModal>
     </>
   );
-}
-
-/** Stored organizations by default; the sample list only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
-export default function SuperAdminOrganizationsPage() {
-  return previewEnabled() ? <PreviewSuperAdminOrganizationsPage /> : <LivePlatformOrganizations />;
 }

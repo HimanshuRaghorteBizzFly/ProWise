@@ -85,36 +85,6 @@ export function canAnyWithGrants(
   return keys.some((key) => canWithGrants(grants, key, target));
 }
 
-<<<<<<< HEAD
-export interface PermissionEnv {
-  nodeEnv: string | undefined;
-  useMocks: string | undefined;
-}
-
-export function readPermissionEnv(): PermissionEnv {
-  return { nodeEnv: process.env.NODE_ENV, useMocks: process.env.NEXT_PUBLIC_USE_MOCKS };
-}
-
-/**
- * Sample (fixture) data only when explicitly requested with NEXT_PUBLIC_USE_MOCKS=true, and never in a production
- * build. Normal use always shows the real server data or a real error / empty / "Later" state.
- */
-export function mocksAllowed(env: PermissionEnv): boolean {
-  return env.nodeEnv !== "production" && env.useMocks === "true";
-}
-
-/** Dev preview tools (Quick Navigator, role preview): same rule as sample data. */
-export function previewEnabled(env: PermissionEnv = readPermissionEnv()): boolean {
-  return mocksAllowed(env);
-}
-
-/** Fixture is used without calling the API only when explicitly requested outside production. */
-export function mocksRequested(env: PermissionEnv, rolePreview = false): boolean {
-  return mocksAllowed(env) && (env.useMocks === "true" || rolePreview);
-}
-
-=======
->>>>>>> 29db595 (Initial ProWise project upload)
 /** Status 0 (network failure) or a gateway error from the Next.js /api proxy. 500 is a normal error. */
 export function isBackendUnreachable(status: number): boolean {
   return status === 0 || status === 502 || status === 503 || status === 504;

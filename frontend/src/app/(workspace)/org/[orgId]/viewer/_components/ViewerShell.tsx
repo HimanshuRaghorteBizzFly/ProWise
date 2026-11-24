@@ -1,11 +1,6 @@
 "use client";
 
-<<<<<<< HEAD
-import { previewEnabled } from "@/lib/permissions";
-import React, { useState, useEffect, useMemo, useRef } from "react";
-=======
 import React, { useEffect, useMemo, useRef, useState } from "react";
->>>>>>> 29db595 (Initial ProWise project upload)
 import Link from "next/link";
 import { usePathname, useRouter, useParams } from "next/navigation";
 import {
@@ -58,43 +53,8 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
   const params = useParams();
   const orgId = (params?.orgId as string) || "";
 
-<<<<<<< HEAD
-  const { currentUser, currentRole, currentOrg, logout } = useAuthStore();
-  const { theme, resolvedTheme, toggleTheme, setTheme } = useThemeStore();
-  const {
-    notifications,
-    markNotificationAsRead,
-    markAllNotificationsAsRead,
-    selectedProject,
-    setSelectedProject,
-    selectedTask,
-    setSelectedTask,
-    selectedFile,
-    setSelectedFile,
-    selectedEvent,
-    setSelectedEvent,
-    isSearchModalOpen,
-    setIsSearchModalOpen,
-    userSettings,
-  } = useViewerStore();
-
-  // The signed-in user; the sample viewer settings only in the dev preview.
-  const sampleSettings = previewEnabled() ? userSettings : undefined;
-  const displayName = sampleSettings?.displayName || currentUser?.name || currentUser?.email || "";
-  const displayEmail = sampleSettings?.email || currentUser?.email || "";
-
-  const getInitials = (name: string) => {
-    if (!name) return "PW";
-    const parts = name.trim().split(/\s+/);
-    if (parts.length >= 2 && parts[0] && parts[parts.length - 1]) {
-      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  };
-=======
   const { currentUser, currentOrg, logout } = useAuthStore();
   const { resolvedTheme, toggleTheme } = useThemeStore();
->>>>>>> 29db595 (Initial ProWise project upload)
 
   const displayName = currentUser.name || currentUser.email;
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -102,10 +62,6 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
-<<<<<<< HEAD
-  // Sample notifications: dev preview only (notifications come with task 5.2).
-  const unreadCount = previewEnabled() ? notifications.filter((n) => !n.read).length : 0;
-=======
   const navigation = useMemo(() => viewerNavigation(orgId), [orgId]);
 
   const isActive = (href: string) =>
@@ -132,7 +88,6 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("keydown", onKey);
     };
   }, []);
->>>>>>> 29db595 (Initial ProWise project upload)
 
   const handleSignOut = async () => {
     try {
@@ -145,119 +100,6 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
     router.push("/login");
   };
 
-<<<<<<< HEAD
-  useEffect(() => {
-    // Theme initialization
-    const savedTheme = localStorage.getItem("prowise-theme") as "light" | "dark" | "system" | null;
-    if (savedTheme) {
-      setTheme(savedTheme);
-    }
-  }, [setTheme]);
-
-  // Outside click listener for notification popover & profile dropdown
-  useEffect(() => {
-    const handleOutsideClick = (e: MouseEvent) => {
-      if (
-        notificationPopoverRef.current &&
-        !notificationPopoverRef.current.contains(e.target as Node)
-      ) {
-        setIsNotificationPopoverOpen(false);
-      }
-      if (
-        profileMenuRef.current &&
-        !profileMenuRef.current.contains(e.target as Node)
-      ) {
-        setIsProfileMenuOpen(false);
-      }
-    };
-    window.addEventListener("mousedown", handleOutsideClick);
-    return () => window.removeEventListener("mousedown", handleOutsideClick);
-  }, []);
-
-  // Global Ctrl+K / Cmd+K listener
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setIsSearchModalOpen(true);
-      }
-      if (e.key === "Escape") {
-        setIsSearchModalOpen(false);
-        setIsNotificationPopoverOpen(false);
-        setIsProfileMenuOpen(false);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [setIsSearchModalOpen]);
-
-  // Navigation Items according to 10 features
-  const navigationSections: NavSection[] = useMemo(() => [
-    {
-      title: "Core Workspaces",
-      items: [
-        { title: "Dashboard", href: `/org/${orgId}/viewer/dashboard`, icon: LayoutDashboard },
-        { title: "Projects Portfolio", href: `/org/${orgId}/viewer/projects`, icon: FolderGit2 },
-        { title: "Tasks & Work", href: `/org/${orgId}/viewer/tasks`, icon: CheckSquare },
-      ],
-    },
-    {
-      title: "Delivery & Governance",
-      items: [
-        { title: "Progress Summaries", href: `/org/${orgId}/viewer/progress`, icon: Activity },
-        { title: "Authorized Reports", href: `/org/${orgId}/viewer/reports`, icon: BarChart3 },
-        { title: "Calendar & Milestones", href: `/org/${orgId}/viewer/calendar`, icon: Calendar },
-      ],
-    },
-    {
-      title: "Collaboration & Evidence",
-      items: [
-        { title: "Team Directory", href: `/org/${orgId}/viewer/team`, icon: Users },
-        { title: "Files & Evidence", href: `/org/${orgId}/viewer/files`, icon: FileText },
-        { title: "Activity Timeline", href: `/org/${orgId}/viewer/activity`, icon: Clock },
-      ],
-    },
-    {
-      title: "Personal",
-      items: [
-        {
-          title: "Notifications",
-          href: `/org/${orgId}/viewer/notifications`,
-          icon: Bell,
-          badge: unreadCount > 0 ? unreadCount : undefined,
-        },
-        { title: "Settings", href: `/org/${orgId}/viewer/settings`, icon: Settings },
-      ],
-    },
-  ], [orgId, unreadCount]);
-
-  // Search Results for Global Search Modal
-  const searchResults = useMemo(() => {
-    // Search reads the sample viewer data: dev preview only (search comes with task 5.3).
-    if (!searchFilter.trim() || !previewEnabled()) return { projects: [], tasks: [], members: [], files: [] };
-    const q = searchFilter.toLowerCase();
-    const projects = getViewerProjects(orgId).filter(
-      (p) => p.name.toLowerCase().includes(q) || p.key.toLowerCase().includes(q)
-    );
-    const tasks = getViewerTasks(orgId, undefined, undefined, undefined, q);
-    const members = getViewerMembers(orgId, q);
-    const files = getViewerFiles(orgId).filter(
-      (f) => f.name.toLowerCase().includes(q) || f.description.toLowerCase().includes(q)
-    );
-    return { projects, tasks, members, files };
-  }, [orgId, searchFilter]);
-
-  const currentPathLabel = useMemo(() => {
-    for (const section of navigationSections) {
-      for (const item of section.items) {
-        if (pathname === item.href || (item.href !== `/org/${orgId}/viewer` && pathname.startsWith(item.href))) {
-          return item.title;
-        }
-      }
-    }
-    return "Dashboard";
-  }, [pathname, navigationSections, orgId]);
-=======
   const navLinks = (onNavigate?: () => void) =>
     navigation.map((item) => {
       const Icon = item.icon;
@@ -281,7 +123,6 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
         </Link>
       );
     });
->>>>>>> 29db595 (Initial ProWise project upload)
 
   return (
     <div className="min-h-screen w-full flex bg-app-bg text-app-text-primary antialiased">
@@ -316,24 +157,10 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
 
         {!isSidebarCollapsed && currentOrg.name && (
           <div className="p-3 border-b border-app-border">
-<<<<<<< HEAD
-            <div className="rounded-xl bg-app-surface border border-app-border p-2.5 shadow-2xs">
-              <div className="text-[10px] uppercase font-bold text-app-text-muted tracking-wider">
-                Active Organization
-              </div>
-              <div className="text-xs font-semibold text-app-text-primary truncate mt-0.5">
-                {currentOrg.name}
-              </div>
-              <div className="text-[10px] text-app-text-secondary flex items-center gap-1 mt-0.5">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                <span>{currentOrg.timezone ? `${currentOrg.timezone} • ` : ""}Read-Only</span>
-              </div>
-=======
             <div className="rounded-xl bg-app-surface border border-app-border p-2.5">
               <div className="text-[10px] uppercase font-bold text-app-text-muted tracking-wider">Active Organization</div>
               <div className="text-xs font-semibold text-app-text-primary truncate mt-0.5">{currentOrg.name}</div>
               <div className="text-[10px] text-app-text-secondary mt-0.5">{currentOrg.timezone} • Read-Only</div>
->>>>>>> 29db595 (Initial ProWise project upload)
             </div>
           </div>
         )}
@@ -379,17 +206,12 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
             </button>
             <div>
               <nav className="flex items-center space-x-1 text-[11px] text-app-text-muted">
-<<<<<<< HEAD
-                <span>{currentOrg.name}</span>
-                <span>/</span>
-=======
                 {currentOrg.name && (
                   <>
                     <span>{currentOrg.name}</span>
                     <span>/</span>
                   </>
                 )}
->>>>>>> 29db595 (Initial ProWise project upload)
                 <span className="font-semibold text-blue-600 dark:text-blue-400">Viewer</span>
               </nav>
               <h1 className="text-base font-bold text-app-text-primary leading-tight mt-0.5">{currentLabel}</h1>

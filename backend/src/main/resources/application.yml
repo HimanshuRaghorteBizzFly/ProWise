@@ -95,18 +95,6 @@ prowise:
     # Super Admin. Remove it once the account is active.
     super-admin-password: ${PROWISE_BOOTSTRAP_SUPER_ADMIN_PASSWORD:}
   auth:
-<<<<<<< HEAD
-    jwt-signing-key: ${JWT_SIGNING_KEY:test-default-signing-key-that-is-at-least-32-bytes-long}
-    # Session lifetimes (env): a 15-minute access token, a 7-day refresh session (absolute from sign-in unless sliding).
-    access-token-minutes: ${JWT_ACCESS_TTL_MINUTES:15}
-    refresh-token-days: ${REFRESH_TTL_DAYS:7}
-    refresh-sliding: ${REFRESH_SLIDING:false}
-    # Two tabs refreshing with the same cookie at the same moment are not treated as token theft within this window.
-    refresh-reuse-grace-seconds: ${REFRESH_REUSE_GRACE_SECONDS:10}
-    # The refresh cookie: Secure everywhere except local http development; path = browser-facing auth endpoints.
-    cookie-secure: ${AUTH_COOKIE_SECURE:true}
-    refresh-cookie-path: ${AUTH_REFRESH_COOKIE_PATH:/api/v1/auth}
-=======
     # No default: RequiredEnvironmentValidator stops startup when JWT_SIGNING_KEY is missing.
     jwt-signing-key: ${JWT_SIGNING_KEY:}
     access-token-minutes: ${ACCESS_TOKEN_MINUTES:15}
@@ -115,4 +103,3 @@ prowise:
     refresh-token-days: ${REFRESH_TOKEN_DAYS:30}
     # Auth cookies are HTTPS-only when true. Off for plain-HTTP local development; on in application-prod.yml.
     secure-cookies: ${AUTH_SECURE_COOKIES:false}
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4

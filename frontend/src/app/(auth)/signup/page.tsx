@@ -2,13 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-<<<<<<< HEAD
-import { useRouter } from "next/navigation";
-import { ApiError, apiClient } from "@/lib/api";
-import { establishSession } from "@/lib/session";
-=======
 import { apiClient } from "@/lib/api";
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -30,7 +24,6 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [signupError, setSignupError] = useState<string | null>(null);
 
   const isPasswordLongEnough = password.length >= 12;
 
@@ -42,41 +35,13 @@ export default function SignupPage() {
     }
 
     setIsLoading(true);
-    setSignupError(null);
     try {
-<<<<<<< HEAD
-      const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      // The body never carries a role or an organization id: the server makes this user the one Owner of the new
-      // organization and binds the session to it.
-      const created = await apiClient.signup({
-        email: email.trim(),
-        password,
-        name: name.trim(),
-        organization: {
-          name: orgName.trim(),
-          slug,
-          timezone,
-          calendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
-        },
-      });
-      const session = await establishSession();
-      toast.success("Workspace created. Welcome to your Owner dashboard.");
-      router.replace(created.target_dashboard_url || session.target);
-    } catch (error) {
-      const reference = error instanceof ApiError && error.requestId ? ` (Reference: ${error.requestId})` : "";
-      setSignupError(error instanceof ApiError && error.code === "EMAIL_IN_USE"
-        ? "An account already exists for this email. Sign in instead."
-        : error instanceof ApiError && error.code === "DUPLICATE_SLUG"
-          ? "That company name is already taken. Choose another name."
-          : `${error instanceof Error ? error.message : "Unable to create the workspace."}${reference}`);
-=======
       // No session yet: the account activates from the emailed link (approved decision D9). The same answer is
       // shown whether or not the address was already registered.
       await apiClient.signup({ email: email.trim(), password, name: name.trim() });
       setSubmitted(true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to register right now.");
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
     } finally {
       setIsLoading(false);
     }
@@ -123,12 +88,6 @@ export default function SignupPage() {
             </div>
           ) : (
           <form onSubmit={handleSignup} className="space-y-4">
-            {signupError && (
-              <p role="alert" data-testid="signup-error"
-                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
-                {signupError}
-              </p>
-            )}
             {/* User Details Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">

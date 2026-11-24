@@ -1,13 +1,4 @@
 import {
-<<<<<<< HEAD
-  Activity,
-  Bell,
-  Building2,
-  CalendarDays,
-  Tags,
-  FileBarChart,
-=======
->>>>>>> 29db595 (Initial ProWise project upload)
   FolderKanban,
   KeyRound,
   LayoutDashboard,
@@ -54,13 +45,6 @@ export const ORG_SHELL: Record<OrgFamily, { label: string; tagline: string; sect
       {
         title: "Organization",
         items: [
-<<<<<<< HEAD
-          { title: "Organization Settings", path: "organization", icon: Building2 },
-          { title: "Work Calendar", path: "work-calendar", icon: CalendarDays },
-          { title: "Work Types", path: "work-types", icon: Tags },
-          { title: "Data & Privacy", path: "privacy", icon: Lock },
-=======
->>>>>>> 29db595 (Initial ProWise project upload)
           { title: "Transfer Ownership", path: "transfer-ownership", icon: KeyRound },
         ],
       },
@@ -82,23 +66,7 @@ export const ORG_SHELL: Record<OrgFamily, { label: string; tagline: string; sect
       },
       {
         title: "Platform",
-<<<<<<< HEAD
-        items: [
-          { title: "Integrations & Sync", path: "integrations", icon: GitBranch, badgeKey: "repos" },
-          { title: "Projects Overview", path: "projects", icon: FolderKanban },
-          { title: "Work Calendar", path: "work-calendar", icon: CalendarDays },
-          { title: "Work Types", path: "work-types", icon: Tags },
-        ],
-      },
-      {
-        title: "Insight",
-        items: [
-          { title: "Reports", path: "reports", icon: FileBarChart },
-          { title: "Audit Activity", path: "audit-logs", icon: Activity },
-        ],
-=======
         items: [{ title: "Projects Overview", path: "projects", icon: FolderKanban }],
->>>>>>> 29db595 (Initial ProWise project upload)
       },
     ],
   },

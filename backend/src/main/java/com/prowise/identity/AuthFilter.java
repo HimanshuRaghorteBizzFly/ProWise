@@ -67,26 +67,7 @@ public class AuthFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
             token = header.substring("Bearer ".length()).trim();
         } else if (request.getCookies() != null) {
-<<<<<<< HEAD
-            for (Cookie c : request.getCookies()) {
-                // Tenant access tokens travel only as Authorization: Bearer (kept in memory by the client); only the
-                // separate platform-operator console still uses its cookie.
-                if ("prowise_operator_access_token".equals(c.getName())) {
-                    token = c.getValue();
-                    break;
-                }
-            }
-=======
             token = sessionCookie(request);
->>>>>>> 29db595 (Initial ProWise project upload)
-        }
-
-        // Sign-up, sign-in, refresh, password reset and sign-out must work with a stale access token (expired, or its
-        // session revoked by a refresh or workspace switch) still in the Authorization header or the httpOnly cookie:
-        // there the stale token is ignored and the request continues as anonymous. Everywhere else it is still a 401.
-        // Sign-out continues anonymously too: the controller then revokes the session found from the refresh cookie.
-        if (token != null && !token.isBlank() && isLenientPath(request) && !tokenUsable(token)) {
-            token = null;
         }
 
         if (token == null || token.isBlank()) {
@@ -207,52 +188,6 @@ public class AuthFilter extends OncePerRequestFilter {
         }
     }
 
-<<<<<<< HEAD
-    private static final java.util.Set<String> LENIENT_AUTH_ROUTES = java.util.Set.of(
-            "/auth/signup", "/auth/signin", "/auth/login", "/auth/refresh", "/auth/logout", "/auth/signout",
-            "/auth/forgot-password", "/auth/reset-password", "/auth/password-reset/request",
-            "/auth/password-reset/confirm", "/auth/operator/login");
-
-    /** Public authentication routes (and sign-out), under /v1, /api or /api/v1. */
-    static boolean isLenientPath(HttpServletRequest request) {
-        String path = request.getRequestURI();
-        String context = request.getContextPath();
-        if (context != null && !context.isEmpty() && path.startsWith(context)) path = path.substring(context.length());
-        for (String prefix : new String[] {"/api/v1", "/v1", "/api"}) {
-            if (path.startsWith(prefix + "/") && LENIENT_AUTH_ROUTES.contains(path.substring(prefix.length()))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** True when the token parses and its session (user or operator) is still active. */
-    private boolean tokenUsable(String token) {
-        try {
-            AuthPrincipal principal = jwtService.parse(token);
-            JdbcTemplate jdbcTemplate = jdbc.getIfAvailable();
-            if (jdbcTemplate == null) return false;
-            if (principal.isOperator()) {
-                Integer active = jdbcTemplate.queryForObject(
-                        "SELECT count(*) FROM operator_sessions WHERE id = ? AND revoked = false AND expires_at > now()",
-                        Integer.class, principal.sessionId());
-                return active != null && active == 1;
-            }
-            Integer active = jdbcTemplate.queryForObject(
-                    "SELECT count(*) FROM sessions s JOIN users u ON u.id = s.user_id "
-                            + "WHERE s.id = ? AND s.user_id = ? AND s.revoked_at IS NULL "
-                            + "AND s.expires_at > now() AND u.status = 'ACTIVE'",
-                    Integer.class, principal.sessionId(), principal.userId());
-            if (active == null || active != 1) return false;
-            if (principal.organizationId() == null) return true;
-            Integer member = jdbcTemplate.queryForObject(
-                    "SELECT count(*) FROM memberships WHERE org_id = ? AND user_id = ? AND status = 'ACTIVE'",
-                    Integer.class, principal.organizationId(), principal.userId());
-            return member != null && member == 1;
-        } catch (RuntimeException invalid) {
-            return false;
-        }
-=======
     /** Paths (under /v1 or /api) a session may use while its account must change its password. */
     private static final java.util.Set<String> PASSWORD_CHANGE_PATHS = java.util.Set.of(
             "/auth/change-password", "/auth/password/change", "/auth/logout", "/auth/signout", "/auth/refresh",
@@ -314,7 +249,6 @@ public class AuthFilter extends OncePerRequestFilter {
         response.setHeader(ApiHeaders.REQUEST_ID, requestId);
         response.setContentType("application/json");
         objectMapper.writeValue(response.getWriter(), new ApiError(code, message, requestId, java.util.List.of()));
->>>>>>> 29db595 (Initial ProWise project upload)
     }
 
     private void writeUnauthorized(HttpServletRequest request, HttpServletResponse response) throws IOException {

@@ -20,7 +20,7 @@ vi.mock("@/hooks/usePermissions", () => ({
   usePermissions: () => ({ status: "ready", can: (key: string) => allowed.has(key), retry: () => undefined }),
 }));
 
-const { ProjectCreateView, ProjectWorkspaceView, ProjectsPortfolioView, formatDay, todayIn } = await import(
+const { ProjectCreateView, ProjectWorkspaceView, ProjectsPortfolioView, formatDay } = await import(
   "../src/components/projects/ApiProjectViews"
 );
 
@@ -132,21 +132,6 @@ describe("Create project", () => {
     expect(markup).toContain("Back to projects");
     expect(markup).not.toContain('role="dialog"');
   });
-
-  it("blocks past days: start from today, target from the start (or today)", () => {
-    allowed.add("project.create");
-    const markup = render(<ProjectCreateView base="owner" />, (client) =>
-      client.setQueryData(["project-options", "org-1"], { members: [], teams: [], default_timezone: "Europe/London" }));
-    const today = todayIn("Europe/London");
-    expect(markup.match(new RegExp(`type="date"[^>]*min="${today}"|min="${today}"[^>]*type="date"`, "g"))).toHaveLength(2);
-  });
-
-  it("works out today in the project's time zone", () => {
-    const lateUtc = new Date("2026-11-24T23:30:00Z");
-    expect(todayIn("Europe/London", lateUtc)).toBe("2026-11-24");
-    expect(todayIn("Asia/Kolkata", lateUtc)).toBe("2026-11-25");
-    expect(todayIn("America/New_York", lateUtc)).toBe("2026-11-24");
-  });
 });
 
 describe("Project workspace", () => {
@@ -159,12 +144,11 @@ describe("Project workspace", () => {
     expect(markup).not.toContain("/projects/p-1/edit"); // no edit right, no edit action
   });
 
-  it("offers Edit only when the project is editable, and shows the Structured Breakdown and Documents tabs (task 3.1)", () => {
+  it("offers Edit only when the project is editable, and marks Structured tabs as later", () => {
     const markup = render(<ProjectWorkspaceView base="manager" projectId="p-1" />, (client) =>
       client.setQueryData(["project", "org-1", "p-1"], solo({ mode: "STRUCTURED", can_edit: true })));
     expect(markup).toContain("/org/org-1/manager/projects/p-1/edit");
-    expect(markup).toContain(">Breakdown<");
-    expect(markup).toContain(">Documents<");
+    expect(markup).toContain("arrive with tasks 3.1 to 3.4");
     expect(markup).not.toContain(">Repositories<");
   });
 });

@@ -1,41 +1,9 @@
 "use client";
 
-<<<<<<< HEAD
-import { previewEnabled } from "@/lib/permissions";
-import { LiveViewerDashboard } from "@/components/dashboards/LiveRoleDashboards";
-import React, { useState, useMemo } from "react";
-import { useParams, useRouter } from "next/navigation";
-import {
-  FolderGit2,
-  Calendar,
-  Clock,
-  ArrowRight,
-  Download,
-  AlertTriangle,
-  CheckCircle2,
-  TrendingUp,
-  Layers,
-  ShieldCheck,
-  Sparkles,
-  Eye,
-  CheckSquare,
-  Activity,
-  FileText,
-} from "lucide-react";
-import { HealthBadge } from "@/components/ui/health-badge";
-import { ProgressBar } from "@/components/ui/progress";
-import {
-  PortfolioHealthDonut,
-  MilestoneProgressBarChart,
-  TaskStateBreakdownChart,
-  ProgressTrajectoryChart,
-} from "./_components/ViewerCharts";
-=======
 import React, { useMemo } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FolderGit2, PlayCircle, CheckCircle2, PauseCircle } from "lucide-react";
->>>>>>> 29db595 (Initial ProWise project upload)
 import {
   ViewerPageHeader,
   ViewerSurfaceCard,
@@ -47,13 +15,9 @@ import {
 import { ViewerProjectTable } from "./_components/ViewerProjectTable";
 import { useViewerProjects } from "./_services/useViewerProjects";
 
-<<<<<<< HEAD
-function PreviewViewerDashboard() {
-=======
 const RECENT_LIMIT = 8;
 
 export default function ViewerDashboardPage() {
->>>>>>> 29db595 (Initial ProWise project upload)
   const params = useParams();
   const orgId = (params?.orgId as string) || "";
   const { state, retry } = useViewerProjects(orgId);
@@ -108,9 +72,4 @@ export default function ViewerDashboardPage() {
       )}
     </div>
   );
-}
-
-/** Real data by default; the sample dashboard only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
-export default function ViewerDashboardPage() {
-  return previewEnabled() ? <PreviewViewerDashboard /> : <LiveViewerDashboard />;
 }

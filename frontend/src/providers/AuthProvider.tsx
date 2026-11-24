@@ -3,19 +3,8 @@
 import React, { createContext, useContext, useEffect } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import { Organization, SystemRole, User } from "@/types";
-<<<<<<< HEAD
-import { SESSION_EXPIRED_EVENT } from "@/lib/api";
-import { classifyFailure, previewEnabled, readPermissionEnv } from "@/lib/permissions";
-import { establishSession } from "@/lib/session";
-import { clearWorkspaceCaches } from "@/lib/workspace-switch";
-=======
 import { apiClient } from "@/lib/api";
-<<<<<<< HEAD
-import { mocksAllowed, readPermissionEnv } from "@/lib/permissions";
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
-=======
 import { clearAuthSession } from "@/lib/auth-session";
->>>>>>> 29db595 (Initial ProWise project upload)
 import { useWorkspaceStore } from "@/store/workspace-store";
 
 interface AuthContextValue {
@@ -27,51 +16,14 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-/** Pages that need a session: without one the user is sent to sign in (not to an "Access Restricted" page). */
-export function isProtectedPath(pathname: string): boolean {
-  return /^\/org\//.test(pathname) || ["/select-workspace", "/select-org", "/no-workspace"].includes(pathname);
-}
-
-/** Sign-in page for an expired session, remembering where the user was. */
-export function signInPathFor(pathname: string): string {
-  return `/login?expired=1&next=${encodeURIComponent(pathname)}`;
-}
-
-function sendToSignIn() {
-  if (typeof window === "undefined") return;
-  const { pathname, search } = window.location;
-  if (!isProtectedPath(pathname)) return;
-  clearWorkspaceCaches();
-  useAuthStore.getState().logout();
-  window.location.assign(signInPathFor(pathname + search));
-}
-
-/**
- * Loads the server session (GET /v1/me, refreshing the access token from the refresh cookie when needed) into the
- * client stores: the real user, organization (name, timezone), role and memberships. A missing or expired session
- * is "anonymous" and, on a protected page, goes to sign-in. Sample identities exist only in the dev preview
- * (NEXT_PUBLIC_USE_MOCKS=true, never in production) and never override a real session.
- */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { currentUser, currentRole, currentOrg, isAuthenticated, hydrate } = useAuthStore();
+  const { currentUser, currentRole, currentOrg, isAuthenticated, hydrate, logout } = useAuthStore();
   const setOrganizations = useWorkspaceStore((state) => state.setOrganizations);
 
   useEffect(() => {
-    window.addEventListener(SESSION_EXPIRED_EVENT, sendToSignIn);
-    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, sendToSignIn);
-  }, []);
-
-  useEffect(() => {
     let active = true;
-    establishSession().catch((error: unknown) => {
+    apiClient.me().then((me) => {
       if (!active) return;
-<<<<<<< HEAD
-      const store = useAuthStore.getState();
-      const preview = previewEnabled() && store.isRolePreview;
-      if (classifyFailure(error, readPermissionEnv()) !== "fixture") {
-        if (preview) {
-          store.setSessionStatus("authenticated");
-=======
       const organizations = me.memberships.map((membership): Organization => ({
         id: membership.org_id,
         slug: membership.slug,
@@ -102,53 +54,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // isAuthenticated flag is cleared (a 401 arrives here only after the refresh cookie was also refused).
       if (active) {
         const store = useAuthStore.getState();
-<<<<<<< HEAD
-        // If user already signed in or has an active non-viewer role, preserve their authenticated session
-        if (store.isAuthenticated && store.currentRole && store.currentRole !== "VIEWER") {
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
-          return;
-        }
-        // No valid session: never a fixture identity. Protected pages go to sign-in.
-        store.logout();
-        sendToSignIn();
-        return;
-=======
         if (store.isAuthenticated && store.currentRole === "SUPER_ADMIN") {
           return;
         }
         clearAuthSession();
->>>>>>> 29db595 (Initial ProWise project upload)
       }
-      // Dev preview only (flag set, backend unreachable): keep the preview, else the sample viewer.
-      if (preview) {
-        store.setSessionStatus("authenticated");
-        return;
-      }
-      const defaultOrg: Organization = {
-        id: "org-acme",
-        slug: "acme-health",
-        name: "Acme Health Technologies",
-        ownerId: "usr-owner",
-        timezone: "America/New_York",
-        workCalendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
-        createdAt: "2026-02-15T09:00:00Z",
-        plan: "ENTERPRISE",
-        status: "ACTIVE",
-      };
-      const defaultUser: User = {
-        id: "usr-viewer",
-        email: "jordan.lee@acmehealth.com",
-        name: "Jordan Lee (Viewer)",
-        timezone: "America/New_York",
-        createdAt: "2026-02-25T16:00:00Z",
-      };
-      hydrate(defaultUser, [defaultOrg], "VIEWER");
-      setOrganizations([defaultOrg]);
     });
     return () => {
       active = false;
     };
-  }, [hydrate, setOrganizations]);
+  }, [hydrate, logout, setOrganizations]);
 
   return (
     <AuthContext.Provider
@@ -163,6 +78,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   );
 }
+
+function toSystemRole(role: string | undefined): SystemRole {
+  const roles: SystemRole[] = [
+    "SUPER_ADMIN", "PLATFORM_OPERATOR", "ORGANIZATION_OWNER", "ORGANIZATION_ADMIN",
+    "PROJECT_MANAGER", "TEAM_LEAD", "DEVELOPER", "QA_REVIEWER", "VIEWER",
+  ];
+  return role && roles.includes(role as SystemRole) ? role as SystemRole : "VIEWER";
+}
+
+function parseCalendar(value: string) {
+  try {
+    const calendar = JSON.parse(value) as { workDays?: number[]; dailyHours?: number; holidays?: string[] };
+    return {
+      workDays: calendar.workDays || [],
+      dailyHours: calendar.dailyHours || 0,
+      holidays: calendar.holidays || [],
+    };
+  } catch {
+    return { workDays: [], dailyHours: 0, holidays: [] };
+  }
+}
+
 
 export const useAuthContext = () => {
   const ctx = useContext(AuthContext);

@@ -27,20 +27,6 @@ const NOW = "2026-11-17T12:00:00Z";
 const canFor = (role: keyof typeof FIXTURE_GRANTS) => (key: PermissionKey) => canWithGrants(FIXTURE_GRANTS[role], key);
 const enabledButton = (label: string) => new RegExp(`<button(?![^>]*disabled)[^>]*>\\s*${label}`);
 
-<<<<<<< HEAD
-describe("Owner dashboard in production", () => {
-  it("never starts from fixture data in a production build", () => {
-    expect(getOwnerDashboardStart(ORG, { nodeEnv: "production", useMocks: "true" })).toEqual({ status: "unavailable", orgId: ORG });
-  });
-
-  it("loads fixtures outside production only with NEXT_PUBLIC_USE_MOCKS=true", () => {
-    expect(getOwnerDashboardStart(ORG, { nodeEnv: "development", useMocks: "true" })).toEqual({ status: "loading", orgId: ORG });
-    expect(getOwnerDashboardStart(ORG, { nodeEnv: "development", useMocks: undefined })).toEqual({ status: "unavailable", orgId: ORG });
-  });
-});
-
-=======
->>>>>>> 29db595 (Initial ProWise project upload)
 describe("Who can resolve is labelled as recorded data", () => {
   it("on the dashboard", () => {
     const markup = renderToStaticMarkup(

@@ -1,4 +1,3 @@
-import { apiClient } from "@/lib/api";
 export interface DeveloperDashboardSummary {
   assignedProjectsCount: number;
   activeProjectsCount: number;
@@ -201,27 +200,6 @@ export interface DeveloperPreferences {
   timezone: string;
 }
 
-<<<<<<< HEAD
-/** Browser path "/api/v1/..." -> client path "/v1/..." (the client adds the "/api" base). */
-function clientPath(url: string): string {
-  return url.startsWith("/api/") ? url.slice("/api".length) : url;
-}
-
-/**
- * Safe JSON call through the session-aware client: Bearer token from memory, one refresh on 401, then the retry.
- * Returns null instead of throwing (these panels fall back to empty states).
- */
-async function fetchJson<T>(url: string, options: { method?: string; body?: string } = {}): Promise<T | null> {
-  try {
-    const res = await apiClient.call(clientPath(url), {
-      method: options.method,
-      body: options.body === undefined ? undefined : JSON.parse(options.body),
-    });
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
-=======
 export interface DeveloperGitHubEvent {
   id: string;
   repository?: string;
@@ -234,7 +212,6 @@ export interface DeveloperGitHubEvent {
   occurredAt?: string;
   createdAt?: string;
   [key: string]: unknown;
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
 }
 
 /*
@@ -380,41 +357,10 @@ export const developerApi = {
     call<void>(`/v1/developer/notifications/${enc(notificationId)}/read`, { method: "PATCH" }),
   markAllNotificationsRead: () => call<void>("/v1/developer/notifications/read-all", { method: "POST" }),
 
-<<<<<<< HEAD
-  async markNotificationRead(id: string): Promise<boolean> {
-    try {
-      await apiClient.call(`/v1/developer/notifications/${encodeURIComponent(id)}/read`, { method: "PATCH" });
-      return true;
-    } catch {
-      return false;
-    }
-  },
-
-  async markAllNotificationsRead(): Promise<boolean> {
-    try {
-      await apiClient.call("/v1/developer/notifications/read-all", { method: "POST" });
-      return true;
-    } catch {
-      return false;
-    }
-  },
-
-  async getReportsSummary(orgId?: string): Promise<DeveloperReportsSummary | null> {
-    const query = orgId ? `?orgId=${encodeURIComponent(orgId)}` : "";
-    return fetchJson<DeveloperReportsSummary>(`/api/v1/developer/reports/summary${query}`);
-  },
-
-  async getPreferences(): Promise<DeveloperPreferences | null> {
-    return fetchJson<DeveloperPreferences>(`/api/v1/developer/preferences`);
-  },
-
-  async updatePreferences(payload: {
-=======
   getReportsSummary: (_orgId?: string) => call<DeveloperReportsSummary>("/v1/developer/reports/summary"),
 
   getPreferences: () => call<DeveloperPreferences>("/v1/developer/preferences"),
   updatePreferences: (payload: {
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
     emailNotifications: boolean;
     slackNotifications: boolean;
     theme?: string;

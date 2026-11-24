@@ -1,6 +1,6 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { OwnerDashboardView } from "../src/components/owner/OwnerDashboardView";
 import {
@@ -97,29 +97,4 @@ describe("Owner dashboard", () => {
     expect(markup).toContain("No repositories connected");
     expect(markup).toContain("No audit events are recorded");
   });
-<<<<<<< HEAD
-
-  it("does not show a previous organization's dashboard while the new scope loads", () => {
-    const acmeProjects = SEEDED_PROJECTS.filter((project) => project.orgId === orgId);
-    const state = getOwnerDashboardStateForOrg(
-      { status: "ready", orgId, projects: acmeProjects, users: SEEDED_USERS },
-      "org-nova",
-    );
-
-    expect(state.orgId).toBe("org-nova"); // never the previous organization's data
-    vi.stubEnv("NEXT_PUBLIC_USE_MOCKS", "");
-    expect(getOwnerDashboardStateForOrg(
-      { status: "ready", orgId, projects: acmeProjects, users: SEEDED_USERS },
-      "org-nova",
-    )).toEqual({ status: "unavailable", orgId: "org-nova" }); // normal use: no sample data
-    vi.stubEnv("NEXT_PUBLIC_USE_MOCKS", "true");
-    const preview = getOwnerDashboardStateForOrg(
-      { status: "ready", orgId, projects: acmeProjects, users: SEEDED_USERS },
-      "org-nova",
-    );
-    vi.unstubAllEnvs();
-    expect(preview).toEqual({ status: "loading", orgId: "org-nova" });
-  });
-=======
->>>>>>> 29db595 (Initial ProWise project upload)
 });
