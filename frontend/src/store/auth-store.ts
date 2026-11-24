@@ -2,8 +2,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { safeJSONStorage } from "@/lib/safe-storage";
 import { User, SystemRole, Organization } from "@/types";
+import { previewEnabled } from "@/lib/permissions";
 
-const DEFAULT_ORG: Organization = {
+const SAMPLE_ORG: Organization = {
   id: "org-acme",
   slug: "acme-health",
   name: "Acme Health Technologies",
@@ -15,13 +16,24 @@ const DEFAULT_ORG: Organization = {
   status: "ACTIVE",
 };
 
-const DEFAULT_USER: User = {
+const SAMPLE_USER: User = {
   id: "usr-viewer",
   email: "jordan.lee@acmehealth.com",
   name: "Jordan Lee (Viewer)",
   timezone: "America/New_York",
   createdAt: "2026-02-25T16:00:00Z",
 };
+
+/** Until GET /v1/me answers there is no organization and no user: never a demo company or person. */
+const BLANK_ORG: Organization = {
+  id: "", slug: "", name: "", ownerId: "", timezone: "",
+  workCalendar: { workDays: [], dailyHours: 0, holidays: [] }, createdAt: "", plan: "FREE", status: "ACTIVE",
+};
+const BLANK_USER: User = { id: "", email: "", name: "", timezone: "", createdAt: "" };
+
+// The sample identity exists only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true, never in production).
+const DEFAULT_ORG: Organization = previewEnabled() ? SAMPLE_ORG : BLANK_ORG;
+const DEFAULT_USER: User = previewEnabled() ? SAMPLE_USER : BLANK_USER;
 
 const EMPTY_USER: User = DEFAULT_USER;
 const EMPTY_ORG: Organization = DEFAULT_ORG;
@@ -138,6 +150,12 @@ interface AuthState {
   activeOrgId: string;
   isAuthenticated: boolean;
   isRolePreview: boolean;
+  /**
+   * "checking" until the server session (GET /v1/me) is known. Gates wait for it instead of judging the
+   * default fixture identity; "anonymous" means there is no valid session.
+   */
+  sessionStatus: SessionStatus;
+  setSessionStatus: (status: SessionStatus) => void;
   setCurrentUser: (user: User) => void;
   setCurrentRole: (role: SystemRole) => void;
   setCurrentOrg: (org: Organization) => void;
@@ -147,8 +165,14 @@ interface AuthState {
   switchRoleAndNavigate: (role: SystemRole, routerPush: (url: string) => void) => void;
   switchUserAndRole: (userId: string, routerPush: (url: string) => void) => void;
   logout: () => void;
-  hydrate: (user: User, organizations: Organization[], role: SystemRole) => void;
+  /** activeOrgId: the organization the session is bound to ("" = none selected). Defaults to the first one. */
+  hydrate: (user: User, organizations: Organization[], role: SystemRole, activeOrgId?: string) => void;
 }
+
+export type SessionStatus = "checking" | "authenticated" | "anonymous";
+
+/** No organization selected: gates show "select a workspace" rather than judging a fixture organization. */
+export const NO_ORG: Organization = { ...DEFAULT_ORG, id: "", slug: "", name: "", ownerId: "" };
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -161,7 +185,9 @@ export const useAuthStore = create<AuthState>()(
       activeOrgId: "",
       isAuthenticated: false,
       isRolePreview: false,
+      sessionStatus: "checking",
 
+      setSessionStatus: (status) => set({ sessionStatus: status }),
       setCurrentUser: (user) => set({ currentUser: user }),
       setCurrentRole: (role) => set({ currentRole: role, activeRole: role }),
       setCurrentOrg: (org) => set({ currentOrg: org, activeOrgId: org.id }),
@@ -217,17 +243,21 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         set({
+          sessionStatus: "anonymous",
           currentUser: DEFAULT_USER,
           currentOrg: DEFAULT_ORG,
-          activeOrgId: "org-acme",
+          activeOrgId: DEFAULT_ORG.id,
           isAuthenticated: false,
           isRolePreview: false,
         });
       },
 
-      hydrate: (user, organizations, role) => {
-        const organization = organizations[0] || EMPTY_ORG;
+      hydrate: (user, organizations, role, activeOrgId) => {
+        const organization = activeOrgId === undefined
+          ? organizations[0] || EMPTY_ORG
+          : organizations.find((org) => org.id === activeOrgId) || NO_ORG;
         set({
+          sessionStatus: "authenticated",
           currentUser: user,
           currentOrg: organization,
           organizations,

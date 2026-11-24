@@ -64,7 +64,8 @@ class LoginAuthenticationVerificationTest {
                         .content(payload))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.access_token").isNotEmpty())
-                .andExpect(jsonPath("$.refresh_token").isNotEmpty())
+                .andExpect(jsonPath("$.refresh_token").doesNotExist()) // only in the httpOnly cookie
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().httpOnly("prowise_refresh_token", true))
                 .andExpect(jsonPath("$.must_change_password").value(false))
                 .andExpect(jsonPath("$.target_dashboard_url").value("/super-admin/dashboard"))
                 .andExpect(jsonPath("$.user.email").value("superadmin@prowise.com"))
@@ -93,7 +94,8 @@ class LoginAuthenticationVerificationTest {
                         .content(payload))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.access_token").isNotEmpty())
-                .andExpect(jsonPath("$.refresh_token").isNotEmpty())
+                .andExpect(jsonPath("$.refresh_token").doesNotExist()) // only in the httpOnly cookie
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().httpOnly("prowise_refresh_token", true))
                 .andExpect(jsonPath("$.must_change_password").value(false))
                 .andExpect(jsonPath("$.target_dashboard_url").value("/platform-operator/dashboard"))
                 .andExpect(jsonPath("$.user.email").value("operator@prowise.io"))
@@ -142,7 +144,8 @@ class LoginAuthenticationVerificationTest {
                         .content(payload))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.access_token").isNotEmpty())
-                .andExpect(jsonPath("$.refresh_token").isNotEmpty())
+                .andExpect(jsonPath("$.refresh_token").doesNotExist()) // only in the httpOnly cookie
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().httpOnly("prowise_refresh_token", true))
                 .andExpect(jsonPath("$.must_change_password").value(false))
                 .andExpect(jsonPath("$.target_dashboard_url").value("/org/0a000000-0000-4000-8000-00000000000a/developer/dashboard"))
                 .andExpect(jsonPath("$.user.email").value("alex.rivera@acmehealth.com"))

@@ -238,13 +238,45 @@ public class SuperAdminOrgService {
         return new SuperAdminOrgDTOs.OrgSummaryResponse(total, active, trial, suspended, totalMrr);
     }
 
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    /** Optional so the plain constructor stays usable in unit tests; Spring always provides it at runtime. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setJdbcTemplate(org.springframework.jdbc.core.JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    /** Stored values only: real member and project counts, the real Owner; nothing assumed or invented. */
     private SuperAdminOrgDTOs.OrgDetailResponse buildOrgResponse(OrganizationEntity org) {
         BigDecimal mrr = getMrrForOrg(org);
-        int seatsUsed = 12; // Realistic seed telemetry
-        int projectsCount = 6;
-        double storageUsedGb = 4.2;
+        int seatsUsed = count("SELECT count(*) FROM memberships WHERE org_id = ? AND status = 'ACTIVE'", org.getId());
+        int projectsCount = count("SELECT count(*) FROM projects WHERE org_id = ?", org.getId());
+        double storageUsedGb = 0; // not measured yet
+        SuperAdminOrgDTOs.OrgDetailResponse base =
+                SuperAdminOrgDTOs.OrgDetailResponse.fromEntity(org, seatsUsed, projectsCount, storageUsedGb, mrr);
+        String[] owner = owner(org.getId());
+        if (owner == null) return base;
+        return new SuperAdminOrgDTOs.OrgDetailResponse(base.id(), base.name(), base.slug(), base.domain(), base.industry(),
+                base.country(), base.timezone(), owner[0], owner[1], base.status(), base.planId(), base.seatsUsed(),
+                base.seatsLimit(), base.projectsCount(), base.storageUsedGb(), base.mrr(), base.createdAt(),
+                base.lastActivityAt(), base.suspendedReason(), base.notes());
+    }
 
-        return SuperAdminOrgDTOs.OrgDetailResponse.fromEntity(org, seatsUsed, projectsCount, storageUsedGb, mrr);
+    private int count(String sql, java.util.UUID orgId) {
+        if (jdbc == null || orgId == null) return 0;
+        Integer value = jdbc.queryForObject(sql, Integer.class, orgId);
+        return value == null ? 0 : value;
+    }
+
+    /** {name, email} of the active Organization Owner membership, or null. */
+    private String[] owner(java.util.UUID orgId) {
+        if (jdbc == null || orgId == null) return null;
+        return jdbc.query("""
+                SELECT u.name, u.email FROM memberships m JOIN users u ON u.id = m.user_id
+                WHERE m.org_id = ? AND m.status = 'ACTIVE' AND m.role_template = 'ORGANIZATION_OWNER'
+                ORDER BY m.created_at LIMIT 1
+                """, (rs, n) -> new String[] {rs.getString("name"), rs.getString("email")}, orgId)
+                .stream().findFirst().orElse(null);
     }
 
     private BigDecimal getMrrForOrg(OrganizationEntity org) {
@@ -254,6 +286,6 @@ public class SuperAdminOrgService {
                 return plan.getMonthlyPrice();
             }
         }
-        return BigDecimal.valueOf(499);
+        return BigDecimal.ZERO; // no plan stored: no revenue assumed
     }
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { LivePlatformOrganizations } from "../_components/LivePlatformViews";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -248,7 +250,7 @@ function getInitials(label: string): string {
     .toUpperCase();
 }
 
-export default function SuperAdminOrganizationsPage() {
+function PreviewSuperAdminOrganizationsPage() {
   const organizations = useSuperAdminStore((s) => s.organizations);
   const plans = useSuperAdminStore((s) => s.plans);
   const subscriptions = useSuperAdminStore((s) => s.subscriptions);
@@ -1895,4 +1897,9 @@ export default function SuperAdminOrganizationsPage() {
       <InvoiceModal invoiceId={selectedInvoiceId} onClose={() => setSelectedInvoiceId(null)} />
     </div>
   );
+}
+
+/** Stored organizations by default; the sample list only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function SuperAdminOrganizationsPage() {
+  return previewEnabled() ? <PreviewSuperAdminOrganizationsPage /> : <LivePlatformOrganizations />;
 }

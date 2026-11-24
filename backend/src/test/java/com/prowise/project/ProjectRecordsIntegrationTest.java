@@ -119,6 +119,24 @@ class ProjectRecordsIntegrationTest {
     }
 
     @Test
+    void newProjectCannotStartInThePastAndTargetFollowsStart() throws Exception {
+        Org org = organization("past");
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Europe/London"));
+        mockMvc.perform(auth(post("/v1/organizations/{org}/projects", org.id()), org.token()).contentType("application/json")
+                        .content(body("Past", "PAST", "STRUCTURED", null, today.minusDays(1).toString(), today.plusDays(10).toString())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.field_errors[0].field").value("start_on"));
+        mockMvc.perform(auth(post("/v1/organizations/{org}/projects", org.id()), org.token()).contentType("application/json")
+                        .content(body("Old target", "OLDT", "STRUCTURED", null, null, today.minusDays(1).toString())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.field_errors[0].field").value("target_on"));
+        mockMvc.perform(auth(post("/v1/organizations/{org}/projects", org.id()), org.token()).contentType("application/json")
+                        .content(body("Today", "TODAY", "STRUCTURED", null, today.toString(), today.toString())))
+                .andExpect(status().isCreated());
+        assertThat(count("SELECT count(*) FROM projects WHERE org_id = ?", org.id())).isEqualTo(1);
+    }
+
+    @Test
     void invalidDatesTimezoneAndRequiredFieldsAreRejected() throws Exception {
         Org org = organization("dates");
         mockMvc.perform(auth(post("/v1/organizations/{org}/projects", org.id()), org.token()).contentType("application/json")

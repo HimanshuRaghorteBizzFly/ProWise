@@ -1,5 +1,9 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { ScopeListView, ScopeDetailView } from "@/components/work/ScopeViews";
+import { RequireAnyKey } from "@/components/calendar/CalendarViews";
+
 import React, { useState } from "react";
 import { useParams } from "next/navigation";
 import { CheckCircle2, FileText, Gavel, XCircle } from "lucide-react";
@@ -24,7 +28,7 @@ import {
 const TONE = { PENDING: "warning", APPROVED: "success", REJECTED: "danger" } as const;
 const LABEL = { PENDING: "Pending", APPROVED: "Approved", REJECTED: "Rejected" } as const;
 
-export default function ManagerScopeChangePage() {
+function PreviewManagerScopeChangePage() {
   const { changeId } = useParams<{ changeId: string }>();
   const href = useRoleHref("manager");
   const { status, retry } = useDemoLoad();
@@ -118,5 +122,19 @@ export default function ManagerScopeChangePage() {
         </>
       )}
     </PageFrame>
+  );
+}
+
+/** Task 3.2: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function ManagerScopeChangePage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const home = `/org/${orgId}/manager`;
+  if (previewEnabled()) return <PreviewManagerScopeChangePage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <ScopeDetailView versionId={(params?.changeId as string) ?? ""} crumbs={[{ label: "Project Manager", href: home }, { label: "Scope changes", href: `${home}/scope` }]}
+        back={{ href: `${home}/scope`, label: "Back to scope changes" }} projectHref={(id) => `${home}/projects/${id}`} />
+    </RequireAnyKey>
   );
 }

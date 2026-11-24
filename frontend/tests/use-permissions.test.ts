@@ -109,9 +109,11 @@ describe("mocksAllowed", () => {
     expect(mocksAllowed({ nodeEnv: "production", useMocks: undefined })).toBe(false);
   });
 
-  it("is allowed outside production", () => {
-    expect(mocksAllowed({ nodeEnv: "development", useMocks: undefined })).toBe(true);
+  it("is allowed outside production only with NEXT_PUBLIC_USE_MOCKS=true", () => {
+    expect(mocksAllowed({ nodeEnv: "development", useMocks: "true" })).toBe(true);
     expect(mocksAllowed({ nodeEnv: "test", useMocks: "true" })).toBe(true);
+    // Normal use (no flag) never shows sample data, also in development.
+    expect(mocksAllowed({ nodeEnv: "development", useMocks: undefined })).toBe(false);
   });
 });
 
@@ -151,8 +153,16 @@ describe("permission store", () => {
     expect(store.getState().grants).toEqual(FIXTURE_GRANTS.ORGANIZATION_ADMIN);
   });
 
-  it("uses role fixtures without calling the API in role preview mode", async () => {
+  it("never lets a role preview replace the server's permissions without NEXT_PUBLIC_USE_MOCKS=true", async () => {
     const store = createPermissionStore({ fetchPermissions, env: devEnv });
+    await store.getState().load(ORG_A, "ORGANIZATION_OWNER", { preview: true });
+
+    expect(fetchPermissions).toHaveBeenCalledWith(ORG_A);
+    expect(store.getState().source).toBe("api");
+  });
+
+  it("uses role fixtures without calling the API in role preview mode (dev preview flag)", async () => {
+    const store = createPermissionStore({ fetchPermissions, env: { nodeEnv: "development", useMocks: "true" } });
     await store.getState().load(ORG_A, "ORGANIZATION_OWNER", { preview: true });
 
     expect(fetchPermissions).not.toHaveBeenCalled();
@@ -171,15 +181,16 @@ describe("permission store", () => {
     expect(store.getState().source).toBe("api");
   });
 
-  it("falls back to the fixture only when the API is unreachable", async () => {
+  it("never falls back to the fixture without NEXT_PUBLIC_USE_MOCKS=true, even when the API is unreachable", async () => {
     const store = createPermissionStore({
       fetchPermissions: apiFail(new ApiError(0, "NETWORK_ERROR", "offline", "")),
       env: devEnv,
     });
     await store.getState().load(ORG_A, "ORGANIZATION_OWNER");
 
-    expect(store.getState().status).toBe("ready");
-    expect(store.getState().source).toBe("fixture");
+    expect(store.getState().status).toBe("error");
+    expect(store.getState().source).toBeNull();
+    expect(store.getState().grants).toEqual([]);
   });
 
   it("never uses the fixture in production, even when the API is unreachable", async () => {
@@ -193,16 +204,16 @@ describe("permission store", () => {
     expect(store.getState().grants).toEqual([]);
   });
 
-  it.each([502, 503, 504])("treats proxy %s as unreachable in development and uses the fixture", async (status) => {
+  it.each([502, 503, 504])("treats proxy %s as an error in development without the flag (no fixture)", async (status) => {
     const store = createPermissionStore({
       fetchPermissions: apiFail(new ApiError(status, `HTTP_${status}`, "bad gateway", "")),
       env: devEnv,
     });
     await store.getState().load(ORG_A, "ORGANIZATION_ADMIN");
 
-    expect(store.getState().status).toBe("ready");
-    expect(store.getState().source).toBe("fixture");
-    expect(store.getState().grants).toEqual(FIXTURE_GRANTS.ORGANIZATION_ADMIN);
+    expect(store.getState().status).toBe("error");
+    expect(store.getState().source).toBeNull();
+    expect(store.getState().grants).toEqual([]);
   });
 
   it.each([502, 503, 504])("never uses the fixture for proxy %s in production", async (status) => {

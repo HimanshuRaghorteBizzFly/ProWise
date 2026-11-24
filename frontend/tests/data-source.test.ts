@@ -5,15 +5,18 @@ import { classifyFailure } from "../src/lib/permissions";
 import { createSampleDataStore } from "../src/store/sample-data-store";
 
 const dev = { nodeEnv: "development", useMocks: undefined };
+const devMocks = { nodeEnv: "development", useMocks: "true" };
 const prod = { nodeEnv: "production", useMocks: "true" };
 
 describe("classifyFailure (shared by permissions and page data)", () => {
-  it.each([0, 502, 503, 504])("uses the fixture for unreachable status %s in development", (status) => {
-    expect(classifyFailure(new ApiError(status, "X", "x", ""), dev)).toBe("fixture");
+  it.each([0, 502, 503, 504])("uses the fixture for unreachable status %s only with NEXT_PUBLIC_USE_MOCKS=true", (status) => {
+    expect(classifyFailure(new ApiError(status, "X", "x", ""), devMocks)).toBe("fixture");
+    expect(classifyFailure(new ApiError(status, "X", "x", ""), dev)).toBe("error");
   });
 
-  it("treats a non-API error (e.g. missing base URL) as unreachable in development", () => {
-    expect(classifyFailure(new Error("NEXT_PUBLIC_API_BASE_URL is required"), dev)).toBe("fixture");
+  it("treats a non-API error (e.g. missing base URL) as unreachable: fixture only with the flag", () => {
+    expect(classifyFailure(new Error("NEXT_PUBLIC_API_BASE_URL is required"), devMocks)).toBe("fixture");
+    expect(classifyFailure(new Error("NEXT_PUBLIC_API_BASE_URL is required"), dev)).toBe("error");
   });
 
   it.each([0, 502, 503, 504])("never uses the fixture for status %s in production", (status) => {

@@ -1,5 +1,7 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { LivePlatformDashboard } from "./_components/LivePlatformViews";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -66,7 +68,7 @@ import { RolePreviewDashboardView } from "./_components/RolePreviewDashboardView
 
 const PLAN_COLORS = ["#64748B", "#3B82F6", "#8B5CF6", "#10B981", "#F59E0B"];
 
-export default function SuperAdminDashboardPage() {
+function PreviewSuperAdminDashboardPage() {
   const router = useRouter();
   const organizations = useSuperAdminStore((s) => s.organizations);
   const plans = useSuperAdminStore((s) => s.plans);
@@ -950,4 +952,9 @@ export default function SuperAdminDashboardPage() {
       </SurfaceCard>
     </div>
   );
+}
+
+/** Stored platform data by default; the sample dashboard only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function SuperAdminDashboardPage() {
+  return previewEnabled() ? <PreviewSuperAdminDashboardPage /> : <LivePlatformDashboard />;
 }

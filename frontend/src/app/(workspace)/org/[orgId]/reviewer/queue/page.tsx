@@ -1,5 +1,9 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { ReviewQueueView } from "@/components/work/ReviewViews";
+import { useParams } from "next/navigation";
+
 import React, { useMemo, useState } from "react";
 import { GitPullRequestArrow } from "lucide-react";
 import { useDeliveryStore } from "@/store/delivery-store";
@@ -23,7 +27,7 @@ import {
 
 type PFilter = "ALL" | Priority;
 
-export default function ReviewerQueuePage() {
+function PreviewReviewerQueuePage() {
   const href = useRoleHref("reviewer");
   const { status, retry, forceEmpty } = useDemoLoad();
   const lk = useLookups();
@@ -92,5 +96,14 @@ export default function ReviewerQueuePage() {
         />
       </SurfaceCard>
     </PageFrame>
+  );
+}
+
+/** Task 3.3: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function ReviewerQueuePage() {
+  const params = useParams();
+  const home = `/org/${(params?.orgId as string) || ""}/reviewer`;
+  return previewEnabled() ? <PreviewReviewerQueuePage /> : (
+    <ReviewQueueView crumbs={[{ label: "Reviewer", href: home }]} back={{ href: home, label: "Back to dashboard" }} />
   );
 }

@@ -199,7 +199,7 @@ public class DevelopmentDataInitializer implements ApplicationRunner {
         );
         if (!hashes.isEmpty()) {
             String existingHash = hashes.get(0);
-            if (existingHash == null || !existingHash.startsWith("$2")) {
+            if (existingHash == null || !existingHash.startsWith("$2") || !passwordEncoder.matches(rawPassword, existingHash)) {
                 jdbc.update("UPDATE users SET password_hash = ? WHERE lower(email) = lower(?)", hash, email);
             }
             return;

@@ -1,5 +1,8 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { MyTasksView } from "@/components/work/ReviewViews";
+
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
@@ -28,7 +31,7 @@ import { useProjectStore } from "@/store/project-store";
 import { developerApi, DeveloperWorkItem } from "@/lib/developer-api";
 import { toast } from "sonner";
 
-export default function DeveloperTasksPage() {
+function PreviewDeveloperTasksPage() {
   const params = useParams();
   const orgId = (params?.orgId as string) || "org-acme";
   const { workItems: storeWorkItems } = useProjects(orgId);
@@ -419,5 +422,14 @@ export default function DeveloperTasksPage() {
         )}
       </div>
     </PanelLayout>
+  );
+}
+
+/** Task 3.3: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function DeveloperTasksPage() {
+  const params = useParams();
+  const home = `/org/${(params?.orgId as string) || ""}/developer`;
+  return previewEnabled() ? <PreviewDeveloperTasksPage /> : (
+    <MyTasksView crumbs={[{ label: "Developer", href: home }]} back={{ href: home, label: "Back to dashboard" }} />
   );
 }

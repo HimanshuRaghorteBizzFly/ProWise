@@ -1,5 +1,10 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { WorkItemsView, WorkItemView, TeamWorkView, TeamMemberView, ProjectPlanningView } from "@/components/work/WorkListViews";
+import { RequireAnyKey } from "@/components/calendar/CalendarViews";
+import { useParams } from "next/navigation";
+
 import React, { useMemo, useState } from "react";
 import { ListTodo, UserPlus } from "lucide-react";
 import { useDeliveryStore } from "@/store/delivery-store";
@@ -26,7 +31,7 @@ import {
 
 type StatusFilter = "ALL" | TaskStatus;
 
-export default function ManagerAllWorkPage() {
+function PreviewManagerAllWorkPage() {
   const href = useRoleHref("manager");
   const { status, retry, forceEmpty } = useDemoLoad();
   const lk = useLookups();
@@ -107,5 +112,19 @@ export default function ManagerAllWorkPage() {
         />
       </SurfaceCard>
     </PageFrame>
+  );
+}
+
+/** Task 3.1: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function ManagerAllWorkPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const home = `/org/${orgId}/manager`;
+  if (previewEnabled()) return <PreviewManagerAllWorkPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <WorkItemsView crumbs={[{ label: "Project Manager", href: home }]} back={{ href: home, label: "Back to dashboard" }} title="All work"
+        itemHref={(entry) => `${home}/work-items/${entry.item.id}`} />
+    </RequireAnyKey>
   );
 }

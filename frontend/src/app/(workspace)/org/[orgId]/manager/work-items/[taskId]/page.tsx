@@ -1,5 +1,9 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { WorkItemsView, WorkItemView, TeamWorkView, TeamMemberView, ProjectPlanningView } from "@/components/work/WorkListViews";
+import { RequireAnyKey } from "@/components/calendar/CalendarViews";
+
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { ClipboardCheck, GitBranch, OctagonAlert, UserCog } from "lucide-react";
@@ -29,7 +33,7 @@ import {
   useRoleHref,
 } from "@/components/delivery/DeliveryUI";
 
-export default function ManagerTaskDetailPage() {
+function PreviewManagerTaskDetailPage() {
   const { taskId } = useParams<{ taskId: string }>();
   const href = useRoleHref("manager");
   const { status, retry } = useDemoLoad();
@@ -192,5 +196,19 @@ export default function ManagerTaskDetailPage() {
         </>
       )}
     </PageFrame>
+  );
+}
+
+/** Task 3.1: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function ManagerTaskDetailPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const home = `/org/${orgId}/manager`;
+  if (previewEnabled()) return <PreviewManagerTaskDetailPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <WorkItemView itemId={(params?.taskId as string) ?? ""} crumbs={[{ label: "Project Manager", href: home }, { label: "All work", href: `${home}/work-items` }]}
+        back={{ href: `${home}/work-items`, label: "Back to all work" }} projectHref={(id) => `${home}/projects/${id}`} />
+    </RequireAnyKey>
   );
 }

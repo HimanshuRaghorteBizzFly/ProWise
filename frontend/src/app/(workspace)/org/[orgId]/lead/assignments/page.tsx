@@ -1,5 +1,8 @@
 "use client";
 
+import { useParams } from "next/navigation";
+import { previewEnabled } from "@/lib/permissions";
+import { AssignWorkView } from "@/components/work/WorkViews";
 import React, { useEffect, useMemo, useState } from "react";
 import { Inbox, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -24,7 +27,7 @@ import {
 import { useLeadTeam } from "@/components/delivery/useLeadTeam";
 import { cn } from "@/lib/utils";
 
-export default function TeamLeadAssignPage() {
+function PreviewTeamLeadAssignPage() {
   const href = useRoleHref("lead");
   const { status, retry, forceEmpty } = useDemoLoad(300);
   const lk = useLookups();
@@ -140,5 +143,14 @@ export default function TeamLeadAssignPage() {
         </Panel>
       </div>
     </PageFrame>
+  );
+}
+
+/** Task 3.1: real task assignment by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function AssignWorkPage() {
+  const params = useParams();
+  const home = `/org/${(params?.orgId as string) || ""}/lead`;
+  return previewEnabled() ? <PreviewTeamLeadAssignPage /> : (
+    <AssignWorkView crumbs={[{ label: "Team Lead", href: home }]} back={{ href: home, label: "Back to dashboard" }} />
   );
 }

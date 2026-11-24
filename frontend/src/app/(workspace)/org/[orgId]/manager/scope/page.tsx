@@ -1,5 +1,10 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { ScopeListView, ScopeDetailView } from "@/components/work/ScopeViews";
+import { RequireAnyKey } from "@/components/calendar/CalendarViews";
+import { useParams } from "next/navigation";
+
 import React, { useMemo, useState } from "react";
 import { Scale } from "lucide-react";
 import { useDeliveryStore } from "@/store/delivery-store";
@@ -22,7 +27,7 @@ type Filter = "ALL" | ScopeChange["status"];
 const SCOPE_TONE = { PENDING: "warning", APPROVED: "success", REJECTED: "danger" } as const;
 const SCOPE_LABEL = { PENDING: "Pending", APPROVED: "Approved", REJECTED: "Rejected" } as const;
 
-export default function ManagerScopePage() {
+function PreviewManagerScopePage() {
   const href = useRoleHref("manager");
   const { status, retry, forceEmpty } = useDemoLoad();
   const lk = useLookups();
@@ -79,5 +84,19 @@ export default function ManagerScopePage() {
         />
       </SurfaceCard>
     </PageFrame>
+  );
+}
+
+/** Task 3.2: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function ManagerScopePage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const home = `/org/${orgId}/manager`;
+  if (previewEnabled()) return <PreviewManagerScopePage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <ScopeListView crumbs={[{ label: "Project Manager", href: home }]} back={{ href: home, label: "Back to dashboard" }}
+        detailHref={(entry) => `${home}/scope/${entry.version.id}`} />
+    </RequireAnyKey>
   );
 }

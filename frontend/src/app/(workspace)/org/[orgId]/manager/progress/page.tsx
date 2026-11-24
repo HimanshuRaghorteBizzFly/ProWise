@@ -1,5 +1,10 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { ProgressListView, ProjectProgressPageView } from "@/components/work/ReviewViews";
+import { RequireAnyKey } from "@/components/calendar/CalendarViews";
+import { useParams } from "next/navigation";
+
 import React, { useMemo } from "react";
 import { BarChart3, FolderKanban, TrendingUp } from "lucide-react";
 import { useDeliveryStore } from "@/store/delivery-store";
@@ -19,7 +24,7 @@ import {
 } from "@/components/delivery/DeliveryUI";
 import { GaugeRing, GroupedBarChart } from "@/components/delivery/DeliveryCharts";
 
-export default function ManagerProgressPage() {
+function PreviewManagerProgressPage() {
   const href = useRoleHref("manager");
   const { status, retry, forceEmpty } = useDemoLoad();
   const allProjects = useDeliveryStore((s) => s.projects);
@@ -85,5 +90,19 @@ export default function ManagerProgressPage() {
         />
       </Panel>
     </PageFrame>
+  );
+}
+
+/** Task 3.5: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function ManagerProgressPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const home = `/org/${orgId}/manager`;
+  if (previewEnabled()) return <PreviewManagerProgressPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <ProgressListView crumbs={[{ label: "Project Manager", href: home }]} back={{ href: home, label: "Back to dashboard" }}
+        projectHref={(p) => `${home}/projects/${p.id}`} />
+    </RequireAnyKey>
   );
 }

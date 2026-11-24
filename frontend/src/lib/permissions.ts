@@ -94,9 +94,17 @@ export function readPermissionEnv(): PermissionEnv {
   return { nodeEnv: process.env.NODE_ENV, useMocks: process.env.NEXT_PUBLIC_USE_MOCKS };
 }
 
-/** Fixture data is never allowed in a production build. */
+/**
+ * Sample (fixture) data only when explicitly requested with NEXT_PUBLIC_USE_MOCKS=true, and never in a production
+ * build. Normal use always shows the real server data or a real error / empty / "Later" state.
+ */
 export function mocksAllowed(env: PermissionEnv): boolean {
-  return env.nodeEnv !== "production";
+  return env.nodeEnv !== "production" && env.useMocks === "true";
+}
+
+/** Dev preview tools (Quick Navigator, role preview): same rule as sample data. */
+export function previewEnabled(env: PermissionEnv = readPermissionEnv()): boolean {
+  return mocksAllowed(env);
 }
 
 /** Fixture is used without calling the API only when explicitly requested outside production. */

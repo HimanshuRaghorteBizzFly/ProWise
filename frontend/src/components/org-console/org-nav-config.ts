@@ -2,6 +2,8 @@ import {
   Activity,
   Bell,
   Building2,
+  CalendarDays,
+  Tags,
   FileBarChart,
   FolderKanban,
   GitBranch,
@@ -65,6 +67,8 @@ export const ORG_SHELL: Record<OrgFamily, { label: string; tagline: string; sect
         title: "Organization",
         items: [
           { title: "Organization Settings", path: "organization", icon: Building2 },
+          { title: "Work Calendar", path: "work-calendar", icon: CalendarDays },
+          { title: "Work Types", path: "work-types", icon: Tags },
           { title: "Data & Privacy", path: "privacy", icon: Lock },
           { title: "Transfer Ownership", path: "transfer-ownership", icon: KeyRound },
         ],
@@ -91,6 +95,8 @@ export const ORG_SHELL: Record<OrgFamily, { label: string; tagline: string; sect
         items: [
           { title: "Integrations & Sync", path: "integrations", icon: GitBranch, badgeKey: "repos" },
           { title: "Projects Overview", path: "projects", icon: FolderKanban },
+          { title: "Work Calendar", path: "work-calendar", icon: CalendarDays },
+          { title: "Work Types", path: "work-types", icon: Tags },
         ],
       },
       {

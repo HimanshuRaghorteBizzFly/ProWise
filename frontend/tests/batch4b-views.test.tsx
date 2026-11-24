@@ -33,8 +33,9 @@ describe("Owner dashboard in production", () => {
     expect(getOwnerDashboardStart(ORG, { nodeEnv: "production", useMocks: "true" })).toEqual({ status: "unavailable", orgId: ORG });
   });
 
-  it("loads fixtures outside production", () => {
-    expect(getOwnerDashboardStart(ORG, { nodeEnv: "development", useMocks: undefined })).toEqual({ status: "loading", orgId: ORG });
+  it("loads fixtures outside production only with NEXT_PUBLIC_USE_MOCKS=true", () => {
+    expect(getOwnerDashboardStart(ORG, { nodeEnv: "development", useMocks: "true" })).toEqual({ status: "loading", orgId: ORG });
+    expect(getOwnerDashboardStart(ORG, { nodeEnv: "development", useMocks: undefined })).toEqual({ status: "unavailable", orgId: ORG });
   });
 });
 

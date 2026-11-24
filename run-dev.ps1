@@ -32,7 +32,7 @@ Write-Host "Starting backend on http://localhost:8080..."
 $backendProcess = Start-Process `
     -FilePath (Join-Path $backend "mvnw.cmd") `
     -WorkingDirectory $backend `
-    -ArgumentList "spring-boot:run", "-Dspring-boot.run.arguments=--server.port=8080" `
+    -ArgumentList "spring-boot:run", "-Dspring-boot.run.profiles=dev", "-Dspring-boot.run.arguments=--server.port=8080" `
     -PassThru
 
 Write-Host "Starting frontend on http://localhost:3000..."

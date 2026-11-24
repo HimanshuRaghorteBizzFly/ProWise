@@ -1,5 +1,10 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { BlockersView, BlockerDetailView, DependenciesPageView } from "@/components/work/DependencyViews";
+import { RequireAnyKey } from "@/components/calendar/CalendarViews";
+import { useParams } from "next/navigation";
+
 import React from "react";
 import Link from "next/link";
 import { ArrowRight, Network } from "lucide-react";
@@ -20,7 +25,7 @@ import type { Dependency } from "@/mocks/delivery-dashboards";
 
 const KIND: Record<Dependency["kind"], string> = { BLOCKS: "Blocks", NEEDS_INPUT: "Needs input", SHARED_COMPONENT: "Shared component" };
 
-export default function TeamLeadDependenciesPage() {
+function PreviewTeamLeadDependenciesPage() {
   const href = useRoleHref("lead");
   const { status, retry, forceEmpty } = useDemoLoad();
   const lk = useLookups();
@@ -86,5 +91,18 @@ export default function TeamLeadDependenciesPage() {
         </div>
       </div>
     </PageFrame>
+  );
+}
+
+/** Task 3.4: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function TeamLeadDependenciesPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const home = `/org/${orgId}/lead`;
+  if (previewEnabled()) return <PreviewTeamLeadDependenciesPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <DependenciesPageView crumbs={[{ label: "Team Lead", href: home }]} back={{ href: home, label: "Back to dashboard" }} />
+    </RequireAnyKey>
   );
 }

@@ -17,8 +17,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { previewEnabled } from "@/lib/permissions";
 
+/** Dev preview only (NEXT_PUBLIC_USE_MOCKS=true, never in production): never shown over a real session. */
 export function RoleTestBanner() {
+  return previewEnabled() ? <RoleTestBannerPanel /> : null;
+}
+
+function RoleTestBannerPanel() {
   const router = useRouter();
   const { currentRole, currentOrg, switchRoleAndNavigate } = useAuthStore();
   const { approveScopeAddition, reopenWorkItem, resetToInitialFixtures } = useProjectStore();

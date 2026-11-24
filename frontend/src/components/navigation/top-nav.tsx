@@ -6,11 +6,15 @@ import { Search, Menu, Bell, Sun, Moon, ChevronDown, ChevronRight, LogOut, Shiel
 import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
 import { useThemeStore } from "@/store/theme-store";
 import { useProjectStore } from "@/store/project-store";
-import { SystemRole } from "@/types";
+import { Organization, SystemRole } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
 import { GlobalSearchModal } from "./global-search-modal";
 import { SampleDataBadge } from "./sample-data-badge";
 import { SEEDED_ORGS } from "@/lib/mock-data";
+import { apiClient } from "@/lib/api";
+import { previewEnabled } from "@/lib/permissions";
+import { establishSession } from "@/lib/session";
+import { clearWorkspaceCaches, switchWorkspace } from "@/lib/workspace-switch";
 import { cn } from "@/lib/utils";
 
 interface TopNavProps {
@@ -52,6 +56,42 @@ export function TopNav({
 }: TopNavProps) {
   const router = useRouter();
   const { currentUser, currentRole, currentOrg, setCurrentOrg, switchRoleAndNavigate, logout } = useAuthStore();
+  const realOrganizations = useAuthStore((state) => state.organizations);
+  const preview = previewEnabled();
+  // Real memberships in normal use; the fixture organizations only in the dev preview.
+  const menuOrganizations: Organization[] = preview ? SEEDED_ORGS : realOrganizations;
+
+  const openOrganization = async (org: Organization) => {
+    if (preview) {
+      setCurrentOrg(org);
+      router.push(getRoleDashboardPath(currentRole, org.id));
+      return;
+    }
+    // Task 1.3: the server binds the session to the chosen organization; the landing follows that membership.
+    const switched = await switchWorkspace(org.id);
+    if (!switched.ok) {
+      router.push("/select-workspace");
+      return;
+    }
+    try {
+      router.push((await establishSession()).target);
+    } catch {
+      router.push("/select-workspace");
+    }
+  };
+
+  const signOut = async (everywhere = false) => {
+    try {
+      // Revokes this session (or every session of the user) and clears the httpOnly refresh cookie.
+      if (everywhere) await apiClient.signoutEverywhere();
+      else await apiClient.signout();
+    } catch {
+      // Already signed out or unreachable: the local session is cleared anyway.
+    }
+    clearWorkspaceCaches();
+    logout();
+    router.replace("/login");
+  };
   const { setTheme, resolvedTheme } = useThemeStore();
   const { notifications, markNotificationRead, markAllNotificationsRead } = useProjectStore();
 
@@ -268,61 +308,74 @@ export function TopNav({
                   <p className="truncate text-[11px] text-app-text-muted">{currentUser.email}</p>
                 </div>
 
-                <div className="border-b border-app-border py-2">
-                  <p className={MENU_SECTION_TITLE}>Switch active panel / role</p>
-                  <div className="max-h-48 space-y-0.5 overflow-y-auto">
-                    {ROLES.map((r) => (
-                      <button
-                        key={r.role}
-                        type="button"
-                        onClick={() => {
-                          switchRoleAndNavigate(r.role, router.push);
-                          setOpenMenu(null);
-                        }}
-                        aria-current={currentRole === r.role ? "true" : undefined}
-                        className={cn(MENU_ITEM, currentRole === r.role ? MENU_ITEM_ACTIVE : MENU_ITEM_IDLE)}
-                      >
-                        <span>{r.label}</span>
-                        {currentRole === r.role && <Check className="h-3.5 w-3.5 text-blue-600" aria-hidden="true" />}
-                      </button>
-                    ))}
+                {preview && (
+                  <div className="border-b border-app-border py-2">
+                    <p className={MENU_SECTION_TITLE}>Switch active panel / role (preview)</p>
+                    <div className="max-h-48 space-y-0.5 overflow-y-auto">
+                      {ROLES.map((r) => (
+                        <button
+                          key={r.role}
+                          type="button"
+                          onClick={() => {
+                            switchRoleAndNavigate(r.role, router.push);
+                            setOpenMenu(null);
+                          }}
+                          aria-current={currentRole === r.role ? "true" : undefined}
+                          className={cn(MENU_ITEM, currentRole === r.role ? MENU_ITEM_ACTIVE : MENU_ITEM_IDLE)}
+                        >
+                          <span>{r.label}</span>
+                          {currentRole === r.role && <Check className="h-3.5 w-3.5 text-blue-600" aria-hidden="true" />}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
-                <div className="border-b border-app-border py-2">
-                  <p className={MENU_SECTION_TITLE}>Switch organization</p>
-                  <div className="space-y-0.5">
-                    {SEEDED_ORGS.map((org) => (
-                      <button
-                        key={org.id}
-                        type="button"
-                        onClick={() => {
-                          setCurrentOrg(org);
-                          setOpenMenu(null);
-                          router.push(getRoleDashboardPath(currentRole, org.id));
-                        }}
-                        aria-current={currentOrg.id === org.id ? "true" : undefined}
-                        className={cn(MENU_ITEM, currentOrg.id === org.id ? MENU_ITEM_ACTIVE : MENU_ITEM_IDLE)}
-                      >
-                        <span className="truncate">{org.name}</span>
-                        {currentOrg.id === org.id && <Check className="h-3.5 w-3.5 text-blue-600" aria-hidden="true" />}
-                      </button>
-                    ))}
+                {menuOrganizations.length > 1 && (
+                  <div className="border-b border-app-border py-2">
+                    <p className={MENU_SECTION_TITLE}>Switch organization</p>
+                    <div className="space-y-0.5">
+                      {menuOrganizations.map((org) => (
+                        <button
+                          key={org.id}
+                          type="button"
+                          onClick={() => {
+                            setOpenMenu(null);
+                            void openOrganization(org);
+                          }}
+                          aria-current={currentOrg.id === org.id ? "true" : undefined}
+                          className={cn(MENU_ITEM, currentOrg.id === org.id ? MENU_ITEM_ACTIVE : MENU_ITEM_IDLE)}
+                        >
+                          <span className="truncate">{org.name}</span>
+                          {currentOrg.id === org.id && <Check className="h-3.5 w-3.5 text-blue-600" aria-hidden="true" />}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="pt-1">
                   <button
                     type="button"
                     onClick={() => {
-                      logout();
                       setOpenMenu(null);
-                      router.push("/login");
+                      void signOut();
                     }}
                     className={cn(MENU_ITEM, "justify-start font-medium text-rose-600 hover:bg-rose-500/10 dark:text-rose-400")}
                   >
                     <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>Sign out</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenu(null);
+                      void signOut(true);
+                    }}
+                    className={cn(MENU_ITEM, "justify-start text-rose-600 hover:bg-rose-500/10 dark:text-rose-400")}
+                  >
+                    <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Sign out on all devices</span>
                   </button>
                 </div>
               </div>

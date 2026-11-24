@@ -1,5 +1,7 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { ProjectCreateView } from "@/components/projects/ApiProjectViews";
 import React, { useState, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -61,7 +63,7 @@ const IANA_TIMEZONES = [
   { value: "Australia/Sydney", label: "Australia/Sydney (AEST/AEDT, UTC+10)" },
 ];
 
-export default function ManagerCreateProjectPage() {
+function PreviewManagerCreateProjectPage() {
   const { orgId } = useParams<{ orgId: string }>();
   const safeOrgId = orgId || "org-acme";
   const href = useRoleHref("manager");
@@ -837,4 +839,9 @@ export default function ManagerCreateProjectPage() {
       </form>
     </PageFrame>
   );
+}
+
+/** Task 2.1 create form on the real API; the sample form only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function ManagerCreateProjectPage() {
+  return previewEnabled() ? <PreviewManagerCreateProjectPage /> : <ProjectCreateView base="manager" />;
 }

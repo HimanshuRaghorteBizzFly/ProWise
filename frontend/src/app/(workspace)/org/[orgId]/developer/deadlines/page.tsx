@@ -1,5 +1,8 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { DeadlinesView, RequireAnyKey } from "@/components/calendar/CalendarViews";
+
 import React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
@@ -11,7 +14,7 @@ import { useAuthStore } from "@/store/auth-store";
 import { useProjectStore } from "@/store/project-store";
 import { Clock } from "lucide-react";
 
-export default function DeveloperDeadlinesPage() {
+function PreviewDeveloperDeadlinesPage() {
   const params = useParams();
   const router = useRouter();
   const orgId = (params?.orgId as string) || "org-acme";
@@ -88,3 +91,16 @@ export default function DeveloperDeadlinesPage() {
   );
 }
 
+
+/** Task 2.3: real deadlines by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function DeveloperDeadlinesPage() {
+  const params = useParams();
+  const home = `/org/${(params?.orgId as string) || ""}/developer`;
+  if (previewEnabled()) return <PreviewDeveloperDeadlinesPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <DeadlinesView crumbs={[{ label: "Developer", href: home }]} back={{ href: home, label: "Back to dashboard" }}
+        projectHref={(project) => (project.mode === "INDIVIDUAL" ? `${home}/projects/${project.id}/individual` : null)} />
+    </RequireAnyKey>
+  );
+}

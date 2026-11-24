@@ -4,8 +4,26 @@ import { useParams } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
 import { useProjects } from "@/hooks/useProjects";
 import { Card } from "@/components/ui/card";
+import { previewEnabled } from "@/lib/permissions";
+import { ProjectScheduleView, RequireAnyKey } from "@/components/calendar/CalendarViews";
 
+/** Task 2.3: the project's real check-in schedule; the sample card only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
 export default function IndividualDeadlinesPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const projectId = (params?.projectId as string) ?? "";
+  const home = `/org/${orgId}/developer`;
+  if (previewEnabled()) return <PreviewIndividualDeadlinesPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <ProjectScheduleView projectId={projectId}
+        crumbs={[{ label: "Developer", href: home }, { label: "Project", href: `${home}/projects/${projectId}/individual` }]}
+        back={{ href: `${home}/projects/${projectId}/individual`, label: "Back to project" }} />
+    </RequireAnyKey>
+  );
+}
+
+function PreviewIndividualDeadlinesPage() {
   const params = useParams();
   const orgId = (params.orgId as string) || "org-1";
   const projectId = params.projectId as string;

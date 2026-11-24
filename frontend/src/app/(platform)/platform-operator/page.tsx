@@ -1,5 +1,7 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { LiveOperatorDashboard } from "./_components/LiveOperatorDashboard";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -72,7 +74,7 @@ function getDepartmentBadgeClass(dept: string): string {
   return "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300";
 }
 
-export default function PlatformOperatorDashboardPage() {
+function PreviewPlatformOperatorDashboardPage() {
   const orgHealth = usePlatformOperatorStore((s) => s.orgHealth);
   const systemMetrics = usePlatformOperatorStore((s) => s.systemMetrics);
   const incidents = usePlatformOperatorStore((s) => s.incidents);
@@ -2213,4 +2215,9 @@ export default function PlatformOperatorDashboardPage() {
       </div>
     </div>
   );
+}
+
+/** Stored operational counts by default; the sample dashboard only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function PlatformOperatorDashboardPage() {
+  return previewEnabled() ? <PreviewPlatformOperatorDashboardPage /> : <LiveOperatorDashboard />;
 }

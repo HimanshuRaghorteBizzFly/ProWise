@@ -192,8 +192,15 @@ function baseErrorMessage(error: unknown): string {
     if (code === "DUPLICATE_ROLE") return "A role with this name already exists.";
     if (code === "ROLE_IN_USE") return "Revoke this role from every member before deleting it.";
     if (code === "MEMBER_INACTIVE") return "Only active members can receive a role.";
-    if (code === "FORBIDDEN") return "You can't grant or change a permission you don't hold.";
+    if (code === "FORBIDDEN") return "You don't have permission to do this.";
     if (code === "NOT_FOUND") return "That item doesn't exist or isn't in this workspace.";
+    // Validation: show what is wrong with the first field in plain words, not the generic summary.
+    const fieldErrors = (error as { fieldErrors?: { field: string; message: string }[] }).fieldErrors;
+    if (code === "VALIDATION_FAILED" && fieldErrors && fieldErrors.length > 0) {
+      const first = fieldErrors[0];
+      const label = first.field.replace(/_/g, " ").replace(/\./g, " ").replace(/^\w/, (c) => c.toUpperCase());
+      return /^[A-Z]/.test(first.message) ? first.message : `${label} ${first.message}.`;
+    }
   }
   return error instanceof Error ? error.message : "Something went wrong.";
 }

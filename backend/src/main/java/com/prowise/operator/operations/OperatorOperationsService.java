@@ -515,7 +515,7 @@ public class OperatorOperationsService {
                 "pendingWebhooks", pendingWebhooks,
                 "failedJobs", failedJobs,
                 "unacknowledgedAlerts", unackAlerts,
-                "systemHealthScore", (openIncidents == 0 && failedJobs == 0) ? "99.98%" : "98.45%",
+
                 "operationalStatus", openIncidents > 0 ? "DEGRADED" : "OPERATIONAL"
         );
     }

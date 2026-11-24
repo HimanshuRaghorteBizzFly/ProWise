@@ -1,11 +1,15 @@
 "use client";
+
+import { previewEnabled } from "@/lib/permissions";
+import { WorkItemsView, WorkItemView, TeamWorkView, TeamMemberView, ProjectPlanningView } from "@/components/work/WorkListViews";
+import { RequireAnyKey } from "@/components/calendar/CalendarViews";
 import React from "react";
 import { useParams } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
 import { Card } from "@/components/ui/card";
 import { useProjects } from "@/hooks/useProjects";
 
-export default function StructuredTaskDetailPage() {
+function PreviewStructuredTaskDetailPage() {
   const params = useParams();
   const orgId = (params.orgId as string) || "org-1";
   const projectId = params.projectId as string;
@@ -34,5 +38,20 @@ export default function StructuredTaskDetailPage() {
         </Card>
       </div>
     </PanelLayout>
+  );
+}
+
+/** Task 3.1: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function StructuredTaskDetailPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const home = `/org/${orgId}/developer`;
+  if (previewEnabled()) return <PreviewStructuredTaskDetailPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <WorkItemView itemId={(params?.taskId as string) ?? ""}
+        crumbs={[{ label: "Developer", href: home }, { label: "My tasks", href: `${home}/projects/${params?.projectId as string}/structured/my-tasks` }]}
+        back={{ href: `${home}/projects/${params?.projectId as string}/structured/my-tasks`, label: "Back to my tasks" }} />
+    </RequireAnyKey>
   );
 }

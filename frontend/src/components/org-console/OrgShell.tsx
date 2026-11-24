@@ -10,6 +10,8 @@ import { useThemeStore } from "@/store/theme-store";
 import { useAuthStore } from "@/store/auth-store";
 import { useOrgConsoleStore } from "@/store/org-console-store";
 import { ORG_VIEWERS } from "@/mocks/org-console";
+import { apiClient } from "@/lib/api";
+import { previewEnabled } from "@/lib/permissions";
 import { ORG_SHELL, orgPath } from "./org-nav-config";
 import type { OrgFamily } from "./role-rules";
 
@@ -25,15 +27,16 @@ export function useOrgBadges(): Record<string, number> {
   const notifications = useOrgConsoleStore((s) => s.notifications);
   const risks = useOrgConsoleStore((s) => s.risks);
   const members = useOrgConsoleStore((s) => s.members);
+  const preview = previewEnabled();
   return useMemo(
-    () => ({
+    (): Record<string, number> => (!preview ? {} : {
       invites: invitations.filter((i) => i.status === "PENDING").length,
       repos: repositories.filter((r) => r.status === "FAILED" || r.status === "PAUSED").length,
       notifications: notifications.filter((n) => !n.read).length,
       risks: risks.filter((r) => r.severity === "CRITICAL" || r.severity === "HIGH").length,
       attention: members.filter((m) => m.status === "SUSPENDED" || (m.status === "ACTIVE" && !m.mfa)).length,
     }),
-    [invitations, repositories, notifications, risks, members]
+    [preview, invitations, repositories, notifications, risks, members]
   );
 }
 
@@ -53,7 +56,10 @@ export function OrgSidebarBody({
   const pathname = usePathname() || "";
   const config = ORG_SHELL[family];
   const badges = useOrgBadges();
-  const orgName = useOrgConsoleStore((s) => s.settings.name);
+  const sampleOrgName = useOrgConsoleStore((s) => s.settings.name);
+  // The real organization from the session; the sample name only in the dev preview.
+  const sessionOrgName = useAuthStore((s) => (s.currentOrg.id === orgId ? s.currentOrg.name : ""));
+  const orgName = previewEnabled() ? sampleOrgName : sessionOrgName;
   const Icon = family === "owner" ? Crown : ShieldHalf;
 
   return (
@@ -139,7 +145,7 @@ export function OrgShell({ family, children }: { family: OrgFamily; children: Re
   const pathname = usePathname() || "";
   const router = useRouter();
   const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
+  const orgId = (params?.orgId as string) || "";
   const config = ORG_SHELL[family];
   const { resolvedTheme, setTheme } = useThemeStore();
   const logout = useAuthStore((s) => s.logout);
@@ -192,9 +198,13 @@ export function OrgShell({ family, children }: { family: OrgFamily; children: Re
     return { section: "Overview", label: "Dashboard" };
   }, [config.sections, family, orgId, pathname]);
 
-  const viewer = ORG_VIEWERS[family];
-  const person = members.find((m) => m.id === viewer.id);
-  const alerts = family === "owner" ? badges.notifications : badges.attention + badges.repos;
+  const preview = previewEnabled();
+  const sessionUser = useAuthStore((s) => s.currentUser);
+  const sessionOrg = useAuthStore((s) => (s.currentOrg.id === orgId ? s.currentOrg.name : ""));
+  // The signed-in user; the sample persona only in the dev preview.
+  const viewer = preview ? ORG_VIEWERS[family] : { ...ORG_VIEWERS[family], name: sessionUser.name || sessionUser.email, title: sessionOrg };
+  const person = preview ? members.find((m) => m.id === viewer.id) : { color: "#1A73E8", initials: (viewer.name.replace(/@.*/, "").split(/[s._-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("") || "PW").toUpperCase() };
+  const alerts = family === "owner" ? badges.notifications ?? 0 : (badges.attention ?? 0) + (badges.repos ?? 0);
 
   return (
     <div className="min-h-screen w-full flex bg-[var(--color-app-bg)] text-[var(--color-text-primary)] overflow-x-clip">
@@ -248,7 +258,7 @@ export function OrgShell({ family, children }: { family: OrgFamily; children: Re
                 <p className="text-[10px] text-[var(--color-text-muted)] truncate max-w-[160px]">{viewer.title}</p>
               </div>
             </div>
-            <button type="button" onClick={() => { logout(); router.push("/login"); }} aria-label="Sign out" title="Sign out" className="rounded-lg p-2 text-[var(--color-text-secondary)] hover:bg-rose-500/10 hover:text-rose-600 transition-colors">
+            <button type="button" onClick={() => { void apiClient.signout().catch(() => undefined).finally(() => { logout(); router.push("/login"); }); }} aria-label="Sign out" title="Sign out" className="rounded-lg p-2 text-[var(--color-text-secondary)] hover:bg-rose-500/10 hover:text-rose-600 transition-colors">
               <LogOut className="w-4 h-4" />
             </button>
           </div>

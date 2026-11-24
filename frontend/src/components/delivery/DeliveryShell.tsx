@@ -23,6 +23,8 @@ import { useThemeStore } from "@/store/theme-store";
 import { useAuthStore } from "@/store/auth-store";
 import { useDeliveryStore } from "@/store/delivery-store";
 import { PEOPLE, VIEWERS } from "@/mocks/delivery-dashboards";
+import { apiClient } from "@/lib/api";
+import { previewEnabled } from "@/lib/permissions";
 import { DELIVERY_ROLES, rolePath, type DeliveryRole } from "./delivery-nav";
 import { daysFromToday, hoursSince } from "./DeliveryUI";
 
@@ -50,6 +52,8 @@ export function useNavBadges(role: DeliveryRole): Record<string, number> {
   const teams = useDeliveryStore((s) => s.teams);
 
   return useMemo((): Record<string, number> => {
+    // Badge counts come from the sample delivery store: only in the dev preview, never as real numbers.
+    if (!previewEnabled()) return {};
     if (role === "manager") {
       return {
         risks: projects.flatMap((p) => p.risks).filter((r) => r.severity === "HIGH" || r.severity === "CRITICAL").length,
@@ -209,7 +213,7 @@ export function DeliveryShell({ role, children }: { role: DeliveryRole; children
   const pathname = usePathname() || "";
   const router = useRouter();
   const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
+  const orgId = (params?.orgId as string) || "";
   const config = DELIVERY_ROLES[role];
 
   const { resolvedTheme, setTheme } = useThemeStore();
@@ -228,7 +232,8 @@ export function DeliveryShell({ role, children }: { role: DeliveryRole; children
   }, [setTheme, role]);
 
   useEffect(() => {
-    if (currentRole !== config.systemRole) setCurrentRole(config.systemRole);
+    // Dev preview only: in normal use the role always comes from the real session, never from the URL.
+    if (previewEnabled() && currentRole !== config.systemRole) setCurrentRole(config.systemRole);
   }, [currentRole, config.systemRole, setCurrentRole]);
 
   useEffect(() => {
@@ -268,8 +273,13 @@ export function DeliveryShell({ role, children }: { role: DeliveryRole; children
     return best;
   }, [config.sections, role, orgId, pathname]);
 
-  const viewer = VIEWERS[role];
-  const viewerPerson = PEOPLE.find((p) => p.id === viewer.id);
+  const preview = previewEnabled();
+  const sessionUser = useAuthStore((state) => state.currentUser);
+  const sessionOrgName = useAuthStore((state) => (state.currentOrg.id === orgId ? state.currentOrg.name : ""));
+  const sampleViewer = VIEWERS[role];
+  // The signed-in user and organization; the sample persona only in the dev preview.
+  const viewer = preview ? sampleViewer : { ...sampleViewer, name: sessionUser.name || sessionUser.email, title: sessionOrgName };
+  const viewerPerson = preview ? PEOPLE.find((p) => p.id === viewer.id) : { color: "#1A73E8", initials: initialsOf(viewer.name) };
   const alertCount = Object.values(badges).reduce((s, n) => s + n, 0);
 
   return (
@@ -357,8 +367,11 @@ export function DeliveryShell({ role, children }: { role: DeliveryRole; children
             <button
               type="button"
               onClick={() => {
-                logout();
-                router.push("/login");
+                // End the server session too (revokes it and clears the httpOnly cookies), then sign in again.
+                void apiClient.signout().catch(() => undefined).finally(() => {
+                  logout();
+                  router.push("/login");
+                });
               }}
               aria-label="Sign out"
               title="Sign out"
@@ -375,4 +388,9 @@ export function DeliveryShell({ role, children }: { role: DeliveryRole; children
       <Toaster position="top-right" theme={resolvedTheme} richColors />
     </div>
   );
+}
+
+function initialsOf(name: string): string {
+  const parts = name.replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean);
+  return (parts.slice(0, 2).map((part) => part[0]).join("") || "PW").toUpperCase();
 }

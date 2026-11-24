@@ -1,5 +1,9 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { DeadlinesView, RequireAnyKey } from "@/components/calendar/CalendarViews";
+import { useParams } from "next/navigation";
+
 import React, { useMemo } from "react";
 import { AlarmClockOff, CalendarCheck2, CalendarClock, Flag } from "lucide-react";
 import { useDeliveryStore } from "@/store/delivery-store";
@@ -22,7 +26,7 @@ import {
 } from "@/components/delivery/DeliveryUI";
 import { GroupedBarChart } from "@/components/delivery/DeliveryCharts";
 
-export default function ManagerDeadlinesPage() {
+function PreviewManagerDeadlinesPage() {
   const href = useRoleHref("manager");
   const { status, retry, forceEmpty } = useDemoLoad();
   const lk = useLookups();
@@ -124,5 +128,18 @@ export default function ManagerDeadlinesPage() {
         <div id="later" className="scroll-mt-20"><TaskList items={later} empty="Nothing scheduled later." /></div>
       </Panel>
     </PageFrame>
+  );
+}
+
+/** Task 2.3: real deadlines by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function ManagerDeadlinesPage() {
+  const params = useParams();
+  const home = `/org/${(params?.orgId as string) || ""}/manager`;
+  if (previewEnabled()) return <PreviewManagerDeadlinesPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <DeadlinesView crumbs={[{ label: "Project Manager", href: home }]} back={{ href: home, label: "Back to dashboard" }}
+        projectHref={(project) => `${home}/projects/${project.id}`} />
+    </RequireAnyKey>
   );
 }

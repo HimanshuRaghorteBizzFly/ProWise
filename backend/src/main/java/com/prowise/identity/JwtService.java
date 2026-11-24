@@ -22,7 +22,7 @@ public class JwtService {
 
     public JwtService(
             @Value("${prowise.auth.jwt-signing-key}") String signingKey,
-            @Value("${prowise.auth.access-token-minutes:15}") long accessTokenMinutes) {
+            @Value("${prowise.auth.access-token-minutes}") long accessTokenMinutes) {
         if (signingKey == null || signingKey.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) {
             throw new IllegalStateException("JWT_SIGNING_KEY must contain at least 32 bytes.");
         }
@@ -31,7 +31,11 @@ public class JwtService {
     }
 
     public String issueAccessToken(AuthPrincipal principal) {
-        Instant now = Instant.now();
+        return issueAccessToken(principal, Instant.now());
+    }
+
+    /** Issued at {@code now} (tests use a past instant to get an already expired token). */
+    String issueAccessToken(AuthPrincipal principal, Instant now) {
         var builder = Jwts.builder()
                 .subject(principal.userId().toString())
                 .claim("sid", principal.sessionId().toString())

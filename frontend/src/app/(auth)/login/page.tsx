@@ -1,14 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiClient } from "@/lib/api";
-import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
+import { ApiError, apiClient } from "@/lib/api";
+import { establishSession } from "@/lib/session";
+import { previewEnabled } from "@/lib/permissions";
 import { useSuperAdminStore } from "@/app/(platform)/super-admin/_store/useSuperAdminStore";
 import { usePlatformOperatorStore } from "@/app/(platform)/platform-operator/_store/usePlatformOperatorStore";
 import { Button } from "@/components/ui/button";
-import { SystemRole } from "@/types";
 import { toast } from "sonner";
 import {
   Mail,
@@ -138,6 +138,19 @@ const QUICK_ACCOUNTS: QuickCredential[] = [
   },
 ];
 
+/** One clear message per failure; never a guessed role or a fallback dashboard. */
+function loginFailureMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    const reference = error.requestId ? ` (Reference: ${error.requestId})` : "";
+    if (error.status === 401) return "The email or password is incorrect.";
+    if (error.status === 403) return `${error.message}${reference}`;
+    if (error.status === 429) return "Too many attempts. Wait a minute and try again.";
+    if (error.status === 0 || error.status >= 502) return "The ProWise server cannot be reached. Try again shortly.";
+    return `Sign-in failed: ${error.message}${reference}`;
+  }
+  return "Sign-in failed. Try again.";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -147,6 +160,16 @@ export default function LoginPage() {
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | "Platform" | "Leadership" | "Delivery">("ALL");
   const [isLoading, setIsLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
+  // Demo logins are a dev-preview aid only (NEXT_PUBLIC_USE_MOCKS=true, never in production).
+  const showDemoLogins = previewEnabled();
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("expired") === "1") {
+      setSessionNotice("Your session ended. Please sign in again.");
+    }
+  }, []);
 
   const fillCredentials = (account: QuickCredential) => {
     setEmail(account.email);
@@ -155,143 +178,41 @@ export default function LoginPage() {
     toast.info(`Filled credentials for ${account.label}`);
   };
 
-  const executeLogin = async (targetEmail: string, targetPass: string, presetLabel?: string) => {
+  const executeLogin = async (targetEmail: string, targetPass: string, _presetLabel?: string) => {
     const cleanEmail = targetEmail.trim();
+    setLoginError(null);
     if (!cleanEmail || !targetPass) {
-      toast.error("Please enter both email and password.");
+      setLoginError("Enter both your email and password.");
       return;
     }
 
     setIsLoading(true);
     try {
-      let destination = "";
-      let userRole: SystemRole = "VIEWER";
-      let userName = cleanEmail.split("@")[0];
-
-      // 1. Attempt Spring Boot backend authentication
-      try {
-        const response = await apiClient.login({ email: cleanEmail, password: targetPass });
-
-        if (response.must_change_password) {
-          toast.info("Temporary password detected. Please set your new password.");
-          window.location.assign("/change-password");
-          return;
-        }
-
-        userRole = (response.user?.role as SystemRole) || "SUPER_ADMIN";
-        userName = response.user?.name || userName;
-        destination = response.target_dashboard_url || "";
-      } catch (backendError) {
-        console.warn("Backend login failed or unreachable, resolving local session:", backendError);
-        // Resilient fallback for all panels
-        const normalized = cleanEmail.toLowerCase();
-        if (normalized.includes("superadmin") || presetLabel === "Super Admin") {
-          userRole = "SUPER_ADMIN";
-          userName = "Super Admin";
-          destination = "/super-admin/dashboard";
-        } else if (normalized.includes("operator") || presetLabel === "Platform Operator") {
-          userRole = "PLATFORM_OPERATOR";
-          userName = "Jordan Mercer";
-          destination = "/platform-operator/dashboard";
-        } else if (
-          normalized.includes("alex.rivera") ||
-          normalized.includes("developer") ||
-          presetLabel === "Developer"
-        ) {
-          userRole = "DEVELOPER";
-          userName = "Alex Rivera";
-          destination = "/org/org-acme/developer/dashboard";
-        } else if (normalized.includes("sarah.lin") || normalized.includes("owner") || presetLabel === "Org Owner") {
-          userRole = "ORGANIZATION_OWNER";
-          userName = "Dr. Sarah Lin";
-          destination = "/org/org-acme/owner/dashboard";
-        } else if (normalized.includes("david.kim") || normalized.includes("admin") || presetLabel === "Org Admin") {
-          userRole = "ORGANIZATION_ADMIN";
-          userName = "David Kim";
-          destination = "/org/org-acme/admin/dashboard";
-        } else if (normalized.includes("priya.raman") || normalized.includes("manager") || presetLabel === "Project Manager") {
-          userRole = "PROJECT_MANAGER";
-          userName = "Priya Raman";
-          destination = "/org/org-acme/manager/dashboard";
-        } else if (normalized.includes("marcus.chen") || normalized.includes("lead") || presetLabel === "Team Lead") {
-          userRole = "TEAM_LEAD";
-          userName = "Marcus Chen";
-          destination = "/org/org-acme/lead/dashboard";
-        } else if (normalized.includes("elena.ruiz") || normalized.includes("reviewer") || normalized.includes("qa") || presetLabel === "QA / Reviewer") {
-          userRole = "QA_REVIEWER";
-          userName = "Elena Ruiz";
-          destination = "/org/org-acme/reviewer/dashboard";
-        } else if (normalized.includes("jordan.lee") || normalized.includes("viewer") || presetLabel === "Viewer") {
-          userRole = "VIEWER";
-          userName = "Jordan Lee";
-          destination = "/org/org-acme/viewer/dashboard";
-        } else {
-          userRole = "SUPER_ADMIN";
-          userName = "Super Admin";
-          destination = "/super-admin/dashboard";
-        }
+      // The server decides where this account lands: platform dashboards only for real platform accounts,
+      // otherwise from the ACTIVE memberships (one workspace, the workspace picker, or "no workspace yet").
+      const response = await apiClient.login({ email: cleanEmail, password: targetPass });
+      if (response.must_change_password) {
+        router.replace("/change-password");
+        return;
       }
+      const session = await establishSession();
+      const destination = session.target || response.target_dashboard_url;
 
-      // 2. Resolve destination URL according to role
-      if (!destination) {
-        if (userRole === "SUPER_ADMIN") destination = "/super-admin/dashboard";
-        else if (userRole === "PLATFORM_OPERATOR") destination = "/platform-operator/dashboard";
-        else if (userRole === "DEVELOPER") destination = "/org/org-acme/developer/dashboard";
-        else destination = getRoleDashboardPath(userRole, "org-acme");
-      }
-
-      // Normalize UUID orgs to mock fixture org if applicable
-      if (destination.includes("0a000000-0000-4000-8000-00000000000a")) {
-        const panelSegment = userRole === "PROJECT_MANAGER" ? "manager" : userRole === "TEAM_LEAD" ? "lead" : userRole === "QA_REVIEWER" ? "reviewer" : userRole === "ORGANIZATION_OWNER" ? "owner" : userRole === "ORGANIZATION_ADMIN" ? "admin" : userRole === "DEVELOPER" ? "developer" : "viewer";
-        destination = `/org/org-acme/${panelSegment}/dashboard`;
-      }
-
-      // 3. Update global Auth store
-      useAuthStore.getState().setCurrentUser({
-        id: "usr-" + userRole.toLowerCase().replace(/_/g, "-"),
-        email: cleanEmail,
-        name: userName,
-        timezone: "America/New_York",
-        createdAt: new Date().toISOString(),
-      });
-      useAuthStore.getState().setCurrentRole(userRole);
-      useAuthStore.getState().setCurrentOrg({
-        id: "org-acme",
-        slug: "acme-health",
-        name: "Acme Health Technologies",
-        ownerId: "usr-owner",
-        timezone: "America/New_York",
-        workCalendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
-        createdAt: "2026-02-15T09:00:00Z",
-        plan: "ENTERPRISE",
-        status: "ACTIVE",
-      });
-      useAuthStore.getState().login(cleanEmail, userRole);
-
-      // 4. Update panel-specific stores
-      if (userRole === "SUPER_ADMIN") {
+      if (session.platform && session.role === "SUPER_ADMIN") {
         try {
           useSuperAdminStore.getState().setActiveRolePreview("role-sa");
         } catch {}
-      } else if (userRole === "PLATFORM_OPERATOR") {
+      } else if (session.platform && session.role === "PLATFORM_OPERATOR") {
         try {
           usePlatformOperatorStore.getState().updateAccountSettings({
-            name: userName,
+            name: session.user.name,
             email: cleanEmail,
-            department: "Site Reliability",
-            shiftName: "EMEA Shift (08:00 - 16:30 UTC)",
-            mfaEnabled: true,
-            activeOperatorId: "op-jordan",
           });
         } catch {}
       }
-
-      toast.success(`Signed in as ${userRole.replace(/_/g, " ")}. Redirecting to dashboard...`);
-      setTimeout(() => {
-        window.location.assign(destination);
-      }, 200);
+      router.replace(destination);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Unable to complete sign in.");
+      setLoginError(loginFailureMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -333,6 +254,7 @@ export default function LoginPage() {
         </div>
 
         {/* Quick-fill Account Selector for Seamless Development & Access across all sections */}
+        {showDemoLogins && (
         <div className="mb-5 bg-white/85 dark:bg-slate-900/85 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3.5 sm:p-4 shadow-sm">
           <div className="flex items-center justify-between mb-2 px-0.5">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
@@ -435,10 +357,23 @@ export default function LoginPage() {
             </div>
           )}
         </div>
+        )}
 
         {/* Main Login Card */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xl shadow-slate-200/40 dark:shadow-black/50 p-6 sm:p-7 backdrop-blur-md">
-          <form onSubmit={handleCustomLogin} className="space-y-4">
+          <form onSubmit={handleCustomLogin} className="space-y-4" noValidate>
+            {sessionNotice && !loginError && (
+              <p role="status" data-testid="session-expired"
+                className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                {sessionNotice}
+              </p>
+            )}
+            {loginError && (
+              <p role="alert" data-testid="login-error"
+                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
+                {loginError}
+              </p>
+            )}
             {/* Work Email Field */}
             <div className="space-y-1.5">
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">

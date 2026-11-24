@@ -1,5 +1,6 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useParams } from "next/navigation";
@@ -80,11 +81,13 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
     userSettings,
   } = useViewerStore();
 
-  const displayName = userSettings?.displayName || currentUser?.name || "Jordan Lee";
-  const displayEmail = userSettings?.email || currentUser?.email || "jordan.lee@acmehealth.com";
+  // The signed-in user; the sample viewer settings only in the dev preview.
+  const sampleSettings = previewEnabled() ? userSettings : undefined;
+  const displayName = sampleSettings?.displayName || currentUser?.name || currentUser?.email || "";
+  const displayEmail = sampleSettings?.email || currentUser?.email || "";
 
   const getInitials = (name: string) => {
-    if (!name) return "JL";
+    if (!name) return "PW";
     const parts = name.trim().split(/\s+/);
     if (parts.length >= 2 && parts[0] && parts[parts.length - 1]) {
       return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
@@ -101,7 +104,8 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
   const notificationPopoverRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  // Sample notifications: dev preview only (notifications come with task 5.2).
+  const unreadCount = previewEnabled() ? notifications.filter((n) => !n.read).length : 0;
 
   const handleSignOut = async () => {
     try {
@@ -202,7 +206,8 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
 
   // Search Results for Global Search Modal
   const searchResults = useMemo(() => {
-    if (!searchFilter.trim()) return { projects: [], tasks: [], members: [], files: [] };
+    // Search reads the sample viewer data: dev preview only (search comes with task 5.3).
+    if (!searchFilter.trim() || !previewEnabled()) return { projects: [], tasks: [], members: [], files: [] };
     const q = searchFilter.toLowerCase();
     const projects = getViewerProjects(orgId).filter(
       (p) => p.name.toLowerCase().includes(q) || p.key.toLowerCase().includes(q)
@@ -275,11 +280,11 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
                 Active Organization
               </div>
               <div className="text-xs font-semibold text-app-text-primary truncate mt-0.5">
-                {currentOrg.name || "Acme Health Technologies"}
+                {currentOrg.name}
               </div>
               <div className="text-[10px] text-app-text-secondary flex items-center gap-1 mt-0.5">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                <span>{currentOrg.timezone || "America/New_York"} • Read-Only</span>
+                <span>{currentOrg.timezone ? `${currentOrg.timezone} • ` : ""}Read-Only</span>
               </div>
             </div>
           </div>
@@ -416,7 +421,7 @@ export function ViewerShell({ children }: { children: React.ReactNode }) {
 
             <div>
               <nav className="flex items-center space-x-1 text-[11px] text-app-text-muted">
-                <span>{currentOrg.name || "Acme Health Technologies"}</span>
+                <span>{currentOrg.name}</span>
                 <span>/</span>
                 <span className="font-semibold text-blue-600 dark:text-blue-400">Viewer</span>
                 <span>/</span>

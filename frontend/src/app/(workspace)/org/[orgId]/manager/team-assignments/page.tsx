@@ -1,7 +1,9 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { AssignWorkView } from "@/components/work/WorkViews";
 import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { Inbox, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useDeliveryStore } from "@/store/delivery-store";
@@ -26,7 +28,7 @@ import {
   utilisationTone,
 } from "@/components/delivery/DeliveryUI";
 
-export default function ManagerAssignWorkPage() {
+function PreviewManagerAssignWorkPage() {
   const href = useRoleHref("manager");
   const router = useRouter();
   const { status, retry, forceEmpty } = useDemoLoad(300);
@@ -190,5 +192,14 @@ export default function ManagerAssignWorkPage() {
         )}
       </Panel>
     </PageFrame>
+  );
+}
+
+/** Task 3.1: real task assignment by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function AssignWorkPage() {
+  const params = useParams();
+  const home = `/org/${(params?.orgId as string) || ""}/manager`;
+  return previewEnabled() ? <PreviewManagerAssignWorkPage /> : (
+    <AssignWorkView crumbs={[{ label: "Project Manager", href: home }]} back={{ href: home, label: "Back to dashboard" }} />
   );
 }

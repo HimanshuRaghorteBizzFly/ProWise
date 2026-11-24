@@ -19,6 +19,9 @@ interface RequestOptions {
   retryOnUnauthorized?: boolean;
   /** Reuse a key to make a user-level retry of the same change safe; otherwise one is generated per call. */
   idempotencyKey?: string;
+  /** Raw bytes (file upload): sent as-is with this content type, without an Idempotency-Key (the server
+   *  replay cache holds 1 MB at most; uploads are drafts that only count once the project is created). */
+  raw?: { data: Blob | ArrayBuffer; contentType: string };
 }
 
 /** Random id for X-Request-Id and Idempotency-Key (UUID when available, safe characters only). */
@@ -59,16 +62,17 @@ export interface AuthUserSummary {
   id: string;
   email: string;
   name: string;
-  role: string;
-  department?: string;
-  organization_id?: string;
-  organization_name?: string;
+  /** Null when no workspace is selected yet (workspace picker or no workspace). */
+  role: string | null;
+  department?: string | null;
+  organization_id?: string | null;
+  organization_name?: string | null;
   must_change_password: boolean;
 }
 
+/** The refresh token never appears here: it only travels in the httpOnly refresh cookie. */
 export interface AuthLoginResponse {
   access_token: string;
-  refresh_token: string;
   expires_in: number;
   must_change_password: boolean;
   target_dashboard_url: string;
@@ -153,11 +157,24 @@ export interface ApiClientOptions {
   baseUrl?: string;
   fetch?: FetchLike;
   isRolePreview?: () => boolean;
+  /** Called when a request stays 401 after a refresh attempt (default: a window event). */
+  onSessionExpired?: () => void;
 }
+
+/** Fired on window when the session can no longer be refreshed. */
+export const SESSION_EXPIRED_EVENT = "prowise:session-expired";
+
+/** Routes that start a session: the old access token is never sent to them. */
+const PUBLIC_AUTH_PATH = /^\/(?:api\/)?(?:v1\/)?auth\/(?:signup|signin|login|refresh|forgot-password|reset-password|password-reset)/;
 
 export function createApiClient(options: ApiClientOptions = {}) {
   const fetcher = options.fetch ?? globalThis.fetch;
   const isRolePreview = options.isRolePreview ?? (() => useAuthStore.getState().isRolePreview);
+  const onSessionExpired = options.onSessionExpired ?? (() => {
+    if (typeof window !== "undefined") window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  });
+  // The access token lives in memory only (never localStorage or a readable cookie). On a reload it is gone and
+  // the first request or establishSession() gets a new one from the httpOnly refresh cookie.
   let accessToken: string | null = null;
   let refreshing: Promise<string | null> | null = null;
 
@@ -179,24 +196,30 @@ export function createApiClient(options: ApiClientOptions = {}) {
     // Task 1.4: one key per logical mutation, reused when the request is retried after a token refresh,
     // so the server returns the earlier result instead of applying the change twice.
     const idempotencyKey =
-      requestOptions.idempotencyKey ?? (MUTATION_METHODS.has(method) ? newClientId() : undefined);
+      requestOptions.raw ? undefined
+        : requestOptions.idempotencyKey ?? (MUTATION_METHODS.has(method) ? newClientId() : undefined);
     const requestId = newClientId();
 
     let response: Response;
+    let sentWith: string | null = null;
     try {
       const headers = new Headers({ Accept: "application/json" });
       if (requestOptions.headers) {
         Object.entries(requestOptions.headers).forEach(([k, v]) => headers.set(k, v));
       }
-      if (requestOptions.body !== undefined) headers.set("Content-Type", "application/json");
-      if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+      if (requestOptions.raw) headers.set("Content-Type", requestOptions.raw.contentType || "application/octet-stream");
+      else if (requestOptions.body !== undefined) headers.set("Content-Type", "application/json");
+      // Never send the (possibly stale) access token to sign-up, sign-in or refresh: those start a new session.
+      sentWith = accessToken && !PUBLIC_AUTH_PATH.test(path) ? accessToken : null;
+      if (sentWith) headers.set("Authorization", `Bearer ${sentWith}`);
       headers.set(REQUEST_ID_HEADER, requestId);
       if (idempotencyKey) headers.set(IDEMPOTENCY_KEY_HEADER, idempotencyKey);
       response = await fetcher(`${resolveApiBaseUrl(options.baseUrl)}${path}`, {
         method,
         headers,
         credentials: "include",
-        body: requestOptions.body === undefined ? undefined : JSON.stringify(requestOptions.body),
+        body: requestOptions.raw ? requestOptions.raw.data
+          : requestOptions.body === undefined ? undefined : JSON.stringify(requestOptions.body),
       });
     } catch (error) {
       throw new ApiError(
@@ -207,11 +230,15 @@ export function createApiClient(options: ApiClientOptions = {}) {
       );
     }
 
-    if (response.status === 401 && requestOptions.retryOnUnauthorized !== false) {
-      const refreshed = await refreshAccessToken();
-      if (refreshed) {
+    if (response.status === 401 && requestOptions.retryOnUnauthorized !== false && !PUBLIC_AUTH_PATH.test(path)) {
+      // Another request already got a new token while this one was in flight: retry with it, no second refresh.
+      // Otherwise refresh once (shared by every waiting request) and retry. Exactly one retry per request: no loops.
+      const current = accessToken && accessToken !== sentWith ? accessToken : await refreshAccessToken();
+      if (current) {
         return request(path, { ...requestOptions, idempotencyKey, retryOnUnauthorized: false });
       }
+      // Only a failed refresh ends the session: let the app send the user to sign in.
+      onSessionExpired();
     }
     if (!response.ok) {
       throw await toApiError(response, requestId);
@@ -224,24 +251,35 @@ export function createApiClient(options: ApiClientOptions = {}) {
     return (await response.json()) as T;
   }
 
+  /**
+   * One refresh at a time: requests that hit 401 meanwhile wait for the same promise. Across tabs a Web Lock (when
+   * the browser has one) serializes refreshes so two tabs never present the same cookie at once.
+   */
   async function refreshAccessToken(): Promise<string | null> {
     if (!refreshing) {
-      refreshing = json<{ access_token: string }>("/v1/auth/refresh", {
-        method: "POST",
-      })
-        .then((tokens) => {
-          accessToken = tokens.access_token;
-          return accessToken;
-        })
-        .catch(() => {
-          accessToken = null;
-          return null;
-        })
-        .finally(() => {
-          refreshing = null;
-        });
+      const run = () =>
+        // retryOnUnauthorized: false — a 401 from refresh must not trigger another refresh (it would wait on itself).
+        json<{ access_token: string }>("/v1/auth/refresh", { method: "POST", retryOnUnauthorized: false })
+          .then((tokens) => {
+            accessToken = tokens.access_token;
+            return accessToken;
+          })
+          .catch(() => {
+            accessToken = null;
+            return null;
+          });
+      const locks = typeof navigator !== "undefined" ? (navigator as Navigator & { locks?: LockManager }).locks : undefined;
+      const pending: Promise<string | null> = locks ? (locks.request("prowise-session-refresh", run) as unknown as Promise<string | null>) : run();
+      refreshing = pending.finally(() => {
+        refreshing = null;
+      });
     }
     return refreshing;
+  }
+
+  /** Page load or reload: get an access token from the refresh cookie before any page decides access. */
+  async function ensureAccessToken(): Promise<string | null> {
+    return accessToken ?? refreshAccessToken();
   }
 
   return {
@@ -257,7 +295,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
         calendar: { workDays: number[]; dailyHours: number; holidays: string[] };
       };
     }) =>
-      json<{ access_token: string }>("/v1/auth/signup", { method: "POST", body }).then((tokens) => {
+      // The server decides role and organization (the new user is the Owner) and binds the session to it.
+      json<{ access_token: string; organization_id?: string; role?: string; target_dashboard_url?: string }>(
+        "/v1/auth/signup", { method: "POST", body },
+      ).then((tokens) => {
         accessToken = tokens.access_token;
         return tokens;
       }),
@@ -267,12 +308,14 @@ export function createApiClient(options: ApiClientOptions = {}) {
         return tokens;
       }),
     login: (body: { email: string; password: string }) =>
-      json<AuthLoginResponse>("/api/auth/login", { method: "POST", body }).then((res) => {
+      // /v1 path: the base URL is "/api" and only /api/v1/* is proxied ("/api/auth/login" became /api/api/... = 404).
+      json<AuthLoginResponse>("/v1/auth/login", { method: "POST", body }).then((res) => {
         accessToken = res.access_token;
         return res;
       }),
     changePassword: (body: { currentPassword?: string; newPassword: string }) =>
-      json<{ access_token: string; refresh_token: string }>("/api/auth/change-password", {
+      // /v1 path: the base URL is "/api" and only /api/v1/* is proxied to the backend.
+      json<{ access_token: string }>("/v1/auth/change-password", {
         method: "POST",
         body: {
           current_password: body.currentPassword,
@@ -283,6 +326,14 @@ export function createApiClient(options: ApiClientOptions = {}) {
         return tokens;
       }),
     refresh: refreshAccessToken,
+    ensureAccessToken,
+    /** Log out on every device: revokes all sessions of this user and clears the refresh cookie. */
+    signoutEverywhere: async () => {
+      await request("/v1/auth/logout-all", { method: "POST" });
+      accessToken = null;
+    },
+    /** A request through the session-aware client (Bearer + refresh on 401) for older helpers that build their own paths. */
+    call: (path: string, init: { method?: string; body?: unknown } = {}) => request(path, init),
     signout: async () => {
       // /v1 path: the base URL is "/api" and only /api/v1/* is proxied to the backend; also the one sign-out
       // path allowed during role preview.
@@ -407,6 +458,115 @@ export function createApiClient(options: ApiClientOptions = {}) {
       json<Dto.ProjectDto>(`${orgPath(orgId)}/projects`, { method: "POST", body }),
     updateProject: (orgId: string, projectId: string, body: Dto.UpdateProjectDto) =>
       json<Dto.ProjectDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", body }),
+    // Super Admin (platform accounts only; the server requires PLATFORM_SUPER_ADMIN): stored platform data.
+    adminDashboard: () => json<Dto.AdminDashboardDto>("/v1/admin/dashboard"),
+    adminOrganizations: (search?: string) =>
+      json<Dto.AdminOrganizationDto[]>(`/v1/admin/organizations${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+    // Task 3.1: Create Project setup, breakdown, assignment, work types and project documents.
+    uploadProjectDocument: (orgId: string, file: File) =>
+      json<Dto.ProjectDocumentDto>(`${orgPath(orgId)}/project-documents?file_name=${encodeURIComponent(file.name)}`,
+        { method: "POST", raw: { data: file, contentType: file.type || "application/octet-stream" } }),
+    createConfiguredProject: (orgId: string, body: Dto.ConfiguredProjectRequestDto) =>
+      json<Dto.ConfiguredProjectDto>(`${orgPath(orgId)}/projects/configured`, { method: "POST", body }),
+    projectDocuments: (orgId: string, projectId: string) =>
+      json<Dto.ProjectDocumentDto[]>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/documents`),
+    downloadProjectDocument: (orgId: string, projectId: string, documentId: string) =>
+      request(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}`)
+        .then((response) => response.blob()),
+    workItems: (orgId: string, projectId: string) =>
+      json<Dto.WorkItemDto[]>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items`),
+    addWorkItem: (orgId: string, projectId: string, body: Dto.AddWorkItemDto) =>
+      json<Dto.WorkItemDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items`, { method: "POST", body }),
+    updateWorkItem: (orgId: string, projectId: string, itemId: string, body: Dto.UpdateWorkItemDto) =>
+      json<Dto.WorkItemDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items/${encodeURIComponent(itemId)}`,
+        { method: "PATCH", body }),
+    retireWorkItem: (orgId: string, projectId: string, itemId: string, expectedVersion: number) =>
+      json<Dto.WorkItemDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items/${encodeURIComponent(itemId)}/retire`,
+        { method: "POST", body: { expected_version: expectedVersion } }),
+    assignWorkItem: (orgId: string, projectId: string, itemId: string, body: Dto.AssignmentDto) =>
+      json<Dto.WorkItemDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items/${encodeURIComponent(itemId)}/assignment`,
+        { method: "POST", body }),
+    assignmentHistory: (orgId: string, projectId: string, itemId: string) =>
+      json<Dto.AssignmentChangeDto[]>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items/${encodeURIComponent(itemId)}/assignment-history`),
+    projectAssignees: (orgId: string, projectId: string) =>
+      json<Dto.WorkPersonDto[]>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/assignees`),
+    assignableWork: (orgId: string) => json<Dto.AssignableItemDto[]>(`${orgPath(orgId)}/work-items/assignable`),
+    workTypes: (orgId: string) => json<Dto.WorkTypeDto[]>(`${orgPath(orgId)}/work-types`),
+    createWorkType: (orgId: string, body: { name: string; description?: string }) =>
+      json<Dto.WorkTypeDto>(`${orgPath(orgId)}/work-types`, { method: "POST", body }),
+    updateWorkType: (orgId: string, typeId: string, body: { name?: string; description?: string; expected_version: number }) =>
+      json<Dto.WorkTypeDto>(`${orgPath(orgId)}/work-types/${encodeURIComponent(typeId)}`, { method: "PATCH", body }),
+    retireWorkType: (orgId: string, typeId: string, expectedVersion: number) =>
+      json<Dto.WorkTypeDto>(`${orgPath(orgId)}/work-types/${encodeURIComponent(typeId)}/retire`,
+        { method: "POST", body: { expected_version: expectedVersion } }),
+    // Task 3.2: scope versions.
+    scopeVersions: (orgId: string, projectId: string) =>
+      json<Dto.ScopeVersionDto[]>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/scope-versions`),
+    createScopeDraft: (orgId: string, projectId: string, body: Dto.ScopeDraftDto) =>
+      json<Dto.ScopeVersionDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/scope-versions`, { method: "POST", body }),
+    approveScopeVersion: (orgId: string, projectId: string, versionId: string, expectedVersion: number) =>
+      json<Dto.ScopeVersionDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/scope-versions/${encodeURIComponent(versionId)}/approve`,
+        { method: "POST", body: { expected_version: expectedVersion } }),
+    // Tasks 3.3 and 3.5: review and rework, accepted-work progress.
+    myTasks: (orgId: string) => json<Dto.ReviewTaskDto[]>(`${orgPath(orgId)}/my-tasks`),
+    reviewQueue: (orgId: string) => json<Dto.ReviewTaskDto[]>(`${orgPath(orgId)}/review-queue`),
+    submitTask: (orgId: string, projectId: string, itemId: string, body: Dto.SubmitTaskDto) =>
+      json<Dto.ReviewTaskDto>(`${workItemPath(orgId, projectId, itemId)}/submit`, { method: "POST", body }),
+    approveTask: (orgId: string, projectId: string, itemId: string, body: Dto.ReviewDecisionDto) =>
+      json<Dto.ReviewTaskDto>(`${workItemPath(orgId, projectId, itemId)}/approve`, { method: "POST", body }),
+    requestTaskChanges: (orgId: string, projectId: string, itemId: string, body: Dto.ReviewDecisionDto) =>
+      json<Dto.ReviewTaskDto>(`${workItemPath(orgId, projectId, itemId)}/request-changes`, { method: "POST", body }),
+    reopenTask: (orgId: string, projectId: string, itemId: string, body: { reason: string; expected_version: number }) =>
+      json<Dto.ReviewTaskDto>(`${workItemPath(orgId, projectId, itemId)}/reopen`, { method: "POST", body }),
+    setTaskChecks: (orgId: string, projectId: string, itemId: string, body: { labels: string[]; expected_version: number }) =>
+      json<Dto.ReviewTaskDto>(`${workItemPath(orgId, projectId, itemId)}/checks`, { method: "PUT", body }),
+    reviewTask: (orgId: string, projectId: string, itemId: string) =>
+      json<Dto.ReviewTaskDto>(`${workItemPath(orgId, projectId, itemId)}/review`),
+    taskReviews: (orgId: string, projectId: string, itemId: string) =>
+      json<Dto.ReviewEventDto[]>(`${workItemPath(orgId, projectId, itemId)}/reviews`),
+    structuredProgress: (orgId: string, projectId: string) =>
+      json<Dto.StructuredProgressDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/progress`),
+    // Task 3.4: blockers across projects.
+    orgBlockers: (orgId: string) => json<Dto.OrgBlockerDto[]>(`${orgPath(orgId)}/blockers`),
+    orgBlocker: (orgId: string, blockerId: string) => json<Dto.OrgBlockerDto>(`${orgPath(orgId)}/blockers/${encodeURIComponent(blockerId)}`),
+    // Task 3.2: scope versions across projects.
+    orgScopeVersions: (orgId: string, status?: string) =>
+      json<Dto.ProjectScopeVersionDto[]>(`${orgPath(orgId)}/scope-versions${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+    orgScopeVersion: (orgId: string, versionId: string) =>
+      json<Dto.ProjectScopeVersionDto>(`${orgPath(orgId)}/scope-versions/${encodeURIComponent(versionId)}`),
+    // Task 3.1: cross-project work items and team work.
+    orgWorkItems: (orgId: string, query: { project_id?: string; assignee?: string; state?: string } = {}) => {
+      const params = new URLSearchParams();
+      for (const [name, value] of Object.entries(query)) if (value) params.set(name, value);
+      const suffix = params.toString() ? `?${params.toString()}` : "";
+      return json<Dto.AssignableItemDto[]>(`${orgPath(orgId)}/work-items${suffix}`);
+    },
+    orgWorkItem: (orgId: string, itemId: string) => json<Dto.AssignableItemDto>(`${orgPath(orgId)}/work-items/${encodeURIComponent(itemId)}`),
+    myTeams: (orgId: string) => json<Dto.TeamWorkDto[]>(`${orgPath(orgId)}/my-teams`),
+    itemBlockers: (orgId: string, projectId: string, itemId: string) => json<Dto.BlockerDto[]>(`${workItemPath(orgId, projectId, itemId)}/blockers`),
+    // Task 2.3: work calendar, cadence and due occurrences.
+    orgCalendar: (orgId: string) => json<Dto.OrgCalendarDto>(`${orgPath(orgId)}/calendar`),
+    updateOrgCalendar: (orgId: string, body: Dto.UpdateOrgCalendarDto) =>
+      json<Dto.OrgCalendarDto>(`${orgPath(orgId)}/calendar`, { method: "PUT", body }),
+    projectCadence: (orgId: string, projectId: string) => json<Dto.ProjectCadenceDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/cadence`),
+    updateProjectCadence: (orgId: string, projectId: string, body: Dto.UpdateCadenceDto) =>
+      json<Dto.ProjectCadenceDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/cadence`, { method: "PUT", body }),
+    projectSchedule: (orgId: string, projectId: string) => json<Dto.ProjectScheduleDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/schedule`),
+    // Task 3.4: dependencies and blockers.
+    dependencyBoard: (orgId: string, projectId: string) => json<Dto.DependencyBoardDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/dependencies`),
+    linkDependency: (orgId: string, projectId: string, successorId: string, body: { predecessor_id: string; expected_version: number }) =>
+      json<Dto.DependencyChangeDto>(`${workItemPath(orgId, projectId, successorId)}/dependencies`, { method: "POST", body }),
+    removeDependency: (orgId: string, projectId: string, successorId: string, linkId: string, expectedVersion: number) =>
+      json<Dto.DependencyChangeDto>(`${workItemPath(orgId, projectId, successorId)}/dependencies/${encodeURIComponent(linkId)}/remove`,
+        { method: "POST", body: { expected_version: expectedVersion } }),
+    releaseDependencies: (orgId: string, projectId: string, itemId: string, body: { treatment: "DROP" | "BRIDGE"; expected_version: number }) =>
+      json<Dto.DependencyChangeDto>(`${workItemPath(orgId, projectId, itemId)}/dependencies/release`, { method: "POST", body }),
+    clearDependencyFlag: (orgId: string, projectId: string, itemId: string, expectedVersion: number) =>
+      json<Dto.DependencyItemRefDto>(`${workItemPath(orgId, projectId, itemId)}/dependency-flag/clear`, { method: "POST", body: { expected_version: expectedVersion } }),
+    raiseBlocker: (orgId: string, projectId: string, itemId: string, body: Dto.RaiseBlockerDto) =>
+      json<Dto.RaisedBlockerDto>(`${workItemPath(orgId, projectId, itemId)}/blockers`, { method: "POST", body }),
+    resolveBlocker: (orgId: string, projectId: string, itemId: string, blockerId: string, body: { resolution: string; expected_version: number }) =>
+      json<Dto.RaisedBlockerDto>(`${workItemPath(orgId, projectId, itemId)}/blockers/${encodeURIComponent(blockerId)}/resolve`, { method: "POST", body }),
     // Task 2.2: check-ins use the org-bound token (no org in the path).
     progressSummary: (projectId: string) =>
       json<Dto.ProgressSummaryDto>(`/v1/projects/${encodeURIComponent(projectId)}/checkins/summary`),
@@ -528,6 +688,10 @@ export const apiClient = createApiClient();
 
 function orgPath(orgId: string): string {
   return `/v1/organizations/${encodeURIComponent(orgId)}`;
+}
+
+function workItemPath(orgId: string, projectId: string, itemId: string): string {
+  return `${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items/${encodeURIComponent(itemId)}`;
 }
 
 async function toApiError(response: Response, sentRequestId = ""): Promise<ApiError> {

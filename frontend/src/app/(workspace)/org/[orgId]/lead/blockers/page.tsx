@@ -1,5 +1,10 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { BlockersView, BlockerDetailView, DependenciesPageView } from "@/components/work/DependencyViews";
+import { RequireAnyKey } from "@/components/calendar/CalendarViews";
+import { useParams } from "next/navigation";
+
 import React, { useState } from "react";
 import Link from "next/link";
 import { OctagonAlert, ShieldCheck } from "lucide-react";
@@ -21,7 +26,7 @@ import {
 } from "@/components/delivery/DeliveryUI";
 import { useLeadTeam } from "@/components/delivery/useLeadTeam";
 
-export default function TeamLeadBlockersPage() {
+function PreviewTeamLeadBlockersPage() {
   const href = useRoleHref("lead");
   const { status, retry, forceEmpty } = useDemoLoad();
   const lk = useLookups();
@@ -70,5 +75,19 @@ export default function TeamLeadBlockersPage() {
         </div>
       )}
     </PageFrame>
+  );
+}
+
+/** Task 3.4: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function TeamLeadBlockersPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const home = `/org/${orgId}/lead`;
+  if (previewEnabled()) return <PreviewTeamLeadBlockersPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <BlockersView crumbs={[{ label: "Team Lead", href: home }]} back={{ href: home, label: "Back to dashboard" }}
+        detailHref={(entry) => `${home}/blockers/${entry.blocker.id}`} />
+    </RequireAnyKey>
   );
 }

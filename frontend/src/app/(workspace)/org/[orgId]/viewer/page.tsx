@@ -1,5 +1,7 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { LiveViewerDashboard } from "@/components/dashboards/LiveRoleDashboards";
 import React, { useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -49,7 +51,7 @@ import {
 } from "./_services/viewer-service";
 import { ViewerProject } from "./_types";
 
-export default function ViewerDashboard() {
+function PreviewViewerDashboard() {
   const params = useParams();
   const router = useRouter();
   const rawOrgId = params?.orgId as string;
@@ -560,4 +562,9 @@ export default function ViewerDashboard() {
       </div>
     </div>
   );
+}
+
+/** Real data by default; the sample dashboard only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function ViewerDashboardPage() {
+  return previewEnabled() ? <PreviewViewerDashboard /> : <LiveViewerDashboard />;
 }

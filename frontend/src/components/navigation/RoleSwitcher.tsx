@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Shield, ChevronDown, Loader2 } from "lucide-react";
 import { useAuthStore } from "@/store/auth-store";
 import { SystemRole } from "@/types";
+import { previewEnabled } from "@/lib/permissions";
 
 const ROLES: { label: string; role: SystemRole }[] = [
   { label: "Super Admin", role: "SUPER_ADMIN" },
@@ -18,7 +19,12 @@ const ROLES: { label: string; role: SystemRole }[] = [
   { label: "Viewer", role: "VIEWER" },
 ];
 
+/** Dev preview only (NEXT_PUBLIC_USE_MOCKS=true, never in production). */
 export function RoleSwitcher() {
+  return previewEnabled() ? <RoleSwitcherControl /> : null;
+}
+
+function RoleSwitcherControl() {
   const router = useRouter();
   const currentRole = useAuthStore((s) => s.currentRole);
   const isRolePreview = useAuthStore((s) => s.isRolePreview);

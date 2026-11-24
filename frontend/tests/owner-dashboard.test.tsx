@@ -1,6 +1,6 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { OwnerDashboardView } from "../src/components/owner/OwnerDashboardView";
 import { getOwnerDashboardStateForOrg } from "../src/hooks/useOwnerDashboard";
@@ -106,6 +106,18 @@ describe("Owner dashboard", () => {
       "org-nova",
     );
 
-    expect(state).toEqual({ status: "loading", orgId: "org-nova" });
+    expect(state.orgId).toBe("org-nova"); // never the previous organization's data
+    vi.stubEnv("NEXT_PUBLIC_USE_MOCKS", "");
+    expect(getOwnerDashboardStateForOrg(
+      { status: "ready", orgId, projects: acmeProjects, users: SEEDED_USERS },
+      "org-nova",
+    )).toEqual({ status: "unavailable", orgId: "org-nova" }); // normal use: no sample data
+    vi.stubEnv("NEXT_PUBLIC_USE_MOCKS", "true");
+    const preview = getOwnerDashboardStateForOrg(
+      { status: "ready", orgId, projects: acmeProjects, users: SEEDED_USERS },
+      "org-nova",
+    );
+    vi.unstubAllEnvs();
+    expect(preview).toEqual({ status: "loading", orgId: "org-nova" });
   });
 });

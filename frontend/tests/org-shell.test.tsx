@@ -1,6 +1,6 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/org/org-acme/owner/members",
@@ -120,7 +120,9 @@ describe("org shell top nav", () => {
     expect(renderTopNav()).toContain("Sample data");
   });
 
-  it("shows no badge for live API permissions", () => {
+  it("shows no badge for live API permissions in normal use (no NEXT_PUBLIC_USE_MOCKS)", () => {
+    vi.stubEnv("NEXT_PUBLIC_USE_MOCKS", "");
+    onTestFinished(() => { vi.unstubAllEnvs(); });
     setup("ORGANIZATION_OWNER", "api");
     expect(renderTopNav()).not.toContain("Sample data");
   });

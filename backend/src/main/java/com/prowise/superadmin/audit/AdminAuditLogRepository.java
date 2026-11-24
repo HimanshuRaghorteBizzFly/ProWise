@@ -13,13 +13,13 @@ public interface AdminAuditLogRepository extends JpaRepository<AdminAuditLogEnti
 
     @Query("""
         SELECT a FROM AdminAuditLogEntity a
-        WHERE (:category IS NULL OR a.category = :category)
-          AND (:severity IS NULL OR a.severity = :severity)
-          AND (:search IS NULL OR LOWER(a.summary) LIKE LOWER(CONCAT('%', :search, '%'))
+        WHERE (:category = '' OR a.category = :category)
+          AND (:severity = '' OR a.severity = :severity)
+          AND (:search = '' OR LOWER(a.summary) LIKE LOWER(CONCAT('%', :search, '%'))
                 OR LOWER(a.action) LIKE LOWER(CONCAT('%', :search, '%'))
                 OR LOWER(a.actorName) LIKE LOWER(CONCAT('%', :search, '%')))
-          AND (:fromDate IS NULL OR a.timestamp >= :fromDate)
-          AND (:toDate IS NULL OR a.timestamp <= :toDate)
+          AND a.timestamp >= :fromDate
+          AND a.timestamp <= :toDate
         ORDER BY a.timestamp DESC
     """)
     List<AdminAuditLogEntity> searchAuditLogs(

@@ -1,6 +1,11 @@
 # Local development (SPRING_PROFILES_ACTIVE=dev).
 prowise:
+  auth:
+    # Local http://localhost: the refresh cookie cannot be Secure-only for every browser.
+    cookie-secure: ${AUTH_COOKIE_SECURE:false}
   sandbox:
+    seed-enabled: true
+  demo-users:
     seed-enabled: true
 
 logging:

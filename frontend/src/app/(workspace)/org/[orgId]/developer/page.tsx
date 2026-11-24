@@ -1,5 +1,7 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { LiveDeveloperDashboard } from "@/components/dashboards/LiveRoleDashboards";
 import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
@@ -29,7 +31,7 @@ import { useProjectStore } from "@/store/project-store";
 import { useDeliveryStore } from "@/store/delivery-store";
 import { developerApi, DeveloperDashboardSummary } from "@/lib/developer-api";
 
-export default function DeveloperDashboard() {
+function PreviewDeveloperDashboard() {
   const params = useParams();
   const router = useRouter();
   const orgId = (params?.orgId as string) || "org-acme";
@@ -426,6 +428,16 @@ export default function DeveloperDashboard() {
           </div>
         </Card>
       </div>
+    </PanelLayout>
+  );
+}
+
+/** Real data by default; the sample dashboard only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function DeveloperDashboardPage() {
+  if (previewEnabled()) return <PreviewDeveloperDashboard />;
+  return (
+    <PanelLayout title="Developer">
+      <LiveDeveloperDashboard />
     </PanelLayout>
   );
 }

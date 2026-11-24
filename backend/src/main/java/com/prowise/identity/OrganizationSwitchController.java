@@ -26,9 +26,11 @@ import io.swagger.v3.oas.annotations.Operation;
 public class OrganizationSwitchController {
 
     private final AuthService authService;
+    private final SessionCookies cookies;
 
-    public OrganizationSwitchController(AuthService authService) {
+    public OrganizationSwitchController(AuthService authService, SessionCookies cookies) {
         this.authService = authService;
+        this.cookies = cookies;
     }
 
     @PostMapping("/{orgId}/switch")
@@ -38,6 +40,6 @@ public class OrganizationSwitchController {
             @PathVariable UUID orgId,
             Authentication authentication) {
         AuthPrincipal principal = (AuthPrincipal) authentication.getPrincipal();
-        return AuthController.withRefreshCookie(authService.switchOrganization(principal, orgId), 200);
+        return cookies.withTokens(authService.switchOrganization(principal, orgId), 200);
     }
 }

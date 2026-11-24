@@ -1,5 +1,10 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { WorkItemsView, WorkItemView, TeamWorkView, TeamMemberView, ProjectPlanningView } from "@/components/work/WorkListViews";
+import { RequireAnyKey } from "@/components/calendar/CalendarViews";
+import { useParams } from "next/navigation";
+
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { ListChecks, UserPlus } from "lucide-react";
@@ -26,7 +31,7 @@ import { useLeadTeam } from "@/components/delivery/useLeadTeam";
 
 const COLUMNS: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "IN_REVIEW", "DONE"];
 
-export default function TeamLeadBoardPage() {
+function PreviewTeamLeadBoardPage() {
   const href = useRoleHref("lead");
   const { status, retry, forceEmpty } = useDemoLoad();
   const lk = useLookups();
@@ -107,5 +112,19 @@ export default function TeamLeadBoardPage() {
         </div>
       )}
     </PageFrame>
+  );
+}
+
+/** Task 3.1: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function TeamLeadBoardPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const home = `/org/${orgId}/lead`;
+  if (previewEnabled()) return <PreviewTeamLeadBoardPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <WorkItemsView crumbs={[{ label: "Team Lead", href: home }]} back={{ href: home, label: "Back to dashboard" }} title="Team work"
+        itemHref={(entry) => `${home}/work-items/${entry.item.id}`} />
+    </RequireAnyKey>
   );
 }

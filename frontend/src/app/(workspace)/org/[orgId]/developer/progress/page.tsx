@@ -1,5 +1,9 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { ProgressListView, ProjectProgressPageView } from "@/components/work/ReviewViews";
+import { RequireAnyKey } from "@/components/calendar/CalendarViews";
+
 import React, { useState, useMemo, useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { PanelLayout } from "@/components/layouts/panel-layout";
@@ -50,7 +54,7 @@ import { developerApi } from "@/lib/developer-api";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-export default function DeveloperProgressTrackerPage() {
+function PreviewDeveloperProgressTrackerPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -1985,5 +1989,19 @@ export default function DeveloperProgressTrackerPage() {
         </form>
       </Dialog>
     </PanelLayout>
+  );
+}
+
+/** Task 3.5: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function DeveloperProgressTrackerPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const home = `/org/${orgId}/developer`;
+  if (previewEnabled()) return <PreviewDeveloperProgressTrackerPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <ProgressListView crumbs={[{ label: "Developer", href: home }]} back={{ href: home, label: "Back to dashboard" }}
+        projectHref={(p) => (p.mode === "STRUCTURED" ? `${home}/projects/${p.id}/structured/progress` : `${home}/projects/${p.id}/individual`)} />
+    </RequireAnyKey>
   );
 }

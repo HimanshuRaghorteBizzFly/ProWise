@@ -89,9 +89,10 @@ public class SuperAdminDashboardService {
             }
             for (OrganizationEntity org : orgs) {
                 if (!"SUSPENDED".equalsIgnoreCase(org.getState())) {
-                    BigDecimal price = planPriceMap.getOrDefault(org.getPlanId(), BigDecimal.valueOf(499));
+                    // Only stored values: no assumed price or seat quota for organizations without a plan.
+                    BigDecimal price = planPriceMap.getOrDefault(org.getPlanId(), BigDecimal.ZERO);
                     totalMrr = totalMrr.add(price);
-                    totalSeats += (org.getSeatsLimit() != null ? org.getSeatsLimit() : 25);
+                    totalSeats += (org.getSeatsLimit() != null ? org.getSeatsLimit() : 0);
                 }
             }
             activeSubs = activeOrgs;
@@ -102,21 +103,14 @@ public class SuperAdminDashboardService {
 
         // Metric Cards
         List<SuperAdminDashboardDTOs.MetricCard> kpiCards = List.of(
-                new SuperAdminDashboardDTOs.MetricCard("kpi-mrr", "Monthly Recurring Revenue (MRR)", "$" + totalMrr.toPlainString(), "+14.8%", "up", "vs last month"),
-                new SuperAdminDashboardDTOs.MetricCard("kpi-arr", "Annual Run Rate (ARR)", "$" + totalArr.toPlainString(), "+18.2%", "up", "annualized"),
-                new SuperAdminDashboardDTOs.MetricCard("kpi-orgs", "Active Tenant Workspaces", String.valueOf(activeOrgs), "+6", "up", "this quarter"),
-                new SuperAdminDashboardDTOs.MetricCard("kpi-seats", "Allocated Seat Quota", String.valueOf(totalSeats), "+85", "up", "contracted")
+                new SuperAdminDashboardDTOs.MetricCard("kpi-mrr", "Monthly Recurring Revenue (MRR)", "$" + totalMrr.toPlainString(), null, null, "from stored plans"),
+                new SuperAdminDashboardDTOs.MetricCard("kpi-arr", "Annual Run Rate (ARR)", "$" + totalArr.toPlainString(), null, null, "MRR x 12"),
+                new SuperAdminDashboardDTOs.MetricCard("kpi-orgs", "Active Tenant Workspaces", String.valueOf(activeOrgs), null, null, "stored organizations"),
+                new SuperAdminDashboardDTOs.MetricCard("kpi-seats", "Allocated Seat Quota", String.valueOf(totalSeats), null, null, "stored seat limits")
         );
 
-        // Revenue History (6 months)
-        List<SuperAdminDashboardDTOs.RevenueChartPoint> revenueHistory = List.of(
-                new SuperAdminDashboardDTOs.RevenueChartPoint("Jun", totalMrr.multiply(BigDecimal.valueOf(0.72)).setScale(2, RoundingMode.HALF_UP), totalArr.multiply(BigDecimal.valueOf(0.72)).setScale(2, RoundingMode.HALF_UP), BigDecimal.valueOf(3200)),
-                new SuperAdminDashboardDTOs.RevenueChartPoint("Jul", totalMrr.multiply(BigDecimal.valueOf(0.78)).setScale(2, RoundingMode.HALF_UP), totalArr.multiply(BigDecimal.valueOf(0.78)).setScale(2, RoundingMode.HALF_UP), BigDecimal.valueOf(4100)),
-                new SuperAdminDashboardDTOs.RevenueChartPoint("Aug", totalMrr.multiply(BigDecimal.valueOf(0.84)).setScale(2, RoundingMode.HALF_UP), totalArr.multiply(BigDecimal.valueOf(0.84)).setScale(2, RoundingMode.HALF_UP), BigDecimal.valueOf(3800)),
-                new SuperAdminDashboardDTOs.RevenueChartPoint("Sep", totalMrr.multiply(BigDecimal.valueOf(0.91)).setScale(2, RoundingMode.HALF_UP), totalArr.multiply(BigDecimal.valueOf(0.91)).setScale(2, RoundingMode.HALF_UP), BigDecimal.valueOf(4900)),
-                new SuperAdminDashboardDTOs.RevenueChartPoint("Oct", totalMrr.multiply(BigDecimal.valueOf(0.96)).setScale(2, RoundingMode.HALF_UP), totalArr.multiply(BigDecimal.valueOf(0.96)).setScale(2, RoundingMode.HALF_UP), BigDecimal.valueOf(5200)),
-                new SuperAdminDashboardDTOs.RevenueChartPoint("Nov", totalMrr, totalArr, BigDecimal.valueOf(6100))
-        );
+        // No revenue history is stored yet, so none is shown (never scaled or invented values).
+        List<SuperAdminDashboardDTOs.RevenueChartPoint> revenueHistory = List.of();
 
         // Plan distribution
         Map<String, Long> planCount = new HashMap<>();

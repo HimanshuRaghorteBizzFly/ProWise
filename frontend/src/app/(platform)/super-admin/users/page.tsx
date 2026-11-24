@@ -1,5 +1,6 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   AlertCircle,
@@ -86,7 +87,14 @@ const ROLE_BADGE_STYLES: Record<string, string> = {
 };
 
 export default function SuperAdminUsersPage() {
-  const organizations = useSuperAdminStore((s) => s.organizations);
+  const sampleOrganizations = useSuperAdminStore((s) => s.organizations);
+  // Real organizations for the filter; the sample list only in the dev preview.
+  const [realOrganizations, setRealOrganizations] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (previewEnabled()) return;
+    apiClient.adminOrganizations().then(setRealOrganizations).catch(() => setRealOrganizations([]));
+  }, []);
+  const organizations = previewEnabled() ? sampleOrganizations : realOrganizations;
 
   // Users state
   const [users, setUsers] = useState<SuperAdminUserItem[]>([]);
@@ -167,7 +175,15 @@ export default function SuperAdminUsersPage() {
         setTotalPages(res.total_pages || 1);
       }
     } catch {
-      // Fallback fallback seed if backend is unreachable
+      if (!previewEnabled()) {
+        // Normal use: never an invented user list; show the real (empty) state and the error.
+        toast.error("Users could not be loaded from the server.");
+        setUsers([]);
+        setTotalElements(0);
+        setTotalPages(1);
+        return;
+      }
+      // Dev preview only (NEXT_PUBLIC_USE_MOCKS=true): offline sample list.
       toast.error("Could not reach backend API. Showing offline user list.");
       setUsers([
         {

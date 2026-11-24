@@ -3,8 +3,8 @@ package com.prowise.superadmin;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -520,6 +520,8 @@ public class SuperAdminServiceTest {
         // ARR = 6298 * 12 = 75576
         assertEquals(BigDecimal.valueOf(75576), dash.totalArr());
         assertEquals(4, dash.kpiCards().size());
-        assertEquals(6, dash.revenueHistory().size());
+        // Only stored data: no invented month-over-month trends and no fabricated revenue history.
+        assertTrue(dash.kpiCards().stream().allMatch(card -> card.change() == null && card.trend() == null));
+        assertEquals(0, dash.revenueHistory().size());
     }
 }

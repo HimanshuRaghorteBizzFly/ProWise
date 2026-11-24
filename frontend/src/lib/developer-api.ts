@@ -1,3 +1,4 @@
+import { apiClient } from "@/lib/api";
 export interface DeveloperDashboardSummary {
   assignedProjectsCount: number;
   activeProjectsCount: number;
@@ -198,22 +199,21 @@ export interface DeveloperPreferences {
   timezone: string;
 }
 
-// Helper to make safe fetch calls with timeout and fallback
-async function fetchJson<T>(url: string, options: RequestInit = {}): Promise<T | null> {
+/** Browser path "/api/v1/..." -> client path "/v1/..." (the client adds the "/api" base). */
+function clientPath(url: string): string {
+  return url.startsWith("/api/") ? url.slice("/api".length) : url;
+}
+
+/**
+ * Safe JSON call through the session-aware client: Bearer token from memory, one refresh on 401, then the retry.
+ * Returns null instead of throwing (these panels fall back to empty states).
+ */
+async function fetchJson<T>(url: string, options: { method?: string; body?: string } = {}): Promise<T | null> {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        ...(options.headers || {}),
-      },
+    const res = await apiClient.call(clientPath(url), {
+      method: options.method,
+      body: options.body === undefined ? undefined : JSON.parse(options.body),
     });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
     return null;
@@ -411,8 +411,8 @@ export const developerApi = {
 
   async markNotificationRead(id: string): Promise<boolean> {
     try {
-      const res = await fetch(`/api/v1/developer/notifications/${encodeURIComponent(id)}/read`, { method: "PATCH" });
-      return res.ok;
+      await apiClient.call(`/v1/developer/notifications/${encodeURIComponent(id)}/read`, { method: "PATCH" });
+      return true;
     } catch {
       return false;
     }
@@ -420,8 +420,8 @@ export const developerApi = {
 
   async markAllNotificationsRead(): Promise<boolean> {
     try {
-      const res = await fetch(`/api/v1/developer/notifications/read-all`, { method: "POST" });
-      return res.ok;
+      await apiClient.call("/v1/developer/notifications/read-all", { method: "POST" });
+      return true;
     } catch {
       return false;
     }

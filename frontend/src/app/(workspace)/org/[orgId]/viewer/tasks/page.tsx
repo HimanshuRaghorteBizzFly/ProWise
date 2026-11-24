@@ -1,5 +1,9 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { WorkItemsView, WorkItemView, TeamWorkView, TeamMemberView, ProjectPlanningView } from "@/components/work/WorkListViews";
+import { RequireAnyKey } from "@/components/calendar/CalendarViews";
+
 import React, { useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -36,7 +40,7 @@ import { getViewerTasks, getViewerProjects } from "../_services/viewer-service";
 import { ViewerTask } from "../_types";
 import { toast } from "sonner";
 
-export default function ViewerTasksPage() {
+function PreviewViewerTasksPage() {
   const params = useParams();
   const rawOrgId = params?.orgId as string;
   const orgId = !rawOrgId || rawOrgId === "viewer" ? "org-acme" : rawOrgId;
@@ -465,5 +469,18 @@ export default function ViewerTasksPage() {
         />
       </ViewerSurfaceCard>
     </div>
+  );
+}
+
+/** Task 3.1: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function ViewerTasksPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const home = `/org/${orgId}/viewer`;
+  if (previewEnabled()) return <PreviewViewerTasksPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <WorkItemsView crumbs={[{ label: "Viewer", href: home }]} back={{ href: home, label: "Back to dashboard" }} title="Tasks" />
+    </RequireAnyKey>
   );
 }

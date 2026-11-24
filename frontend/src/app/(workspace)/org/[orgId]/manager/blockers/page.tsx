@@ -1,5 +1,10 @@
 "use client";
 
+import { previewEnabled } from "@/lib/permissions";
+import { BlockersView, BlockerDetailView, DependenciesPageView } from "@/components/work/DependencyViews";
+import { RequireAnyKey } from "@/components/calendar/CalendarViews";
+import { useParams } from "next/navigation";
+
 import React, { useMemo, useState } from "react";
 import { GitBranch, OctagonAlert, ShieldCheck } from "lucide-react";
 import { useDeliveryStore } from "@/store/delivery-store";
@@ -22,7 +27,7 @@ import {
 } from "@/components/delivery/DeliveryUI";
 import { HorizontalBarChart } from "@/components/delivery/DeliveryCharts";
 
-export default function ManagerBlockersPage() {
+function PreviewManagerBlockersPage() {
   const href = useRoleHref("manager");
   const { status, retry, forceEmpty } = useDemoLoad();
   const lk = useLookups();
@@ -108,5 +113,18 @@ export default function ManagerBlockersPage() {
         )}
       </Panel>
     </PageFrame>
+  );
+}
+
+/** Task 3.4: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
+export default function ManagerBlockersPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const home = `/org/${orgId}/manager`;
+  if (previewEnabled()) return <PreviewManagerBlockersPage />;
+  return (
+    <RequireAnyKey keys={["project.read"]} backHref={home}>
+      <BlockersView crumbs={[{ label: "Project Manager", href: home }]} back={{ href: home, label: "Back to dashboard" }} />
+    </RequireAnyKey>
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 
-import { FolderKanban, Mail, TrendingUp, Users, UsersRound } from "lucide-react";
+import React from "react";
+import { Clock, FolderKanban, Mail, TrendingUp, Users, UsersRound } from "lucide-react";
 
+import { OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
 import {
   KpiGrid,
   KpiTile,
@@ -140,7 +142,27 @@ export function LiveOrganizationDashboard({
             ))}
           </div>
         </Panel>
+
+        <Panel title="Coming later" description="These parts have no backend yet, so no numbers are shown." icon={Clock}>
+          <ul className="space-y-2 text-xs" data-testid="dashboard-later">
+            {LATER_PARTS.map((part) => (
+              <li key={part.label} className="flex items-center justify-between gap-2">
+                <span className="text-[var(--color-text-secondary)]">{part.label}</span>
+                <OwnerLaterBadge task={part.task} />
+              </li>
+            ))}
+          </ul>
+        </Panel>
       </div>
     </>
   );
 }
+
+/** Owner dashboard parts without a backend yet: labelled, never filled with sample numbers. */
+const LATER_PARTS = [
+  { label: "Schedule health and risks", task: "5.1" },
+  { label: "Reminders, approvals and escalations", task: "5.2" },
+  { label: "Portfolio search and My Work", task: "5.3" },
+  { label: "Timelines and planned workload", task: "5.4" },
+  { label: "Reports and CSV exports", task: "5.5" },
+] as const;
