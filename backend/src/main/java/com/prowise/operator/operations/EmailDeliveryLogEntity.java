@@ -1,6 +1,7 @@
 package com.prowise.operator.operations;
 
 import java.time.Instant;
+import java.util.UUID;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -21,10 +22,10 @@ public class EmailDeliveryLogEntity {
     private String subject;
 
     @Column(name = "provider", nullable = false, length = 80)
-    private String provider = "SendGrid";
+    private String provider;
 
     @Column(name = "status", nullable = false, length = 30)
-    private String status = "DELIVERED";
+    private String status = "QUEUED";
 
     @Column(name = "attempts", nullable = false)
     private int attempts = 1;
@@ -35,13 +36,44 @@ public class EmailDeliveryLogEntity {
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 
-    @Column(name = "sent_at", nullable = false)
-    private Instant sentAt = Instant.now();
+    /** When the SMTP server accepted the message; null until then and for failures. */
+    @Column(name = "sent_at")
+    private Instant sentAt;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    /** Account the email concerns (null for operator emails and older rows). */
+    @Column(name = "user_id")
+    private UUID userId;
+
+    /** ACCOUNT_SETUP, PASSWORD_RESET, OPERATOR_INVITATION (null for older rows). */
+    @Column(name = "email_type", length = 40)
+    private String emailType;
+
+    @Column(name = "sender", length = 320)
+    private String sender;
+
+    @Column(name = "message_id", length = 998)
+    private String messageId;
+
+    /** The SMTP server's own reply (for example "250 2.0.0 OK ... gsmtp"). Never contains credentials. */
+    @Column(name = "smtp_response", columnDefinition = "TEXT")
+    private String smtpResponse;
+
     public EmailDeliveryLogEntity() {}
+
+    public String getSender() { return sender; }
+    public void setSender(String sender) { this.sender = sender; }
+    public String getMessageId() { return messageId; }
+    public void setMessageId(String messageId) { this.messageId = messageId; }
+    public String getSmtpResponse() { return smtpResponse; }
+    public void setSmtpResponse(String smtpResponse) { this.smtpResponse = smtpResponse; }
+
+    public UUID getUserId() { return userId; }
+    public void setUserId(UUID userId) { this.userId = userId; }
+    public String getEmailType() { return emailType; }
+    public void setEmailType(String emailType) { this.emailType = emailType; }
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }

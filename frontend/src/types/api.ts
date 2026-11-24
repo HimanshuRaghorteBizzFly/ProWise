@@ -27,6 +27,7 @@ export type LandingKind = "PLATFORM" | "WORKSPACE" | "SELECT_WORKSPACE" | "NO_WO
 export interface MeResponse {
   id: string;
   email: string;
+<<<<<<< HEAD
   name?: string | null;
   /** Platform role for platform accounts, else the role template of the active workspace membership (or null). */
   role?: string | null;
@@ -37,6 +38,15 @@ export interface MeResponse {
   target_dashboard_url?: string;
   landing?: LandingKind | null;
   platform_account?: boolean;
+=======
+  name?: string;
+  /** The role of this session: the membership role in the bound organization, or a platform role; null when unbound. */
+  role?: string | null;
+  organization_id?: string | null;
+  organization_name?: string | null;
+  target_dashboard_url?: string;
+  must_change_password?: boolean;
+>>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
   memberships: Array<{
     id: string;
     org_id: string;

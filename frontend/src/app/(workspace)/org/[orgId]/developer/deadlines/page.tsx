@@ -1,5 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
+<<<<<<< HEAD
 import { previewEnabled } from "@/lib/permissions";
 import { DeadlinesView, RequireAnyKey } from "@/components/calendar/CalendarViews";
 
@@ -104,3 +105,9 @@ export default function DeveloperDeadlinesPage() {
     </RequireAnyKey>
   );
 }
+=======
+/** Folded into the 11 Developer destinations; the old URL keeps working. */
+export default function Page({ params }: { params: { orgId: string } }) {
+  redirect(`/org/${params.orgId}/developer/calendar`);
+}
+>>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4

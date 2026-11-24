@@ -5,27 +5,41 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Mail, CheckCircle2, ArrowRight } from "lucide-react";
+import { apiClient } from "@/lib/api";
 
+/**
+ * Landing page for the single-use link emailed after public signup (approved decision D9). The token comes from
+ * the link; confirming activates the pending account, then the owner signs in and creates a workspace.
+ * Confirmation needs a click so that mail scanners that pre-open links do not use the token up.
+ */
 export default function VerifyEmailPage() {
   const router = useRouter();
-  const [code, setCode] = useState("");
+  const [token] = useState(() =>
+    typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("token") || "",
+  );
   const [isVerified, setIsVerified] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleVerify = (e: React.FormEvent) => {
     e.preventDefault();
-    if (code.length < 4) {
-      toast.error("Please enter the verification code sent to your email.");
+    if (!token) {
+      toast.error("Open the link from your email to confirm your address.");
       return;
     }
-
-    setIsVerified(true);
-    toast.success("Email verified successfully!");
-    setTimeout(() => {
-      router.push("/select-workspace");
-    }, 1200);
+    setIsSubmitting(true);
+    apiClient
+      .verifyEmail(token)
+      .then(() => {
+        setIsVerified(true);
+        toast.success("Your email is confirmed. You can sign in now.");
+        setTimeout(() => router.push("/login"), 1500);
+      })
+      .catch(() =>
+        toast.error("This link is invalid, already used or expired. Sign up again with the same address to get a new one."),
+      )
+      .finally(() => setIsSubmitting(false));
   };
 
   return (
@@ -37,7 +51,7 @@ export default function VerifyEmailPage() {
           </span>
           <h1 className="text-xl font-bold mt-2">Verify your email</h1>
           <p className="text-xs text-[var(--color-text-secondary)] mt-1">
-            We sent a verification code to your email address.
+            Confirm the address you signed up with to activate your account. The link works once.
           </p>
         </div>
 
@@ -47,41 +61,29 @@ export default function VerifyEmailPage() {
               <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
               <h3 className="text-base font-semibold">Account Verified</h3>
               <p className="text-xs text-[var(--color-text-secondary)] mt-1">
-                Taking you to workspace setup...
+                Redirecting you to sign in...
               </p>
             </div>
           ) : (
             <form onSubmit={handleVerify} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">
-                  Verification Code
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 absolute left-3 top-2.5 text-[var(--color-text-muted)]" />
-                  <Input
-                    type="text"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    placeholder="e.g. 742918"
-                    className="pl-9 tracking-widest text-center font-mono font-bold"
-                    required
-                  />
-                </div>
+              <div className="flex items-start gap-2 text-xs text-[var(--color-text-secondary)]">
+                <Mail className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-text-muted)]" />
+                <span>
+                  {token
+                    ? "Select the button below to confirm your email address."
+                    : "No confirmation link was found. Open the link from the email we sent you."}
+                </span>
               </div>
 
-              <Button type="submit" className="w-full">
-                <span>Confirm Verification</span>
+              <Button type="submit" className="w-full" disabled={!token} isLoading={isSubmitting}>
+                <span>Confirm my email</span>
                 <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
 
               <div className="text-center pt-2">
-                <button
-                  type="button"
-                  onClick={() => toast.info("A fresh verification code was resent.")}
-                  className="text-xs text-primary-600 hover:underline"
-                >
-                  Resend verification code
-                </button>
+                <Link href="/login" className="text-xs text-primary-600 hover:underline">
+                  Back to sign in
+                </Link>
               </div>
             </form>
           )}
@@ -90,4 +92,3 @@ export default function VerifyEmailPage() {
     </div>
   );
 }
-

@@ -27,6 +27,10 @@ import com.prowise.developer.DeveloperAccess.Actor;
 @Transactional
 public class DeveloperService {
 
+    // Work-flow writes go through JDBC; refresh managed entities so responses show the stored row.
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
     private final ProjectRepository projectRepository;
     private final WorkItemRepository workItemRepository;
     private final SprintRepository sprintRepository;
@@ -45,6 +49,8 @@ public class DeveloperService {
     private final DeveloperNotificationRepository developerNotificationRepository;
     private final DeveloperPreferenceRepository developerPreferenceRepository;
     private final DeveloperAccess access;
+    private final com.prowise.work.WorkflowService workflow;
+    private final com.prowise.work.BlockerService blockers;
 
     public DeveloperService(
             ProjectRepository projectRepository,
@@ -64,7 +70,11 @@ public class DeveloperService {
             FileMetadataRepository fileMetadataRepository,
             DeveloperNotificationRepository developerNotificationRepository,
             DeveloperPreferenceRepository developerPreferenceRepository,
-            DeveloperAccess access) {
+            DeveloperAccess access,
+            com.prowise.work.WorkflowService workflow,
+            com.prowise.work.BlockerService blockers) {
+        this.workflow = workflow;
+        this.blockers = blockers;
         this.projectRepository = projectRepository;
         this.workItemRepository = workItemRepository;
         this.sprintRepository = sprintRepository;
@@ -169,7 +179,7 @@ public class DeveloperService {
                 .toList();
 
         List<DeveloperDTOs.WorkItemDTO> blockedTasks = myWorkItems.stream()
-                .filter(w -> w.isBlocked() || "BLOCKED".equalsIgnoreCase(w.getState()))
+                .filter(w -> w.isBlocked())
                 .map(this::mapWorkItemToDTO)
                 .toList();
 
@@ -217,42 +227,25 @@ public class DeveloperService {
     private DeveloperDTOs.ProjectDTO toProjectDTO(Actor actor, ProjectEntity p) {
         Instant now = Instant.now();
         List<WorkItemEntity> pTasks = workItemRepository.findByOrgIdAndProjectId(actor.orgId(), p.getId());
-        long blockedCount = pTasks.stream().filter(t -> t.isBlocked() || "BLOCKED".equalsIgnoreCase(t.getState())).count();
+        long blockedCount = pTasks.stream().filter(t -> t.isBlocked()).count();
         long overdueCount = pTasks.stream().filter(t -> t.getDueDate() != null && t.getDueDate().isBefore(now) && !"DONE".equalsIgnoreCase(t.getState())).count();
         Optional<ProjectCheckInEntity> latestCheckIn = projectCheckInRepository.findTop1ByOrgIdAndProjectIdOrderByCreatedAtDesc(actor.orgId(), p.getId());
 
+        // Structured: the latest calculated snapshot (task 3.5); Individual: the latest approved check-in (task 2.2).
         BigDecimal progressPercent = p.getLastProgressPercent();
-        if ("STRUCTURED".equalsIgnoreCase(p.getMode())) {
-            progressPercent = structuredProgress(pTasks);
-        }
         return new DeveloperDTOs.ProjectDTO(
                 p.getId(), p.getOrgId(), p.getName(), p.getCode(), p.getDescription(), p.getMode(), p.getStatus(),
-                progressPercent != null ? progressPercent : BigDecimal.ZERO, p.getTargetCompletionDate(),
+                progressPercent, p.getTargetCompletionDate(), // null stays "Not reported", never 0 (rule 9)
                 p.getAccountableOwnerId(), p.getMemberIds(), p.getTotalWeight(), p.getCompletedWeight(),
                 blockedCount, overdueCount, latestCheckIn.orElse(null));
     }
 
+    /**
+     * Structured progress as last calculated from accepted work in the active baseline (task 3.5, written with every
+     * material change). Never derived from task counts or unapproved weights here (rule 9); null = Not measurable.
+     */
     public BigDecimal calculateStructuredProgress(UUID orgId, String projectId) {
-        return structuredProgress(workItemRepository.findByOrgIdAndProjectId(orgId, projectId));
-    }
-
-    private static BigDecimal structuredProgress(List<WorkItemEntity> workItems) {
-        if (workItems.isEmpty()) {
-            return BigDecimal.ZERO;
-        }
-        BigDecimal totalWeight = BigDecimal.ZERO;
-        BigDecimal completedWeight = BigDecimal.ZERO;
-        for (WorkItemEntity item : workItems) {
-            BigDecimal w = item.getWeight() != null ? item.getWeight() : BigDecimal.ONE;
-            totalWeight = totalWeight.add(w);
-            if ("DONE".equalsIgnoreCase(item.getState())) {
-                completedWeight = completedWeight.add(w);
-            }
-        }
-        if (totalWeight.compareTo(BigDecimal.ZERO) == 0) {
-            return BigDecimal.ZERO;
-        }
-        return completedWeight.multiply(BigDecimal.valueOf(100)).divide(totalWeight, 2, RoundingMode.HALF_UP);
+        return projectRepository.findByIdAndOrgId(projectId, orgId).map(ProjectEntity::getLastProgressPercent).orElse(null);
     }
 
     // ==========================================
@@ -273,16 +266,10 @@ public class DeveloperService {
         requireTaskEdit(actor, item);
 
         String oldState = item.getState();
-        String newState = req.state().toUpperCase();
-        item.setState(newState);
-        if ("IN_REVIEW".equalsIgnoreCase(newState)) {
-            item.setSubmittedRevision(item.getCurrentRevision());
-        }
-        if ("DONE".equalsIgnoreCase(newState)) {
-            item.setBlocked(false);
-        }
-        item.setUpdatedAt(Instant.now());
-        WorkItemEntity saved = workItemRepository.save(item);
+        String newState = req.state() == null ? "" : req.state().toUpperCase();
+        // Task 3.3: the same workflow rules as /v1/work-items (start and submit only; Done needs review or checks).
+        workflow.legacyTransition(actor.authentication(), taskId, newState, req.note());
+        WorkItemEntity saved = reload(item);
 
         if (req.note() != null && !req.note().isBlank()) {
             TaskCommentEntity comment = new TaskCommentEntity();
@@ -296,34 +283,31 @@ public class DeveloperService {
             taskCommentRepository.save(comment);
         }
 
-        projectRepository.findByIdAndOrgId(item.getProjectId(), actor.orgId()).ifPresent(p -> {
-            if ("STRUCTURED".equalsIgnoreCase(p.getMode())) {
-                p.setLastProgressPercent(calculateStructuredProgress(actor.orgId(), p.getId()));
-                p.setUpdatedAt(Instant.now());
-                projectRepository.save(p);
-            }
-        });
         return mapWorkItemToDTO(saved);
+    }
+
+    private static final java.util.Set<String> BUG_SEVERITIES = java.util.Set.of("LOW", "MEDIUM", "HIGH", "CRITICAL");
+    private static final java.util.Set<String> BUG_STATUSES = java.util.Set.of("OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED", "REOPENED");
+
+    private static com.prowise.common.api.ApiException invalid(String field, String message) {
+        return new com.prowise.common.api.ApiException(org.springframework.http.HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
+                "The request has invalid fields.", List.of(new com.prowise.common.api.ApiError.FieldError(field, message)));
+    }
+
+    private <T> T reload(T entity) {
+        if (entityManager != null && entityManager.contains(entity)) entityManager.refresh(entity);
+        return entity;
     }
 
     public TaskBlockerEntity submitTaskBlocker(Actor actor, String taskId, DeveloperDTOs.TaskBlockerRequest req) {
         WorkItemEntity item = visibleTask(actor, taskId);
         requireTaskEdit(actor, item);
 
-        item.setBlocked(true);
-        item.setState("BLOCKED");
-        item.setUpdatedAt(Instant.now());
-        workItemRepository.save(item);
-
-        TaskBlockerEntity blocker = new TaskBlockerEntity();
-        blocker.setId("blk-" + UUID.randomUUID().toString().substring(0, 8));
-        blocker.setOrgId(actor.orgId());
-        blocker.setTaskId(item.getId());
-        blocker.setReason(req.reason());
-        blocker.setSeverity(req.severity() != null ? req.severity().toUpperCase() : "HIGH");
-        blocker.setResolved(false);
-        blocker.setCreatedAt(Instant.now());
-        return taskBlockerRepository.save(blocker);
+        // Task 3.4: the same rules as /v1/work-items/{id}/blockers (separate flag, owner, two severities, audit).
+        String severity = "CRITICAL".equalsIgnoreCase(req.severity()) ? "CRITICAL" : "NORMAL";
+        com.prowise.work.BlockerService.BlockerView raised = blockers.raise(actor.authentication(), item.getId(),
+                new com.prowise.work.BlockerService.RaiseRequest(req.reason(), severity, null));
+        return taskBlockerRepository.findByIdAndOrgId(raised.id(), actor.orgId()).orElseThrow();
     }
 
     public TaskBlockerEntity resolveTaskBlocker(Actor actor, String blockerId) {
@@ -332,21 +316,8 @@ public class DeveloperService {
         if (blocker == null) throw access.notFound(actor, "BLOCKER", blockerId);
         WorkItemEntity item = visibleTask(actor, blocker.getTaskId());
         requireTaskEdit(actor, item);
-
-        blocker.setResolved(true);
-        blocker.setResolvedAt(Instant.now());
-        blocker.setResolvedBy(actor.userId());
-        TaskBlockerEntity saved = taskBlockerRepository.save(blocker);
-
-        if (taskBlockerRepository.findByOrgIdAndTaskIdAndResolvedFalse(actor.orgId(), item.getId()).isEmpty()) {
-            item.setBlocked(false);
-            if ("BLOCKED".equalsIgnoreCase(item.getState())) {
-                item.setState("IN_PROGRESS");
-            }
-            item.setUpdatedAt(Instant.now());
-            workItemRepository.save(item);
-        }
-        return saved;
+        blockers.resolve(actor.authentication(), blockerId, new com.prowise.work.BlockerService.ResolveRequest(null));
+        return reload(blocker);
     }
 
     public TaskCommentEntity addTaskComment(Actor actor, String taskId, String authorName, DeveloperDTOs.TaskCommentRequest req) {
@@ -423,16 +394,22 @@ public class DeveloperService {
                 && !access.can(actor, project.getId(), PermissionKey.TASK_REVIEW)) {
             throw PermissionService.forbidden();
         }
+        String title = req.title() == null ? "" : req.title().trim();
+        if (title.isEmpty()) throw invalid("title", "is required");
+        if (title.length() > 200) throw invalid("title", "is longer than 200 characters");
+        String severity = req.severity() == null || req.severity().isBlank() ? "MEDIUM" : req.severity().trim().toUpperCase(java.util.Locale.ROOT);
+        if (!BUG_SEVERITIES.contains(severity)) throw invalid("severity", "must be LOW, MEDIUM, HIGH or CRITICAL");
         BugEntity bug = new BugEntity();
         bug.setId("bug-" + UUID.randomUUID().toString().substring(0, 8));
         bug.setOrgId(actor.orgId());
         bug.setProjectId(project.getId());
-        bug.setTitle(req.title());
+        bug.setTitle(title);
         bug.setDescription(req.description());
-        bug.setSeverity(req.severity() != null ? req.severity().toUpperCase() : "MEDIUM");
+        bug.setSeverity(severity);
         bug.setStatus("OPEN");
         bug.setReportedBy(actor.userId());
-        bug.setAssignedTo(req.assignedTo() != null ? req.assignedTo() : actor.userId());
+        // The reporter owns the issue: an assignee id from the request body is never trusted (it could name anyone).
+        bug.setAssignedTo(actor.userId());
         bug.setReproductionSteps(req.reproductionSteps());
         bug.setEnvironment(req.environment());
         bug.setCreatedAt(Instant.now());
@@ -447,11 +424,13 @@ public class DeveloperService {
         if (!actor.userId().equals(bug.getAssignedTo()) && !access.can(actor, bug.getProjectId(), PermissionKey.TASK_ASSIGN)) {
             throw PermissionService.forbidden();
         }
-        bug.setStatus(req.status().toUpperCase());
+        String status = req.status() == null ? "" : req.status().trim().toUpperCase(java.util.Locale.ROOT);
+        if (!BUG_STATUSES.contains(status)) throw invalid("status", "must be OPEN, IN_PROGRESS, RESOLVED, CLOSED or REOPENED");
+        bug.setStatus(status);
         if (req.resolution() != null) {
             bug.setResolution(req.resolution());
         }
-        if ("RESOLVED".equalsIgnoreCase(req.status()) || "CLOSED".equalsIgnoreCase(req.status())) {
+        if ("RESOLVED".equals(status) || "CLOSED".equals(status)) {
             bug.setResolvedAt(Instant.now());
         }
         return bugRepository.save(bug);
@@ -697,7 +676,7 @@ public class DeveloperService {
         long completed = tasks.stream().filter(t -> "DONE".equalsIgnoreCase(t.getState())).count();
         long inProgress = tasks.stream().filter(t -> "IN_PROGRESS".equalsIgnoreCase(t.getState())).count();
         long inReview = tasks.stream().filter(t -> "IN_REVIEW".equalsIgnoreCase(t.getState())).count();
-        long blocked = tasks.stream().filter(t -> t.isBlocked() || "BLOCKED".equalsIgnoreCase(t.getState())).count();
+        long blocked = tasks.stream().filter(t -> t.isBlocked()).count();
 
         BigDecimal actualHours = tasks.stream()
                 .map(t -> t.getActualHours() != null ? t.getActualHours() : BigDecimal.ZERO)

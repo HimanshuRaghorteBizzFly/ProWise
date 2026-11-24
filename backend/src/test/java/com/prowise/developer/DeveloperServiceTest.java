@@ -76,6 +76,8 @@ public class DeveloperServiceTest {
         developerNotificationRepository = mock(DeveloperNotificationRepository.class);
         developerPreferenceRepository = mock(DeveloperPreferenceRepository.class);
         access = mock(DeveloperAccess.class);
+        workflow = mock(com.prowise.work.WorkflowService.class);
+        blockers = mock(com.prowise.work.BlockerService.class);
 
         // Default: the caller may read and act on the projects used below; individual tests override.
         when(access.canRead(any(), anyString())).thenReturn(true);
@@ -88,8 +90,11 @@ public class DeveloperServiceTest {
                 projectCheckInRepository, bugRepository, bugCommentRepository, codeReviewRepository,
                 codeReviewCommentRepository, gitHubActivityRepository, calendarEventRepository, discussionRepository,
                 discussionMessageRepository, fileMetadataRepository, developerNotificationRepository,
-                developerPreferenceRepository, access);
+                developerPreferenceRepository, access, workflow, blockers);
     }
+
+    private com.prowise.work.WorkflowService workflow;
+    private com.prowise.work.BlockerService blockers;
 
     private static Actor actor(String userId) {
         return new Actor(ORG, userId, null, null);
@@ -172,35 +177,23 @@ public class DeveloperServiceTest {
     }
 
     @Test
-    @DisplayName("Structured mode progress is computed from work items weight")
+    @DisplayName("Structured progress shown to developers is the latest calculated snapshot, never task counts (rule 9)")
     void testStructuredProgressCalculation() {
         String projId = "proj-structured-cds";
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projId);
+        project.setMode("STRUCTURED");
+        project.setLastProgressPercent(new BigDecimal("50"));
+        when(projectRepository.findByIdAndOrgId(projId, ORG)).thenReturn(Optional.of(project));
 
-        WorkItemEntity leaf1 = new WorkItemEntity();
-        leaf1.setId("task-101");
-        leaf1.setWeight(BigDecimal.valueOf(30));
-        leaf1.setState("DONE");
-
-        WorkItemEntity leaf2 = new WorkItemEntity();
-        leaf2.setId("task-102");
-        leaf2.setWeight(BigDecimal.valueOf(20));
-        leaf2.setState("DONE");
-
-        WorkItemEntity leaf3 = new WorkItemEntity();
-        leaf3.setId("task-103");
-        leaf3.setWeight(BigDecimal.valueOf(50));
-        leaf3.setState("IN_PROGRESS");
-
-        when(workItemRepository.findByOrgIdAndProjectId(ORG, projId)).thenReturn(List.of(leaf1, leaf2, leaf3));
-
-        BigDecimal progress = developerService.calculateStructuredProgress(ORG, projId);
-
-        // (30 + 20) / (30 + 20 + 50) * 100 = 50.00%
-        assertEquals(new BigDecimal("50.00"), progress);
+        // The accepted-work math (fixtures 50%, 40%, 16%, Not measurable) is in StructuredProgressTest and
+        // ProgressSnapshotIntegrationTest; this service only reads the stored, calculated figure.
+        assertEquals(new BigDecimal("50"), developerService.calculateStructuredProgress(ORG, projId));
+        verify(workItemRepository, never()).findByOrgIdAndProjectId(ORG, projId);
     }
 
     @Test
-    @DisplayName("Task status update to IN_REVIEW records submittedRevision and recalculates structured progress")
+    @DisplayName("Task status update goes through the task 3.3 workflow rules and keeps the note as a comment")
     void testTaskStatusUpdate() {
         String taskId = "task-10";
         String projId = "proj-struct";
@@ -227,8 +220,9 @@ public class DeveloperServiceTest {
 
         DeveloperDTOs.WorkItemDTO updated = developerService.updateTaskStatus(actor(USER), taskId, req);
 
-        assertEquals("IN_REVIEW", updated.state());
-        assertEquals(3, updated.submittedRevision());
+        // The real transition (revision binding, review rules) is covered by ReviewWorkflowIntegrationTest.
+        verify(workflow).legacyTransition(any(), eq(taskId), eq("IN_REVIEW"), eq("Ready for review"));
+        assertEquals(taskId, updated.id());
         verify(taskCommentRepository, times(1)).save(any(TaskCommentEntity.class));
     }
 
@@ -263,7 +257,7 @@ public class DeveloperServiceTest {
     }
 
     @Test
-    @DisplayName("Blocker lifecycle: reporting marks task blocked, resolving clears it")
+    @DisplayName("Blocker lifecycle goes through the shared task 3.4 rules and never changes the workflow state")
     void testBlockerLifecycle() {
         String taskId = "task-50";
 
@@ -276,24 +270,28 @@ public class DeveloperServiceTest {
 
         when(workItemRepository.findByIdAndOrgId(taskId, ORG)).thenReturn(Optional.of(item));
         when(workItemRepository.save(any(WorkItemEntity.class))).thenAnswer(i -> i.getArgument(0));
-        when(taskBlockerRepository.save(any(TaskBlockerEntity.class))).thenAnswer(i -> i.getArgument(0));
+        TaskBlockerEntity stored = new TaskBlockerEntity();
+        stored.setId("blk-1");
+        stored.setOrgId(ORG);
+        stored.setTaskId(taskId);
+        stored.setSeverity("CRITICAL");
+        when(taskBlockerRepository.findByIdAndOrgId("blk-1", ORG)).thenReturn(Optional.of(stored));
+        when(blockers.raise(any(), eq(taskId), any())).thenReturn(new com.prowise.work.BlockerService.BlockerView(
+                "blk-1", taskId, "K-1", "Task", "Waiting", "CRITICAL", null, null, false, null, null, null, 0));
 
         DeveloperDTOs.TaskBlockerRequest req = new DeveloperDTOs.TaskBlockerRequest("Waiting on external API credentials", "CRITICAL");
         TaskBlockerEntity blocker = developerService.submitTaskBlocker(actor(USER), taskId, req);
 
-        assertTrue(item.isBlocked());
-        assertEquals("BLOCKED", item.getState());
+        // Task 3.4: the shared blocker rules (separate flag, owner, audit) run in BlockerService; see
+        // DependencyBlockerIntegrationTest. Domain rule (T21): the workflow state never changes here.
+        verify(blockers).raise(any(), eq(taskId), eq(new com.prowise.work.BlockerService.RaiseRequest(
+                "Waiting on external API credentials", "CRITICAL", null)));
         assertEquals("CRITICAL", blocker.getSeverity());
         assertEquals(ORG, blocker.getOrgId());
+        assertEquals("IN_PROGRESS", item.getState());
 
-        when(taskBlockerRepository.findByIdAndOrgId(blocker.getId(), ORG)).thenReturn(Optional.of(blocker));
-        when(taskBlockerRepository.findByOrgIdAndTaskIdAndResolvedFalse(ORG, taskId)).thenReturn(List.of());
-
-        TaskBlockerEntity resolved = developerService.resolveTaskBlocker(actor(USER), blocker.getId());
-
-        assertTrue(resolved.isResolved());
-        assertNotNull(resolved.getResolvedAt());
-        assertFalse(item.isBlocked());
+        developerService.resolveTaskBlocker(actor(USER), "blk-1");
+        verify(blockers).resolve(any(), eq("blk-1"), any());
         assertEquals("IN_PROGRESS", item.getState());
     }
 
@@ -309,7 +307,7 @@ public class DeveloperServiceTest {
     }
 
     @Test
-    @DisplayName("Code review approval completes linked task")
+    @DisplayName("Code review approval is evidence only: the linked task stays in review (AS-03, rule 9)")
     void testCodeReviewApproval() {
         pendingReview("usr-reviewer");
         WorkItemEntity task = new WorkItemEntity();
@@ -325,7 +323,9 @@ public class DeveloperServiceTest {
         CodeReviewEntity result = developerService.submitReviewDecision(actor("usr-reviewer"), "rev-1", decisionReq);
 
         assertEquals("APPROVED", result.getStatus());
-        assertEquals("DONE", task.getState());
+        // A pull request review never replaces the required work-item review (docs/tasks/phase-3.md AS-03).
+        assertEquals("IN_REVIEW", task.getState());
+        verify(workItemRepository, never()).save(any());
         verify(codeReviewCommentRepository, times(1)).save(any(CodeReviewCommentEntity.class));
     }
 
@@ -339,5 +339,65 @@ public class DeveloperServiceTest {
 
         assertEquals(HttpStatus.FORBIDDEN, denied.status());
         verify(codeReviewRepository, never()).save(any());
+    }
+
+    /* ------------------------------------------------------------------ issues (Blockers & Issues) */
+
+    private ProjectEntity project(String id) {
+        ProjectEntity p = new ProjectEntity();
+        p.setId(id);
+        p.setOrgId(ORG);
+        when(projectRepository.findByIdAndOrgId(id, ORG)).thenReturn(Optional.of(p));
+        return p;
+    }
+
+    @Test
+    @DisplayName("A developer reports an issue for themselves; an assignee id from the request body is never trusted")
+    void reportedIssueIsAssignedToTheReporter() {
+        project("proj-1");
+        when(bugRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        BugEntity bug = developerService.createBug(actor(USER), new DeveloperDTOs.CreateBugRequest(
+                "proj-1", "Login fails", "Steps in description", "high", null, null, "someone-in-another-org"));
+
+        assertEquals(USER, bug.getAssignedTo());
+        assertEquals(USER, bug.getReportedBy());
+        assertEquals("HIGH", bug.getSeverity());
+        assertEquals("OPEN", bug.getStatus());
+    }
+
+    @Test
+    @DisplayName("Issue title and severity are validated before anything is stored")
+    void issueValidation() {
+        project("proj-1");
+        ApiException noTitle = assertThrows(ApiException.class, () -> developerService.createBug(actor(USER),
+                new DeveloperDTOs.CreateBugRequest("proj-1", "  ", "d", "LOW", null, null, null)));
+        assertEquals(HttpStatus.BAD_REQUEST, noTitle.status());
+        ApiException badSeverity = assertThrows(ApiException.class, () -> developerService.createBug(actor(USER),
+                new DeveloperDTOs.CreateBugRequest("proj-1", "Title", "d", "URGENT", null, null, null)));
+        assertEquals(HttpStatus.BAD_REQUEST, badSeverity.status());
+        verify(bugRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Issue status accepts only the known lifecycle values")
+    void issueStatusIsValidated() {
+        BugEntity bug = new BugEntity();
+        bug.setId("bug-1");
+        bug.setOrgId(ORG);
+        bug.setProjectId("proj-1");
+        bug.setAssignedTo(USER);
+        when(bugRepository.findByIdAndOrgId("bug-1", ORG)).thenReturn(Optional.of(bug));
+        when(bugRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        ApiException invalid = assertThrows(ApiException.class, () -> developerService.updateBugStatus(actor(USER), "bug-1",
+                new DeveloperDTOs.UpdateBugStatusRequest("DELETED", null)));
+        assertEquals(HttpStatus.BAD_REQUEST, invalid.status());
+        verify(bugRepository, never()).save(any());
+
+        BugEntity resolved = developerService.updateBugStatus(actor(USER), "bug-1",
+                new DeveloperDTOs.UpdateBugStatusRequest("resolved", "Fixed in PR 12"));
+        assertEquals("RESOLVED", resolved.getStatus());
+        assertNotNull(resolved.getResolvedAt());
     }
 }

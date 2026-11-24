@@ -120,6 +120,11 @@ interface ProjectStoreState {
   updateTicketStatus: (ticketId: string, status: SupportTicket["status"]) => void;
   retryWebhookDelivery: (deliveryId: string) => void;
 
+  // Repositories & Engineering
+  addRepository: (repo: Repository) => void;
+  removeRepository: (id: string) => void;
+  syncRepository: (id: string) => void;
+
   // Reset to initial deterministic state
   resetToInitialFixtures: () => void;
 }
@@ -918,6 +923,29 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       ),
     }));
   },
+
+  addRepository: (repo) =>
+    set((state) => ({
+      repositories: [repo, ...state.repositories.filter((r) => r.id !== repo.id)],
+    })),
+
+  removeRepository: (id) =>
+    set((state) => ({
+      repositories: state.repositories.filter((r) => r.id !== id),
+    })),
+
+  syncRepository: (id) =>
+    set((state) => ({
+      repositories: state.repositories.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              syncStatus: "SYNCED" as const,
+              lastSuccessfulSync: new Date().toISOString(),
+            }
+          : r
+      ),
+    })),
 
   resetToInitialFixtures: () => {
     set({

@@ -1,226 +1,110 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import React, { useMemo, useState } from "react";
+import { GitBranch, Info } from "lucide-react";
+
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import {
-  GitBranch,
-  GitPullRequest,
-  GitCommit,
-  CheckCircle2,
-  Clock,
-  ExternalLink,
-  Search,
-  Filter,
-  RefreshCw,
-} from "lucide-react";
-import { developerApi } from "@/lib/developer-api";
-import { useProjectStore } from "@/store/project-store";
+import { AdminSelect, EmptyStateView, PageFrame, Panel, StatusBadge } from "@/components/delivery/DeliveryUI";
+import { DevGate, dateTimeText } from "@/components/developer/DevUI";
+import { useDevGitHub } from "@/components/developer/useDeveloperData";
+import { useOrgId } from "@/components/org-console/useRoleApi";
+import type { DeveloperGitHubEvent } from "@/lib/developer-api";
 
+function repoOf(e: DeveloperGitHubEvent): string {
+  return (e.repositoryName as string) || (e.repository as string) || (e.repo as string) || "Unknown repository";
+}
+
+function summaryOf(e: DeveloperGitHubEvent): string {
+  return (e.title as string) || (e.payloadSummary as string) || (e.message as string) || "Activity";
+}
+
+/** Read-only GitHub evidence feed. Activity never sets progress or task state (rule 9). */
 export default function DeveloperGitHubPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const { gitEvents: storeGitEvents } = useProjectStore();
+  const orgId = useOrgId();
+  const home = `/org/${orgId}/developer/dashboard`;
+  const activity = useDevGitHub();
+  const [repo, setRepo] = useState("ALL");
+  const [actor, setActor] = useState("ALL");
 
-  const [events, setEvents] = useState<any[]>([]);
-  const [repoFilter, setRepoFilter] = useState("ALL");
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const loadActivity = async () => {
-    setLoading(true);
-    const res = await developerApi.getGitHubActivity();
-    if (res && res.length > 0) {
-      setEvents(res);
-    } else {
-      setEvents(storeGitEvents);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    loadActivity();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeGitEvents]);
-
-  const repositories = [
-    { name: "prowise/prowise-backend", defaultBranch: "main", stars: 12, openPRs: 2, status: "Active" },
-    { name: "prowise/prowise-frontend", defaultBranch: "main", stars: 8, openPRs: 1, status: "Active" },
-    { name: "prowise/fhir-patient-service", defaultBranch: "main", stars: 4, openPRs: 0, status: "Active" },
-    { name: "prowise/clinical-decision-engine", defaultBranch: "develop", stars: 15, openPRs: 3, status: "Active" },
-  ];
-
-  const filteredEvents = events.filter((evt) => {
-    const repo = evt.repositoryName || evt.repo || "";
-    const msg = evt.payloadSummary || evt.message || evt.title || "";
-    const matchesRepo = repoFilter === "ALL" || repo.includes(repoFilter);
-    const matchesSearch =
-      repo.toLowerCase().includes(search.toLowerCase()) ||
-      msg.toLowerCase().includes(search.toLowerCase());
-    return matchesRepo && matchesSearch;
-  });
+  const events = useMemo<DeveloperGitHubEvent[]>(() => (activity.kind === "ready" ? activity.data : []), [activity]);
+  const repos = useMemo(() => Array.from(new Set(events.map(repoOf))).sort(), [events]);
+  const actors = useMemo(
+    () => Array.from(new Set(events.map((e) => (e.actor as string) || "").filter(Boolean))).sort(),
+    [events],
+  );
+  const filtered = events.filter(
+    (e) => (repo === "ALL" || repoOf(e) === repo) && (actor === "ALL" || e.actor === actor),
+  );
 
   return (
-    <PanelLayout
-      title="GitHub Activity & Integrations"
-      breadcrumb={[{ label: "Developer", href: `/org/${orgId}/developer` }, { label: "GitHub Activity" }]}
-    >
-      <div className="space-y-6">
-        {/* Connected Repositories Section */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 className="text-base font-bold text-app-text-primary">Connected Repositories</h2>
-              <p className="text-xs text-app-text-secondary">
-                GitHub organizations and engineering repositories linked to your assigned projects.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={loadActivity}
-              disabled={loading}
-              className="gap-1.5 text-xs"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-              <span>Sync Webhooks</span>
-            </Button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {repositories.map((repo) => (
-              <Card key={repo.name} className="p-4 space-y-3 border-l-4 border-l-purple-600">
-                <div className="flex items-center justify-between">
-                  <Badge variant="outline" className="font-mono text-[10px]">
-                    {repo.defaultBranch}
-                  </Badge>
-                  <Badge variant="success" className="text-[10px]">
-                    {repo.status}
-                  </Badge>
-                </div>
-                <div>
-                  <h4 className="font-mono font-bold text-xs text-app-text-primary truncate">
-                    {repo.name}
-                  </h4>
-                  <div className="flex items-center gap-3 text-[11px] text-app-text-muted mt-1.5">
-                    <span className="flex items-center gap-1">
-                      <GitPullRequest className="w-3 h-3 text-purple-600" /> {repo.openPRs} PRs
-                    </span>
-                    <span>&bull;</span>
-                    <span className="flex items-center gap-1 text-emerald-600">
-                      <CheckCircle2 className="w-3 h-3" /> CI Passing
-                    </span>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
+    <PanelLayout title="GitHub Activity">
+      <PageFrame
+        crumbs={[{ label: "Developer", href: home }, { label: "GitHub Activity" }]}
+        title="GitHub Activity"
+        description="Commits, pull requests and checks linked to your work."
+      >
+        <div className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 text-xs text-[var(--color-text-secondary)]">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+          <span>GitHub activity is evidence only and never changes progress or task state.</span>
         </div>
-
-        {/* Activity Feed Section */}
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-app-text-primary">Live GitHub Event Stream</h3>
-              <p className="text-xs text-app-text-secondary">
-                Pushes, commits, pull request status checks, and peer review requests.
-              </p>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="relative w-48">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-app-text-muted" />
-                <Input
-                  placeholder="Filter commits..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-8 text-xs h-8"
-                />
-              </div>
-              <select
-                value={repoFilter}
-                onChange={(e) => setRepoFilter(e.target.value)}
-                className="rounded-lg border border-app-border bg-app-surface px-2.5 py-1 text-xs text-app-text-primary"
-              >
-                <option value="ALL">All Repos</option>
-                <option value="backend">backend</option>
-                <option value="frontend">frontend</option>
-                <option value="cds">decision-engine</option>
-              </select>
-            </div>
-          </div>
-
-          <Card className="p-0 overflow-hidden">
-            <div className="divide-y divide-app-border">
-              {filteredEvents.length === 0 ? (
-                <div className="py-12 text-center text-xs text-app-text-muted">
-                  No GitHub activity recorded matching criteria.
+        <DevGate state={activity} what="GitHub activity" back={{ href: home, label: "Back to dashboard" }}>
+          {() =>
+            events.length === 0 ? (
+              <EmptyStateView
+                icon={GitBranch}
+                title="No activity linked yet"
+                description="When repositories are connected for your projects, linked commits and pull requests appear here."
+              />
+            ) : (
+              <Panel title="Activity" description={`${filtered.length} of ${events.length} events`} icon={GitBranch}>
+                <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <AdminSelect
+                    label="Repository"
+                    value={repo}
+                    onChange={(e) => setRepo(e.target.value)}
+                    options={[{ label: "All repositories", value: "ALL" }, ...repos.map((r) => ({ label: r, value: r }))]}
+                  />
+                  <AdminSelect
+                    label="Author"
+                    value={actor}
+                    onChange={(e) => setActor(e.target.value)}
+                    options={[{ label: "All authors", value: "ALL" }, ...actors.map((a) => ({ label: a, value: a }))]}
+                  />
                 </div>
-              ) : (
-                filteredEvents.map((evt) => {
-                  const eventType = evt.eventType || evt.type || "PUSH";
-                  const repo = evt.repositoryName || evt.repo || "prowise/backend";
-                  const msg = evt.payloadSummary || evt.message || evt.title || "Commit and push";
-                  const actor = evt.actor || "Developer";
-
-                  return (
-                    <div
-                      key={evt.id}
-                      className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-app-hover transition-colors"
-                    >
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div className="p-2 rounded-lg bg-app-surface border border-app-border mt-0.5 shrink-0">
-                          {eventType === "PULL_REQUEST" || eventType === "PR" ? (
-                            <GitPullRequest className="w-4 h-4 text-purple-600" />
+                {filtered.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-[var(--color-text-muted)]">No events match these filters.</p>
+                ) : (
+                  <ul className="divide-y divide-[var(--color-border)]">
+                    {filtered.map((e) => (
+                      <li key={e.id} className="flex flex-col gap-1 py-2.5 text-xs sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <StatusBadge label={(e.eventType as string) || (e.type as string) || "EVENT"} tone="neutral" />
+                          <span className="truncate font-semibold text-[var(--color-text-primary)]">{repoOf(e)}</span>
+                          {e.url ? (
+                            <a
+                              href={e.url}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              className="truncate text-blue-600 hover:underline dark:text-blue-400"
+                            >
+                              {summaryOf(e)}
+                            </a>
                           ) : (
-                            <GitCommit className="w-4 h-4 text-blue-600" />
+                            <span className="truncate text-[var(--color-text-secondary)]">{summaryOf(e)}</span>
                           )}
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono text-xs font-bold text-app-text-primary">
-                              {repo}
-                            </span>
-                            <Badge variant="outline" className="text-[10px] font-mono">
-                              {eventType}
-                            </Badge>
-                            {evt.ref && (
-                              <span className="text-[10px] font-mono text-app-text-muted">
-                                {evt.ref}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-app-text-secondary mt-1 font-medium">{msg}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3 shrink-0 text-xs text-app-text-muted sm:text-right">
-                        <div>
-                          <span className="font-semibold text-app-text-primary block">{actor}</span>
-                          <span className="text-[10px]">
-                            {new Date(evt.createdAt).toLocaleString()}
-                          </span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0"
-                          onClick={() => window.open("https://github.com", "_blank")}
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </Card>
-        </div>
-      </div>
+                        <span className="shrink-0 text-[11px] text-[var(--color-text-muted)]">
+                          {(e.actor as string) || "Unknown"} · {dateTimeText((e.occurredAt as string) || (e.createdAt as string))}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Panel>
+            )
+          }
+        </DevGate>
+      </PageFrame>
     </PanelLayout>
   );
 }

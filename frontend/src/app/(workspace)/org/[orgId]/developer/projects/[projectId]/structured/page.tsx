@@ -1,526 +1,268 @@
 "use client";
 
-import React, { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import React, { useMemo, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { Activity, AlertTriangle, History, ListTree } from "lucide-react";
+
+import type { StructuredProgressDto, WorkBlockerDto, WorkItemDto } from "@/types/work";
 import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ProgressBar } from "@/components/ui/progress";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Dialog } from "@/components/ui/dialog";
-import { Input, Textarea } from "@/components/ui/input";
+import { EmptyStateView, PageFrame, Panel, ProgressBar, SegmentTabs, StatPill, StatusBadge } from "@/components/delivery/DeliveryUI";
+import { DevGate, SectionGate, WorkStateBadge, dateText, dateTimeText, isOverdue } from "@/components/developer/DevUI";
 import {
-  LayoutGrid,
-  List,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  Send,
-  Eye,
-  GitPullRequest,
-  Check,
-  ArrowRight,
-  ShieldCheck,
-  ExternalLink,
-} from "lucide-react";
-import { useAuthStore } from "@/store/auth-store";
-import { useProjectStore } from "@/store/project-store";
-import { WorkItem, WorkItemState } from "@/types";
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+  useDevProject,
+  useMyWorkItems,
+  useProjectBlockers,
+  useProjectWorkItems,
+  useStructuredProgress,
+} from "@/components/developer/useDeveloperData";
 
-export default function StructuredModeWorkspace() {
-  const params = useParams();
-  const router = useRouter();
-  const orgId = (params?.orgId as string) || "org-acme";
-  const projectId = (params?.projectId as string) || "proj-structured-cds";
+function num(value: number | null | undefined): string {
+  return value === null || value === undefined ? "—" : Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
 
-  const { currentOrg, currentUser } = useAuthStore();
-  const {
-    projects,
-    workItems,
-    baselines,
-    updateWorkItemState,
-    submitWorkItemForReview,
-    addBlocker,
-  } = useProjectStore();
-
-  const project = projects.find((p) => p.id === projectId) || projects[1];
-  const activeBaseline = baselines.find((b) => b.id === project.activeBaselineId);
-  const projectItems = workItems.filter((w) => w.projectId === project.id);
-
-  const [viewMode, setViewMode] = useState<"board" | "list" | "timeline">("board");
-
-  // Task Details / Review Submission Dialog state
-  const [selectedTask, setSelectedTask] = useState<WorkItem | null>(null);
-  const [isSubmitReviewOpen, setIsSubmitReviewOpen] = useState(false);
-  const [reviewEvidence, setReviewEvidence] = useState("");
-
-  // Blocker Dialog state
-  const [isBlockerDialogOpen, setIsBlockerDialogOpen] = useState(false);
-  const [blockerReason, setBlockerReason] = useState("");
-
-  const columns: { state: WorkItemState; title: string; color: string }[] = [
-    { state: "TODO", title: "To Do", color: "border-slate-300 dark:border-slate-700" },
-    { state: "IN_PROGRESS", title: "In Progress", color: "border-blue-500" },
-    { state: "IN_REVIEW", title: "In Review", color: "border-amber-500" },
-    { state: "DONE", title: "Done (Accepted)", color: "border-green-500" },
-  ];
-
-  const handleMoveState = (task: WorkItem, targetState: WorkItemState) => {
-    // Blueprint Rule: A required review blocks moving directly to Done without passing inspection!
-    if (targetState === "DONE" && task.state !== "IN_REVIEW") {
-      toast.error("Definition of Done: Task must first be submitted for Review and approved by QA.");
-      return;
-    }
-
-    if (targetState === "IN_REVIEW") {
-      submitWorkItemForReview(task.id, currentUser.id);
-      toast.success(`Task ${task.key} submitted for inspection (Revision ${task.currentRevision}).`);
-      return;
-    }
-
-    updateWorkItemState(task.id, targetState, currentUser.id);
-    toast.info(`Moved ${task.key} to ${targetState.replace("_", " ")}.`);
-  };
-
-  const handleConfirmSubmitReview = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTask) return;
-
-    submitWorkItemForReview(selectedTask.id, currentUser.id);
-    setIsSubmitReviewOpen(false);
-    toast.success(
-      `Submitted ${selectedTask.key} (rev ${selectedTask.currentRevision}) to QA Reviewer Priya Patel.`
-    );
-  };
-
-  const handleAddBlocker = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTask) return;
-
-    addBlocker(selectedTask.id, blockerReason, "HIGH", currentUser.id);
-    setIsBlockerDialogOpen(false);
-    setBlockerReason("");
-    toast.warning(`Blocker flagged on ${selectedTask.key}.`);
-  };
-
+function ProgressSummary({ progress }: { progress: StructuredProgressDto }) {
+  const measurable = progress.percent !== null;
   return (
-    <PanelLayout
-      title={`Structured Workspace — ${project.name}`}
-      breadcrumb={[
-        { label: "Developer", href: `/org/${orgId}/developer` },
-        { label: project.key },
-        { label: "Structured Mode" },
-      ]}
-    >
-      <div className="space-y-6">
-        {/* Header Bar */}
-        <div className="p-4 rounded-xl bg-app-surface border border-app-border flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-subtle">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
-                {project.key}
-              </span>
-              <h2 className="text-base font-bold text-app-text-primary">{project.name}</h2>
-              <Badge variant="default">Mode B: Structured Delivery</Badge>
-            </div>
-            <p className="text-xs text-app-text-secondary mt-1">
-              Active Baseline: <strong>v{activeBaseline?.version || 1}</strong> ({activeBaseline?.totalWeight || 100} points total) • Target: {project.targetDate}
-            </p>
-          </div>
-
-          {/* View Mode Switcher */}
-          <div className="flex items-center gap-1.5 bg-app-sidebar p-1 rounded-lg border border-app-border">
-            <button
-              onClick={() => setViewMode("board")}
-              className={cn(
-                "p-1.5 rounded-md text-xs font-medium flex items-center gap-1 transition-colors",
-                viewMode === "board"
-                  ? "bg-app-surface shadow-xs text-app-text-primary font-semibold"
-                  : "text-app-text-muted hover:text-app-text-primary"
-              )}
-            >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              <span>Board</span>
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={cn(
-                "p-1.5 rounded-md text-xs font-medium flex items-center gap-1 transition-colors",
-                viewMode === "list"
-                  ? "bg-app-surface shadow-xs text-app-text-primary font-semibold"
-                  : "text-app-text-muted hover:text-app-text-primary"
-              )}
-            >
-              <List className="w-3.5 h-3.5" />
-              <span>List</span>
-            </button>
-            <button
-              onClick={() => setViewMode("timeline")}
-              className={cn(
-                "p-1.5 rounded-md text-xs font-medium flex items-center gap-1 transition-colors",
-                viewMode === "timeline"
-                  ? "bg-app-surface shadow-xs text-app-text-primary font-semibold"
-                  : "text-app-text-muted hover:text-app-text-primary"
-              )}
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>Timeline</span>
-            </button>
-          </div>
+    <Panel title="Structured progress" icon={Activity} iconTone="violet" description="Calculated by the server from the approved baseline">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <p className="text-3xl font-bold tabular-nums text-[var(--color-text-primary)]" data-testid="structured-percent">
+            {measurable ? `${progress.percent}%` : "Not measurable"}
+          </p>
+          <span className="text-xs text-[var(--color-text-secondary)]">{progress.label}</span>
         </div>
-
-        {/* Progress Formula Banner */}
-        <div className="p-3.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-          <div>
-            <span className="font-bold text-indigo-900 dark:text-indigo-200">
-              Mathematically Calculated Progress:
-            </span>{" "}
-            <span className="text-app-text-secondary">
-              Eligible Done Leaves (
-              {projectItems
-                .filter((w) => w.state === "DONE")
-                .reduce((acc, curr) => acc + curr.weight, 0)}{" "}
-              pts) / Baseline ({activeBaseline?.totalWeight || 100} pts) ={" "}
-              <strong className="text-indigo-600 text-sm font-extrabold">
-                {project.lastProgressPercent}%
-              </strong>
-            </span>
-          </div>
-          <div className="w-48">
-            <ProgressBar value={project.lastProgressPercent} size="sm" showLabel />
-          </div>
+        {measurable && <ProgressBar value={progress.percent ?? 0} />}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <StatPill label="Accepted leaves" value={`${progress.accepted_leaves} / ${progress.total_leaves}`} />
+          <StatPill label="Accepted weight" value={`${num(progress.numerator)} / ${num(progress.denominator)}`} />
+          <StatPill label="Baseline" value={progress.baseline ? `v${progress.baseline.version_no}` : "None approved"} />
+          <StatPill label="Unit" value={progress.baseline?.unit ?? "—"} />
         </div>
-
-        {/* VIEW 1: KANBAN BOARD */}
-        {viewMode === "board" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {columns.map((col) => {
-              const itemsInCol = projectItems.filter(
-                (w) => w.state === col.state && w.type !== "MILESTONE"
-              );
-
-              return (
-                <div
-                  key={col.state}
-                  className="bg-app-sidebar/70 rounded-xl p-3 border border-app-border flex flex-col min-h-[500px]"
-                >
-                  <div
-                    className={cn(
-                      "flex items-center justify-between pb-2.5 mb-3 border-b-2 font-bold text-xs text-app-text-primary",
-                      col.color
-                    )}
-                  >
-                    <span>{col.title}</span>
-                    <span className="h-5 w-5 rounded-full bg-app-surface text-app-text-secondary text-[11px] flex items-center justify-center font-mono border border-app-border">
-                      {itemsInCol.length}
-                    </span>
-                  </div>
-
-                  <div className="flex-1 space-y-3 overflow-y-auto">
-                    {itemsInCol.map((item) => (
-                      <Card
-                        key={item.id}
-                        className={cn(
-                          "p-3.5 space-y-2.5 shadow-xs cursor-pointer hover:border-blue-500 transition-all",
-                          item.isBlocked && "border-amber-400 bg-amber-50/20"
-                        )}
-                        onClick={() => setSelectedTask(item)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-xs font-bold text-blue-600">
-                            {item.key}
-                          </span>
-                          <span className="text-[11px] font-semibold text-app-text-muted">
-                            {item.weight} pts
-                          </span>
-                        </div>
-
-                        <h4 className="text-xs font-bold text-app-text-primary line-clamp-2">
-                          {item.title}
-                        </h4>
-
-                        <div className="flex items-center justify-between text-[11px] text-app-text-muted pt-1 border-t border-app-border">
-                          <span>rev {item.currentRevision}</span>
-                          {item.isBlocked && (
-                            <Badge variant="warning" className="text-[10px] px-1 py-0">
-                              Blocked
-                            </Badge>
-                          )}
-                        </div>
-
-                        {/* Workflow Action Buttons */}
-                        <div
-                          className="pt-1 flex items-center justify-between gap-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {col.state === "TODO" && (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="w-full text-[11px] h-7"
-                              onClick={() => handleMoveState(item, "IN_PROGRESS")}
-                            >
-                              Start Working &rarr;
-                            </Button>
-                          )}
-                          {col.state === "IN_PROGRESS" && (
-                            <Button
-                              size="sm"
-                              className="w-full text-[11px] h-7 bg-amber-600 hover:bg-amber-700"
-                              onClick={() => {
-                                setSelectedTask(item);
-                                setIsSubmitReviewOpen(true);
-                              }}
-                            >
-                              <Send className="w-3 h-3 mr-1" /> Submit for Review
-                            </Button>
-                          )}
-                          {col.state === "IN_REVIEW" && (
-                            <div className="w-full text-center py-1 text-[11px] text-amber-600 font-medium">
-                              Waiting QA Approval
-                            </div>
-                          )}
-                          {col.state === "DONE" && (
-                            <div className="w-full text-center py-1 text-[11px] text-green-600 font-semibold flex items-center justify-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5" /> Accepted Work
-                            </div>
-                          )}
-                        </div>
-                      </Card>
-                    ))}
-
-                    {itemsInCol.length === 0 && (
-                      <div className="py-8 text-center text-xs text-app-text-muted border border-dashed border-app-border rounded-lg">
-                        Empty column
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* VIEW 2: LIST VIEW */}
-        {viewMode === "list" && (
-          <Card className="p-0 overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Hierarchy / Key</TableHead>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Weight</TableHead>
-                  <TableHead>Revision</TableHead>
-                  <TableHead>Acceptance Criteria</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {projectItems.map((item) => (
-                  <TableRow key={item.id} onClick={() => setSelectedTask(item)} className="cursor-pointer">
-                    <TableCell className="font-mono font-bold text-xs text-blue-600">
-                      {item.type === "MILESTONE" ? `📦 ${item.key}` : item.key}
-                    </TableCell>
-                    <TableCell className="font-semibold text-xs text-app-text-primary">
-                      {item.title}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={item.type === "MILESTONE" ? "default" : "secondary"}>
-                        {item.type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          item.state === "DONE"
-                            ? "success"
-                            : item.state === "IN_REVIEW"
-                            ? "warning"
-                            : "secondary"
-                        }
-                      >
-                        {item.state}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs font-semibold">{item.weight} pts</TableCell>
-                    <TableCell className="font-mono text-xs text-app-text-muted">
-                      rev {item.currentRevision}
-                    </TableCell>
-                    <TableCell className="text-xs text-app-text-secondary truncate max-w-xs">
-                      {item.criteria}
-                    </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <Button size="sm" variant="outline" onClick={() => setSelectedTask(item)}>
-                        Inspect
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-        )}
-
-        {/* VIEW 3: TIMELINE / GANTT VIEW */}
-        {viewMode === "timeline" && (
-          <Card className="p-5 space-y-4">
-            <CardTitle className="text-sm">Finish-to-Start Milestone Schedule</CardTitle>
-            <CardDescription>
-              Sprint date cutoffs derive from the project local timezone ({project.timezone}). Moving predecessors highlights dependency risk.
-            </CardDescription>
-
-            <div className="space-y-4 pt-2">
-              {projectItems.map((item) => (
-                <div key={item.id} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-app-text-primary">
-                      {item.key} — {item.title}
-                    </span>
-                    <span className="text-app-text-muted">Due: {item.dueDate || "Nov 15, 2026"}</span>
-                  </div>
-                  <ProgressBar
-                    value={item.state === "DONE" ? 100 : item.state === "IN_REVIEW" ? 75 : item.state === "IN_PROGRESS" ? 40 : 0}
-                    size="sm"
-                    status={item.state === "DONE" ? "success" : item.state === "IN_REVIEW" ? "warning" : "default"}
-                  />
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
+        {progress.explanation && <p className="text-xs text-[var(--color-text-secondary)]">{progress.explanation}</p>}
+        <p className="text-[11px] text-[var(--color-text-muted)]">
+          Progress counts only accepted (Done) leaves with approved baseline weights; a reopened prerequisite suspends credit
+          for dependent work. Code activity, elapsed time and task counts never set it.
+        </p>
       </div>
-
-      {/* Task Details Dialog */}
-      {selectedTask && (
-        <Dialog
-          isOpen={!!selectedTask}
-          onClose={() => setSelectedTask(null)}
-          title={`[${selectedTask.key}] ${selectedTask.title}`}
-          description={`Revision ${selectedTask.currentRevision} • Weight: ${selectedTask.weight} points`}
-          maxWidth="lg"
-        >
-          <div className="space-y-4 pt-2 text-xs">
-            <div>
-              <span className="font-bold text-app-text-primary block mb-1">
-                Acceptance Criteria:
-              </span>
-              <p className="p-3 rounded-lg bg-app-sidebar/60 border border-app-border text-app-text-secondary leading-relaxed">
-                {selectedTask.criteria}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-3 rounded-lg border border-app-border">
-                <span className="text-app-text-muted">Current Workflow State:</span>
-                <p className="font-bold text-sm text-app-text-primary mt-1">
-                  {selectedTask.state.replace("_", " ")}
-                </p>
-              </div>
-              <div className="p-3 rounded-lg border border-app-border">
-                <span className="text-app-text-muted">Assigned Reviewer:</span>
-                <p className="font-semibold text-app-text-primary mt-1">Priya Patel (QA)</p>
-              </div>
-            </div>
-
-            {selectedTask.isBlocked && (
-              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200">
-                <span className="font-bold">Active Blocker:</span>{" "}
-                {selectedTask.blockers?.[0]?.reason || "Impediment logged."}
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-app-border">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setIsBlockerDialogOpen(true);
-                }}
-              >
-                <AlertTriangle className="w-3.5 h-3.5 mr-1 text-amber-500" /> Flag Blocker
-              </Button>
-
-              <div className="flex items-center gap-2">
-                {selectedTask.state === "IN_PROGRESS" && (
-                  <Button
-                    size="sm"
-                    className="bg-amber-600 hover:bg-amber-700"
-                    onClick={() => {
-                      setIsSubmitReviewOpen(true);
-                    }}
-                  >
-                    <Send className="w-3.5 h-3.5 mr-1" /> Submit for Review
-                  </Button>
-                )}
-                <Button variant="secondary" size="sm" onClick={() => setSelectedTask(null)}>
-                  Close
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Dialog>
-      )}
-
-      {/* Submit for Review Dialog */}
-      <Dialog
-        isOpen={isSubmitReviewOpen}
-        onClose={() => setIsSubmitReviewOpen(false)}
-        title="Submit Work Item for Inspection"
-        description="Submitting records your current revision and notifies the assigned QA reviewer."
-      >
-        <form onSubmit={handleConfirmSubmitReview} className="space-y-4 pt-2">
-          <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-xs text-blue-900 dark:text-blue-300">
-            Submitting <strong>{selectedTask?.key}</strong> at <strong>Revision {selectedTask?.currentRevision}</strong>.
-            Reviewers will inspect against this exact revision snapshot.
-          </div>
-
-          <Input
-            label="Optional Pull Request or Test Evidence Link"
-            value={reviewEvidence}
-            onChange={(e) => setReviewEvidence(e.target.value)}
-            placeholder="https://github.com/acme-health/clinical-decision-api/pull/28"
-          />
-
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-app-border">
-            <Button type="button" variant="outline" onClick={() => setIsSubmitReviewOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">Submit to Reviewer</Button>
-          </div>
-        </form>
-      </Dialog>
-
-      {/* Flag Blocker Dialog */}
-      <Dialog
-        isOpen={isBlockerDialogOpen}
-        onClose={() => setIsBlockerDialogOpen(false)}
-        title="Flag Blocker on Task"
-        description="Blockers highlight impediments without altering approved task state."
-      >
-        <form onSubmit={handleAddBlocker} className="space-y-4 pt-2">
-          <Textarea
-            label="Blocker Reason"
-            value={blockerReason}
-            onChange={(e) => setBlockerReason(e.target.value)}
-            placeholder="Explain what is blocking progress..."
-            required
-          />
-
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-app-border">
-            <Button type="button" variant="outline" onClick={() => setIsBlockerDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">Log Blocker</Button>
-          </div>
-        </form>
-      </Dialog>
-    </PanelLayout>
+    </Panel>
   );
 }
 
+function LeavesTable({ orgId, progress }: { orgId: string; progress: StructuredProgressDto }) {
+  if (progress.leaves.length === 0) {
+    return (
+      <EmptyStateView icon={ListTree} title="No baseline leaves" description="No approved baseline yet, so there is nothing to measure." />
+    );
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
+            <th className="py-2 pr-3 font-semibold">Item</th>
+            <th className="py-2 pr-3 font-semibold">State</th>
+            <th className="py-2 pr-3 font-semibold text-right">Weight</th>
+            <th className="py-2 font-semibold">Credit</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[var(--color-border)]">
+          {progress.leaves.map((leaf) => (
+            <tr key={leaf.work_item_id}>
+              <td className="py-2 pr-3 min-w-[180px]">
+                <Link href={`/org/${orgId}/developer/tasks/${leaf.work_item_id}`} className="hover:underline">
+                  <span className="font-mono text-blue-600 dark:text-blue-400 mr-1.5">{leaf.key}</span>
+                  <span className="text-[var(--color-text-primary)]">{leaf.title}</span>
+                </Link>
+              </td>
+              <td className="py-2 pr-3">
+                <WorkStateBadge state={leaf.cancelled ? "CANCELLED" : leaf.state} />
+              </td>
+              <td className="py-2 pr-3 text-right tabular-nums">{num(leaf.weight)}</td>
+              <td className="py-2">
+                {leaf.suspended ? (
+                  <StatusBadge label="Suspended" tone="warning" />
+                ) : leaf.accepted ? (
+                  <StatusBadge label="Counted" tone="success" />
+                ) : (
+                  <StatusBadge label="Not yet" tone="neutral" />
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Snapshots({ progress }: { progress: StructuredProgressDto }) {
+  const recent = progress.snapshots.slice(0, 8);
+  if (recent.length === 0) {
+    return <p className="text-xs text-[var(--color-text-muted)]">No snapshots yet. One is written with every material change.</p>;
+  }
+  return (
+    <ul className="divide-y divide-[var(--color-border)]">
+      {recent.map((s) => (
+        <li key={s.id} className="py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="min-w-0">
+            <span className="font-semibold tabular-nums text-[var(--color-text-primary)]">
+              {s.percent === null ? s.missing_label ?? "Not measurable" : `${s.percent}%`}
+            </span>
+            <span className="ml-2 text-[var(--color-text-secondary)]">
+              {s.accepted_leaves}/{s.total_leaves} leaves{s.baseline_version ? ` · baseline v${s.baseline_version}` : ""}
+            </span>
+            {s.cause && <span className="ml-2 text-[var(--color-text-muted)]">{s.cause}</span>}
+            {s.transition_marker && <StatusBadge label="Mode change" tone="violet" className="ml-2" />}
+          </div>
+          <span className="text-[11px] text-[var(--color-text-muted)]">{dateTimeText(s.taken_at)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+type ItemFilter = "MINE" | "ALL";
+
+function WorkItems({ orgId, items, mine }: { orgId: string; items: WorkItemDto[]; mine: Set<string> }) {
+  const [filter, setFilter] = useState<ItemFilter>(mine.size > 0 ? "MINE" : "ALL");
+  const active = items.filter((i) => i.plan_status !== "RETIRED");
+  const shown = filter === "MINE" ? active.filter((i) => mine.has(i.id)) : active;
+  return (
+    <div className="space-y-3">
+      <SegmentTabs<ItemFilter>
+        value={filter}
+        onChange={setFilter}
+        options={[
+          { value: "MINE", label: "Assigned to me", count: active.filter((i) => mine.has(i.id)).length },
+          { value: "ALL", label: "All work", count: active.length },
+        ]}
+      />
+      {shown.length === 0 ? (
+        <EmptyStateView
+          icon={ListTree}
+          title={filter === "MINE" ? "Nothing assigned to you here" : "No work items yet"}
+          description={filter === "MINE" ? "Work assigned to you on this project appears here." : "The project manager has not planned work yet."}
+        />
+      ) : (
+        <ul className="divide-y divide-[var(--color-border)]">
+          {shown.map((item) => {
+            const overdue = isOverdue(item.due_on, item.state);
+            return (
+              <li key={item.id}>
+                <Link
+                  href={`/org/${orgId}/developer/tasks/${item.id}`}
+                  className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2.5 px-2 rounded-md hover:bg-[var(--color-hover)] ${mine.has(item.id) ? "border-l-2 border-l-blue-500" : ""}`}
+                  style={{ paddingLeft: `${0.5 + Math.max(0, item.depth - 1) * 1}rem` }}
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-mono font-semibold text-blue-600 dark:text-blue-400">{item.key}</span>
+                      <span className="text-[10px] uppercase text-[var(--color-text-muted)]">{item.type}</span>
+                      {item.plan_status === "DRAFT" && <StatusBadge label="Draft" tone="neutral" />}
+                    </div>
+                    <p className="text-xs font-medium text-[var(--color-text-primary)] truncate">{item.title}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-muted)] shrink-0">
+                    <span className="truncate max-w-[160px]">{item.primary_assignee?.email ?? "Unassigned"}</span>
+                    <span className={overdue ? "text-rose-600 dark:text-rose-400 font-semibold" : ""}>Due {dateText(item.due_on)}</span>
+                    <span className="tabular-nums">w {num(item.weight)}</span>
+                    <WorkStateBadge state={item.state} blocked={item.blocked} />
+                  </div>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function OpenBlockers({ orgId, blockers }: { orgId: string; blockers: WorkBlockerDto[] }) {
+  if (blockers.length === 0) return <p className="text-xs text-[var(--color-text-muted)]">No open blockers on this project.</p>;
+  return (
+    <ul className="space-y-2">
+      {blockers.map((b) => (
+        <li key={b.id} className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Link href={`/org/${orgId}/developer/tasks/${b.work_item_id}`} className="font-mono font-semibold text-rose-600 dark:text-rose-400 hover:underline">
+              {b.work_item_key}
+            </Link>
+            <StatusBadge label={b.severity === "CRITICAL" ? "Critical" : "Normal"} tone={b.severity === "CRITICAL" ? "danger" : "warning"} />
+          </div>
+          <p className="mt-1 text-[var(--color-text-primary)]">{b.reason}</p>
+          <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+            Owner {b.owner?.email ?? "—"} · open {b.age_hours}h
+          </p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export default function StructuredProjectPage() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const projectId = (params?.projectId as string) || "";
+  const project = useDevProject(projectId);
+  const progress = useStructuredProgress(projectId);
+  const items = useProjectWorkItems(projectId);
+  const blockers = useProjectBlockers(projectId);
+  const myWork = useMyWorkItems();
+  const mine = useMemo(
+    () => new Set(myWork.kind === "ready" ? myWork.data.filter((w) => w.project_id === projectId).map((w) => w.id) : []),
+    [myWork, projectId],
+  );
+
+  const list = `/org/${orgId}/developer/projects`;
+  const name = project.kind === "ready" ? project.data.name : "Project";
+  const crumbs = [{ label: "My Projects", href: list }, { label: name }];
+
+  return (
+    <PanelLayout title={name} breadcrumb={crumbs}>
+      <DevGate state={project} what="This project" back={{ href: list, label: "Back to my projects" }} skeleton="detail">
+        {(p) => (
+          <PageFrame
+            crumbs={crumbs}
+            back={{ href: list, label: "Back to my projects" }}
+            title={p.name}
+            badge="Structured"
+            description={p.description || `${p.code} · target ${dateText(p.targetCompletionDate)}`}
+          >
+            <SectionGate state={progress} what="Structured progress">
+              {(data) => <ProgressSummary progress={data} />}
+            </SectionGate>
+
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+              <div className="xl:col-span-2 space-y-5 min-w-0">
+                <Panel title="Work items" icon={ListTree} iconTone="blue" description="Open an item to start it, submit evidence or see its review history">
+                  <SectionGate state={items} what="Work items">
+                    {(data) => <WorkItems orgId={orgId} items={data} mine={mine} />}
+                  </SectionGate>
+                </Panel>
+                <Panel title="Baseline leaves" icon={ListTree} iconTone="violet" description="What counts toward progress, and why">
+                  <SectionGate state={progress} what="Baseline leaves">
+                    {(data) => <LeavesTable orgId={orgId} progress={data} />}
+                  </SectionGate>
+                </Panel>
+              </div>
+              <div className="space-y-5 min-w-0">
+                <Panel title="Open blockers" icon={AlertTriangle} iconTone="rose">
+                  <SectionGate state={blockers} what="Open blockers">
+                    {(data) => <OpenBlockers orgId={orgId} blockers={data} />}
+                  </SectionGate>
+                </Panel>
+                <Panel title="Progress history" icon={History} iconTone="teal" description="Append-only snapshots">
+                  <SectionGate state={progress} what="Progress history">
+                    {(data) => <Snapshots progress={data} />}
+                  </SectionGate>
+                </Panel>
+              </div>
+            </div>
+          </PageFrame>
+        )}
+      </DevGate>
+    </PanelLayout>
+  );
+}

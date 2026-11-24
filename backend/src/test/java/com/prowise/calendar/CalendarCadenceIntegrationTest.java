@@ -37,6 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.prowise.testsupport.TestAccounts;
 import com.prowise.authz.TestDatabase;
 
 /** Task 2.3 through the API: work calendar, cadence, grace, on hold, rescheduling, one live occurrence per window. */
@@ -55,6 +56,9 @@ class CalendarCadenceIntegrationTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private CalendarCadenceService calendar;
     @Autowired private TransactionTemplate transactions;
+
+    @Autowired
+    private com.prowise.identity.AccountTokenService accountTokens;
 
     @BeforeEach
     @AfterEach

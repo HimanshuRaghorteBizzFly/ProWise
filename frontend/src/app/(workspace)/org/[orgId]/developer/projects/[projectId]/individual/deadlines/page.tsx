@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 "use client";
 import React from "react";
 import { useParams } from "next/navigation";
@@ -45,4 +46,11 @@ function PreviewIndividualDeadlinesPage() {
       </div>
     </PanelLayout>
   );
+=======
+import { redirect } from "next/navigation";
+
+/** Folded into the Developer workspace: this old URL now opens the page that holds the same real data. */
+export default function Page({ params }: { params: { orgId: string; projectId: string; taskId?: string } }) {
+  redirect(`/org/${params.orgId}/developer/projects/${params.projectId}/individual`);
+>>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
 }

@@ -305,39 +305,32 @@ export function Sidebar({ mobileOpen, onMobileClose, mobileTriggerRef }: Sidebar
         ];
 
       case "DEVELOPER":
+        // The 11 Developer destinations. Bugs live in Blockers & Issues, files in Reviews & Evidence, My Work in
+        // My Tasks; sprint and report pages are not separate destinations.
         return [
           {
             groupTitle: "Workspace",
             items: [
               { label: "Dashboard", href: `/org/${orgId}/developer/dashboard`, icon: LayoutDashboard },
-              { label: "My Projects", href: `/org/${orgId}/developer/projects`, icon: FolderGit2 },
               { label: "My Tasks", href: `/org/${orgId}/developer/tasks`, icon: CheckSquare },
-              { label: "Progress Tracker", href: `/org/${orgId}/developer/progress`, icon: Activity },
-              { label: "My Work", href: `/org/${orgId}/developer/my-work`, icon: Layers },
+              { label: "My Projects", href: `/org/${orgId}/developer/projects`, icon: FolderGit2 },
+              { label: "Progress & Tracker", href: `/org/${orgId}/developer/progress`, icon: Activity },
             ],
           },
           {
-            groupTitle: "Development",
+            groupTitle: "Delivery",
             items: [
-              { label: "Sprint Board", href: `/org/${orgId}/developer/sprints`, icon: FolderGit2 },
               { label: "GitHub Activity", href: `/org/${orgId}/developer/github`, icon: GitPullRequest },
-              { label: "Code Reviews", href: `/org/${orgId}/developer/reviews`, icon: FileCheck },
-              { label: "Bugs & Issues", href: `/org/${orgId}/developer/bugs`, icon: AlertTriangle },
-            ],
-          },
-          {
-            groupTitle: "Collaboration",
-            items: [
+              { label: "Reviews & Evidence", href: `/org/${orgId}/developer/reviews`, icon: FileCheck },
+              { label: "Blockers & Issues", href: `/org/${orgId}/developer/blockers`, icon: AlertTriangle },
               { label: "Calendar & Deadlines", href: `/org/${orgId}/developer/calendar`, icon: Calendar },
-              { label: "Team Collaboration", href: `/org/${orgId}/developer/discussions`, icon: Users },
-              { label: "Files & Documents", href: `/org/${orgId}/developer/files`, icon: FileText },
             ],
           },
           {
-            groupTitle: "Personal",
+            groupTitle: "Team",
             items: [
+              { label: "Team & Comments", href: `/org/${orgId}/developer/discussions`, icon: Users },
               { label: "Notifications", href: `/org/${orgId}/developer/notifications`, icon: Bell },
-              { label: "My Reports", href: `/org/${orgId}/developer/reports`, icon: FileText },
               { label: "Settings", href: `/org/${orgId}/developer/settings`, icon: Settings },
             ],
           },

@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,8 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.prowise.common.api.ApiException;
 import com.prowise.common.api.ErrorCodes;
 import com.prowise.identity.AuthPrincipal;
+import com.prowise.identity.EmailCredentialService;
 import com.prowise.identity.JwtService;
-import com.prowise.notification.EmailMessage;
 import com.prowise.notification.EmailSender;
 import com.prowise.operator.OperatorDepartment;
 import com.prowise.operator.OperatorDepartmentPermissionEntity;
@@ -66,6 +67,15 @@ public class OperatorAuthService {
     private final EmailSender emailSender;
     private final long refreshTokenDays;
     private final long accessTokenMinutes;
+    /** Same minimum as user accounts (AuthService). */
+    static final int MIN_PASSWORD_LENGTH = 12;
+    private EmailCredentialService emailCredentialService;
+
+    /** Optional so unit tests can build the service without the mail stack; when absent no reset email is sent. */
+    @Autowired(required = false)
+    public void setEmailCredentialService(EmailCredentialService emailCredentialService) {
+        this.emailCredentialService = emailCredentialService;
+    }
 
     public OperatorAuthService(
             PlatformOperatorRepository operatorRepository,
@@ -123,6 +133,13 @@ public class OperatorAuthService {
         if (operator.getPasswordHash() == null || !passwordEncoder.matches(password, operator.getPasswordHash())) {
             recordLoginHistory(operator.getId(), email, "FAILED_INVALID_CREDENTIALS", ipAddress, userAgent, "Password mismatch");
             throw invalidCredentials();
+        }
+
+        // An operator activated by status change alone has never chosen a password through the invitation.
+        if (!operator.isPasswordSetupCompleted()) {
+            recordLoginHistory(operator.getId(), email, "FAILED_SETUP_INCOMPLETE", ipAddress, userAgent, "Invitation not accepted");
+            throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_SETUP_INCOMPLETE",
+                    "Accept your invitation email to choose a password before signing in.");
         }
 
         // Credentials valid - update operator timestamps
@@ -218,53 +235,55 @@ public class OperatorAuthService {
             String tokenHash = hash(rawToken);
             Instant expiresAt = Instant.now().plus(30, ChronoUnit.MINUTES);
 
+            // A new request supersedes earlier links; only the hash is stored.
+            passwordResetRepository.expireOpenForOperator(op.getId(), Instant.now());
             passwordResetRepository.save(new OperatorPasswordResetEntity(op.getId(), op.getEmail(), tokenHash, expiresAt));
 
-            emailSender.send(new EmailMessage(
-                    op.getEmail(),
-                    "ProWise Platform Operator Password Reset",
-                    "A password reset was requested for your Platform Operator account.\n\n"
-                            + "Your reset token is: " + rawToken + "\n\n"
-                            + "This token will expire in 30 minutes."
-            ));
+            // The email carries a single-use link, never the token as text. Without the HTML email service no
+            // email is sent at all (fail closed); the token is never logged.
+            if (emailCredentialService != null) {
+                emailCredentialService.sendOperatorPasswordResetEmail(op.getEmail(), op.getName(), rawToken);
+            }
         }
     }
 
+    @Transactional
     public void resetPassword(String token, String newPassword) {
-        if (token == null || token.isBlank() || newPassword == null || newPassword.length() < 8) {
+        if (token == null || token.isBlank() || newPassword == null || newPassword.length() < MIN_PASSWORD_LENGTH) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED,
-                    "Password reset token and a new password with at least 8 characters are required.");
+                    "Password reset link and a new password with at least 12 characters are required.");
         }
 
         String tokenHash = hash(token.trim());
-        OperatorPasswordResetEntity reset = passwordResetRepository.findByTokenHashAndUsedAtIsNull(tokenHash)
-                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_CREDENTIALS,
-                        "Invalid or expired password reset token."));
-
-        if (reset.getExpiresAt().isBefore(Instant.now())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_CREDENTIALS,
-                    "Password reset token has expired.");
+        OperatorPasswordResetEntity reset = passwordResetRepository.findByTokenHash(tokenHash)
+                .orElseThrow(OperatorAuthService::invalidResetLink);
+        // Atomic single use: of two concurrent submissions only one can mark the link used.
+        if (passwordResetRepository.markUsedIfOpen(tokenHash, Instant.now()) != 1) {
+            throw invalidResetLink();
         }
 
         PlatformOperatorEntity operator = operatorRepository.findById(reset.getOperatorId())
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator account not found."));
+                .filter(op -> "ACTIVE".equalsIgnoreCase(op.getStatus()))
+                .orElseThrow(OperatorAuthService::invalidResetLink);
 
         operator.setPasswordHash(passwordEncoder.encode(newPassword));
         operator.setPasswordSetupCompleted(true);
         operator.setUpdatedAt(Instant.now());
         operatorRepository.save(operator);
 
-        reset.setUsedAt(Instant.now());
-        passwordResetRepository.save(reset);
-
         // Revoke all existing sessions on password change
         sessionRepository.revokeAllByOperatorId(operator.getId(), "PASSWORD_RESET");
     }
 
+    private static ApiException invalidResetLink() {
+        return new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_CREDENTIALS,
+                "This reset link is invalid, already used or expired.");
+    }
+
     public OperatorAuthDTOs.OperatorAuthResponse acceptInvitation(String token, String newPassword, String name) {
-        if (token == null || token.isBlank() || newPassword == null || newPassword.length() < 8) {
+        if (token == null || token.isBlank() || newPassword == null || newPassword.length() < MIN_PASSWORD_LENGTH) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED,
-                    "Invitation token and a password with at least 8 characters are required.");
+                    "Invitation link and a password with at least 12 characters are required.");
         }
 
         String tokenHash = hash(token.trim());

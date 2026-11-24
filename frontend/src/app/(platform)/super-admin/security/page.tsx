@@ -119,6 +119,12 @@ export default function SecurityCenterPage() {
         description="Monitor platform security alerts, enforce protection policies, review active admin sessions, and oversee access posture."
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <Link href="/super-admin/security-keys">
+              <AdminButton variant="outline" size="sm">
+                <Lock className="w-3.5 h-3.5 text-purple-600" />
+                Platform Keys &amp; JWT
+              </AdminButton>
+            </Link>
             <Link href="/super-admin/access-approvals">
               <AdminButton variant="outline" size="sm">
                 <UserCheck className="w-3.5 h-3.5" />

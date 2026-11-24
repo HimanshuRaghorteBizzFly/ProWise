@@ -32,7 +32,7 @@ import com.prowise.authz.TestDatabase;
 @Tag("AS-07")
 class SuperAdminUserAccessIntegrationTest {
 
-    private static final String PASSWORD = "correct-horse-battery";
+    private static final String PASSWORD = "Correct-Horse-Battery-1!";
     private static final List<String> ROUTES = List.of(
             "/api/super-admin/users", "/v1/admin/users", "/api/v1/admin/users");
 
@@ -47,6 +47,7 @@ class SuperAdminUserAccessIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired private com.prowise.identity.AccountTokenService accountTokens;
 
     @BeforeEach
     @AfterEach
@@ -129,9 +130,9 @@ class SuperAdminUserAccessIntegrationTest {
 
     private String signupToken(String name) throws Exception {
         String email = name + "-" + UUID.randomUUID().toString().substring(0, 8) + "@example.test";
-        return objectMapper.readTree(mockMvc.perform(post("/v1/auth/signup").contentType("application/json")
-                        .content("{\"email\":\"" + email + "\",\"password\":\"" + PASSWORD + "\"}"))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("access_token").asText();
+        // Signup returns 202 without a session (D9); verify through the real endpoint, then sign in.
+        return com.prowise.testsupport.TestAccounts.signUpVerifyAndLogin(
+                mockMvc, jdbc, accountTokens, objectMapper, email, PASSWORD).accessToken();
     }
 
     private static String createBody(String name) {

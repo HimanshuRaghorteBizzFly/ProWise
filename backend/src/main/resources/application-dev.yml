@@ -1,4 +1,5 @@
 # Local development (SPRING_PROFILES_ACTIVE=dev).
+# Email uses the same real SMTP settings as every other profile (SMTP_* in backend/.env or the admin panel).
 prowise:
   auth:
     # Local http://localhost: the refresh cookie cannot be Secure-only for every browser.
@@ -11,11 +12,3 @@ prowise:
 logging:
   level:
     com.prowise: DEBUG
-
-spring:
-  mail:
-    host: ${MAIL_HOST:localhost}
-    port: ${MAIL_PORT:1025}
-    properties:
-      mail.smtp.auth: false
-      mail.smtp.starttls.enable: false

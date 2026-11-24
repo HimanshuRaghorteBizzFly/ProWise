@@ -432,23 +432,21 @@ public class OperatorOperationsService {
     @Transactional(readOnly = true)
     public List<OperatorDTOs.EmailDeliveryLogResponse> listEmailDeliveryLogs(String status, AuthPrincipal principal) {
         List<EmailDeliveryLogEntity> list = (status != null && !status.equals("ALL"))
-                ? emailLogRepository.findByStatusOrderBySentAtDesc(status)
-                : emailLogRepository.findAllByOrderBySentAtDesc();
+                ? emailLogRepository.findByStatusOrderByCreatedAtDesc(status)
+                : emailLogRepository.findAllByOrderByCreatedAtDesc();
         return list.stream().map(this::toEmailResponse).toList();
     }
 
+    /**
+     * A logged email cannot be re-sent from the log: account emails carry single-use links whose raw token is never
+     * stored, so a "retry" could only pretend. The log is left unchanged; the sender of the original email (for
+     * example "Resend setup email" on the user) issues a fresh link and a real new delivery attempt.
+     */
     public OperatorDTOs.EmailDeliveryLogResponse retryEmailDelivery(String id, AuthPrincipal principal, String ip) {
-        EmailDeliveryLogEntity log = emailLogRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Email delivery record not found: " + id));
-
-        log.setAttempts(log.getAttempts() + 1);
-        log.setStatus("DELIVERED");
-        log.setErrorMessage(null);
-        log.setSentAt(Instant.now());
-        EmailDeliveryLogEntity saved = emailLogRepository.save(log);
-
-        logActivity(principal, "EMAIL_RETRY", "email_delivery", id, "Retried email delivery to " + log.getRecipient(), ip);
-        return toEmailResponse(saved);
+        emailLogRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Not found."));
+        throw new ApiException(HttpStatus.CONFLICT, "EMAIL_RETRY_UNAVAILABLE",
+                "Logged emails cannot be re-sent. Use the original action (for example Resend setup email) to send a new one.");
     }
 
     // ==================== OPERATIONAL ALERTS ====================

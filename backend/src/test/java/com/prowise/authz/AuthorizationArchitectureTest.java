@@ -40,6 +40,7 @@ class AuthorizationArchitectureTest {
             "com.prowise.common.api.HealthController.health",
             "com.prowise.common.api.JsonErrorController.error",
             "com.prowise.identity.AuthController.signup",
+            "com.prowise.identity.AuthController.verifyEmail",
             "com.prowise.identity.AuthController.signin",
             "com.prowise.identity.AuthController.login",
             "com.prowise.identity.AuthController.refresh",
@@ -47,17 +48,24 @@ class AuthorizationArchitectureTest {
             "com.prowise.identity.AuthController.logout",
             "com.prowise.identity.AuthController.forgotPassword",
             "com.prowise.identity.AuthController.resetPassword",
+            "com.prowise.identity.AuthController.activateAccount",
             "com.prowise.operator.auth.OperatorAuthController.login",
             "com.prowise.operator.auth.OperatorAuthController.refresh",
             "com.prowise.operator.auth.OperatorAuthController.forgotPassword",
             "com.prowise.operator.auth.OperatorAuthController.resetPassword",
-            "com.prowise.operator.auth.OperatorAuthController.acceptInvitation");
+            "com.prowise.operator.auth.OperatorAuthController.acceptInvitation",
+            // The emailed invitation link, before an account exists: preview and create the account (single use).
+            "com.prowise.org.InvitationAcceptController.publicPreview",
+            "com.prowise.org.InvitationAcceptController.activate");
 
     /** Identity-level routes with no tenant object: the service itself checks membership where it matters. */
     static final Set<String> AUTHENTICATED_ONLY_ENDPOINTS = Set.of(
             "com.prowise.identity.AuthController.logoutEverywhere",
             "com.prowise.identity.AuthController.changePassword",
             "com.prowise.identity.AuthController.me",
+            "com.prowise.identity.AuthController.sessions",
+            "com.prowise.identity.AuthController.revokeSession",
+            "com.prowise.identity.AuthController.revokeOtherSessions",
             "com.prowise.identity.OrganizationSwitchController.switchOrganization",
             "com.prowise.org.OrganizationController.create",
             "com.prowise.org.InvitationAcceptController.preview",

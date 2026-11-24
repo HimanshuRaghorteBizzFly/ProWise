@@ -6,6 +6,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "auth_audit_logs")
@@ -27,8 +29,9 @@ public class AuthAuditLogEntity {
     @Column(name = "target_user_id")
     private UUID targetUserId;
 
+    /** JSON text bound as jsonb; without the JSON type code PostgreSQL rejects the varchar parameter. */
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "details", columnDefinition = "JSONB")
-    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     private String details = "{}";
 
     @Column(name = "ip_address", length = 100)

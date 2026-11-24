@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   AlertCircle,
@@ -340,6 +341,12 @@ export default function PlatformSettingsPage() {
         description="Configure customer-facing platform branding, system limits, session security safeguards, executive email digests, and diagnostics."
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <Link href="/super-admin/security-keys">
+              <AdminButton variant="outline" size="sm">
+                <KeyRound className="w-4 h-4 text-purple-600" />
+                Platform Keys &amp; JWT
+              </AdminButton>
+            </Link>
             <AdminButton
               variant="outline"
               size="sm"
@@ -801,6 +808,28 @@ export default function PlatformSettingsPage() {
        * ========================================================================= */}
       {activeTab === "security" && (
         <div className="space-y-6 max-w-4xl">
+          <div className="p-4 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/60 dark:bg-blue-950/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                  Platform Keys, JWT Signing &amp; Environment Secrets Vault
+                </h4>
+                <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                  Configure and view JWT Signing Keys, Access Tokens, Database Passwords, SMTP Passwords, and export .env files directly in the UI.
+                </p>
+              </div>
+            </div>
+            <Link href="/super-admin/security-keys">
+              <AdminButton variant="primary" size="sm" className="whitespace-nowrap">
+                <KeyRound className="w-3.5 h-3.5" />
+                Open Secrets Vault
+              </AdminButton>
+            </Link>
+          </div>
+
           <SurfaceCard className="p-4 sm:p-6 space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-[var(--color-border)]">
               <div className="flex items-center gap-2">

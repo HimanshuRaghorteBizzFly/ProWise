@@ -12,7 +12,8 @@ import type {
   ProjectOptionsDto,
   UpdateProjectDto,
 } from "@/types/api";
-import { toState, type LoadState } from "@/components/org-console/useRoleApi";
+import { toState, withFixture, type LoadState } from "@/components/org-console/useRoleApi";
+import { PREVIEW_PROJECTS } from "@/lib/fixtures/preview-data";
 
 /** Task 2.1: project records on the real API (no sample fallback: these screens create and edit). */
 
@@ -41,7 +42,8 @@ export function usePortfolio(orgId: string, filters: PortfolioFilters): Portfoli
   if (query.isPending) state = { kind: "loading" };
   else if (query.error) {
     const kind = classifyFailure(query.error, readPermissionEnv());
-    state = kind === "forbidden" ? { kind: "forbidden" }
+    state = kind === "fixture" ? { kind: "ready", data: PREVIEW_PROJECTS.filter((p) => !filters.mode || p.mode === filters.mode), sample: true }
+      : kind === "forbidden" ? { kind: "forbidden" }
       : kind === "not-found" ? { kind: "access-lost" }
         : kind === "unauthenticated" ? { kind: "unauthenticated" }
           : { kind: "error", retry: () => void query.refetch() };
@@ -59,7 +61,7 @@ export function usePortfolio(orgId: string, filters: PortfolioFilters): Portfoli
 export function useProject(orgId: string, projectId: string): LoadState<ProjectDto> {
   return toState(useQuery({
     queryKey: ["project", orgId, projectId],
-    queryFn: () => apiClient.project(orgId, projectId),
+    queryFn: () => withFixture(() => apiClient.project(orgId, projectId), () => PREVIEW_PROJECTS.find((p) => p.id === projectId) ?? PREVIEW_PROJECTS[0]),
     enabled: Boolean(projectId),
     ...QUERY,
   }));

@@ -121,6 +121,14 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping({"/auth/activate-account", "/auth/account-setup/confirm"})
+    @PreAuthorize("permitAll()")
+    @Operation(summary = "Activate a pending account with its emailed single-use setup link and a self-chosen password")
+    public ResponseEntity<Void> activateAccount(@RequestBody PasswordResetRequest request) {
+        authService.activateAccount(request.token(), request.password());
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping({"/me", "/auth/me"})
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Get the authenticated identity and active memberships")

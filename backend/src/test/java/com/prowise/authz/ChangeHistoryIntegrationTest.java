@@ -56,6 +56,7 @@ class ChangeHistoryIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired private com.prowise.identity.AccountTokenService accountTokens;
 
     @BeforeEach
     @AfterEach
@@ -302,11 +303,10 @@ class ChangeHistoryIntegrationTest {
 
     private Person person(String name) throws Exception {
         String email = name + "-" + UUID.randomUUID().toString().substring(0, 8) + "@example.test";
-        JsonNode signup = json(mockMvc.perform(post("/v1/auth/signup").contentType("application/json")
-                        .content("{\"email\":\"" + email + "\",\"password\":\"correct-horse-battery\"}"))
-                .andExpect(status().isCreated()).andReturn());
-        UUID id = jdbc.queryForObject("SELECT id FROM users WHERE lower(email) = lower(?)", UUID.class, email);
-        return new Person(id, email, signup.path("access_token").asText());
+        // Signup returns 202 without a session (D9); verify through the real endpoint, then sign in.
+        com.prowise.testsupport.TestAccounts.Account account = com.prowise.testsupport.TestAccounts.signUpVerifyAndLogin(
+                mockMvc, jdbc, accountTokens, objectMapper, email, "Correct-Horse-Battery-1!");
+        return new Person(account.id(), email, account.accessToken());
     }
 
     private String switchTo(String token, UUID orgId) throws Exception {

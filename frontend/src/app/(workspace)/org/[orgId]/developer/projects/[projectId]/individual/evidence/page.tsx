@@ -1,19 +1,6 @@
-"use client";
-import React from "react";
-import { useParams } from "next/navigation";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card } from "@/components/ui/card";
+import { redirect } from "next/navigation";
 
-export default function IndividualProjectEvidencePage() {
-  const params = useParams();
-  const orgId = (params.orgId as string) || "org-1";
-  const projectId = params.projectId as string;
-
-  return (
-    <PanelLayout title="Project Evidence & PRs" breadcrumb={[{ label: "Developer", href: `/org/${orgId}/developer` }, { label: "Evidence" }]}>
-      <Card className="p-5 border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <p className="text-xs text-[var(--color-text-secondary)]">Artifacts and PR links attached to check-ins for this project.</p>
-      </Card>
-    </PanelLayout>
-  );
+/** Folded into the Developer workspace: this old URL now opens the page that holds the same real data. */
+export default function Page({ params }: { params: { orgId: string; projectId: string; taskId?: string } }) {
+  redirect(`/org/${params.orgId}/developer/projects/${params.projectId}/individual`);
 }

@@ -19,15 +19,36 @@ public class JwtService {
 
     private final SecretKey key;
     private final Duration accessTokenLifetime;
+    private final String issuer;
 
+    /**
+     * HMAC-signed access tokens. The key and issuer come only from configuration (JWT_SIGNING_KEY, JWT_ISSUER in
+     * the environment or backend/.env); parsing verifies the signature, the expiry and the issuer, and the key is
+     * never logged or echoed in errors.
+     */
+    @org.springframework.beans.factory.annotation.Autowired
     public JwtService(
             @Value("${prowise.auth.jwt-signing-key}") String signingKey,
+<<<<<<< HEAD
             @Value("${prowise.auth.access-token-minutes}") long accessTokenMinutes) {
+=======
+            @Value("${prowise.auth.access-token-minutes:15}") long accessTokenMinutes,
+            @Value("${prowise.auth.jwt-issuer:prowise}") String issuer) {
+>>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
         if (signingKey == null || signingKey.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) {
             throw new IllegalStateException("JWT_SIGNING_KEY must contain at least 32 bytes.");
         }
         this.key = Keys.hmacShaKeyFor(signingKey.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         this.accessTokenLifetime = Duration.ofMinutes(accessTokenMinutes);
+        if (issuer == null || issuer.isBlank()) {
+            throw new IllegalStateException("JWT_ISSUER must not be blank.");
+        }
+        this.issuer = issuer.trim();
+    }
+
+    /** Default issuer; for unit tests that build the service directly. */
+    public JwtService(String signingKey, long accessTokenMinutes) {
+        this(signingKey, accessTokenMinutes, "prowise");
     }
 
     public String issueAccessToken(AuthPrincipal principal) {
@@ -37,6 +58,7 @@ public class JwtService {
     /** Issued at {@code now} (tests use a past instant to get an already expired token). */
     String issueAccessToken(AuthPrincipal principal, Instant now) {
         var builder = Jwts.builder()
+                .issuer(issuer)
                 .subject(principal.userId().toString())
                 .claim("sid", principal.sessionId().toString())
                 .claim("email", principal.email())
@@ -64,7 +86,7 @@ public class JwtService {
     }
 
     public AuthPrincipal parse(String token) {
-        Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
+        Claims claims = Jwts.parser().verifyWith(key).requireIssuer(issuer).build().parseSignedClaims(token).getPayload();
         String type = claims.get("type", String.class);
         if ("OPERATOR".equalsIgnoreCase(type)) {
             String opid = claims.get("opid", String.class);

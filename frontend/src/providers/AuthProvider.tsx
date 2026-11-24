@@ -3,10 +3,15 @@
 import React, { createContext, useContext, useEffect } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import { Organization, SystemRole, User } from "@/types";
+<<<<<<< HEAD
 import { SESSION_EXPIRED_EVENT } from "@/lib/api";
 import { classifyFailure, previewEnabled, readPermissionEnv } from "@/lib/permissions";
 import { establishSession } from "@/lib/session";
 import { clearWorkspaceCaches } from "@/lib/workspace-switch";
+=======
+import { apiClient } from "@/lib/api";
+import { mocksAllowed, readPermissionEnv } from "@/lib/permissions";
+>>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
 import { useWorkspaceStore } from "@/store/workspace-store";
 
 interface AuthContextValue {
@@ -56,11 +61,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let active = true;
     establishSession().catch((error: unknown) => {
       if (!active) return;
+<<<<<<< HEAD
       const store = useAuthStore.getState();
       const preview = previewEnabled() && store.isRolePreview;
       if (classifyFailure(error, readPermissionEnv()) !== "fixture") {
         if (preview) {
           store.setSessionStatus("authenticated");
+=======
+      const organizations = me.memberships.map((membership): Organization => ({
+        id: membership.org_id,
+        slug: membership.slug,
+        name: membership.name,
+        ownerId: "",
+        timezone: membership.timezone,
+        workCalendar: parseCalendar(membership.work_calendar),
+        createdAt: "",
+        plan: "FREE",
+        status: membership.status === "ACTIVE" ? "ACTIVE" : "SUSPENDED",
+      }));
+      const user: User = {
+        id: me.id,
+        email: me.email,
+        name: me.name || me.email.split("@")[0],
+        timezone: organizations[0]?.timezone || "UTC",
+        createdAt: "",
+      };
+      // The role of this session (membership role in the bound organization, or a platform role), never just
+      // the first membership: the same person can hold different roles in different organizations.
+      const bound = me.organization_id ? organizations.find((o) => o.id === me.organization_id) : undefined;
+      const ordered = bound ? [bound, ...organizations.filter((o) => o.id !== bound.id)] : organizations;
+      const role = toSystemRole(me.role ?? (organizations.length === 1 ? me.memberships[0]?.role_template : undefined));
+      hydrate(user, ordered, role);
+      setOrganizations(organizations);
+    }).catch(() => {
+      if (active) {
+        // Production never invents a session: no API answer means signed out.
+        if (!mocksAllowed(readPermissionEnv())) return;
+        const store = useAuthStore.getState();
+        // If user already signed in or has an active non-viewer role, preserve their authenticated session
+        if (store.isAuthenticated && store.currentRole && store.currentRole !== "VIEWER") {
+>>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
           return;
         }
         // No valid session: never a fixture identity. Protected pages go to sign-in.

@@ -22,7 +22,7 @@ export type LoadState<T> =
   | { kind: "unauthenticated" }
   | { kind: "error"; retry: () => void };
 
-class SampleData<T> {
+export class SampleData<T> {
   constructor(readonly data: T) {}
 }
 
@@ -44,7 +44,8 @@ function fixtureRoles(): RoleDto[] {
   return [...templates, ...API_CUSTOM_ROLE_FIXTURES];
 }
 
-async function withFixture<T>(call: () => Promise<T>, fixture: () => T): Promise<T | SampleData<T>> {
+/** The call's result, or the typed fixture when the API is unreachable (incl. role preview) outside production. */
+export async function withFixture<T>(call: () => Promise<T>, fixture: () => T): Promise<T | SampleData<T>> {
   try {
     return await call();
   } catch (error) {

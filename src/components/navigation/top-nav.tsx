@@ -14,6 +14,8 @@ import {
   Check,
   CheckCheck,
   ExternalLink,
+  Settings,
+  GitBranch,
 } from "lucide-react";
 import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
 import { useThemeStore } from "@/store/theme-store";
@@ -222,37 +224,46 @@ export function TopNav({ title, breadcrumb = [] }: TopNavProps) {
             {isProfileOpen && (
               <div className="absolute right-0 mt-2 w-64 rounded-xl bg-app-surface border border-app-border shadow-modal p-2 z-50">
                 <div className="px-3 py-2 border-b border-app-border">
-                  <p className="text-xs font-bold text-app-text-primary truncate">
-                    {currentUser.name}
-                  </p>
-                  <p className="text-[11px] text-app-text-muted truncate">{currentUser.email}</p>
+                  <div className="flex items-center justify-between gap-1">
+                    <p className="text-xs font-bold text-app-text-primary truncate">
+                      {currentUser.name}
+                    </p>
+                    <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400 border border-blue-500/20 shrink-0">
+                      {roleLabel}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-app-text-muted truncate mt-0.5">{currentUser.email}</p>
                 </div>
 
-                {/* Role Switcher in Profile Menu */}
-                <div className="py-2 border-b border-app-border">
-                  <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-app-text-muted">
-                    Switch Active Panel / Role
-                  </div>
-                  <div className="max-h-48 overflow-y-auto space-y-0.5">
-                    {roles.map((r) => (
-                      <button
-                        key={r.role}
-                        onClick={() => {
-                          switchRoleAndNavigate(r.role, router.push);
-                          setIsProfileOpen(false);
-                        }}
-                        className={cn(
-                          "w-full flex items-center justify-between px-3 py-1.5 text-xs text-left rounded-lg transition-colors",
-                          currentRole === r.role
-                            ? "bg-blue-100/70 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 font-semibold"
-                            : "hover:bg-app-hover text-app-text-secondary hover:text-app-text-primary"
-                        )}
-                      >
-                        <span>{r.label}</span>
-                        {currentRole === r.role && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                      </button>
-                    ))}
-                  </div>
+                {/* Direct Account & Developer Settings */}
+                <div className="py-1.5 border-b border-app-border space-y-0.5">
+                  <button
+                    onClick={() => {
+                      setIsProfileOpen(false);
+                      if (currentRole === "DEVELOPER") {
+                        router.push(`/org/${currentOrg.id}/developer/settings`);
+                      } else {
+                        router.push(getRoleDashboardPath(currentRole, currentOrg.id));
+                      }
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left text-app-text-secondary hover:text-app-text-primary hover:bg-app-hover rounded-lg transition-colors"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-app-text-muted" />
+                    <span>Settings &amp; Preferences</span>
+                  </button>
+
+                  {currentRole === "DEVELOPER" && (
+                    <button
+                      onClick={() => {
+                        setIsProfileOpen(false);
+                        router.push(`/org/${currentOrg.id}/developer/github`);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left text-app-text-secondary hover:text-app-text-primary hover:bg-app-hover rounded-lg transition-colors"
+                    >
+                      <GitBranch className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                      <span>GitHub Repositories</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Organization Switcher */}

@@ -404,6 +404,17 @@ public class ProjectService {
         args.add(access.membershipId()); // task 2.2: the lead of the project's team reads it (to approve check-ins)
     }
 
+    /** Whether the caller can read the project, without writing security evidence (for filtering own lists). */
+    public boolean readable(UUID organizationId, String projectId, Authentication authentication) {
+        if (projectId == null) return false;
+        Access access = access(organizationId, authentication);
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM projects p WHERE p.org_id = ? AND p.id = ?");
+        List<Object> args = new ArrayList<>(List.of(organizationId, projectId));
+        appendReadable(sql, args, access);
+        Long count = jdbc.queryForObject(sql.toString(), Long.class, args.toArray());
+        return count != null && count > 0;
+    }
+
     /** One readable project, or 404 with no metadata (and a security evidence row). */
     private ProjectResponse find(UUID organizationId, String projectId, Authentication authentication) {
         Access access = access(organizationId, authentication);

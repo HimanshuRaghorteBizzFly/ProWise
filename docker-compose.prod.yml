@@ -1,9 +1,11 @@
 # In real production use a managed PostgreSQL and a secret manager.
+# Under the prod profile the backend refuses to start with the example JWT_SIGNING_KEY from backend/.env.example or without
+# SMTP, FRONTEND_URL and CORS settings: replace them with real values from your secret manager.
 services:
   db:
     image: postgres:16
     env_file:
-      - ./env.example
+      - ./.env.example
     volumes:
       - prowise-postgres-prod:/var/lib/postgresql/data
     healthcheck:
@@ -21,7 +23,7 @@ services:
       - ./backend/.env.example
     environment:
       DB_URL: jdbc:postgresql://db:5432/prowise
-      SPRING_PROFILES_ACTIVE: default
+      SPRING_PROFILES_ACTIVE: prod
     ports:
       - "8080:8080"
     depends_on:
@@ -42,7 +44,7 @@ services:
       - ./backend/.env.example
     environment:
       DB_URL: jdbc:postgresql://db:5432/prowise
-      SPRING_PROFILES_ACTIVE: worker
+      SPRING_PROFILES_ACTIVE: prod,worker
     depends_on:
       db:
         condition: service_healthy

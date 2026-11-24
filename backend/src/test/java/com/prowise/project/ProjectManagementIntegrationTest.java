@@ -30,6 +30,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.prowise.testsupport.TestAccounts;
 import com.prowise.authz.TestDatabase;
 
 @SpringBootTest
@@ -50,6 +51,9 @@ class ProjectManagementIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private com.prowise.identity.AccountTokenService accountTokens;
+
     @BeforeEach
     @AfterEach
     void cleanDatabase() {
@@ -67,13 +71,10 @@ class ProjectManagementIntegrationTest {
 
     private Person person(String name) throws Exception {
         String email = name + "-" + UUID.randomUUID().toString().substring(0, 8) + "@example.test";
-        MvcResult res = mockMvc.perform(post("/v1/auth/signup")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"" + email + "\",\"password\":\"correct-horse-battery\"}"))
-                .andExpect(status().isCreated()).andReturn();
-        JsonNode signup = json(res);
-        UUID id = jdbc.queryForObject("SELECT id FROM users WHERE lower(email) = lower(?)", UUID.class, email);
-        return new Person(id, email, signup.path("access_token").asText());
+        // Signup now returns 202 without a session (D9); verify through the real endpoint, then sign in.
+        TestAccounts.Account account = TestAccounts.signUpVerifyAndLogin(
+                mockMvc, jdbc, accountTokens, objectMapper, email, "Correct-Horse-Battery-1!");
+        return new Person(account.id(), email, account.accessToken());
     }
 
     private Workspace workspace(String slug) throws Exception {

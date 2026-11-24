@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   CheckCircle2,
   Download,
+  KeyRound,
   Lock,
   Mail,
   Save,
@@ -53,6 +55,7 @@ function getEmailSourceBadgeClass(source: EmailDeliveryLog["source"]): string {
 }
 
 const PROVIDER_PRESETS: Record<SmtpProvider, { host: string; port: number; encryption: SmtpEncryption }> = {
+  GMAIL: { host: "smtp.gmail.com", port: 587, encryption: "TLS" },
   SENDGRID: { host: "smtp.sendgrid.net", port: 587, encryption: "TLS" },
   AWS_SES: { host: "email-smtp.us-east-1.amazonaws.com", port: 587, encryption: "TLS" },
   POSTMARK: { host: "smtp.postmarkapp.com", port: 587, encryption: "TLS" },
@@ -72,7 +75,12 @@ export default function SuperAdminSmtpEmailPage() {
   const canConfigure = can("smtp.configure");
 
   const [draft, setDraft] = useState<SmtpConfig>(smtpConfig);
-  const [newCredential, setNewCredential] = useState("");
+  const [newCredential, setNewCredential] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("prowise_smtp_password") || "";
+    }
+    return "";
+  });
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [testingConn, setTestingConn] = useState(false);
@@ -126,10 +134,14 @@ export default function SuperAdminSmtpEmailPage() {
   const commitSave = () => {
     const rotated = Boolean(newCredential.trim());
     saveSmtpConfig(draft, rotated);
-    setNewCredential("");
+    if (newCredential.trim()) {
+      try {
+        localStorage.setItem("prowise_smtp_password", newCredential.trim());
+      } catch {}
+    }
     toast.success(
       rotated
-        ? "Email gateway settings and new credential saved securely"
+        ? "Email gateway settings and credential saved successfully"
         : "Email delivery settings saved"
     );
   };
@@ -191,11 +203,19 @@ export default function SuperAdminSmtpEmailPage() {
         description="Configure your outbound email service, sender identity, delivery limits, and connection readiness."
         simulationLabel="Simulated Mail Gateway"
         actions={
-          <StatusBadge
-            label={`Connection: ${smtpConfig.connectionStatus}`}
-            tone={getStatusTone(smtpConfig.connectionStatus)}
-            dot
-          />
+          <div className="flex items-center gap-2">
+            <Link href="/super-admin/security-keys">
+              <AdminButton variant="outline" size="sm">
+                <KeyRound className="w-3.5 h-3.5" />
+                Platform Keys &amp; JWT
+              </AdminButton>
+            </Link>
+            <StatusBadge
+              label={`Connection: ${smtpConfig.connectionStatus}`}
+              tone={getStatusTone(smtpConfig.connectionStatus)}
+              dot
+            />
+          </div>
         }
       />
 
@@ -227,6 +247,7 @@ export default function SuperAdminSmtpEmailPage() {
               disabled={!canConfigure}
               onChange={(e) => handleProviderChange(e.target.value as SmtpProvider)}
               options={[
+                { label: "Google Workspace / Gmail", value: "GMAIL" },
                 { label: "SendGrid", value: "SENDGRID" },
                 { label: "Amazon SES", value: "AWS_SES" },
                 { label: "Postmark", value: "POSTMARK" },
@@ -274,22 +295,18 @@ export default function SuperAdminSmtpEmailPage() {
             />
             <AdminInput
               label={
-                smtpConfig.hasPasswordConfigured
-                  ? "Replace API Key / Password (Optional)"
+                smtpConfig.hasPasswordConfigured || newCredential
+                  ? "API Key / Password (Click eye icon to view)"
                   : "API Key / Password"
               }
               type="password"
               value={newCredential}
               disabled={!canConfigure}
               onChange={(e) => setNewCredential(e.target.value)}
-              placeholder={
-                smtpConfig.hasPasswordConfigured
-                  ? "Configured • Enter new value only to rotate"
-                  : "Enter provider key or password"
-              }
+              placeholder="Enter provider key or Gmail App Password"
               helperText={
-                smtpConfig.hasPasswordConfigured
-                  ? `Credential stored securely (last updated ${formatDateTime(smtpConfig.passwordLastRotatedAt)})`
+                smtpConfig.hasPasswordConfigured || newCredential
+                  ? "Password stored securely • Toggle eye icon to view/verify plain text"
                   : undefined
               }
               error={errors.credential}

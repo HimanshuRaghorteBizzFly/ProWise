@@ -143,9 +143,15 @@ public class AuthFilter extends OncePerRequestFilter {
                 writeUnauthorized(request, response);
                 return;
             }
+            // "My sessions" shows when each device was last active; at most one write per session per minute.
+            jdbcTemplate.update("UPDATE sessions SET last_used_at = now() WHERE id = ? "
+                    + "AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')", principal.sessionId());
             if (principal.organizationId() != null) {
+                // The membership must be active and the organization not suspended or archived: either change
+                // ends the organization-bound session on its next request.
                 Integer member = jdbcTemplate.queryForObject(
-                        "SELECT count(*) FROM memberships WHERE org_id = ? AND user_id = ? AND status = 'ACTIVE'",
+                        "SELECT count(*) FROM memberships m JOIN organizations o ON o.id = m.org_id "
+                                + "WHERE m.org_id = ? AND m.user_id = ? AND m.status = 'ACTIVE' AND o.state = 'ACTIVE'",
                         Integer.class, principal.organizationId(), principal.userId());
                 if (member == null || member != 1) {
                     writeUnauthorized(request, response);
@@ -156,7 +162,11 @@ public class AuthFilter extends OncePerRequestFilter {
                         .setParameter("orgId", principal.organizationId());
             }
             List<GrantedAuthority> userAuthorities = new ArrayList<>();
-            if (principal.role() != null && !principal.role().isBlank()) {
+            // Operator authority comes only from an operator token (an active platform_operators row with a
+            // completed setup, see AuthService.issueSession). A plain user token whose users.role still says
+            // PLATFORM_OPERATOR gets no operator authority from that column.
+            if (principal.role() != null && !principal.role().isBlank()
+                    && !"PLATFORM_OPERATOR".equalsIgnoreCase(principal.role().trim())) {
                 String cleanRole = principal.role().toUpperCase().replace("-", "_");
                 userAuthorities.add(new SimpleGrantedAuthority("ROLE_" + cleanRole));
                 userAuthorities.add(new SimpleGrantedAuthority(cleanRole));

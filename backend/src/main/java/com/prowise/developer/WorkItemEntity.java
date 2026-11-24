@@ -44,13 +44,19 @@ public class WorkItemEntity {
     private String reviewerId;
 
     @Column(name = "state", nullable = false, length = 30)
-    private String state = "TODO"; // "TODO", "IN_PROGRESS", "BLOCKED", "IN_REVIEW", "DONE"
+    private String state = "TODO"; // "TODO", "IN_PROGRESS", "IN_REVIEW", "DONE", "CANCELLED" (blocked is the separate flag below)
 
     @Column(name = "is_blocked", nullable = false)
     private boolean blocked = false;
 
-    @Column(name = "weight", precision = 8, scale = 2, nullable = false)
-    private BigDecimal weight = BigDecimal.ONE;
+    // Set only by an approved scope version (task 3.2); null until then.
+    @Column(name = "weight", precision = 8, scale = 2)
+    private BigDecimal weight;
+
+    // Optimistic lock shared with the JDBC work-item service (task 3.1): every JPA save bumps it too.
+    @jakarta.persistence.Version
+    @Column(name = "version", nullable = false)
+    private long version;
 
     @Column(name = "weight_unit", length = 30)
     private String weightUnit = "pts";
@@ -114,6 +120,7 @@ public class WorkItemEntity {
     public void setState(String state) { this.state = state; }
     public boolean isBlocked() { return blocked; }
     public void setBlocked(boolean blocked) { this.blocked = blocked; }
+    public long getVersion() { return version; }
     public BigDecimal getWeight() { return weight; }
     public void setWeight(BigDecimal weight) { this.weight = weight; }
     public String getWeightUnit() { return weightUnit; }

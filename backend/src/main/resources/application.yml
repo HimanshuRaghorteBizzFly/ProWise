@@ -3,7 +3,9 @@ spring:
     name: prowise-api
   config:
     # Local convenience: values from backend/.env (git-ignored). Real environments use env vars.
-    import: optional:file:.env[.properties]
+    # PROWISE_ENV_FILE lets the Maven test run point this away from backend/.env, so tests never use real
+    # SMTP credentials or bootstrap addresses (see maven-surefire-plugin in pom.xml).
+    import: optional:file:${PROWISE_ENV_FILE:.env}[.properties]
   datasource:
     # No defaults on purpose: RequiredEnvironmentValidator fails startup with a clear message.
     url: ${DB_URL:}
@@ -25,19 +27,13 @@ spring:
       shutdown:
         await-termination: true
         await-termination-period: 20s
+  # Environment fallback for SMTP. Settings saved by the Super Admin (encrypted password) take precedence.
+  # Delivery goes through SmtpMailGateway: STARTTLS required on 587, timeouts under prowise.mail below.
   mail:
     host: ${SMTP_HOST:smtp.gmail.com}
     port: ${SMTP_PORT:587}
     username: ${SMTP_USERNAME:}
     password: ${SMTP_PASSWORD:}
-    properties:
-      mail:
-        smtp:
-          auth: ${SMTP_AUTH:true}
-          starttls:
-            enable: ${SMTP_STARTTLS:true}
-          timeout: 5000
-          connectiontimeout: 5000
 
 server:
   shutdown: graceful
@@ -71,11 +67,26 @@ prowise:
   sandbox:
     seed-enabled: false
   mail:
-    from: ${SMTP_FROM:no-reply@prowise.com}
+    from: ${SMTP_FROM:}
+    from-name: ${SMTP_FROM_NAME:ProWise Platform}
+    reply-to: ${SMTP_REPLY_TO:}
+    # TLS (STARTTLS, 587), SSL (465) or NONE (localhost relay only). Empty: derived from the port.
+    encryption: ${SMTP_ENCRYPTION:}
+    connect-timeout-ms: ${SMTP_CONNECT_TIMEOUT_MS:10000}
+    read-timeout-ms: ${SMTP_READ_TIMEOUT_MS:15000}
+    write-timeout-ms: ${SMTP_WRITE_TIMEOUT_MS:15000}
+    # AES-256-GCM key for SMTP passwords saved from the admin panel (32+ characters). Server-side only.
+    credential-encryption-key: ${SMTP_CREDENTIAL_ENCRYPTION_KEY:}
     frontend-url: ${FRONTEND_URL:http://localhost:3000}
   worker:
     outbox-delay-ms: ${OUTBOX_POLL_DELAY_MS:5000}
+  bootstrap:
+    # Optional, set only by deployment configuration. When set and no legitimate Super Admin exists, startup
+    # creates one pending Super Admin and emails a single-use 72-hour setup link (SuperAdminBootstrapService).
+    # There is no HTTP endpoint for this. Remove the variable once the account is active.
+    super-admin-email: ${PROWISE_BOOTSTRAP_SUPER_ADMIN_EMAIL:}
   auth:
+<<<<<<< HEAD
     jwt-signing-key: ${JWT_SIGNING_KEY:test-default-signing-key-that-is-at-least-32-bytes-long}
     # Session lifetimes (env): a 15-minute access token, a 7-day refresh session (absolute from sign-in unless sliding).
     access-token-minutes: ${JWT_ACCESS_TTL_MINUTES:15}
@@ -86,3 +97,13 @@ prowise:
     # The refresh cookie: Secure everywhere except local http development; path = browser-facing auth endpoints.
     cookie-secure: ${AUTH_COOKIE_SECURE:true}
     refresh-cookie-path: ${AUTH_REFRESH_COOKIE_PATH:/api/v1/auth}
+=======
+    # No default: RequiredEnvironmentValidator stops startup when JWT_SIGNING_KEY is missing.
+    jwt-signing-key: ${JWT_SIGNING_KEY:}
+    access-token-minutes: ${ACCESS_TOKEN_MINUTES:15}
+    # The iss claim every access token carries and every request must present.
+    jwt-issuer: ${JWT_ISSUER:prowise}
+    refresh-token-days: ${REFRESH_TOKEN_DAYS:30}
+    # Auth cookies are HTTPS-only when true. Off for plain-HTTP local development; on in application-prod.yml.
+    secure-cookies: ${AUTH_SECURE_COOKIES:false}
+>>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4

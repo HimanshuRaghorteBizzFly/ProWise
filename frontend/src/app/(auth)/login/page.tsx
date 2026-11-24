@@ -3,11 +3,19 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+<<<<<<< HEAD
 import { ApiError, apiClient } from "@/lib/api";
 import { establishSession } from "@/lib/session";
 import { previewEnabled } from "@/lib/permissions";
+=======
+import { apiClient, ApiError } from "@/lib/api";
+import { isBackendUnreachable, mocksAllowed, readPermissionEnv } from "@/lib/permissions";
+import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
+>>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
 import { useSuperAdminStore } from "@/app/(platform)/super-admin/_store/useSuperAdminStore";
 import { usePlatformOperatorStore } from "@/app/(platform)/platform-operator/_store/usePlatformOperatorStore";
+import { operatorAuthService } from "@/app/(platform)/platform-operator/_services/operator-auth-service";
+import { applyLoginResponse } from "@/lib/auth-session";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -33,12 +41,14 @@ interface QuickCredential {
   label: string;
   role: string;
   email: string;
-  pass: string;
   target: string;
   category: "Platform" | "Leadership" | "Delivery";
   icon: React.ComponentType<{ className?: string }>;
   color: string;
 }
+
+/** Sent only by the offline preview button; it is not the password of any account. */
+const OFFLINE_PREVIEW_PLACEHOLDER = "offline-preview-only";
 
 const QUICK_ACCOUNTS: QuickCredential[] = [
   // Platform Section
@@ -46,7 +56,6 @@ const QUICK_ACCOUNTS: QuickCredential[] = [
     label: "Super Admin",
     role: "System Director",
     email: "superadmin@prowise.com",
-    pass: "SuperAdmin2026!",
     target: "/super-admin/dashboard",
     category: "Platform",
     icon: Crown,
@@ -56,7 +65,6 @@ const QUICK_ACCOUNTS: QuickCredential[] = [
     label: "Platform Operator",
     role: "SRE & Operations",
     email: "operator@prowise.io",
-    pass: "Operator2026!",
     target: "/platform-operator/dashboard",
     category: "Platform",
     icon: Layers,
@@ -68,7 +76,6 @@ const QUICK_ACCOUNTS: QuickCredential[] = [
     label: "Org Owner",
     role: "Executive Owner",
     email: "dr.sarah.lin@acmehealth.com",
-    pass: "Owner2026!",
     target: "/org/org-acme/owner/dashboard",
     category: "Leadership",
     icon: Building2,
@@ -78,7 +85,6 @@ const QUICK_ACCOUNTS: QuickCredential[] = [
     label: "Org Admin",
     role: "Workspace Admin",
     email: "david.kim@acmehealth.com",
-    pass: "Admin2026!",
     target: "/org/org-acme/admin/dashboard",
     category: "Leadership",
     icon: ShieldCheck,
@@ -90,7 +96,6 @@ const QUICK_ACCOUNTS: QuickCredential[] = [
     label: "Project Manager",
     role: "Portfolio Manager",
     email: "priya.raman@acmehealth.com",
-    pass: "Manager2026!",
     target: "/org/org-acme/manager/dashboard",
     category: "Delivery",
     icon: FolderKanban,
@@ -100,7 +105,6 @@ const QUICK_ACCOUNTS: QuickCredential[] = [
     label: "Team Lead",
     role: "Engineering Lead",
     email: "marcus.chen@acmehealth.com",
-    pass: "Lead2026!",
     target: "/org/org-acme/lead/dashboard",
     category: "Delivery",
     icon: Users,
@@ -110,7 +114,6 @@ const QUICK_ACCOUNTS: QuickCredential[] = [
     label: "Developer",
     role: "Full-Stack Dev",
     email: "alex.rivera@acmehealth.com",
-    pass: "Developer2026!",
     target: "/org/org-acme/developer/dashboard",
     category: "Delivery",
     icon: Cpu,
@@ -120,7 +123,6 @@ const QUICK_ACCOUNTS: QuickCredential[] = [
     label: "QA / Reviewer",
     role: "Quality & Review",
     email: "elena.ruiz@acmehealth.com",
-    pass: "Reviewer2026!",
     target: "/org/org-acme/reviewer/dashboard",
     category: "Delivery",
     icon: CheckSquare,
@@ -130,7 +132,6 @@ const QUICK_ACCOUNTS: QuickCredential[] = [
     label: "Viewer",
     role: "Read-Only Stakeholder",
     email: "jordan.lee@acmehealth.com",
-    pass: "Viewer2026!",
     target: "/org/org-acme/viewer/dashboard",
     category: "Delivery",
     icon: Eye,
@@ -171,11 +172,15 @@ export default function LoginPage() {
     }
   }, []);
 
+  // Development builds only (mocks allowed). No password is embedded anywhere: seeded logins with published
+  // passwords were disabled (approved decision D4). A preset fills the email and selects the offline preview role.
+  const showDemoPanel = mocksAllowed(readPermissionEnv());
+
   const fillCredentials = (account: QuickCredential) => {
     setEmail(account.email);
-    setPassword(account.pass);
+    setPassword("");
     setSelectedPreset(account.label);
-    toast.info(`Filled credentials for ${account.label}`);
+    toast.info(`Selected ${account.label}. Enter the password, or use the offline preview when the API is down.`);
   };
 
   const executeLogin = async (targetEmail: string, targetPass: string, _presetLabel?: string) => {
@@ -188,12 +193,103 @@ export default function LoginPage() {
 
     setIsLoading(true);
     try {
+<<<<<<< HEAD
       // The server decides where this account lands: platform dashboards only for real platform accounts,
       // otherwise from the ACTIVE memberships (one workspace, the workspace picker, or "no workspace yet").
       const response = await apiClient.login({ email: cleanEmail, password: targetPass });
       if (response.must_change_password) {
         router.replace("/change-password");
         return;
+=======
+      let destination = "";
+      let userRole: SystemRole = "VIEWER";
+      let userName = cleanEmail.split("@")[0];
+
+      // 1. Attempt Spring Boot backend authentication
+      try {
+        const response = await apiClient.login({ email: cleanEmail, password: targetPass });
+
+        if (response.must_change_password) {
+          toast.info("Temporary password detected. Please set your new password.");
+          window.location.assign("/change-password");
+          return;
+        }
+
+        // Real session: the server's user, organization(s) and membership role. Never the demo organization.
+        const realDestination = applyLoginResponse(response);
+        const roleText = (response.user.role ?? "member").replace(/_/g, " ").toLowerCase();
+        toast.success(
+          response.requires_organization_selection
+            ? "Signed in. Choose the organization to open."
+            : `Signed in as ${roleText}.`,
+        );
+        window.location.assign(realDestination);
+        return;
+      } catch (backendError) {
+        // One login page for all nine roles: Platform Operators have their own account store, so a wrong
+        // password on the member login is tried once against the operator login before it is reported.
+        if (backendError instanceof ApiError && backendError.status === 401 && backendError.code === "INVALID_CREDENTIALS") {
+          const operatorDestination = await tryOperatorLogin(cleanEmail, targetPass);
+          if (operatorDestination) {
+            window.location.assign(operatorDestination);
+            return;
+          }
+          throw backendError;
+        }
+        // A real answer from the server (wrong password, account pending activation, disabled, rate limited)
+        // is always shown as-is. Only an unreachable backend in a development build may use the local
+        // preview session below; production builds never do.
+        const status = backendError instanceof ApiError ? backendError.status : 0;
+        if (!mocksAllowed(readPermissionEnv()) || !isBackendUnreachable(status)) {
+          throw backendError;
+        }
+        console.warn("Backend unreachable in development; using a local preview session.");
+        const normalized = cleanEmail.toLowerCase();
+        if (normalized.includes("superadmin") || presetLabel === "Super Admin") {
+          userRole = "SUPER_ADMIN";
+          userName = "Super Admin";
+          destination = "/super-admin/dashboard";
+        } else if (normalized.includes("operator") || presetLabel === "Platform Operator") {
+          userRole = "PLATFORM_OPERATOR";
+          userName = "Jordan Mercer";
+          destination = "/platform-operator/dashboard";
+        } else if (
+          normalized.includes("alex.rivera") ||
+          normalized.includes("developer") ||
+          presetLabel === "Developer"
+        ) {
+          userRole = "DEVELOPER";
+          userName = "Alex Rivera";
+          destination = "/org/org-acme/developer/dashboard";
+        } else if (normalized.includes("sarah.lin") || normalized.includes("owner") || presetLabel === "Org Owner") {
+          userRole = "ORGANIZATION_OWNER";
+          userName = "Dr. Sarah Lin";
+          destination = "/org/org-acme/owner/dashboard";
+        } else if (normalized.includes("david.kim") || normalized.includes("admin") || presetLabel === "Org Admin") {
+          userRole = "ORGANIZATION_ADMIN";
+          userName = "David Kim";
+          destination = "/org/org-acme/admin/dashboard";
+        } else if (normalized.includes("priya.raman") || normalized.includes("manager") || presetLabel === "Project Manager") {
+          userRole = "PROJECT_MANAGER";
+          userName = "Priya Raman";
+          destination = "/org/org-acme/manager/dashboard";
+        } else if (normalized.includes("marcus.chen") || normalized.includes("lead") || presetLabel === "Team Lead") {
+          userRole = "TEAM_LEAD";
+          userName = "Marcus Chen";
+          destination = "/org/org-acme/lead/dashboard";
+        } else if (normalized.includes("elena.ruiz") || normalized.includes("reviewer") || normalized.includes("qa") || presetLabel === "QA / Reviewer") {
+          userRole = "QA_REVIEWER";
+          userName = "Elena Ruiz";
+          destination = "/org/org-acme/reviewer/dashboard";
+        } else if (normalized.includes("jordan.lee") || normalized.includes("viewer") || presetLabel === "Viewer") {
+          userRole = "VIEWER";
+          userName = "Jordan Lee";
+          destination = "/org/org-acme/viewer/dashboard";
+        } else {
+          // Never default an unknown address to an administrator preview.
+          throw new Error("The server is unreachable. Start the backend and try again.");
+        }
+>>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
       }
       const session = await establishSession();
       const destination = session.target || response.target_dashboard_url;
@@ -218,6 +314,31 @@ export default function LoginPage() {
     }
   };
 
+  /** Platform Operator sign-in on the common page. Returns the dashboard, or null when the credentials are not an operator's. */
+  const tryOperatorLogin = async (operatorEmail: string, operatorPassword: string): Promise<string | null> => {
+    try {
+      const res = await operatorAuthService.login(operatorEmail, operatorPassword, false);
+      usePlatformOperatorStore.getState().updateAccountSettings({
+        name: res.operator.name,
+        email: res.operator.email,
+        department: res.operator.departmentName as never,
+        shiftName: res.operator.shiftName,
+        mfaEnabled: res.operator.mfaEnabled,
+        activeOperatorId: res.operator.id,
+      });
+      useAuthStore.getState().setCurrentRole("PLATFORM_OPERATOR");
+      useAuthStore.getState().login(res.operator.email, "PLATFORM_OPERATOR");
+      toast.success(`Welcome back, ${res.operator.name}.`);
+      return "/platform-operator/dashboard";
+    } catch (operatorError) {
+      // A real operator refusal (suspended, setup unfinished, locked) is shown as-is; anything else means the
+      // address is not an operator, and the member login's "invalid credentials" answer stands.
+      const message = operatorError instanceof Error ? operatorError.message : "";
+      if (/suspend|disabled|locked|setup|invitation/i.test(message)) throw operatorError;
+      return null;
+    }
+  };
+
   const handleCustomLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     await executeLogin(email, password, selectedPreset || undefined);
@@ -225,7 +346,9 @@ export default function LoginPage() {
 
   const handleInstantSignIn = async (account: QuickCredential) => {
     fillCredentials(account);
-    await executeLogin(account.email, account.pass, account.label);
+    // Not a password for any account: a reachable API rejects it, and only an unreachable API in a development
+    // build falls back to the local preview session for the selected role.
+    await executeLogin(account.email, OFFLINE_PREVIEW_PLACEHOLDER, account.label);
   };
 
   const visibleAccounts =
@@ -254,11 +377,15 @@ export default function LoginPage() {
         </div>
 
         {/* Quick-fill Account Selector for Seamless Development & Access across all sections */}
+<<<<<<< HEAD
         {showDemoLogins && (
+=======
+        {showDemoPanel && (
+>>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
         <div className="mb-5 bg-white/85 dark:bg-slate-900/85 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3.5 sm:p-4 shadow-sm">
           <div className="flex items-center justify-between mb-2 px-0.5">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Quick-Fill Demo Logins
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Development Preview Roles
             </span>
             <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-full border border-blue-200/60 dark:border-blue-900/40">
               All 9 Sections
@@ -301,7 +428,7 @@ export default function LoginPage() {
                   type="button"
                   onClick={() => fillCredentials(account)}
                   onDoubleClick={() => handleInstantSignIn(account)}
-                  title={`${account.label} (${account.role}) - Double click to sign in immediately`}
+                  title={`${account.label} (${account.role}) - double click for the offline preview`}
                   className={`group relative flex flex-col items-center justify-center text-center p-2 rounded-xl border transition-all text-left ${
                     isSelected
                       ? "border-blue-600 bg-blue-50/90 dark:bg-blue-950/60 shadow-sm ring-1 ring-blue-600"
@@ -351,7 +478,7 @@ export default function LoginPage() {
                   disabled={isLoading}
                   className="h-7 px-2.5 text-[11px] font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-xs flex items-center gap-1"
                 >
-                  <Zap className="w-3 h-3 text-amber-300" /> Instant Sign In
+                  <Zap className="w-3 h-3 text-amber-300" /> Offline Preview
                 </Button>
               </div>
             </div>
