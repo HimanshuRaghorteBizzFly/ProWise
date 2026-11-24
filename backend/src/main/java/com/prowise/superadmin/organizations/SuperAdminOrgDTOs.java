@@ -4,8 +4,10 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 
 public final class SuperAdminOrgDTOs {
@@ -25,21 +27,26 @@ public final class SuperAdminOrgDTOs {
             String status,
             String planId,
             int seatsUsed,
-            int seatsLimit,
+            Integer seatsLimit,
             int projectsCount,
             double storageUsedGb,
             BigDecimal mrr,
             Instant createdAt,
             Instant lastActivityAt,
             String suspendedReason,
-            String notes
+            String notes,
+            long version
     ) {
+        /** Unknown values stay null (shown as "not set"); nothing is filled in with invented defaults. */
         public static OrgDetailResponse fromEntity(OrganizationEntity org, int seatsUsed, int projectsCount, double storageUsedGb, BigDecimal mrr) {
             return new OrgDetailResponse(
                     org.getId(),
                     org.getName(),
                     org.getSlug(),
+<<<<<<< HEAD
                     // Stored values only: missing fields stay null instead of invented defaults.
+=======
+>>>>>>> 29db595 (Initial ProWise project upload)
                     org.getDomain(),
                     org.getIndustry(),
                     org.getCountry(),
@@ -49,14 +56,22 @@ public final class SuperAdminOrgDTOs {
                     org.getState(),
                     org.getPlanId(),
                     seatsUsed,
+<<<<<<< HEAD
                     org.getSeatsLimit() != null ? org.getSeatsLimit() : 0,
                     projectsCount,
                     storageUsedGb,
                     mrr != null ? mrr : BigDecimal.ZERO,
+=======
+                    org.getSeatsLimit(),
+                    projectsCount,
+                    storageUsedGb,
+                    mrr,
+>>>>>>> 29db595 (Initial ProWise project upload)
                     org.getCreatedAt(),
                     org.getUpdatedAt(),
                     org.getSuspendedReason(),
-                    org.getNotes()
+                    org.getNotes(),
+                    org.getVersion() == null ? 0L : org.getVersion()
             );
         }
     }
@@ -85,15 +100,27 @@ public final class SuperAdminOrgDTOs {
             String ownerEmail,
             String planId,
             Integer seatsLimit,
-            String notes
+            String notes,
+            Long expectedVersion
     ) {}
 
     public record SuspendOrgRequest(
-            @NotBlank String reason
+            @NotBlank String reason,
+            Long expectedVersion
     ) {}
 
+    /** One organization of a bulk suspension with the version the client read. */
+    public record BulkSuspendItem(
+            @NotNull UUID id,
+            Long expectedVersion
+    ) {}
+
+    /**
+     * Bulk suspension carries a version per organization; one stale or unknown item refuses the whole batch
+     * (409 STALE_VERSION or 404), so nothing is suspended from an outdated list.
+     */
     public record BulkSuspendRequest(
-            @NotNull List<UUID> orgIds,
+            @NotEmpty List<@Valid BulkSuspendItem> items,
             @NotBlank String reason
     ) {}
 

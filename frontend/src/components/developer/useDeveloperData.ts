@@ -2,25 +2,20 @@
 
 import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 
-import { ApiError, apiClient } from "@/lib/api";
+import { apiClient } from "@/lib/api";
 import { developerApi } from "@/lib/developer-api";
-import * as F from "@/lib/fixtures/preview-data";
-import { mocksRequested, readPermissionEnv } from "@/lib/permissions";
-import { toState, withFixture, type LoadState } from "@/components/org-console/useRoleApi";
-import { useAuthStore } from "@/store/auth-store";
+import { toState, type LoadState } from "@/components/org-console/useRoleApi";
 import type * as W from "@/types/work";
 
 /**
  * Developer workspace data. Every query is scoped by the signed-in token's organization on the server; nothing here
- * sends an org id. A real API failure becomes an error / access state with Retry. Only outside production, when the
- * API is unreachable or the session is in role preview (where API calls are blocked by design), the screens show
- * labelled read-only sample data instead of an error.
+ * sends an org id. A real API failure becomes an error / access state with Retry; there is no sample-data fallback.
  */
 
 const QUERY = { retry: false } as const;
 
-function useDevQuery<T>(queryKey: QueryKey, call: () => Promise<T>, fixture: () => T, enabled = true): LoadState<T> {
-  return toState<T>(useQuery({ queryKey, queryFn: () => withFixture(call, fixture), enabled, ...QUERY }));
+function useDevQuery<T>(queryKey: QueryKey, call: () => Promise<T>, enabled = true): LoadState<T> {
+  return toState<T>(useQuery({ queryKey, queryFn: call, enabled, ...QUERY }));
 }
 
 export const devKeys = {
@@ -53,59 +48,47 @@ export const devKeys = {
 /* ---------------------------------------------------------------- reads */
 
 /** The signed-in user (server identity), used only to decide which actions to offer; the server still enforces them. */
-export const useMe = () => useDevQuery(devKeys.me, () => apiClient.me(), () => F.PREVIEW_ME as Awaited<ReturnType<typeof apiClient.me>>);
-export const useDevDashboard = () => useDevQuery(devKeys.dashboard, () => developerApi.getDashboard(), () => F.PREVIEW_DEV_DASHBOARD);
-export const useDevProjects = () => useDevQuery(devKeys.projects, () => developerApi.getProjects(), () => F.PREVIEW_DEV_PROJECTS);
+export const useMe = () => useDevQuery(devKeys.me, () => apiClient.me());
+export const useDevDashboard = () => useDevQuery(devKeys.dashboard, () => developerApi.getDashboard());
+export const useDevProjects = () => useDevQuery(devKeys.projects, () => developerApi.getProjects());
 export const useDevProject = (id: string) =>
-  useDevQuery(devKeys.project(id), () => developerApi.getProject(id),
-    () => F.PREVIEW_DEV_PROJECTS.find((p) => p.id === id) ?? F.PREVIEW_DEV_PROJECTS[0], !!id);
-export const useMyWorkItems = () => useDevQuery(devKeys.myWork, () => apiClient.work.mine(), () => F.PREVIEW_WORK_ITEMS);
-export const useMyBlockers = () => useDevQuery(devKeys.myBlockers, () => apiClient.work.myBlockers(), () => F.PREVIEW_BLOCKERS);
-export const useMyFeedback = () => useDevQuery(devKeys.myFeedback, () => apiClient.work.myFeedback(), () => F.PREVIEW_FEEDBACK);
-export const useWorkItem = (id: string) => useDevQuery(devKeys.item(id), () => apiClient.work.get(id), () => F.previewWorkItem(id), !!id);
+  useDevQuery(devKeys.project(id), () => developerApi.getProject(id), !!id);
+export const useMyWorkItems = () => useDevQuery(devKeys.myWork, () => apiClient.work.mine());
+export const useMyBlockers = () => useDevQuery(devKeys.myBlockers, () => apiClient.work.myBlockers());
+export const useMyFeedback = () => useDevQuery(devKeys.myFeedback, () => apiClient.work.myFeedback());
+export const useWorkItem = (id: string) => useDevQuery(devKeys.item(id), () => apiClient.work.get(id), !!id);
 export const useReviewHistory = (id: string) =>
-  useDevQuery(devKeys.itemHistory(id), () => apiClient.work.reviewHistory(id), () => F.PREVIEW_REVIEW_HISTORY, !!id);
+  useDevQuery(devKeys.itemHistory(id), () => apiClient.work.reviewHistory(id), !!id);
 export const useDependencies = (id: string) =>
-  useDevQuery(devKeys.itemDeps(id), () => apiClient.work.dependencies(id), () => F.PREVIEW_DEPENDENCIES, !!id);
+  useDevQuery(devKeys.itemDeps(id), () => apiClient.work.dependencies(id), !!id);
 export const useItemBlockers = (id: string) =>
-  useDevQuery(devKeys.itemBlockers(id), () => apiClient.work.blockers(id),
-    () => F.PREVIEW_BLOCKERS.filter((b) => b.work_item_id === id), !!id);
+  useDevQuery(devKeys.itemBlockers(id), () => apiClient.work.blockers(id), !!id);
 export const useProjectWorkItems = (id: string) =>
-  useDevQuery(devKeys.projectItems(id), () => apiClient.work.projectItems(id), () => F.PREVIEW_WORK_ITEMS, !!id);
+  useDevQuery(devKeys.projectItems(id), () => apiClient.work.projectItems(id), !!id);
 export const useStructuredProgress = (id: string) =>
-  useDevQuery(devKeys.structured(id), () => apiClient.work.structuredProgress(id), () => F.PREVIEW_STRUCTURED_PROGRESS, !!id);
+  useDevQuery(devKeys.structured(id), () => apiClient.work.structuredProgress(id), !!id);
 export const useProjectBlockers = (id: string) =>
-  useDevQuery(["developer", "project", id, "work-item-blockers"], () => apiClient.work.projectBlockers(id), () => F.PREVIEW_BLOCKERS, !!id);
-export const useDevBugs = () => useDevQuery(devKeys.bugs, () => developerApi.getBugs(), () => F.PREVIEW_BUGS);
+  useDevQuery(["developer", "project", id, "work-item-blockers"], () => apiClient.work.projectBlockers(id), !!id);
+export const useDevBugs = () => useDevQuery(devKeys.bugs, () => developerApi.getBugs());
 export const useDevReviews = (type: "assigned" | "authored") =>
-  useDevQuery(devKeys.reviews(type), () => developerApi.getReviews(type), () => (type === "authored" ? F.PREVIEW_CODE_REVIEWS : []));
-export const useDevFiles = () => useDevQuery(devKeys.files, () => developerApi.getFiles(), () => F.PREVIEW_FILES);
-export const useDevGitHub = () => useDevQuery(devKeys.github, () => developerApi.getGitHubActivity(), () => F.PREVIEW_GITHUB);
-export const useDevCalendar = () => useDevQuery(devKeys.calendar, () => developerApi.getCalendarEvents(), () => F.PREVIEW_CALENDAR);
-export const useDevDiscussions = () => useDevQuery(devKeys.discussions, () => developerApi.getDiscussions(), () => F.PREVIEW_DISCUSSIONS);
+  useDevQuery(devKeys.reviews(type), () => developerApi.getReviews(type));
+export const useDevFiles = () => useDevQuery(devKeys.files, () => developerApi.getFiles());
+export const useDevGitHub = () => useDevQuery(devKeys.github, () => developerApi.getGitHubActivity());
+export const useDevCalendar = () => useDevQuery(devKeys.calendar, () => developerApi.getCalendarEvents());
+export const useDevDiscussions = () => useDevQuery(devKeys.discussions, () => developerApi.getDiscussions());
 export const useDiscussionMessages = (id: string) =>
-  useDevQuery(devKeys.messages(id), () => developerApi.getDiscussionMessages(id), () => F.PREVIEW_MESSAGES, !!id);
+  useDevQuery(devKeys.messages(id), () => developerApi.getDiscussionMessages(id), !!id);
 export const useDevNotifications = () =>
-  useDevQuery(devKeys.notifications, () => developerApi.getNotifications(), () => F.PREVIEW_NOTIFICATIONS);
-export const useDevPreferences = () => useDevQuery(devKeys.preferences, () => developerApi.getPreferences(), () => F.PREVIEW_PREFERENCES);
+  useDevQuery(devKeys.notifications, () => developerApi.getNotifications());
+export const useDevPreferences = () => useDevQuery(devKeys.preferences, () => developerApi.getPreferences());
 
 /* ---------------------------------------------------------------- writes */
-
-/** True while a role preview is active outside production: changes are not sent (sample data is read-only). */
-export function usePreviewReadOnly(): boolean {
-  const preview = useAuthStore((s) => s.isRolePreview);
-  return mocksRequested(readPermissionEnv(), preview) && preview;
-}
-
-const PREVIEW_REFUSAL = () =>
-  new ApiError(0, "ROLE_PREVIEW", "Role preview shows sample data and cannot save changes. Sign in with a real account to make changes.", "");
 
 /** Runs a change and refreshes every developer query (lists, counts and the item itself), since one change moves many. */
 export function useDevMutation<A, R>(fn: (args: A) => Promise<R>) {
   const client = useQueryClient();
-  const readOnly = usePreviewReadOnly();
   return useMutation({
-    mutationFn: (args: A) => (readOnly ? Promise.reject(PREVIEW_REFUSAL()) : fn(args)),
+    mutationFn: fn,
     onSettled: () => client.invalidateQueries({ queryKey: devKeys.all }),
   });
 }

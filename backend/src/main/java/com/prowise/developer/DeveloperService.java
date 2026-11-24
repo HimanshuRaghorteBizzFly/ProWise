@@ -162,7 +162,7 @@ public class DeveloperService {
                 .filter(w -> !"DONE".equalsIgnoreCase(w.getState()) && w.getDueDate() != null && w.getDueDate().isBefore(now))
                 .count();
 
-        long openBugs = bugRepository.countOpenAssigned(actor.orgId(), actor.userId(), "RESOLVED");
+        long openBugs = bugRepository.countOpenAssigned(actor.orgId(), actor.userId());
         long pendingReviews = codeReviewRepository.countByOrgIdAndReviewerIdAndStatus(actor.orgId(), actor.userId(), "PENDING");
         long unreadNotifications = developerNotificationRepository.countByOrgIdAndUserIdAndReadFalse(actor.orgId(), actor.userId());
 
@@ -183,12 +183,15 @@ public class DeveloperService {
                 .map(this::mapWorkItemToDTO)
                 .toList();
 
+        java.util.Map<String, String> projectKeys = new java.util.HashMap<>();
+        projects.forEach(p -> projectKeys.put(p.getId(), p.getKey()));
         List<DeveloperDTOs.DeadlineItemDTO> upcomingDeadlines = myWorkItems.stream()
                 .filter(w -> w.getDueDate() != null && !"DONE".equalsIgnoreCase(w.getState()))
                 .sorted((a, b) -> a.getDueDate().compareTo(b.getDueDate()))
                 .limit(6)
                 .map(w -> new DeveloperDTOs.DeadlineItemDTO(
-                        w.getId(), w.getTitle(), w.getKey(), w.getProjectId(), w.getDueDate(), w.getPriority(), w.getState()))
+                        w.getId(), w.getTitle(), w.getKey(), projectKeys.get(w.getProjectId()), w.getProjectId(),
+                        w.getDueDate(), w.getPriority(), w.getState()))
                 .toList();
 
         List<GitHubActivityEntity> recentGit = access.canAtOrg(actor, PermissionKey.REPO_READ)

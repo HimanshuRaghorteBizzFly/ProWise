@@ -70,8 +70,7 @@ import com.prowise.superadmin.policies.PlatformPolicyEntity;
 import com.prowise.superadmin.policies.PlatformPolicyRepository;
 import com.prowise.superadmin.policies.PolicyDTOs;
 import com.prowise.superadmin.policies.PolicyService;
-import com.prowise.superadmin.roles.SuperAdminRoleDTOs;
-import com.prowise.superadmin.roles.SuperAdminRoleService;
+import com.prowise.superadmin.roles.SystemRoleBaseline;
 import com.prowise.superadmin.subscriptions.SubscriptionDTOs;
 import com.prowise.superadmin.subscriptions.SubscriptionEntity;
 import com.prowise.superadmin.subscriptions.SubscriptionRepository;
@@ -103,7 +102,7 @@ public class SuperAdminServiceTest {
     void testPlansModule() {
         PlanRepository planRepo = mock(PlanRepository.class);
         PlanFeatureRepository featureRepo = mock(PlanFeatureRepository.class);
-        PlanService planService = new PlanService(planRepo, featureRepo);
+        PlanService planService = new PlanService(planRepo, featureRepo, auditService);
 
         PlanEntity plan = new PlanEntity();
         plan.setId("plan-pro");
@@ -123,7 +122,8 @@ public class SuperAdminServiceTest {
 
         PlanDTOs.PlanResponse updated = planService.updatePlan(
                 "plan-pro",
-                new PlanDTOs.UpdatePlanRequest("Professional Plus", null, null, null, null, null, null, null, null, null, null, null)
+                new PlanDTOs.UpdatePlanRequest("Professional Plus", null, null, null, null, null, null, null, null, null, null, null, 0L),
+                "superadmin@prowise.io"
         );
         assertEquals("Professional Plus", updated.name());
     }
@@ -133,7 +133,7 @@ public class SuperAdminServiceTest {
     void testSubscriptionsModule() {
         SubscriptionRepository subRepo = mock(SubscriptionRepository.class);
         PlanRepository planRepo = mock(PlanRepository.class);
-        SubscriptionService subService = new SubscriptionService(subRepo, planRepo);
+        SubscriptionService subService = new SubscriptionService(subRepo, planRepo, auditService);
 
         UUID orgId = UUID.randomUUID();
         PlanEntity plan = new PlanEntity();
@@ -145,7 +145,8 @@ public class SuperAdminServiceTest {
         when(subRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         SubscriptionDTOs.SubscriptionResponse sub = subService.assignSubscription(
-                new SubscriptionDTOs.AssignSubscriptionRequest(orgId, "plan-starter", "MONTHLY", 25, true, "Corporate Card")
+                new SubscriptionDTOs.AssignSubscriptionRequest(orgId, "plan-starter", "MONTHLY", 25, true, "Corporate Card"),
+                "superadmin@prowise.io"
         );
 
         assertNotNull(sub);
@@ -182,7 +183,7 @@ public class SuperAdminServiceTest {
 
         BillingDTOs.PaymentResponse refunded = billingService.refundPayment(
                 payment.id(),
-                new BillingDTOs.RefundPaymentRequest(BigDecimal.valueOf(300), "Billing dispute resolved"),
+                new BillingDTOs.RefundPaymentRequest(BigDecimal.valueOf(300), "Billing dispute resolved", 0L),
                 "superadmin@prowise.io"
         );
         assertEquals("PARTIALLY_REFUNDED", refunded.status());
@@ -229,7 +230,7 @@ public class SuperAdminServiceTest {
         invEntity.setOrgId(orgId);
         when(invoiceRepo.findById(invoice.id())).thenReturn(Optional.of(invEntity));
 
-        InvoiceDTOs.InvoiceResponse paid = invoiceService.markInvoicePaid(invoice.id(), "pay-888", "superadmin@prowise.io");
+        InvoiceDTOs.InvoiceResponse paid = invoiceService.markInvoicePaid(invoice.id(), "pay-888", 0L, "superadmin@prowise.io");
         assertEquals("PAID", paid.status());
         assertEquals("pay-888", paid.paymentId());
     }
@@ -240,7 +241,7 @@ public class SuperAdminServiceTest {
         OrganizationRepository orgRepo = mock(OrganizationRepository.class);
         PlanRepository planRepo = mock(PlanRepository.class);
         SubscriptionRepository subRepo = mock(SubscriptionRepository.class);
-        SuperAdminOrgService orgService = new SuperAdminOrgService(orgRepo, planRepo, subRepo, auditService);
+        SuperAdminOrgService orgService = new SuperAdminOrgService(orgRepo, auditService, mock(org.springframework.jdbc.core.JdbcTemplate.class));
 
         when(orgRepo.existsBySlug("acme-corp")).thenReturn(true);
         when(orgRepo.existsBySlug("new-org")).thenReturn(false);
@@ -263,7 +264,7 @@ public class SuperAdminServiceTest {
 
         SuperAdminOrgDTOs.OrgDetailResponse suspended = orgService.suspendOrganization(
                 created.id(),
-                new SuperAdminOrgDTOs.SuspendOrgRequest("Terms violation"),
+                new SuperAdminOrgDTOs.SuspendOrgRequest("Terms violation", 0L),
                 "superadmin@prowise.io"
         );
         assertEquals("SUSPENDED", suspended.status());
@@ -271,32 +272,20 @@ public class SuperAdminServiceTest {
     }
 
     @Test
-    @DisplayName("Roles: 9 system roles initialization and protection against deletion")
+    @DisplayName("Roles: the organization baseline covers the 7 templates and keeps the owner's governance keys")
     void testRolesModule() {
-        SuperAdminRoleService roleService = new SuperAdminRoleService(auditService);
-
-        List<SuperAdminRoleDTOs.AdminRoleResponse> roles = roleService.listRoles();
-        assertTrue(roles.size() >= 9);
-
-        // Platform Super Admin must exist with rank 1
-        SuperAdminRoleDTOs.AdminRoleResponse superAdminRole = roleService.getRole("role-super-admin");
-        assertNotNull(superAdminRole);
-        assertTrue(superAdminRole.isSystem());
-        assertEquals(1, superAdminRole.hierarchyRank());
-
-        // Deleting system role must throw FORBIDDEN
-        assertThrows(ApiException.class, () -> roleService.deleteRole("role-super-admin", "superadmin@prowise.io"));
-
-        // Creating and deleting custom role succeeds
-        SuperAdminRoleDTOs.AdminRoleResponse custom = roleService.createRole(
-                new SuperAdminRoleDTOs.CreateRoleRequest("Security Auditor", "security-auditor", "Audit read-only", "ORGANIZATION", "violet", "Shield", List.of("audit.view")),
-                "superadmin@prowise.io"
-        );
-        assertNotNull(custom);
-        assertFalse(custom.isSystem());
-
-        roleService.deleteRole(custom.id(), "superadmin@prowise.io");
-        assertThrows(ApiException.class, () -> roleService.getRole(custom.id()));
+        // Task 1.5: roles are persisted (V36), so listing, rank order, Super Admin protection and custom role
+        // create/delete are asserted against the database in SuperAdminRoleGovernanceIntegrationTest.
+        assertEquals(7, SystemRoleBaseline.ORGANIZATION_TEMPLATES.size());
+        assertTrue(SystemRoleBaseline.ORGANIZATION_TEMPLATES.get(SystemRoleBaseline.OWNER_TEMPLATE_ID)
+                .containsAll(SystemRoleBaseline.OWNER_REQUIRED_KEYS));
+        for (java.util.Set<String> keys : SystemRoleBaseline.ORGANIZATION_TEMPLATES.values()) {
+            assertFalse(keys.isEmpty());
+            assertTrue(keys.stream().allMatch(com.prowise.authz.PermissionKey::isValid));
+        }
+        assertNotNull(SystemRoleBaseline.SUPER_ADMIN_DEFINITION_ID);
+        assertThrows(UnsupportedOperationException.class,
+                () -> SystemRoleBaseline.ORGANIZATION_TEMPLATES.get(SystemRoleBaseline.OWNER_TEMPLATE_ID).clear());
     }
 
     @Test
@@ -366,7 +355,7 @@ public class SuperAdminServiceTest {
         entity.setStatus("DRAFT");
         when(annRepo.findById(ann.id())).thenReturn(Optional.of(entity));
 
-        AnnouncementDTOs.AnnouncementResponse published = annService.publishAnnouncement(ann.id(), "superadmin@prowise.io");
+        AnnouncementDTOs.AnnouncementResponse published = annService.publishAnnouncement(ann.id(), 0L, "superadmin@prowise.io");
         assertEquals("PUBLISHED", published.status());
         assertNotNull(published.publishedAt());
     }
@@ -393,7 +382,7 @@ public class SuperAdminServiceTest {
         entity.setEnabled(false);
         when(flagRepo.findById(flag.id())).thenReturn(Optional.of(entity));
 
-        FeatureFlagDTOs.FeatureFlagResponse toggled = flagService.toggleFeatureFlag(flag.id(), true, "superadmin@prowise.io");
+        FeatureFlagDTOs.FeatureFlagResponse toggled = flagService.toggleFeatureFlag(flag.id(), true, 0L, "superadmin@prowise.io");
         assertTrue(toggled.enabled());
     }
 
@@ -401,7 +390,9 @@ public class SuperAdminServiceTest {
     @DisplayName("Licenses: Generate cryptographic key, validate, and revoke")
     void testLicensesModule() {
         LicenseRepository licenseRepo = mock(LicenseRepository.class);
-        LicenseService licenseService = new LicenseService(licenseRepo, auditService);
+        PlanRepository licensePlans = mock(PlanRepository.class);
+        LicenseService licenseService = new LicenseService(licenseRepo, auditService, licensePlans);
+        when(licensePlans.existsById("plan-enterprise")).thenReturn(true);
 
         when(licenseRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -427,7 +418,7 @@ public class SuperAdminServiceTest {
         when(licenseRepo.findById(lic.id())).thenReturn(Optional.of(entity));
         LicenseDTOs.LicenseResponse revoked = licenseService.revokeLicense(
                 lic.id(),
-                new LicenseDTOs.RevokeLicenseRequest("Customer contract ended"),
+                new LicenseDTOs.RevokeLicenseRequest("Customer contract ended", 0L),
                 "superadmin@prowise.io"
         );
         assertEquals("REVOKED", revoked.status());
@@ -445,14 +436,14 @@ public class SuperAdminServiceTest {
         when(brandingRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         PolicyDTOs.PlatformPolicyResponse updatedPolicy = policyService.updatePolicySettings(
-                new PolicyDTOs.UpdatePolicySettingsRequest(5, 45, 180, true, 21, 30, 100, false),
+                new PolicyDTOs.UpdatePolicySettingsRequest(5, 45, 180, true, 21, 30, 100, false, 0L),
                 "superadmin@prowise.io"
         );
         assertEquals(5, updatedPolicy.checkinGraceWorkingDays());
         assertEquals(180, updatedPolicy.auditRetentionDays());
 
         PolicyDTOs.PlatformBrandingResponse updatedBranding = policyService.updateBrandingPreferences(
-                new PolicyDTOs.UpdateBrandingRequest("ProWise Enterprise Core", "support@prowise.io", "https://status.prowise.io", "America/New_York", "English (US)", "YYYY-MM-DD", "USD ($)", true),
+                new PolicyDTOs.UpdateBrandingRequest("ProWise Enterprise Core", "support@prowise.io", "https://status.prowise.io", "America/New_York", "English (US)", "YYYY-MM-DD", "USD ($)", true, 0L),
                 "superadmin@prowise.io"
         );
         assertEquals("ProWise Enterprise Core", updatedBranding.platformName());
@@ -499,13 +490,46 @@ public class SuperAdminServiceTest {
         assertEquals(2, dash.totalOrganizations());
         assertEquals(2, dash.activeOrganizations());
         assertEquals(8, dash.activeOperators());
-        // MRR = 1299 + 4999 = 6298
-        assertEquals(BigDecimal.valueOf(6298), dash.totalMrr());
-        // ARR = 6298 * 12 = 75576
-        assertEquals(BigDecimal.valueOf(75576), dash.totalArr());
+        // Revenue comes only from ACTIVE subscriptions; plan prices alone never produce MRR (owner decision
+        // 2026-11-24: no estimated or invented figures).
+        assertEquals(0, BigDecimal.ZERO.compareTo(dash.totalMrr()));
+        assertEquals(0, BigDecimal.ZERO.compareTo(dash.totalArr()));
         assertEquals(4, dash.kpiCards().size());
+<<<<<<< HEAD
         // Only stored data: no invented month-over-month trends and no fabricated revenue history.
         assertTrue(dash.kpiCards().stream().allMatch(card -> card.change() == null && card.trend() == null));
         assertEquals(0, dash.revenueHistory().size());
+=======
+        // No revenue history is stored, so none is fabricated; no trend is invented for any card.
+        assertTrue(dash.revenueHistory().isEmpty());
+        dash.kpiCards().forEach(card -> {
+            assertEquals(null, card.trend());
+            assertEquals(null, card.change());
+        });
+
+        // Real subscriptions: monthly 1299 + annual 12000 (= 1000 / month) = 2299 MRR; cancelled ones do not count.
+        SubscriptionEntity monthly = new SubscriptionEntity("sub-m", org1.getId(), "plan-pro");
+        monthly.setStatus("ACTIVE");
+        monthly.setBillingCycle("MONTHLY");
+        monthly.setAmount(BigDecimal.valueOf(1299));
+        monthly.setSeats(10);
+        SubscriptionEntity annual = new SubscriptionEntity("sub-a", org2.getId(), "plan-enterprise");
+        annual.setStatus("ACTIVE");
+        annual.setBillingCycle("ANNUAL");
+        annual.setAmount(BigDecimal.valueOf(12000));
+        annual.setSeats(5);
+        SubscriptionEntity cancelled = new SubscriptionEntity("sub-c", org2.getId(), "plan-pro");
+        cancelled.setStatus("CANCELLED");
+        cancelled.setBillingCycle("MONTHLY");
+        cancelled.setAmount(BigDecimal.valueOf(999));
+        cancelled.setSeats(50);
+        when(subRepo.findAll()).thenReturn(List.of(monthly, annual, cancelled));
+
+        SuperAdminDashboardDTOs.SuperAdminDashboardResponse real = dashboardService.getDashboardData();
+        assertEquals(0, BigDecimal.valueOf(2299).compareTo(real.totalMrr()));
+        assertEquals(0, BigDecimal.valueOf(27588).compareTo(real.totalArr()));
+        assertEquals(15, real.totalSeatsAllocated());
+        assertEquals(2, real.activeSubscriptions());
+>>>>>>> 29db595 (Initial ProWise project upload)
     }
 }

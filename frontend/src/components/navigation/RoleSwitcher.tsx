@@ -1,5 +1,6 @@
 "use client";
 
+<<<<<<< HEAD
 import React, { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Shield, ChevronDown, Loader2 } from "lucide-react";
@@ -85,4 +86,8 @@ function RoleSwitcherControl() {
       )}
     </div>
   );
+=======
+export function RoleSwitcher() {
+  return null;
+>>>>>>> 29db595 (Initial ProWise project upload)
 }

@@ -1,14 +1,22 @@
 package com.prowise.superadmin.announcements;
 
 import java.time.Instant;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "announcements")
 public class AnnouncementEntity {
+
+    /** Optimistic lock (V34): exposed as "version", checked against the client's expected_version. */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
 
     @Id
     @Column(name = "id", nullable = false, length = 64)
@@ -26,12 +34,15 @@ public class AnnouncementEntity {
     @Column(name = "target_audience", nullable = false, length = 50)
     private String targetAudience = "ALL_ORGS"; // ALL_ORGS, BY_PLAN, SPECIFIC_ORGS, OPERATORS_ONLY
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "target_plans", columnDefinition = "JSONB")
     private String targetPlans = "[]";
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "target_org_ids", columnDefinition = "JSONB")
     private String targetOrgIds = "[]";
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "channels", columnDefinition = "JSONB")
     private String channels = "[\"IN_APP_BANNER\"]";
 
@@ -102,4 +113,7 @@ public class AnnouncementEntity {
 
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
 }

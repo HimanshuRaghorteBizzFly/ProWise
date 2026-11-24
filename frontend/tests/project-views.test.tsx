@@ -73,7 +73,7 @@ beforeEach(() => allowed.clear());
 describe("project API client", () => {
   it("lists with cursor and filters, and creates with an Idempotency-Key", async () => {
     const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ items: [], next_cursor: null, has_more: false })));
-    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock, isRolePreview: () => false });
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
 
     await client.projects("org-1", { q: "crm", status: "ACTIVE", mode: "", cursor: "abc", limit: 25 });
     await client.createProject("org-1", { name: "X", key: "XX", mode: "INDIVIDUAL", accountable_membership_id: "m" });

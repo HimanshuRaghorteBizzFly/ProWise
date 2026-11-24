@@ -295,4 +295,311 @@ class CalendarCadenceIntegrationTest {
     private JsonNode json(MvcResult result) throws Exception {
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
+<<<<<<< HEAD
+=======
+
+    /** Project create takes the developer's membership id (task 2.1 contract), not the user id. */
+    private UUID membershipOf(Workspace ws, UUID userId) {
+        return jdbc.queryForObject("SELECT id FROM memberships WHERE org_id = ? AND user_id = ?", UUID.class, ws.id(), userId);
+    }
+
+    /** Deadlines are date-only (rule 8): keep the calendar date of an ISO instant or date string. */
+    private static String localDate(String value) {
+        return value == null ? null : value.substring(0, 10);
+    }
+
+    private String createProject(Workspace ws, String key, String name, UUID devId, String startDate, String targetDate, String timezone) throws Exception {
+        MvcResult res = mockMvc.perform(withToken(post("/v1/organizations/{orgId}/projects", ws.id()), ws.ownerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                        {
+                            "key": "%s",
+                            "name": "%s",
+                            "mode": "INDIVIDUAL",
+                            "status": "ACTIVE",
+                            "priority": "HIGH",
+                            "accountable_membership_id": "%s",
+                            "timezone": "%s",
+                            "start_on": "%s",
+                            "target_on": "%s"
+                        }
+                        """.formatted(key, name, membershipOf(ws, devId), timezone != null ? timezone : "Europe/London",
+                                localDate(startDate), localDate(targetDate))))
+                .andExpect(status().isCreated()).andReturn();
+        return json(res).path("id").asText();
+    }
+
+    // =========================================================================
+    // TEST 1: FR-037 & Pass When:
+    // Friday deadline + 1 working-day grace + Monday holiday -> Tuesday grace
+    // =========================================================================
+    @Test
+    @DisplayName("Friday deadline + 1 working-day grace + Monday holiday -> Tuesday grace")
+    void testFridayDeadlineWithMondayHolidayAndGrace() throws Exception {
+        Workspace ws = workspace("cal-hol");
+        Person dev = person("cal-dev");
+
+        UUID devMem = member(ws.id(), dev.id(), "DEVELOPER");
+        seedGrant(ws.id(), devMem, DEVELOPER_ROLE, ws.ownerId());
+        String devToken = switchTo(dev.token(), ws.id());
+
+        // 1. Add Monday 2026-06-08 as an organization holiday
+        mockMvc.perform(withToken(post("/v1/organizations/" + ws.id() + "/calendar/holidays"), ws.ownerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                        {
+                            "date": "2026-06-08",
+                            "name": "King's Birthday Holiday"
+                        }
+                        """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.holidays").isArray());
+
+        // 2. Pure domain test: WorkingCalendar addWorkingDays
+        WorkingCalendar workingCalendar = new WorkingCalendar(
+                WorkingCalendar.DEFAULT_WORKDAYS,
+                Set.of(LocalDate.of(2026, 6, 8)), // Monday holiday
+                ZoneId.of("Europe/London")
+        );
+        LocalDate friday = LocalDate.of(2026, 6, 5);
+        LocalDate graceDate = workingCalendar.addWorkingDays(friday, 1);
+        // Friday June 5 + 1 working day (Sat/Sun skipped, Mon June 8 is holiday) -> Tuesday June 9!
+        assertThat(graceDate).isEqualTo(LocalDate.of(2026, 6, 9));
+
+        // 3. Create project ending on Friday 2026-06-05
+        String projectId = createProject(
+                ws, "PRJCAL", "Calendar Test Project", dev.id(),
+                "2026-06-01T09:00:00Z", "2026-06-05T17:00:00Z", "Europe/London"
+        );
+
+        // 4. Update project cadence to ensure 1 working day grace
+        mockMvc.perform(withToken(put("/v1/projects/" + projectId + "/cadence"), ws.ownerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                        {
+                            "frequency": "WEEKLY",
+                            "dayOfWeek": "FRIDAY",
+                            "localCutoffTime": "17:00",
+                            "graceWorkingDays": 1,
+                            "reminderOffsets": [3, 1],
+                            "reason": "Configuring test cadence"
+                        }
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.grace_working_days").value(1));
+
+        // 5. Query schedule occurrences
+        MvcResult occRes = mockMvc.perform(withToken(get("/v1/projects/" + projectId + "/occurrences"), devToken))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode occurrences = json(occRes);
+        assertThat(occurrences.isArray()).isTrue();
+
+        JsonNode targetOcc = null;
+        for (JsonNode occ : occurrences) {
+            if ("TARGET".equals(occ.path("kind").asText())) {
+                targetOcc = occ;
+                break;
+            }
+        }
+        assertThat(targetOcc).isNotNull();
+        assertThat(targetOcc.path("due_local_date").asText()).isEqualTo("2026-06-05");
+        // Grace date must be Tuesday 2026-06-09
+        assertThat(targetOcc.path("grace_until_date").asText()).isEqualTo("2026-06-09");
+    }
+
+    // =========================================================================
+    // TEST 2: DST Handling
+    // =========================================================================
+    @Test
+    @DisplayName("DST handling calculates exact cutoff instant in target timezone")
+    void testDaylightSavingTimeCutoffHandling() throws Exception {
+        Workspace ws = workspace("cal-dst");
+        Person dev = person("dst-dev");
+
+        UUID devMem = member(ws.id(), dev.id(), "DEVELOPER");
+        seedGrant(ws.id(), devMem, DEVELOPER_ROLE, ws.ownerId());
+
+        WorkingCalendar calLondon = new WorkingCalendar(
+                WorkingCalendar.DEFAULT_WORKDAYS,
+                Set.of(),
+                ZoneId.of("Europe/London")
+        );
+
+        // Winter: GMT (UTC+0)
+        LocalDate winterDate = LocalDate.of(2026, 1, 15);
+        ZonedDateTime winterCutoff = calLondon.cutoffDateTime(winterDate, LocalTime.of(17, 0));
+        assertThat(winterCutoff.getOffset().getTotalSeconds()).isEqualTo(0); // UTC+0
+
+        // Summer: BST (UTC+1)
+        LocalDate summerDate = LocalDate.of(2026, 7, 15);
+        ZonedDateTime summerCutoff = calLondon.cutoffDateTime(summerDate, LocalTime.of(17, 0));
+        assertThat(summerCutoff.getOffset().getTotalSeconds()).isEqualTo(3600); // UTC+1 (BST)
+
+        // Verify startOfNextLocalDate works properly across DST
+        Instant nextDay = calLondon.startOfNextLocalDate(summerDate);
+        ZonedDateTime nextDayZdt = nextDay.atZone(ZoneId.of("Europe/London"));
+        assertThat(nextDayZdt.toLocalDate()).isEqualTo(LocalDate.of(2026, 7, 16));
+        assertThat(nextDayZdt.toLocalTime()).isEqualTo(LocalTime.of(0, 0));
+    }
+
+    // =========================================================================
+    // TEST 3: Project On Hold Suspends Schedule and Occurrences
+    // =========================================================================
+    @Test
+    @DisplayName("Project On Hold suspends deadlines, cadence occurrences, and returns PAUSED status")
+    void testProjectOnHoldSuspendsSchedule() throws Exception {
+        Workspace ws = workspace("cal-hold");
+        Person dev = person("hold-dev");
+
+        UUID devMem = member(ws.id(), dev.id(), "DEVELOPER");
+        seedGrant(ws.id(), devMem, DEVELOPER_ROLE, ws.ownerId());
+        String devToken = switchTo(dev.token(), ws.id());
+
+        String projectId = createProject(
+                ws, "PRJHOLD", "Hold Project", dev.id(),
+                "2026-06-01T09:00:00Z", "2026-06-30T17:00:00Z", "Europe/London"
+        );
+
+        // Verify active summary before hold
+        mockMvc.perform(withToken(get("/v1/projects/" + projectId + "/schedule-summary"), devToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.is_on_hold").value(false));
+
+        // Put project ON_HOLD
+        jdbc.update("UPDATE projects SET lifecycle = 'ON_HOLD' WHERE id = ?", projectId);
+
+        // Verify schedule summary reflects ON_HOLD and PAUSED
+        mockMvc.perform(withToken(get("/v1/projects/" + projectId + "/schedule-summary"), devToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.is_on_hold").value(true))
+                .andExpect(jsonPath("$.next_checkin_status").value("PAUSED"));
+    }
+
+    // =========================================================================
+    // TEST 4: Rescheduling Target Deadline with Mandatory Reason & Versioning
+    // =========================================================================
+    @Test
+    @DisplayName("Reschedule target deadline requires mandatory reason, records versioned history, and supersedes previous occurrence")
+    void testRescheduleTargetDeadline() throws Exception {
+        Workspace ws = workspace("cal-resched");
+        Person dev = person("resched-dev");
+
+        UUID devMem = member(ws.id(), dev.id(), "DEVELOPER");
+        seedGrant(ws.id(), devMem, DEVELOPER_ROLE, ws.ownerId());
+        String devToken = switchTo(dev.token(), ws.id());
+
+        String projectId = createProject(
+                ws, "PRJRESCH", "Reschedule Project", dev.id(),
+                "2026-06-01T09:00:00Z", "2026-06-30T17:00:00Z", "Europe/London"
+        );
+
+        // Generate initial occurrences
+        mockMvc.perform(withToken(get("/v1/projects/" + projectId + "/occurrences"), devToken))
+                .andExpect(status().isOk());
+
+        // 1. Reschedule without reason -> rejected (400 REASON_REQUIRED)
+        mockMvc.perform(withToken(post("/v1/projects/" + projectId + "/deadlines/reschedule"), ws.ownerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                        {
+                            "newTargetDate": "2026-07-15",
+                            "reason": ""
+                        }
+                        """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("REASON_REQUIRED"));
+
+        // 2. Reschedule with valid reason -> 200 OK
+        mockMvc.perform(withToken(post("/v1/projects/" + projectId + "/deadlines/reschedule"), ws.ownerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                        {
+                            "new_target_date": "2026-07-15",
+                            "reason": "Client requested scope extension for additional integrations"
+                        }
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.due_local_date").value("2026-07-15"))
+                .andExpect(jsonPath("$.kind").value("TARGET"))
+                .andExpect(jsonPath("$.status").value("OPEN"));
+
+        // 3. Verify prior TARGET occurrence was marked SUPERSEDED
+        MvcResult occRes = mockMvc.perform(withToken(get("/v1/projects/" + projectId + "/occurrences"), devToken))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode occs = json(occRes);
+        boolean foundSuperseded = false;
+        boolean foundNewOpen = false;
+        for (JsonNode occ : occs) {
+            if ("TARGET".equals(occ.path("kind").asText())) {
+                if ("2026-06-30".equals(occ.path("due_local_date").asText())) {
+                    assertThat(occ.path("status").asText()).isEqualTo("SUPERSEDED");
+                    foundSuperseded = true;
+                } else if ("2026-07-15".equals(occ.path("due_local_date").asText())) {
+                    assertThat(occ.path("status").asText()).isEqualTo("OPEN");
+                    foundNewOpen = true;
+                }
+            }
+        }
+        assertThat(foundSuperseded).isTrue();
+        assertThat(foundNewOpen).isTrue();
+
+        // 4. Verify audit log was recorded
+        Integer auditCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM audit_log WHERE org_id = ? AND action = 'PROJECT_TARGET_RESCHEDULED'",
+                Integer.class, ws.id());
+        assertThat(auditCount).isGreaterThan(0);
+    }
+
+    // =========================================================================
+    // TEST 5: Reminder Candidates Generation & Deduplication
+    // =========================================================================
+    @Test
+    @DisplayName("Reminder candidates are generated and duplicate occurrences are prevented for same window")
+    void testReminderCandidatesAndNoDuplicateOccurrences() throws Exception {
+        Workspace ws = workspace("cal-rem");
+        Person dev = person("rem-dev");
+
+        UUID devMem = member(ws.id(), dev.id(), "DEVELOPER");
+        seedGrant(ws.id(), devMem, DEVELOPER_ROLE, ws.ownerId());
+        String devToken = switchTo(dev.token(), ws.id());
+
+        String projectId = createProject(
+                ws, "PRJREM", "Reminder Project", dev.id(),
+                "2026-06-01T09:00:00Z", "2026-06-30T17:00:00Z", "Europe/London"
+        );
+
+        // Generate occurrences first time
+        mockMvc.perform(withToken(get("/v1/projects/" + projectId + "/occurrences"), devToken))
+                .andExpect(status().isOk());
+
+        // Call again - verify idempotency: no duplicates created
+        MvcResult occRes2 = mockMvc.perform(withToken(get("/v1/projects/" + projectId + "/occurrences"), devToken))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode occs2 = json(occRes2);
+        long targetCount = 0;
+        for (JsonNode o : occs2) {
+            if ("TARGET".equals(o.path("kind").asText())) {
+                targetCount++;
+            }
+        }
+        assertThat(targetCount).isEqualTo(1); // exactly one target occurrence
+
+        // Check reminder candidates
+        MvcResult remRes = mockMvc.perform(withToken(get("/v1/organizations/" + ws.id() + "/reminders/candidates"), ws.ownerToken()))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode candidates = json(remRes);
+        assertThat(candidates.isArray()).isTrue();
+        assertThat(candidates.size()).isGreaterThan(0);
+        assertThat(candidates.get(0).path("channel").asText()).isEqualTo("EMAIL");
+        assertThat(candidates.get(0).path("status").asText()).isEqualTo("PENDING");
+    }
+>>>>>>> 29db595 (Initial ProWise project upload)
 }

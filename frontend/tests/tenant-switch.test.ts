@@ -5,7 +5,6 @@ import { canWithGrants, grantsFromPermissionsResponse } from "../src/lib/permiss
 import { apiClient } from "../src/lib/api";
 import { clearWorkspaceCaches, pathForWorkspace, registerQueryClient, switchWorkspace } from "../src/lib/workspace-switch";
 import { permissionStore } from "../src/store/permission-store";
-import { useOrgConsoleStore } from "../src/store/org-console-store";
 import { useAuthStore } from "../src/store/auth-store";
 
 describe("T04 · scoped grants from GET /v1/me/permissions", () => {
@@ -38,19 +37,17 @@ describe("T06 · switching workspace clears everything from the previous one", (
     vi.restoreAllMocks();
   });
 
-  it("clears cached server data, effective permissions and workspace stores", async () => {
+  it("clears cached server data and effective permissions", async () => {
     const client = new QueryClient();
     registerQueryClient(client);
     client.setQueryData(["roles", "org-a"], [{ id: "secret-role" }]);
     permissionStore.setState({ orgId: "org-a", status: "ready", grants: [{ key: "role.manage", scope: "ORG" }] });
-    useOrgConsoleStore.setState({ members: [] });
 
     clearWorkspaceCaches();
 
     expect(client.getQueryData(["roles", "org-a"])).toBeUndefined();
     expect(permissionStore.getState().status).toBe("idle");
     expect(permissionStore.getState().grants).toEqual([]);
-    expect(useOrgConsoleStore.getState().members.length).toBeGreaterThan(0);
   });
 
   it("asks the API for an org-bound token, then selects the new workspace", async () => {
@@ -58,7 +55,7 @@ describe("T06 · switching workspace clears everything from the previous one", (
     const result = await switchWorkspace("org-b");
 
     expect(switchCall).toHaveBeenCalledWith("org-b");
-    expect(result).toEqual({ ok: true, offline: false });
+    expect(result).toEqual({ ok: true });
     expect(useAuthStore.getState().currentOrg.id).toBe("org-b");
   });
 

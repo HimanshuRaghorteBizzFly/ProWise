@@ -29,7 +29,8 @@ public final class BillingDTOs {
             String failureReason,
             String refundReason,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            long version
     ) {
         public static PaymentResponse fromEntity(PaymentEntity p) {
             return new PaymentResponse(
@@ -49,7 +50,8 @@ public final class BillingDTOs {
                     p.getFailureReason(),
                     p.getRefundReason(),
                     p.getCreatedAt(),
-                    p.getUpdatedAt()
+                    p.getUpdatedAt(),
+                    p.getVersion() == null ? 0L : p.getVersion()
             );
         }
     }
@@ -74,16 +76,14 @@ public final class BillingDTOs {
             String methodLast4,
             String gatewayLabel,
             String description,
-            String failureReason
+            String failureReason,
+            Long expectedVersion
     ) {}
 
     public record RefundPaymentRequest(
             @NotNull @DecimalMin("0.01") BigDecimal amount,
-            @NotBlank String reason
-    ) {}
-
-    public record BulkDeleteRequest(
-            @NotNull List<String> ids
+            @NotBlank String reason,
+            Long expectedVersion
     ) {}
 
     public record PaymentSummaryResponse(

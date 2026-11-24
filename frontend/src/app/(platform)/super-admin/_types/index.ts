@@ -261,7 +261,7 @@ export interface EmailDeliveryLog {
   sentAt: string;
 }
 
-export type EmailTemplateCategory = "AUTH" | "BILLING" | "DELIVERY" | "ALERTS" | "ANNOUNCEMENTS";
+export type EmailTemplateCategory = "AUTH" | "BILLING" | "DELIVERY" | "ALERTS" | "ANNOUNCEMENTS" | "RENEWAL" | "SECURITY";
 
 export type EmailBannerColor = "indigo" | "emerald" | "violet" | "amber" | "rose" | "sky" | "slate";
 

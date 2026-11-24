@@ -31,7 +31,12 @@ public class OperatorAuthController {
 
     private final OperatorAuthService operatorAuthService;
 
-    public OperatorAuthController(OperatorAuthService operatorAuthService) {
+    /** HTTPS-only cookies, from the same setting as user auth (AUTH_SECURE_COOKIES; on in production). */
+    private static volatile boolean secureCookies;
+
+    public OperatorAuthController(OperatorAuthService operatorAuthService,
+            @org.springframework.beans.factory.annotation.Value("${prowise.auth.secure-cookies:false}") boolean secureCookiesSetting) {
+        secureCookies = secureCookiesSetting;
         this.operatorAuthService = operatorAuthService;
     }
 
@@ -160,7 +165,7 @@ public class OperatorAuthController {
     private static ResponseCookie createCookie(String name, String value, long maxAge) {
         return ResponseCookie.from(name, value)
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookies)
                 .path("/")
                 .sameSite("Lax")
                 .maxAge(maxAge)
@@ -170,7 +175,7 @@ public class OperatorAuthController {
     private static ResponseCookie clearCookie(String name) {
         return ResponseCookie.from(name, "")
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookies)
                 .path("/")
                 .sameSite("Lax")
                 .maxAge(0)
@@ -190,10 +195,6 @@ public class OperatorAuthController {
     }
 
     private static String extractClientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            return xff.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
+        return com.prowise.common.api.ClientAddress.of(request);
     }
 }

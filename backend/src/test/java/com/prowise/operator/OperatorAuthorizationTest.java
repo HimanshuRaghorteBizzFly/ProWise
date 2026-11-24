@@ -154,10 +154,10 @@ class OperatorAuthorizationTest {
         when(operatorRepository.countByRoleIdAndStatus("role-super-admin", "ACTIVE")).thenReturn(1L);
 
         // Attempting to delete last super admin must throw ApiException
-        assertThrows(ApiException.class, () -> operatorService.deleteOperator("op-admin-1", "attacker"));
+        assertThrows(ApiException.class, () -> operatorService.deleteOperator("op-admin-1", 0L, "attacker"));
 
         // Attempting to deactivate last super admin must throw ApiException
-        assertThrows(ApiException.class, () -> operatorService.toggleOperatorStatus("op-admin-1", "attacker"));
+        assertThrows(ApiException.class, () -> operatorService.toggleOperatorStatus("op-admin-1", 0L, "attacker"));
     }
 
     @Test

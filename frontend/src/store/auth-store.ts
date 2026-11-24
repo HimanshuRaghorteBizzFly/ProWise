@@ -4,6 +4,7 @@ import { safeJSONStorage } from "@/lib/safe-storage";
 import { User, SystemRole, Organization } from "@/types";
 import { previewEnabled } from "@/lib/permissions";
 
+<<<<<<< HEAD
 const SAMPLE_ORG: Organization = {
   id: "org-acme",
   slug: "acme-health",
@@ -102,6 +103,27 @@ export const ROLE_PERSONAS: Record<SystemRole, User> = {
     timezone: "America/New_York",
     createdAt: "2026-02-01T00:00:00Z",
   },
+=======
+/** Placeholder until the backend (/v1/me or a sign-in answer) supplies the real person and organization. */
+const EMPTY_ORG: Organization = {
+  id: "",
+  slug: "",
+  name: "",
+  ownerId: "",
+  timezone: "UTC",
+  workCalendar: { workDays: [], dailyHours: 0, holidays: [] },
+  createdAt: "",
+  plan: "FREE",
+  status: "ACTIVE",
+};
+
+const EMPTY_USER: User = {
+  id: "",
+  email: "",
+  name: "",
+  timezone: "UTC",
+  createdAt: "",
+>>>>>>> 29db595 (Initial ProWise project upload)
 };
 
 export function getRoleDashboardPath(role: SystemRole, orgId = ""): string {
@@ -149,6 +171,7 @@ interface AuthState {
   activeRole: SystemRole;
   activeOrgId: string;
   isAuthenticated: boolean;
+<<<<<<< HEAD
   isRolePreview: boolean;
   /**
    * "checking" until the server session (GET /v1/me) is known. Gates wait for it instead of judging the
@@ -156,14 +179,13 @@ interface AuthState {
    */
   sessionStatus: SessionStatus;
   setSessionStatus: (status: SessionStatus) => void;
+=======
+>>>>>>> 29db595 (Initial ProWise project upload)
   setCurrentUser: (user: User) => void;
   setCurrentRole: (role: SystemRole) => void;
   setCurrentOrg: (org: Organization) => void;
-  switchRole: (role: SystemRole) => void;
   switchOrg: (orgId: string) => void;
   login: (email: string, role?: SystemRole) => void;
-  switchRoleAndNavigate: (role: SystemRole, routerPush: (url: string) => void) => void;
-  switchUserAndRole: (userId: string, routerPush: (url: string) => void) => void;
   logout: () => void;
   /** activeOrgId: the organization the session is bound to ("" = none selected). Defaults to the first one. */
   hydrate: (user: User, organizations: Organization[], role: SystemRole, activeOrgId?: string) => void;
@@ -181,29 +203,24 @@ export const useAuthStore = create<AuthState>()(
       currentRole: "VIEWER",
       currentOrg: EMPTY_ORG,
       organizations: [],
-      activeRole: "ORGANIZATION_OWNER",
+      activeRole: "VIEWER",
       activeOrgId: "",
       isAuthenticated: false,
+<<<<<<< HEAD
       isRolePreview: false,
       sessionStatus: "checking",
+=======
+>>>>>>> 29db595 (Initial ProWise project upload)
 
       setSessionStatus: (status) => set({ sessionStatus: status }),
       setCurrentUser: (user) => set({ currentUser: user }),
       setCurrentRole: (role) => set({ currentRole: role, activeRole: role }),
       setCurrentOrg: (org) => set({ currentOrg: org, activeOrgId: org.id }),
 
-      switchRole: (role) => {
-        const persona = ROLE_PERSONAS[role] || DEFAULT_USER;
-        set({
-          currentUser: persona,
-          currentRole: role,
-          activeRole: role,
-          isRolePreview: process.env.NODE_ENV !== "production",
-        });
-      },
-
       switchOrg: (orgId) => {
         if (get().currentOrg.id === orgId) return;
+        const next = get().organizations.find((org) => org.id === orgId);
+        if (next) set({ currentOrg: next, activeOrgId: next.id });
       },
 
       login: (email, role) => {
@@ -212,7 +229,6 @@ export const useAuthStore = create<AuthState>()(
           currentRole: targetRole,
           activeRole: targetRole,
           isAuthenticated: true,
-          isRolePreview: false,
           currentUser: {
             ...state.currentUser,
             email: email || state.currentUser.email,
@@ -221,34 +237,22 @@ export const useAuthStore = create<AuthState>()(
         }));
       },
 
-      switchRoleAndNavigate: (role, routerPush) => {
-        const { currentOrg } = get();
-        const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
-        const persona = ROLE_PERSONAS[role] || DEFAULT_USER;
-        set({
-          currentUser: persona,
-          currentRole: role,
-          activeRole: role,
-          isRolePreview: process.env.NODE_ENV !== "production",
-        });
-        const targetUrl = getRoleDashboardPath(role, safeOrgId);
-        routerPush(targetUrl);
-      },
-
-      switchUserAndRole: (userId, routerPush) => {
-        const { currentOrg, currentRole } = get();
-        const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
-        routerPush(getRoleDashboardPath(currentRole, safeOrgId));
-      },
-
       logout: () => {
         set({
+<<<<<<< HEAD
           sessionStatus: "anonymous",
           currentUser: DEFAULT_USER,
           currentOrg: DEFAULT_ORG,
           activeOrgId: DEFAULT_ORG.id,
+=======
+          currentUser: EMPTY_USER,
+          currentRole: "VIEWER",
+          activeRole: "VIEWER",
+          currentOrg: EMPTY_ORG,
+          organizations: [],
+          activeOrgId: "",
+>>>>>>> 29db595 (Initial ProWise project upload)
           isAuthenticated: false,
-          isRolePreview: false,
         });
       },
 
@@ -265,12 +269,14 @@ export const useAuthStore = create<AuthState>()(
           activeRole: role,
           activeOrgId: organization.id,
           isAuthenticated: true,
-          isRolePreview: false,
         });
       },
     }),
     {
       name: "prowise-auth-store",
+      // Version 2 discards state persisted by older builds (which could hold sample personas); the backend re-supplies it.
+      version: 2,
+      migrate: () => ({}) as AuthState,
       storage: safeJSONStorage,
       skipHydration: true,
     }

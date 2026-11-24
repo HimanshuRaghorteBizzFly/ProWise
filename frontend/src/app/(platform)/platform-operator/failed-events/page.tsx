@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
 import {
   AlertCircle,
   ArrowRight,
@@ -10,7 +9,9 @@ import {
   RefreshCw,
   RotateCcw,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
+import type { OpsFailedOutboxEvent } from "@/types/operator-console";
+import { useOperatorPermissions } from "../_services/operator-access";
+import { operatorApi } from "../_services/operator-api";
 import { formatDateTime } from "../_services/operator-service";
 import {
   BulkSelectionBar,
@@ -29,14 +30,49 @@ import {
   getStatusTone,
   useTableSelection,
 } from "../_components/OperatorPrimitives";
+import {
+  MutationNotice,
+  NotAvailableText,
+  OperatorResourceStatus,
+  humanizeCode,
+  readyValue,
+  rowsOf,
+  useOperatorMutation,
+  useOperatorResource,
+} from "../_components/OperatorLive";
 
 type FailedSortField = "referenceId" | "orgName" | "source" | "status" | "attempts" | "timestamp";
 
+/** One failed outbox delivery as the table shows it (metadata only; the event payload is never returned). */
+interface FailedEventRow {
+  id: string;
+  referenceId: string;
+  eventTitle: string;
+  orgName: string;
+  friendlyReason: string;
+  source: string;
+  status: string;
+  attempts: number;
+  timestamp: string;
+}
+
+function toRow(e: OpsFailedOutboxEvent): FailedEventRow {
+  return {
+    id: e.event_id,
+    referenceId: e.event_id.slice(0, 8),
+    eventTitle: e.event_type,
+    orgName: e.organization_id ?? "Platform",
+    friendlyReason: e.last_error ?? "No error detail recorded.",
+    source: e.aggregate_type,
+    status: "Failed",
+    attempts: e.attempts,
+    timestamp: e.failed_at ?? "",
+  };
+}
+
 export default function OperatorFailedEventsPage() {
-  const webhooks = usePlatformOperatorStore((s) => s.webhooks);
-  const retryWebhookEvent = usePlatformOperatorStore((s) => s.retryWebhookEvent);
-  const retryAllFailedWebhooks = usePlatformOperatorStore((s) => s.retryAllFailedWebhooks);
-  const bulkRetryWebhooks = usePlatformOperatorStore((s) => s.bulkRetryWebhooks);
+  const { state, reload } = useOperatorResource(() => operatorApi.outbox.failed(), "outbox-failed");
+  const { busy, notice, clearNotice, run } = useOperatorMutation(reload);
   const { can } = useOperatorPermissions();
   const canRetry = can("integrations.manage");
 
@@ -48,15 +84,26 @@ export default function OperatorFailedEventsPage() {
   const [pageSize, setPageSize] = useState(6);
   const [confirmBatchOpen, setConfirmBatchOpen] = useState(false);
 
-  const failedAndRetrying = useMemo(
-    () => webhooks.filter((w) => w.status === "Failed" || w.status === "Retrying"),
-    [webhooks]
+  const failedAndRetrying = useMemo(() => rowsOf(state).map(toRow), [state]);
+  const sourceOptions = useMemo(
+    () => Array.from(new Set(failedAndRetrying.map((w) => w.source))).sort(),
+    [failedAndRetrying]
   );
 
-  const recentlyRecovered = useMemo(
-    () => webhooks.filter((w) => w.status === "Delivered" && w.syncedJobCode),
-    [webhooks]
-  );
+  /**
+   * Each retry is a real POST /v1/operator/outbox/{eventId}/retry (202 Accepted). There is no bulk endpoint, so a
+   * batch sends the real single retry for each event in turn and the list is reloaded from the server afterwards.
+   */
+  const retryEvents = (ids: string[], key: string) =>
+    run(
+      key,
+      async () => {
+        for (const eventId of ids) await operatorApi.outbox.retry(eventId);
+      },
+      ids.length === 1
+        ? "Retry accepted. The event is queued for delivery again."
+        : `Retry accepted for ${ids.length} event(s).`
+    );
 
   const handleSort = (field: FailedSortField) => {
     if (sortField === field) {
@@ -116,8 +163,8 @@ export default function OperatorFailedEventsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Failed Events & Retries"
-        badge={`${failedAndRetrying.length} Pending`}
-        demoLabel="Demo Retry Queue"
+        badge={`${state.status === "ready" ? failedAndRetrying.length : "-"} Pending`}
+        liveData
         description="Inspect undelivered webhook events, understand why delivery stopped in plain language, and trigger duplicate-safe replays."
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -130,7 +177,8 @@ export default function OperatorFailedEventsPage() {
             <OpButton
               variant="primary"
               size="sm"
-              disabled={!canRetry || failedAndRetrying.length === 0}
+              disabled={!canRetry || failedAndRetrying.length === 0 || busy !== null}
+              isLoading={busy === "all"}
               onClick={() => setConfirmBatchOpen(true)}
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -145,25 +193,34 @@ export default function OperatorFailedEventsPage() {
         description="Retrying an event automatically schedules and completes a deduplicated Sync Job so downstream workspaces catch up safely without duplicate records."
       />
 
+      <MutationNotice
+        notice={notice}
+        onReload={() => {
+          clearNotice();
+          void reload();
+        }}
+        onDismiss={clearNotice}
+      />
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiCard
           label="Failed Events"
-          value={webhooks.filter((w) => w.status === "Failed").length}
+          value={readyValue(state, (d) => d.length)}
           sublabel="Requires manual or scheduled replay"
           icon={AlertCircle}
           tone="rose"
         />
         <KpiCard
           label="Automatic Backoff Queue"
-          value={webhooks.filter((w) => w.status === "Retrying").length}
-          sublabel="Retrying on next scheduled interval"
+          value="—"
+          sublabel="Not available yet"
           icon={RotateCcw}
           tone="amber"
         />
         <KpiCard
           label="Recovered via Replay"
-          value={recentlyRecovered.length}
-          sublabel="Completed cleanly through sync queue"
+          value="—"
+          sublabel="Not available yet"
           icon={CheckCircle2}
           tone="emerald"
         />
@@ -187,16 +244,22 @@ export default function OperatorFailedEventsPage() {
                 aria-label="Filter event source"
                 options={[
                   { label: "All Sources", value: "ALL" },
-                  { label: "GitHub", value: "GitHub" },
-                  { label: "Billing", value: "Billing" },
-                  { label: "Email Relay", value: "Email Relay" },
+                  ...sourceOptions.map((s) => ({ label: humanizeCode(s), value: s })),
                 ]}
               />
             </div>
           }
         />
 
-        {paginated.length === 0 ? (
+        {state.status !== "ready" ? (
+          <OperatorResourceStatus<OpsFailedOutboxEvent[]>
+            state={state}
+            isEmpty={(d) => d.length === 0}
+            onRetry={() => void reload()}
+            emptyTitle="All failed events cleared"
+            emptyDescription="No failed events are waiting in the queue."
+          />
+        ) : paginated.length === 0 ? (
           <EmptyState
             icon={CheckCircle2}
             title="All failed events cleared"
@@ -217,11 +280,11 @@ export default function OperatorFailedEventsPage() {
                 <OpButton
                   variant="primary"
                   size="xs"
-                  disabled={!canRetry}
-                  onClick={() => {
-                    const count = bulkRetryWebhooks(selectedIds);
-                    toast.success(`Replayed ${count} failed event(s).`);
-                    setSelectedIds([]);
+                  disabled={!canRetry || busy !== null || selectedIds.length === 0}
+                  isLoading={busy === "bulk"}
+                  onClick={async () => {
+                    const ok = await retryEvents(selectedIds, "bulk");
+                    if (ok) setSelectedIds([]);
                   }}
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
@@ -283,7 +346,10 @@ export default function OperatorFailedEventsPage() {
                           {srNo}
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
-                          <span className="rounded border border-[var(--color-border)] bg-[var(--color-app-bg)] px-2 py-0.5 text-[11px] font-semibold">
+                          <span
+                            title={item.id}
+                            className="rounded border border-[var(--color-border)] bg-[var(--color-app-bg)] px-2 py-0.5 text-[11px] font-semibold"
+                          >
                             {item.referenceId}
                           </span>
                           <span className="block text-[10px] text-[var(--color-text-muted)] mt-1">
@@ -297,23 +363,21 @@ export default function OperatorFailedEventsPage() {
                           <p className="text-[11px] text-[var(--color-text-secondary)] mt-0.5">{item.friendlyReason}</p>
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
-                          <StatusBadge label={item.source} tone="neutral" />
+                          <StatusBadge label={humanizeCode(item.source)} tone="neutral" />
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
                           <StatusBadge label={item.status} tone={getStatusTone(item.status)} dot />
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap text-[var(--color-text-secondary)]">
-                          HTTP {item.httpStatus} · {item.attempts} try
+                          {item.attempts} try
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap text-right">
                           <OpButton
                             variant="primary"
                             size="xs"
-                            disabled={!canRetry}
-                            onClick={() => {
-                              const jobCode = retryWebhookEvent(item.id);
-                              toast.success(`Replayed ${item.referenceId} cleanly via ${jobCode} (simulated).`);
-                            }}
+                            disabled={!canRetry || busy !== null}
+                            isLoading={busy === item.id}
+                            onClick={() => void retryEvents([item.id], item.id)}
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
                             Retry & Sync Now
@@ -340,47 +404,35 @@ export default function OperatorFailedEventsPage() {
         />
       </SurfaceCard>
 
-      {recentlyRecovered.length > 0 && (
-        <SurfaceCard className="p-4 sm:p-5 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-              Recently Replayed & Synced
-            </h3>
-            <Link href="/platform-operator/sync-jobs">
-              <OpButton variant="ghost" size="xs">
-                Open Sync Queue <ArrowRight className="w-3 h-3" />
-              </OpButton>
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {recentlyRecovered.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3 text-xs space-y-1"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <strong className="text-[var(--color-text-primary)]">
-                    {item.referenceId} — {item.orgName}
-                  </strong>
-                  <StatusBadge label={item.syncedJobCode || "Synced"} tone="success" />
-                </div>
-                <p className="text-[var(--color-text-secondary)]">{item.friendlyReason}</p>
-              </div>
-            ))}
-          </div>
-        </SurfaceCard>
-      )}
+      <SurfaceCard className="p-4 sm:p-5 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+            Recently Replayed & Synced
+          </h3>
+          <Link href="/platform-operator/sync-jobs">
+            <OpButton variant="ghost" size="xs">
+              Open Sync Queue <ArrowRight className="w-3 h-3" />
+            </OpButton>
+          </Link>
+        </div>
+        {/* The server lists only events that are still FAILED; replayed deliveries are not reported back yet. */}
+        <p className="text-xs">
+          <NotAvailableText reason="the server does not report replayed deliveries" />
+        </p>
+      </SurfaceCard>
 
       <ConfirmModal
         isOpen={confirmBatchOpen}
         onClose={() => setConfirmBatchOpen(false)}
         title="Replay All Pending & Failed Events?"
-        description={`This will trigger a deduplicated batch replay across ${failedAndRetrying.length} event(s) and create a corresponding Sync Job record.`}
+        description={`This will send the real retry for each of the ${failedAndRetrying.length} failed event(s), one at a time, and reload the list from the server.`}
         confirmLabel="Replay All Now"
         variant="primary"
         onConfirm={() => {
-          const count = retryAllFailedWebhooks();
-          toast.success(`Batch replay completed for ${count} event(s) (simulated).`);
+          void retryEvents(
+            failedAndRetrying.map((w) => w.id),
+            "all"
+          );
         }}
       />
     </div>

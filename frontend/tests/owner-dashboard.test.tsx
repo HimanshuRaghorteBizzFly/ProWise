@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { OwnerDashboardView } from "../src/components/owner/OwnerDashboardView";
-import { getOwnerDashboardStateForOrg } from "../src/hooks/useOwnerDashboard";
 import {
   FIXTURE_AUDIT,
   FIXTURE_INVITATIONS,
@@ -11,8 +10,8 @@ import {
   FIXTURE_PORTFOLIO,
   FIXTURE_REPOSITORIES,
   FIXTURE_TEAMS,
-} from "../src/lib/fixtures/org-admin";
-import { SEEDED_PROJECTS, SEEDED_USERS } from "../src/lib/mock-data";
+} from "./fixtures/org-admin";
+import { SEEDED_PROJECTS, SEEDED_USERS } from "./fixtures/mock-data";
 
 const orgId = "org-acme";
 const orgName = "Acme Health Technologies";
@@ -44,11 +43,11 @@ function renderDashboard(props: Partial<React.ComponentProps<typeof OwnerDashboa
 }
 
 describe("Owner dashboard", () => {
-  it("renders organization KPIs and both portfolio charts from sample fixtures", () => {
+  it("renders organization KPIs and both portfolio charts", () => {
     const markup = renderDashboard();
 
     expect(markup).toContain("Organization overview");
-    expect(markup).toContain("Sample data");
+    expect(markup).not.toContain("Sample data");
     expect(markup).toContain("Active projects");
     expect(markup).toContain("Active members");
     expect(markup).toContain("Active teams");
@@ -98,6 +97,7 @@ describe("Owner dashboard", () => {
     expect(markup).toContain("No repositories connected");
     expect(markup).toContain("No audit events are recorded");
   });
+<<<<<<< HEAD
 
   it("does not show a previous organization's dashboard while the new scope loads", () => {
     const acmeProjects = SEEDED_PROJECTS.filter((project) => project.orgId === orgId);
@@ -120,4 +120,6 @@ describe("Owner dashboard", () => {
     vi.unstubAllEnvs();
     expect(preview).toEqual({ status: "loading", orgId: "org-nova" });
   });
+=======
+>>>>>>> 29db595 (Initial ProWise project upload)
 });

@@ -51,7 +51,7 @@ export interface OperatorInfo {
 
 export interface OperatorAuthResponse {
   accessToken: string;
-  refreshToken: string;
+  /* No refreshToken: it lives only in the HttpOnly cookie; the client never reads one from a body. */
   tokenType: string;
   expiresIn: number;
   operator: OperatorInfo;
@@ -93,36 +93,52 @@ export interface OperatorDashboardResponse {
   departmentData: Record<string, unknown>;
 }
 
-class OperatorAuthService {
+/** Older builds kept the operator access token here; it is removed on load and never written again. */
+const LEGACY_TOKEN_STORAGE_KEY = "prowise_operator_access_token";
+
+/** Thrown for a non-2xx answer; keeps the HTTP status so a 401 can be told apart. */
+export class OperatorApiError extends Error {
+  readonly status: number;
+  readonly code: string;
+
+  constructor(status: number, code: string, message: string) {
+    super(message);
+    this.name = "OperatorApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/**
+ * Operator API client. The access token lives in memory only (never localStorage); the refresh token lives only
+ * in the HttpOnly cookie the backend sets. After a page load the first call goes out with the cookies alone, and a
+ * 401 triggers one cookie-based refresh (/v1/auth/operator/refresh) and a single retry.
+ */
+export class OperatorAuthService {
   private activeToken: string | null = null;
+  private refreshing: Promise<OperatorAuthResponse> | null = null;
 
   constructor() {
     if (typeof window !== "undefined") {
-      this.activeToken = localStorage.getItem("prowise_operator_access_token");
+      try {
+        window.localStorage?.removeItem(LEGACY_TOKEN_STORAGE_KEY);
+      } catch {
+        /* storage unavailable: nothing to clean up */
+      }
     }
   }
 
   public setToken(token: string | null) {
     this.activeToken = token;
-    if (typeof window !== "undefined") {
-      if (token) {
-        localStorage.setItem("prowise_operator_access_token", token);
-      } else {
-        localStorage.removeItem("prowise_operator_access_token");
-      }
-    }
   }
 
   public getToken(): string | null {
-    if (!this.activeToken && typeof window !== "undefined") {
-      this.activeToken = localStorage.getItem("prowise_operator_access_token");
-    }
     return this.activeToken;
   }
 
   private async request<T>(
     endpoint: string,
-    options: { method?: string; body?: unknown } = {}
+    options: { method?: string; body?: unknown; retryOnUnauthorized?: boolean } = {}
   ): Promise<T> {
     const baseUrl = resolveApiBaseUrl();
     const headers = new Headers({
@@ -145,15 +161,26 @@ class OperatorAuthService {
       body: options.body !== undefined ? JSON.stringify(toSnakeCaseKeys(options.body)) : undefined,
     });
 
+    // Sign-in, refresh and the other /auth/operator/* calls answer 401 for real; only API calls refresh.
+    const mayRefresh = options.retryOnUnauthorized !== false && !endpoint.startsWith("/v1/auth/operator/");
+    if (response.status === 401 && mayRefresh) {
+      const refreshed = await this.refresh().catch(() => null);
+      if (refreshed) {
+        return this.request<T>(endpoint, { ...options, retryOnUnauthorized: false });
+      }
+    }
+
     if (!response.ok) {
       let errorMessage = `Request failed (${response.status})`;
+      let code = `HTTP_${response.status}`;
       try {
         const errorJson = await response.json();
         errorMessage = errorJson.message || errorJson.error || errorMessage;
+        code = errorJson.code || code;
       } catch {
         // Fallback to status text
       }
-      throw new Error(errorMessage);
+      throw new OperatorApiError(response.status, code, errorMessage);
     }
 
     return toCamelCaseKeys(await response.json()) as T;
@@ -172,12 +199,30 @@ class OperatorAuthService {
     return res;
   }
 
-  public async refresh(): Promise<OperatorAuthResponse> {
-    const res = await this.request<OperatorAuthResponse>("/v1/auth/operator/refresh", {
-      method: "POST",
-    });
-    this.setToken(res.accessToken);
-    return res;
+  /**
+   * Rotates the session using the HttpOnly refresh cookie only (no token in the body). Concurrent callers share one
+   * call. On failure the in-memory token is cleared and the promise rejects; callers route to /login.
+   */
+  public refresh(): Promise<OperatorAuthResponse> {
+    if (!this.refreshing) {
+      this.refreshing = this.request<OperatorAuthResponse>("/v1/auth/operator/refresh", {
+        method: "POST",
+        retryOnUnauthorized: false,
+      })
+        .then((res) => {
+          if (!res?.accessToken) throw new OperatorApiError(401, "UNAUTHORIZED", "Your session has ended. Sign in again.");
+          this.setToken(res.accessToken);
+          return res;
+        })
+        .catch((error: unknown) => {
+          this.setToken(null);
+          throw error;
+        })
+        .finally(() => {
+          this.refreshing = null;
+        });
+    }
+    return this.refreshing;
   }
 
   public async logout(): Promise<void> {

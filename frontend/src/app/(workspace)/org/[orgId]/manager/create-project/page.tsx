@@ -1,5 +1,6 @@
 "use client";
 
+<<<<<<< HEAD
 import { previewEnabled } from "@/lib/permissions";
 import { ProjectCreateView } from "@/components/projects/ApiProjectViews";
 import React, { useState, useMemo } from "react";
@@ -48,21 +49,13 @@ interface FormState {
   timezone: string;
   priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 }
+=======
+import React from "react";
+>>>>>>> 29db595 (Initial ProWise project upload)
 
-const IANA_TIMEZONES = [
-  { value: "America/New_York", label: "America/New York (EST/EDT, UTC-5)" },
-  { value: "America/Chicago", label: "America/Chicago (CST/CDT, UTC-6)" },
-  { value: "America/Denver", label: "America/Denver (MST/MDT, UTC-7)" },
-  { value: "America/Los_Angeles", label: "America/Los Angeles (PST/PDT, UTC-8)" },
-  { value: "UTC", label: "UTC (Coordinated Universal Time)" },
-  { value: "Europe/London", label: "Europe/London (GMT/BST, UTC+0)" },
-  { value: "Europe/Berlin", label: "Europe/Berlin (CET/CEST, UTC+1)" },
-  { value: "Asia/Kolkata", label: "Asia/Kolkata (IST, UTC+5:30)" },
-  { value: "Asia/Singapore", label: "Asia/Singapore (SGT, UTC+8)" },
-  { value: "Asia/Tokyo", label: "Asia/Tokyo (JST, UTC+9)" },
-  { value: "Australia/Sydney", label: "Australia/Sydney (AEST/AEDT, UTC+10)" },
-];
+import { ProjectCreateView } from "@/components/projects/ApiProjectViews";
 
+<<<<<<< HEAD
 function PreviewManagerCreateProjectPage() {
   const { orgId } = useParams<{ orgId: string }>();
   const safeOrgId = orgId || "org-acme";
@@ -839,6 +832,11 @@ function PreviewManagerCreateProjectPage() {
       </form>
     </PageFrame>
   );
+=======
+/** Create project (task 2.1, real API: POST /v1/organizations/{orgId}/projects; options come from the server). */
+export default function Page() {
+  return <ProjectCreateView base="manager" />;
+>>>>>>> 29db595 (Initial ProWise project upload)
 }
 
 /** Task 2.1 create form on the real API; the sample form only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */

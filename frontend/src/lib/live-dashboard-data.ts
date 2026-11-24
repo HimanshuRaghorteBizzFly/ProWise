@@ -4,9 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { LoadStatus } from "@/components/delivery/DeliveryUI";
 import { apiClient } from "@/lib/api";
-import * as F from "@/lib/fixtures/preview-data";
-import { classifyFailure, readPermissionEnv } from "@/lib/permissions";
-import { useSampleDataNotice } from "@/store/sample-data-store";
 import type {
   CodeReviewDto,
   InvitationDto,
@@ -151,22 +148,12 @@ export function summarizeQaDashboard(codeReviews: Pick<CodeReviewDto, "status">[
   };
 }
 
-/** Typed sample data for a role's dashboard (role preview or unreachable API, never in production). */
-export function previewDashboardData(role: LiveDashboardRole): LiveDashboardData {
-  if (role === "owner" || role === "admin") {
-    return { kind: "organization", members: F.PREVIEW_MEMBERS, teams: F.PREVIEW_TEAMS, invitations: F.PREVIEW_INVITATIONS, projects: F.PREVIEW_PROJECTS };
-  }
-  if (role === "manager") return { kind: "manager", projects: F.PREVIEW_PROJECTS };
-  if (role === "lead") return { kind: "lead", pendingReviews: F.PREVIEW_PENDING_REVIEWS };
-  return { kind: "reviewer", codeReviews: F.PREVIEW_QA_REVIEWS };
-}
-
 export function useLiveDashboardData(role: LiveDashboardRole, orgId: string) {
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<
     | { key: string; status: "loading" }
     | { key: string; status: "error"; message: string }
-    | { key: string; status: "ready"; data: LiveDashboardData; sample: boolean }
+    | { key: string; status: "ready"; data: LiveDashboardData }
   >({ key: "", status: "loading" });
   const key = `${role}:${orgId}`;
 
@@ -175,15 +162,10 @@ export function useLiveDashboardData(role: LiveDashboardRole, orgId: string) {
     setResult({ key, status: "loading" });
     loadDashboardData(role, orgId)
       .then((data) => {
-        if (active) setResult({ key, status: "ready", data, sample: false });
+        if (active) setResult({ key, status: "ready", data });
       })
       .catch((error: unknown) => {
         if (!active) return;
-        // Role preview blocks API calls and a dev backend may be down: show labelled sample data (never in production).
-        if (classifyFailure(error, readPermissionEnv()) === "fixture") {
-          setResult({ key, status: "ready", data: previewDashboardData(role), sample: true });
-          return;
-        }
         const message = error instanceof Error ? error.message : "The dashboard data could not be loaded.";
         setResult({ key, status: "error", message });
       });
@@ -196,10 +178,7 @@ export function useLiveDashboardData(role: LiveDashboardRole, orgId: string) {
   const retry = useCallback(() => setAttempt((current) => current + 1), []);
   const currentResult = result.key === key ? result : { status: "loading" as const };
   const status: LoadStatus = currentResult.status;
-  const sample = currentResult.status === "ready" && currentResult.sample;
-  useSampleDataNotice(`dashboard:${role}`, sample);
   return {
-    sample,
     status,
     data: currentResult.status === "ready" ? currentResult.data : undefined,
     errorMessage: currentResult.status === "error" ? currentResult.message : undefined,

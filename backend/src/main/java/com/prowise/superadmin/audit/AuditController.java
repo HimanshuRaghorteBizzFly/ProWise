@@ -36,8 +36,10 @@ public class AuditController {
 
     @PostMapping({"/v1/admin/audit-logs", "/api/v1/admin/audit-logs"})
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('audit.view')")
-    public ResponseEntity<AuditDTOs.AuditLogResponse> recordAuditLog(@RequestBody AuditDTOs.RecordAuditLogRequest request) {
-        AuditDTOs.AuditLogResponse response = auditService.recordAuditLog(request);
+    public ResponseEntity<AuditDTOs.AuditLogResponse> recordAuditLog(
+            jakarta.servlet.http.HttpServletRequest http, @RequestBody AuditDTOs.RecordAuditLogRequest request) {
+        // The actor is always the signed-in caller; a client-supplied actor_email is ignored.
+        AuditDTOs.AuditLogResponse response = auditService.recordAuditLog(request, com.prowise.superadmin.common.AdminRequests.actor(http));
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 }

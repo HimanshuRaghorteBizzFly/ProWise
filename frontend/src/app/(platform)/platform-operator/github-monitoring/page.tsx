@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import {
   AlertCircle,
   CheckCircle2,
@@ -12,8 +11,9 @@ import {
   PlayCircle,
   RefreshCw,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
-import { GitHubAppInstallation } from "../_types";
+import type { OpsGitHubRepository, OpsIntegration } from "@/types/operator-console";
+import { useOperatorPermissions } from "../_services/operator-access";
+import { operatorApi } from "../_services/operator-api";
 import { formatDateTime } from "../_services/operator-service";
 import {
   BulkSelectionBar,
@@ -33,13 +33,74 @@ import {
   getStatusTone,
   useTableSelection,
 } from "../_components/OperatorPrimitives";
+import {
+  NotAvailableButton,
+  NotAvailableText,
+  OperatorResourceStatus,
+  humanizeCode,
+  readyValue,
+  rowsOf,
+  useOperatorResource,
+} from "../_components/OperatorLive";
 
 type GitHubSortField = "orgName" | "reposCount" | "rateLimitUsed" | "syncState" | "lastSyncedAt";
 
+const SYNC_REASON = "there is no sync endpoint for GitHub installations";
+const PAUSE_REASON = "there is no pause or resume endpoint for GitHub sync";
+
+/**
+ * One GitHub App installation as the page shows it, built from the real linked repositories
+ * (GET /v1/operator/github/repositories) grouped by installation, named from GET /v1/operator/integrations when the
+ * installation id matches. Sync state and API quota are not reported by the server.
+ */
+interface InstallationRow {
+  id: string;
+  orgName: string;
+  githubAccount: string;
+  reposCount: number;
+  repoNames: string[];
+  inactiveWebhooks: number;
+  webhookHealth: string;
+  syncState: string;
+  lastSyncedAt: string;
+}
+
+function buildRows(repos: OpsGitHubRepository[], integrations: OpsIntegration[]): InstallationRow[] {
+  const groups = new Map<string, OpsGitHubRepository[]>();
+  for (const repo of repos) {
+    const key = repo.installation_id ?? "unlinked";
+    groups.set(key, [...(groups.get(key) ?? []), repo]);
+  }
+  return Array.from(groups.entries()).map(([installationId, list]) => {
+    const integration = integrations.find((i) => i.id === installationId);
+    const owners = Array.from(new Set(list.map((r) => r.repo_full_name.split("/")[0]).filter(Boolean)));
+    const inactive = list.filter((r) => !r.webhook_active).length;
+    const lastEvent = list
+      .map((r) => r.last_event_at)
+      .filter((v): v is string => Boolean(v))
+      .sort()
+      .pop();
+    return {
+      id: installationId,
+      orgName: integration?.name ?? (installationId === "unlinked" ? "Not linked to an installation" : installationId),
+      githubAccount: owners.join(", ") || "—",
+      reposCount: list.length,
+      repoNames: list.map((r) => `${r.repo_full_name}${r.default_branch ? ` (${r.default_branch})` : ""}`),
+      inactiveWebhooks: inactive,
+      webhookHealth: inactive === 0 ? "Active" : `${inactive} Inactive`,
+      syncState: integration ? humanizeCode(integration.health) : "",
+      lastSyncedAt: lastEvent ?? "",
+    };
+  });
+}
+
 export default function OperatorGitHubMonitoringPage() {
-  const githubApps = usePlatformOperatorStore((s) => s.githubApps);
-  const syncGitHubInstallation = usePlatformOperatorStore((s) => s.syncGitHubInstallation);
-  const toggleGitHubPause = usePlatformOperatorStore((s) => s.toggleGitHubPause);
+  const repos = useOperatorResource(() => operatorApi.githubRepositories(), "github-repositories");
+  const integrations = useOperatorResource(() => operatorApi.integrations(), "integrations");
+  const githubApps = useMemo(
+    () => buildRows(rowsOf(repos.state), rowsOf(integrations.state)),
+    [repos.state, integrations.state]
+  );
   const { can } = useOperatorPermissions();
   const canManage = can("integrations.manage");
 
@@ -50,14 +111,11 @@ export default function OperatorGitHubMonitoringPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
-  const [pauseTarget, setPauseTarget] = useState<GitHubAppInstallation | null>(null);
+  // Pause / Resume has no endpoint: the confirmation stays in place but nothing opens it yet.
+  const [pauseTarget, setPauseTarget] = useState<InstallationRow | null>(null);
 
-  const syncedCount = useMemo(
-    () => githubApps.filter((g) => g.syncState === "Synced").length,
-    [githubApps]
-  );
   const attentionCount = useMemo(
-    () => githubApps.filter((g) => g.syncState !== "Synced").length,
+    () => githubApps.filter((g) => g.inactiveWebhooks > 0).length,
     [githubApps]
   );
   const totalRepos = useMemo(
@@ -80,18 +138,21 @@ export default function OperatorGitHubMonitoringPage() {
       const matchesQ =
         !q ||
         g.orgName.toLowerCase().includes(q) ||
-        g.githubAccount.toLowerCase().includes(q);
-      const matchesState = stateFilter === "ALL" || g.syncState === stateFilter;
+        g.githubAccount.toLowerCase().includes(q) ||
+        g.repoNames.some((r) => r.toLowerCase().includes(q));
+      const matchesState =
+        stateFilter === "ALL" ||
+        (stateFilter === "ACTIVE" && g.inactiveWebhooks === 0) ||
+        (stateFilter === "INACTIVE" && g.inactiveWebhooks > 0);
       return matchesQ && matchesState;
     });
-    const stateRank: Record<string, number> = { "Attention Needed": 0, Delayed: 1, Paused: 2, Synced: 3 };
     return [...list].sort((a, b) => {
       let cmp = 0;
       if (sortField === "orgName") cmp = a.orgName.localeCompare(b.orgName);
       else if (sortField === "reposCount") cmp = a.reposCount - b.reposCount;
-      else if (sortField === "rateLimitUsed") cmp = a.rateLimitUsed - b.rateLimitUsed;
-      else if (sortField === "lastSyncedAt") cmp = new Date(a.lastSyncedAt).getTime() - new Date(b.lastSyncedAt).getTime();
-      else cmp = (stateRank[a.syncState] ?? 9) - (stateRank[b.syncState] ?? 9);
+      else if (sortField === "rateLimitUsed") cmp = 0;
+      else if (sortField === "lastSyncedAt") cmp = new Date(a.lastSyncedAt || 0).getTime() - new Date(b.lastSyncedAt || 0).getTime();
+      else cmp = b.inactiveWebhooks - a.inactiveWebhooks;
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [githubApps, search, stateFilter, sortField, sortDir]);
@@ -117,13 +178,31 @@ export default function OperatorGitHubMonitoringPage() {
     paginated.map((g) => g.id)
   );
 
+  const reloadAll = () => {
+    void repos.reload();
+    void integrations.reload();
+  };
+
+  const syncStateBadge = (item: InstallationRow) =>
+    item.syncState ? (
+      <StatusBadge label={item.syncState} tone={getStatusTone(item.syncState)} dot />
+    ) : (
+      <NotAvailableText reason="the server does not report a sync state for this installation" />
+    );
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="GitHub App Monitoring"
-        badge={`${githubApps.length} Installations`}
-        demoLabel="Demo Sync Status"
+        badge={`${repos.state.status === "ready" ? githubApps.length : "-"} Installations`}
+        liveData
         description="Monitor organization repository sync health, API quota usage, and run catch-up synchronization when delays occur."
+        actions={
+          <OpButton variant="outline" size="sm" onClick={reloadAll}>
+            <RefreshCw className="w-3.5 h-3.5" />
+            Refresh
+          </OpButton>
+        }
       />
 
       <DemoDataBanner
@@ -134,22 +213,22 @@ export default function OperatorGitHubMonitoringPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiCard
           label="Synced Installations"
-          value={`${syncedCount} / ${githubApps.length}`}
-          sublabel="Up-to-date commit and PR ingestion"
+          value="—"
+          sublabel="Not available yet"
           icon={CheckCircle2}
-          tone={syncedCount === githubApps.length ? "emerald" : "amber"}
+          tone="slate"
         />
         <KpiCard
           label="Connected Repositories"
-          value={totalRepos}
+          value={readyValue(repos.state, () => totalRepos)}
           sublabel="Tracked across customer organizations"
           icon={GitBranch}
           tone="teal"
         />
         <KpiCard
           label="Attention Needed"
-          value={attentionCount}
-          sublabel="Delayed, paused, or retrying webhooks"
+          value={readyValue(repos.state, () => attentionCount)}
+          sublabel="Installations with an inactive repository webhook"
           icon={AlertCircle}
           tone={attentionCount > 0 ? "amber" : "emerald"}
         />
@@ -173,10 +252,8 @@ export default function OperatorGitHubMonitoringPage() {
                 aria-label="Filter sync state"
                 options={[
                   { label: "All States", value: "ALL" },
-                  { label: "Synced", value: "Synced" },
-                  { label: "Delayed", value: "Delayed" },
-                  { label: "Attention Needed", value: "Attention Needed" },
-                  { label: "Paused", value: "Paused" },
+                  { label: "Webhooks Active", value: "ACTIVE" },
+                  { label: "Webhook Inactive", value: "INACTIVE" },
                 ]}
               />
             </div>
@@ -211,7 +288,16 @@ export default function OperatorGitHubMonitoringPage() {
           }
         />
 
-        {paginated.length === 0 ? (
+        {repos.state.status !== "ready" || repos.state.data.length === 0 ? (
+          <OperatorResourceStatus
+            state={repos.state}
+            isEmpty={(d) => d.length === 0}
+            onRetry={() => void repos.reload()}
+            emptyIcon={GitBranch}
+            emptyTitle="No GitHub installations found"
+            emptyDescription="No repositories are linked to platform sync yet."
+          />
+        ) : paginated.length === 0 ? (
           <EmptyState
             icon={GitBranch}
             title="No GitHub installations found"
@@ -225,19 +311,10 @@ export default function OperatorGitHubMonitoringPage() {
               onSelectAllMatching={() => setSelectedIds(filtered.map((g) => g.id))}
               onClear={() => setSelectedIds([])}
               actions={
-                <OpButton
-                  variant="primary"
-                  size="xs"
-                  disabled={!canManage}
-                  onClick={() => {
-                    selectedIds.forEach((id) => syncGitHubInstallation(id));
-                    toast.success(`Triggered catch-up sync for ${selectedIds.length} installation(s).`);
-                    setSelectedIds([]);
-                  }}
-                >
+                <NotAvailableButton variant="primary" size="xs" reason={SYNC_REASON} hideLabel>
                   <RefreshCw className="w-3.5 h-3.5" />
                   Sync Selected ({selectedIds.length})
-                </OpButton>
+                </NotAvailableButton>
               }
             />
             <div className="overflow-x-auto">
@@ -276,7 +353,6 @@ export default function OperatorGitHubMonitoringPage() {
                   {paginated.map((item, idx) => {
                     const srNo = (safePage - 1) * pageSize + idx + 1;
                     const isSelected = selectedSet.has(item.id);
-                    const quotaPct = Math.min(100, Math.round((item.rateLimitUsed / item.rateLimitMax) * 100));
                     return (
                       <tr key={item.id} className={isSelected ? "bg-teal-500/5" : "hover:bg-[var(--color-hover)]/50"}>
                         <td className="py-3 px-3.5">
@@ -301,59 +377,36 @@ export default function OperatorGitHubMonitoringPage() {
                               <p className="text-[11px] text-[var(--color-text-muted)]">
                                 @{item.githubAccount} · {formatDateTime(item.lastSyncedAt)}
                               </p>
-                              {item.lastErrorSummary && (
-                                <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
-                                  {item.lastErrorSummary}
-                                </p>
-                              )}
+                              <p className="text-[11px] text-[var(--color-text-secondary)] mt-0.5">
+                                {item.repoNames.join(", ")}
+                              </p>
                             </div>
                           </div>
                         </td>
                         <td className="py-3 px-3.5 font-semibold tabular-nums">{item.reposCount}</td>
                         <td className="py-3 px-3.5 min-w-[160px]">
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-[11px] text-[var(--color-text-muted)]">
-                              <span>{item.rateLimitUsed.toLocaleString()}</span>
-                              <span>{quotaPct}%</span>
-                            </div>
-                            <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${quotaPct > 80 ? "bg-amber-500" : "bg-teal-500"}`}
-                                style={{ width: `${quotaPct}%` }}
-                              />
-                            </div>
-                          </div>
+                          <NotAvailableText reason="the server does not report GitHub API rate-limit usage" />
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
                           <div className="space-y-1">
-                            <StatusBadge label={item.syncState} tone={getStatusTone(item.syncState)} dot />
+                            {syncStateBadge(item)}
                             <div>
-                              <StatusBadge label={`Webhook: ${item.webhookHealth}`} tone={getStatusTone(item.webhookHealth)} />
+                              <StatusBadge
+                                label={`Webhook: ${item.webhookHealth}`}
+                                tone={item.inactiveWebhooks === 0 ? "success" : "warning"}
+                              />
                             </div>
                           </div>
                         </td>
                         <td className="py-3 px-3.5 text-right whitespace-nowrap">
                           <div className="inline-flex items-center gap-1.5">
-                            <OpButton
-                              variant="primary"
-                              size="xs"
-                              disabled={!canManage}
-                              onClick={() => {
-                                syncGitHubInstallation(item.id);
-                                toast.success(`Completed catch-up sync for ${item.orgName} (simulated).`);
-                              }}
-                            >
+                            <NotAvailableButton variant="primary" size="xs" reason={SYNC_REASON} hideLabel>
                               <RefreshCw className="w-3.5 h-3.5" />
                               Sync Now
-                            </OpButton>
-                            <OpButton
-                              variant="outline"
-                              size="xs"
-                              disabled={!canManage}
-                              onClick={() => setPauseTarget(item)}
-                            >
+                            </NotAvailableButton>
+                            <NotAvailableButton variant="outline" size="xs" reason={PAUSE_REASON} hideLabel>
                               {item.syncState === "Paused" ? "Resume" : "Pause"}
-                            </OpButton>
+                            </NotAvailableButton>
                           </div>
                         </td>
                       </tr>
@@ -367,7 +420,6 @@ export default function OperatorGitHubMonitoringPage() {
           <div className="space-y-3">
             {paginated.map((item, idx) => {
               const srNo = (safePage - 1) * pageSize + idx + 1;
-              const quotaPct = Math.min(100, Math.round((item.rateLimitUsed / item.rateLimitMax) * 100));
               return (
                 <div
                   key={item.id}
@@ -379,47 +431,31 @@ export default function OperatorGitHubMonitoringPage() {
                         #{srNo}
                       </span>
                       <span className="text-sm font-semibold text-[var(--color-text-primary)]">{item.orgName}</span>
-                      <StatusBadge label={item.syncState} tone={getStatusTone(item.syncState)} dot />
-                      <StatusBadge label={`Webhook: ${item.webhookHealth}`} tone={getStatusTone(item.webhookHealth)} />
+                      {syncStateBadge(item)}
+                      <StatusBadge
+                        label={`Webhook: ${item.webhookHealth}`}
+                        tone={item.inactiveWebhooks === 0 ? "success" : "warning"}
+                      />
                     </div>
                     <p className="text-xs text-[var(--color-text-secondary)]">
                       GitHub Account: <strong>@{item.githubAccount}</strong> · {item.reposCount} repositories · Last synced {formatDateTime(item.lastSyncedAt)}
                     </p>
-                    {item.lastErrorSummary && (
-                      <p className="text-xs text-amber-700 dark:text-amber-300">{item.lastErrorSummary}</p>
-                    )}
+                    <p className="text-xs text-[var(--color-text-secondary)]">{item.repoNames.join(", ")}</p>
                     <div className="max-w-sm pt-1">
                       <div className="flex justify-between text-[11px] text-[var(--color-text-muted)] mb-1">
                         <span>Hourly API Usage</span>
-                        <span>
-                          {item.rateLimitUsed.toLocaleString()} / {item.rateLimitMax.toLocaleString()} ({quotaPct}%)
-                        </span>
+                        <NotAvailableText reason="the server does not report GitHub API rate-limit usage" />
                       </div>
-                      <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
-                        <div className="h-full rounded-full bg-teal-500" style={{ width: `${quotaPct}%` }} />
-                      </div>
+                      <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden" />
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <OpButton
-                      variant="primary"
-                      size="xs"
-                      disabled={!canManage}
-                      onClick={() => {
-                        syncGitHubInstallation(item.id);
-                        toast.success(`Completed catch-up sync for ${item.orgName} (simulated).`);
-                      }}
-                    >
+                    <NotAvailableButton variant="primary" size="xs" reason={SYNC_REASON}>
                       <RefreshCw className="w-3.5 h-3.5" />
                       Sync Now
-                    </OpButton>
-                    <OpButton
-                      variant="outline"
-                      size="xs"
-                      disabled={!canManage}
-                      onClick={() => setPauseTarget(item)}
-                    >
+                    </NotAvailableButton>
+                    <NotAvailableButton variant="outline" size="xs" reason={PAUSE_REASON}>
                       {item.syncState === "Paused" ? (
                         <>
                           <PlayCircle className="w-3.5 h-3.5" />
@@ -431,7 +467,7 @@ export default function OperatorGitHubMonitoringPage() {
                           Pause
                         </>
                       )}
-                    </OpButton>
+                    </NotAvailableButton>
                   </div>
                 </div>
               );
@@ -449,6 +485,7 @@ export default function OperatorGitHubMonitoringPage() {
             setPage(1);
           }}
         />
+        {!canManage && <span className="sr-only">Your role cannot manage GitHub sync.</span>}
       </SurfaceCard>
 
       <ConfirmModal
@@ -467,12 +504,8 @@ export default function OperatorGitHubMonitoringPage() {
         confirmLabel={pauseTarget?.syncState === "Paused" ? "Resume Sync" : "Pause Sync"}
         variant={pauseTarget?.syncState === "Paused" ? "primary" : "danger"}
         onConfirm={() => {
-          if (pauseTarget) {
-            toggleGitHubPause(pauseTarget.id);
-            toast.success(
-              `${pauseTarget.orgName} GitHub sync ${pauseTarget.syncState === "Paused" ? "resumed" : "paused"}.`
-            );
-          }
+          // No pause/resume endpoint exists; nothing is changed locally either.
+          setPauseTarget(null);
         }}
       />
     </div>

@@ -75,7 +75,7 @@ export function LoadGate<T>({
 }: {
   state: LoadState<T>;
   family: OrgFamily;
-  children: (data: T, sample: boolean) => React.ReactNode;
+  children: (data: T) => React.ReactNode;
   permission?: string;
   what?: string;
 }) {
@@ -85,16 +85,7 @@ export function LoadGate<T>({
   if (state.kind === "access-lost") return <AccessLostState />;
   if (state.kind === "unauthenticated") return <SessionExpiredState />;
   if (state.kind === "error") return <ErrorBanner message={`${what} could not be loaded.`} onRetry={state.retry} />;
-  return <>{children(state.data, state.sample)}</>;
-}
-
-function SampleNotice({ sample }: { sample: boolean }) {
-  if (!sample) return null;
-  return (
-    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-800 dark:text-amber-200">
-      <b>Sample data.</b> The API is not reachable in this development build, so changes cannot be saved.
-    </div>
-  );
+  return <>{children(state.data)}</>;
 }
 
 /** Your own effective ORG keys decide what you can switch on (never a role-name map). */
@@ -336,9 +327,8 @@ export function RolesListView({ family }: { family: OrgFamily }) {
       }
     >
       <LoadGate state={state} family={family}>
-        {(roles, sample) => (
+        {(roles) => (
           <>
-            <SampleNotice sample={sample} />
             {roles.length === 0 ? (
               <SurfaceCard><EmptyStateView icon={ShieldCheck} title="No roles" description="Roles appear once the workspace is set up." /></SurfaceCard>
             ) : (
@@ -425,7 +415,7 @@ export function RoleCreateView({ family }: { family: OrgFamily }) {
       description="A custom role sits below Organization Admin. You can switch on only permissions you hold yourself."
     >
       <LoadGate state={state} family={family}>
-        {(roles, sample) => {
+        {(roles) => {
           const pickBase = (id: string) => {
             setBasedOn(id);
             const base = roles.find((role) => role.id === id);
@@ -437,7 +427,6 @@ export function RoleCreateView({ family }: { family: OrgFamily }) {
           };
           const save = () => {
             if (name.trim().length < 3) return setError("Give the role a name (3 to 100 characters).");
-            if (sample) return setError("Sample data: connect the API to save.");
             setError("");
             createRole.mutate(
               { name: name.trim(), permission_keys: keys, expected_version: 0 },
@@ -452,7 +441,6 @@ export function RoleCreateView({ family }: { family: OrgFamily }) {
           };
           return (
             <>
-              <SampleNotice sample={sample} />
               <Panel title="Role details" icon={FilePlus2}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <AdminInput label="Role name" placeholder="e.g. Release Coordinator" value={name} onChange={(e) => { setName(e.target.value); setError(""); }} />
@@ -534,11 +522,10 @@ export function RoleDetailView({ family, roleId }: { family: OrgFamily; roleId: 
       description={role ? (role.template ? "Built-in template from the permission matrix." : "Custom role in this workspace.") : undefined}
     >
       <LoadGate state={state} family={family}>
-        {(loaded, sample) => {
+        {(loaded) => {
           const lockReason = lockFor(loaded, holds, canManage);
           const value = draft ?? loaded.permission_keys;
           const save = () => {
-            if (sample) return setError("Sample data: connect the API to save.");
             setError("");
             updateRole.mutate(
               { roleId: loaded.id, body: { name: loaded.name, permission_keys: value, expected_version: loaded.version } },
@@ -546,7 +533,6 @@ export function RoleDetailView({ family, roleId }: { family: OrgFamily; roleId: 
             );
           };
           const remove = () => {
-            if (sample) return setError("Sample data: connect the API to save.");
             deleteRole.mutate(
               { roleId: loaded.id, version: loaded.version },
               {
@@ -561,7 +547,6 @@ export function RoleDetailView({ family, roleId }: { family: OrgFamily; roleId: 
           const lock = templateLock(loaded);
           return (
             <>
-              <SampleNotice sample={sample} />
               {stale && <StaleVersionBanner requestId={stale.requestId} onReload={reload} reloading={reloading} />}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <StatPill label="Type" value={loaded.template ? "Template" : "Custom"} />
@@ -609,7 +594,7 @@ export function RoleDetailView({ family, roleId }: { family: OrgFamily; roleId: 
                                   <AdminButton
                                     size="xs"
                                     variant="ghost"
-                                    disabled={sample || revokeGrant.isPending}
+                                    disabled={revokeGrant.isPending}
                                     onClick={() =>
                                       revokeGrant.mutate(
                                         { grantId: row.grant_id, version: row.version },
@@ -687,10 +672,9 @@ export function AssignRoleView({ family }: { family: OrgFamily }) {
       description="Give a member a role for the whole organization or one project. You can only assign roles whose permissions you hold; the owner role never moves through a grant."
     >
       <LoadGate state={members} family={family}>
-        {(memberList: MemberDto[], sampleMembers) => (
+        {(memberList: MemberDto[]) => (
           <LoadGate state={roles} family={family}>
-            {(roleList, sampleRoles) => {
-              const sample = sampleMembers || sampleRoles;
+            {(roleList) => {
               const assignable = (role: RoleDto) => {
                 if (role.owner_only) return "Owner only · use ownership transfer";
                 const missing = role.permission_keys.filter((key) => !holds(key));
@@ -703,7 +687,6 @@ export function AssignRoleView({ family }: { family: OrgFamily }) {
                 const reason = assignable(selectedRole);
                 if (reason) return setError(reason);
                 if (scope === "PROJECT" && !/^[0-9a-f-]{36}$/i.test(projectId.trim())) return setError("Enter the project's id.");
-                if (sample) return setError("Sample data: connect the API to save.");
                 setError("");
                 grantRole.mutate(
                   {
@@ -720,7 +703,6 @@ export function AssignRoleView({ family }: { family: OrgFamily }) {
               const activeMembers = memberList.filter((member) => member.status === "ACTIVE");
               return (
                 <>
-                  <SampleNotice sample={sample} />
                   {stale && <StaleVersionBanner requestId={stale.requestId} onReload={reload} reloading={reloading} />}
                   <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
                     <Panel className="xl:col-span-2" title="New grant" icon={KeyRound}>
@@ -769,7 +751,7 @@ export function AssignRoleView({ family }: { family: OrgFamily }) {
                                       <span className="block text-[10px] text-[var(--color-text-muted)]">{grant.scope === "ORG" ? "Whole organization" : "One project"}</span>
                                     </span>
                                     {grant.role_name !== "ORGANIZATION_OWNER" && (
-                                      <AdminButton size="xs" variant="ghost" disabled={sample || revokeGrant.isPending}
+                                      <AdminButton size="xs" variant="ghost" disabled={revokeGrant.isPending}
                                         onClick={() => revokeGrant.mutate({ grantId: grant.id, version: grant.version }, {
                                           onSuccess: () => toast.success("Role revoked"),
                                           onError: (failure) =>

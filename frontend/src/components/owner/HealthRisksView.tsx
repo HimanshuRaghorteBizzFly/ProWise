@@ -21,7 +21,6 @@ import type { PermissionKey } from "@/types/permission";
 export interface HealthRisksViewProps {
   projects: Project[];
   users: User[];
-  source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
   basePath?: string;
   now?: string;
@@ -34,12 +33,11 @@ const KPIS: { health: ProjectHealth; label: string; icon: React.ReactNode }[] = 
   { health: "UNKNOWN", label: "Unknown", icon: <CircleHelp className="h-5 w-5" /> },
 ];
 
-export function HealthRisksView({ projects, users, source, can, basePath, now }: HealthRisksViewProps) {
+export function HealthRisksView({ projects, users, can, basePath, now }: HealthRisksViewProps) {
   const header = (
     <PageHeader
       title="Health & risks"
       description="Active projects whose health is not On Track, with the reasons recorded and who can act. Health labels here are recorded values, not recalculated."
-      simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={<OwnerLaterBadge task="5.1" icon={<ShieldCheck aria-hidden="true" className="h-3.5 w-3.5" />} />}
     />
   );

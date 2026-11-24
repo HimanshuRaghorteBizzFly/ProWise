@@ -1,8 +1,8 @@
 import type { ApiErrorResponse, HealthResponse } from "@/types/api";
 import type * as Dto from "@/types/api";
 import type * as W from "@/types/work";
-import { mocksAllowed, readPermissionEnv } from "@/lib/permissions";
-import { useAuthStore } from "@/store/auth-store";
+import type * as Admin from "@/types/admin";
+import { clearAuthSession } from "@/lib/auth-session";
 
 export const REQUEST_ID_HEADER = "X-Request-Id";
 export const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
@@ -10,6 +10,12 @@ export const EXPECTED_VERSION_FIELD = "expectedVersion";
 export const STALE_VERSION_CODE = "STALE_VERSION";
 
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * A 401 from these is the real answer (wrong password, refused refresh cookie, already signed out), never a reason
+ * to refresh: refreshing here would wait on itself forever.
+ */
+const NO_REFRESH_PATHS = new Set(["/v1/auth/refresh", "/v1/auth/login", "/v1/auth/signin", "/v1/auth/signout"]);
 
 type FetchLike = typeof globalThis.fetch;
 
@@ -80,6 +86,10 @@ export interface AuthUserSummary {
 /** The refresh token never appears here: it only travels in the httpOnly refresh cookie. */
 export interface AuthLoginResponse {
   access_token: string;
+<<<<<<< HEAD
+=======
+  /* No refresh_token: it travels only in the HttpOnly cookie and the client never reads one from a body. */
+>>>>>>> 29db595 (Initial ProWise project upload)
   expires_in: number;
   must_change_password: boolean;
   target_dashboard_url: string;
@@ -196,9 +206,29 @@ export function resolveApiBaseUrl(configuredUrl = process.env.NEXT_PUBLIC_API_BA
 export interface ApiClientOptions {
   baseUrl?: string;
   fetch?: FetchLike;
+<<<<<<< HEAD
   isRolePreview?: () => boolean;
   /** Called when a request stays 401 after a refresh attempt (default: a window event). */
   onSessionExpired?: () => void;
+=======
+  /** Called when the refresh cookie is refused: the session is over and callers route to /login. */
+  onSessionExpired?: () => void;
+}
+
+/** Pages where an ended session needs no redirect (the person is already signing in or setting up an account). */
+const AUTH_PAGE_PREFIXES = [
+  "/login", "/operator/login", "/signup", "/verify-email", "/forgot-password", "/reset-password",
+  "/change-password", "/invitations", "/account-setup", "/activate", "/create-organization",
+];
+
+/** Clears the client session and, outside the sign-in pages, sends the person to /login (back to this page after). */
+export function endSessionAndGoToLogin(): void {
+  clearAuthSession();
+  if (typeof window === "undefined") return;
+  const { pathname, search } = window.location;
+  if (pathname === "/" || AUTH_PAGE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) return;
+  window.location.assign(`/login?next=${encodeURIComponent(pathname + search)}`);
+>>>>>>> 29db595 (Initial ProWise project upload)
 }
 
 /** Fired on window when the session can no longer be refreshed. */
@@ -209,14 +239,27 @@ const PUBLIC_AUTH_PATH = /^\/(?:api\/)?(?:v1\/)?auth\/(?:signup|signin|login|ref
 
 export function createApiClient(options: ApiClientOptions = {}) {
   const fetcher = options.fetch ?? globalThis.fetch;
+<<<<<<< HEAD
   const isRolePreview = options.isRolePreview ?? (() => useAuthStore.getState().isRolePreview);
   const onSessionExpired = options.onSessionExpired ?? (() => {
     if (typeof window !== "undefined") window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
   });
   // The access token lives in memory only (never localStorage or a readable cookie). On a reload it is gone and
   // the first request or establishSession() gets a new one from the httpOnly refresh cookie.
+=======
+  const onSessionExpired = options.onSessionExpired ?? endSessionAndGoToLogin;
+  /*
+   * The access token lives only in memory. It is never written to localStorage or a script-readable cookie (an XSS
+   * could read either). After a reload the server's HttpOnly cookies carry the session: the first 401 refreshes it.
+   */
+>>>>>>> 29db595 (Initial ProWise project upload)
   let accessToken: string | null = null;
-  let refreshing: Promise<string | null> | null = null;
+
+  function setAccessToken(token: string | null) {
+    accessToken = token;
+  }
+
+  let refreshing: Promise<string> | null = null;
 
   async function health(): Promise<HealthResponse> {
     const response = await request("/v1/health", { retryOnUnauthorized: false });
@@ -227,11 +270,6 @@ export function createApiClient(options: ApiClientOptions = {}) {
     path: string,
     requestOptions: RequestOptions = {},
   ): Promise<Response> {
-    const previewAllowed = path === "/v1/health" || path === "/v1/auth/signout";
-    if (isRolePreview() && mocksAllowed(readPermissionEnv()) && !previewAllowed) {
-      throw new ApiError(0, "ROLE_PREVIEW", "API requests are disabled during role preview.", "");
-    }
-
     const method = (requestOptions.method ?? "GET").toUpperCase();
     // Task 1.4: one key per logical mutation, reused when the request is retried after a token refresh,
     // so the server returns the earlier result instead of applying the change twice.
@@ -270,11 +308,17 @@ export function createApiClient(options: ApiClientOptions = {}) {
       );
     }
 
+<<<<<<< HEAD
     if (response.status === 401 && requestOptions.retryOnUnauthorized !== false && !PUBLIC_AUTH_PATH.test(path)) {
       // Another request already got a new token while this one was in flight: retry with it, no second refresh.
       // Otherwise refresh once (shared by every waiting request) and retry. Exactly one retry per request: no loops.
       const current = accessToken && accessToken !== sentWith ? accessToken : await refreshAccessToken();
       if (current) {
+=======
+    if (response.status === 401 && requestOptions.retryOnUnauthorized !== false && !NO_REFRESH_PATHS.has(path)) {
+      const refreshed = await refreshAccessToken().catch(() => null);
+      if (refreshed) {
+>>>>>>> 29db595 (Initial ProWise project upload)
         return request(path, { ...requestOptions, idempotencyKey, retryOnUnauthorized: false });
       }
       // Only a failed refresh ends the session: let the app send the user to sign in.
@@ -292,6 +336,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
   }
 
   /**
+<<<<<<< HEAD
    * One refresh at a time: requests that hit 401 meanwhile wait for the same promise. Across tabs a Web Lock (when
    * the browser has one) serializes refreshes so two tabs never present the same cookie at once.
    */
@@ -313,6 +358,35 @@ export function createApiClient(options: ApiClientOptions = {}) {
       refreshing = pending.finally(() => {
         refreshing = null;
       });
+=======
+   * Exchanges the HttpOnly refresh cookie for a new access token. It never triggers another refresh. On failure the
+   * in-memory session is cleared and the promise rejects; a refused cookie also ends the client session.
+   */
+  async function refreshAccessToken(): Promise<string> {
+    if (!refreshing) {
+      refreshing = json<{ access_token?: string }>("/v1/auth/refresh", {
+        method: "POST",
+        retryOnUnauthorized: false,
+      })
+        .then((tokens) => {
+          if (!tokens?.access_token) {
+            throw new ApiError(401, "UNAUTHORIZED", "Your session has ended. Sign in again.", "");
+          }
+          setAccessToken(tokens.access_token);
+          return tokens.access_token;
+        })
+        .catch((error: unknown) => {
+          setAccessToken(null);
+          // A refusal (4xx) ends the session; a network blip or 5xx leaves the signed-in state for a later retry.
+          if (!(error instanceof ApiError) || (error.status >= 400 && error.status < 500)) {
+            onSessionExpired();
+          }
+          throw error;
+        })
+        .finally(() => {
+          refreshing = null;
+        });
+>>>>>>> 29db595 (Initial ProWise project upload)
     }
     return refreshing;
   }
@@ -352,10 +426,15 @@ export function createApiClient(options: ApiClientOptions = {}) {
       json<{ message: string }>("/v1/auth/signup", { method: "POST", body }),
     /** Activates a self-registered account from the token in its emailed link. Single use. */
     verifyEmail: (token: string) => request("/v1/auth/verify-email", { method: "POST", body: { token } }),
+<<<<<<< HEAD
 >>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
+=======
+    getAccessToken: () => accessToken,
+    setAccessToken,
+>>>>>>> 29db595 (Initial ProWise project upload)
     signin: (body: { email: string; password: string }) =>
       json<{ access_token: string }>("/v1/auth/signin", { method: "POST", body }).then((tokens) => {
-        accessToken = tokens.access_token;
+        setAccessToken(tokens.access_token);
         return tokens;
       }),
 <<<<<<< HEAD
@@ -365,23 +444,27 @@ export function createApiClient(options: ApiClientOptions = {}) {
     login: (body: { email: string; password: string; organization_id?: string }) =>
 >>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
       json<AuthLoginResponse>("/v1/auth/login", { method: "POST", body }).then((res) => {
-        accessToken = res.access_token;
+        setAccessToken(res.access_token);
         return res;
       }),
     changePassword: (body: { currentPassword?: string; newPassword: string }) =>
+<<<<<<< HEAD
 <<<<<<< HEAD
       // /v1 path: the base URL is "/api" and only /api/v1/* is proxied to the backend.
       json<{ access_token: string }>("/v1/auth/change-password", {
 =======
       json<{ access_token: string; refresh_token: string }>("/v1/auth/change-password", {
 >>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
+=======
+      json<{ access_token: string }>("/v1/auth/change-password", {
+>>>>>>> 29db595 (Initial ProWise project upload)
         method: "POST",
         body: {
           current_password: body.currentPassword,
           new_password: body.newPassword,
         },
       }).then((tokens) => {
-        accessToken = tokens.access_token;
+        setAccessToken(tokens.access_token);
         return tokens;
       }),
     refresh: refreshAccessToken,
@@ -394,10 +477,12 @@ export function createApiClient(options: ApiClientOptions = {}) {
     /** A request through the session-aware client (Bearer + refresh on 401) for older helpers that build their own paths. */
     call: (path: string, init: { method?: string; body?: unknown } = {}) => request(path, init),
     signout: async () => {
-      // /v1 path: the base URL is "/api" and only /api/v1/* is proxied to the backend; also the one sign-out
-      // path allowed during role preview.
-      await request("/v1/auth/signout", { method: "POST" });
-      accessToken = null;
+      // /v1 path: the base URL is "/api" and only /api/v1/* is proxied to the backend.
+      try {
+        await request("/v1/auth/signout", { method: "POST" });
+      } finally {
+        setAccessToken(null);
+      }
     },
     me: () => json<import("@/types/api").MeResponse>("/v1/me"),
     myPermissions: (orgId: string) =>
@@ -822,10 +907,96 @@ export function createApiClient(options: ApiClientOptions = {}) {
       loginHistory: (id: string) =>
         json<UserLoginHistoryItem[]>(`/v1/admin/users/${id}/login-history`),
     },
+    /**
+     * Read-only server settings status. Secrets come back with `value: null` (configured / missing only); there is
+     * deliberately no write or generate call: keys are managed in the server environment, never from the browser.
+     */
+    platformKeys: {
+      get: () => json<Admin.PlatformKeysResponse>("/v1/admin/platform-keys"),
+    },
+    /** Super Admin console endpoints (all require PLATFORM_SUPER_ADMIN on the server). */
+    admin: {
+      dashboard: () => json<Admin.AdminDashboard>("/v1/admin/dashboard"),
+      organizations: {
+        list: (params: Admin.AdminOrganizationQuery = {}) =>
+          json<Admin.AdminOrganization[]>(`/v1/admin/organizations${queryString(params)}`),
+        get: (id: string) => json<Admin.AdminOrganization>(`/v1/admin/organizations/${encodeURIComponent(id)}`),
+        summary: () => json<Admin.AdminOrganizationSummary>("/v1/admin/organizations/summary"),
+      },
+      auditLogs: {
+        list: (params: Admin.AdminAuditLogQuery = {}) =>
+          json<Admin.AdminAuditLog[]>(`/v1/admin/audit-logs${queryString(params)}`),
+      },
+      operators: {
+        list: (params: Admin.AdminOperatorQuery = {}) =>
+          json<Admin.AdminOperator[]>(`/v1/admin/operators${queryString(params)}`),
+        get: (id: string) => json<Admin.AdminOperator>(`/v1/admin/operators/${encodeURIComponent(id)}`),
+        permissions: (id: string) =>
+          json<Admin.AdminOperatorPermissions>(`/v1/admin/operators/${encodeURIComponent(id)}/permissions`),
+        /** The backend takes no expectedVersion here; the Idempotency-Key header makes a retry safe. */
+        setStatus: (id: string, status: Admin.AdminOperatorStatus, idempotencyKey?: string) =>
+          json<Admin.AdminOperator>(`/v1/admin/operators/${encodeURIComponent(id)}/status`, {
+            method: "PATCH",
+            body: { status },
+            idempotencyKey,
+          }),
+        resendInvite: (id: string, idempotencyKey?: string) =>
+          request(`/v1/admin/operators/${encodeURIComponent(id)}/resend-invite`, { method: "POST", idempotencyKey }),
+        revokeSessions: (id: string, idempotencyKey?: string) =>
+          request(`/v1/admin/operators/${encodeURIComponent(id)}/revoke-sessions`, { method: "POST", idempotencyKey }),
+      },
+      announcements: {
+        list: (params: Admin.AdminAnnouncementQuery = {}) =>
+          json<Admin.AdminAnnouncement[]>(`/v1/admin/announcements${queryString(params)}`),
+        get: (id: string) => json<Admin.AdminAnnouncement>(`/v1/admin/announcements/${encodeURIComponent(id)}`),
+      },
+      emailTemplates: {
+        list: (params: Admin.AdminEmailTemplateQuery = {}) =>
+          json<Admin.AdminEmailTemplate[]>(`/v1/admin/email-templates${queryString(params)}`),
+        get: (id: string) => json<Admin.AdminEmailTemplate>(`/v1/admin/email-templates/${encodeURIComponent(id)}`),
+      },
+      roles: {
+        list: () => json<Admin.AdminRole[]>("/v1/admin/roles"),
+        get: (id: string) => json<Admin.AdminRole>(`/v1/admin/roles/${encodeURIComponent(id)}`),
+      },
+      permissions: {
+        list: () => json<Admin.AdminPermission[]>("/v1/admin/permissions"),
+      },
+      plans: {
+        list: () => json<Admin.AdminPlan[]>("/v1/admin/plans"),
+        get: (id: string) => json<Admin.AdminPlan>(`/v1/admin/plans/${encodeURIComponent(id)}`),
+      },
+      subscriptions: {
+        list: (params: Admin.AdminSubscriptionQuery = {}) =>
+          json<Admin.AdminSubscription[]>(`/v1/admin/subscriptions${queryString(params)}`),
+        get: (id: string) => json<Admin.AdminSubscription>(`/v1/admin/subscriptions/${encodeURIComponent(id)}`),
+      },
+      invoices: {
+        list: (params: Admin.AdminInvoiceQuery = {}) =>
+          json<Admin.AdminInvoice[]>(`/v1/admin/invoices${queryString(params)}`),
+        get: (id: string) => json<Admin.AdminInvoice>(`/v1/admin/invoices/${encodeURIComponent(id)}`),
+        summary: () => json<Admin.AdminInvoiceSummary>("/v1/admin/invoices/summary"),
+      },
+    },
   };
 }
 
 export const apiClient = createApiClient();
+
+export type { PlatformKeyItem, PlatformKeysResponse } from "@/types/admin";
+
+/** `?a=1&b=2` from the set (non-empty, non-"ALL") values; empty string when there are none. */
+export function queryString(params: object): string {
+  const query = new URLSearchParams();
+  Object.entries(params as Record<string, unknown>).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    const text = String(value).trim();
+    if (text === "" || text === "ALL") return;
+    query.set(key, text);
+  });
+  const qs = query.toString();
+  return qs ? `?${qs}` : "";
+}
 
 /* ---------------------------------------------------------------- SMTP (mirrors EmailProviderDTOs) */
 

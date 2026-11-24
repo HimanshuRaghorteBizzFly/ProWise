@@ -3,44 +3,43 @@
 import React, { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  AlertCircle,
-  AlertTriangle,
-  Building2,
   Calendar,
   CheckCircle2,
-  ChevronDown,
   Clock,
-  Download,
   Eye,
   FileText,
   Flame,
-  History,
-  LayoutGrid,
-  List,
   PlayCircle,
   Plus,
-  RefreshCw,
   Send,
-  ShieldAlert,
-  Trash2,
   Wrench,
-  X,
   XCircle,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
-import { useSuperAdminStore } from "../../super-admin/_store/useSuperAdminStore";
-import { useMaintenanceStore } from "@/store/maintenance-store";
+import type { OpsMaintenanceWindow } from "@/types/admin-operations";
 import {
   MaintenanceChecklistStep,
+  MaintenanceExecutionNote,
   MaintenanceImpactLevel,
   MaintenanceScope,
   MaintenanceServiceArea,
   MaintenanceStatus,
-  MaintenanceWindowItem,
 } from "@/types/maintenance";
+import { instantToLocalInput, localInputToInstant } from "@/components/super-admin/operations/shared";
+import { useOperatorPermissions } from "../_services/operator-access";
+import { operatorApi } from "../_services/operator-api";
 import { formatDateTime } from "../_services/operator-service";
 import {
-  BulkSelectionBar,
+  MutationNotice,
+  NOT_AVAILABLE,
+  NotAvailableButton,
+  NotAvailableText,
+  OperatorResourceStatus,
+  humanizeCode,
+  rowsOf,
+  useOperatorMutation,
+  useOperatorResource,
+} from "../_components/OperatorLive";
+import {
   ConfirmModal,
   DemoDataBanner,
   EmptyState,
@@ -56,8 +55,6 @@ import {
   SortableHeader,
   StatusBadge,
   SurfaceCard,
-  getStatusTone,
-  useTableSelection,
 } from "../_components/OperatorPrimitives";
 
 const SERVICE_AREAS: MaintenanceServiceArea[] = [
@@ -80,17 +77,8 @@ const IMPACT_LEVELS: MaintenanceImpactLevel[] = [
 
 const TIMEZONES = ["UTC", "America/New_York", "America/Los_Angeles", "Europe/London", "Europe/Berlin", "Asia/Tokyo", "Australia/Sydney"];
 
-const DEFAULT_ORGS = [
-  { id: "org-acme", name: "Acme Health Technologies" },
-  { id: "org-cloudpulse", name: "CloudPulse Commerce" },
-  { id: "org-nova", name: "Nova FinTech Global" },
-  { id: "org-vanguard", name: "Vanguard MedSystems" },
-  { id: "org-starlight", name: "Starlight Dynamics" },
-  { id: "org-apex", name: "Apex BioTech Systems" },
-  { id: "org-aether", name: "Aether Robotics AI" },
-  { id: "org-meridian", name: "Meridian Logistics Cloud" },
-  { id: "org-kinetix", name: "Kinetix BioLabs" },
-];
+/** Why the governance / notice fields are disabled: the maintenance record on the server has no such field. */
+const NA_FIELD = "the maintenance record on the server has no such field";
 
 function getMaintStatusTone(status: MaintenanceStatus): "success" | "warning" | "danger" | "info" | "neutral" {
   switch (status) {
@@ -121,32 +109,85 @@ function getImpactTone(level: MaintenanceImpactLevel): "success" | "warning" | "
 
 type MaintSortField = "trackingCode" | "title" | "scheduledStart" | "durationMinutes" | "status" | "progressPct";
 
-export default function OperatorMaintenancePage() {
-  const accountSettings = usePlatformOperatorStore((s) => s.accountSettings);
-  const operatorName = accountSettings.name || "Alex Rivera";
+/**
+ * One maintenance window as the page shows it, read from GET /v1/operator/maintenance. Fields the server does not
+ * store (scope, tenant, impact, services, emergency flag, approval, progress, checklist, notes) are null / empty and
+ * rendered as "Not available yet".
+ */
+interface MaintRow {
+  id: string;
+  version: number | null | undefined;
+  trackingCode: string;
+  title: string;
+  reason: string;
+  departmentId: string | null;
+  scope: MaintenanceScope | null;
+  targetOrgName?: string;
+  impactLevel: MaintenanceImpactLevel | null;
+  affectedServices: MaintenanceServiceArea[];
+  scheduledStart: string;
+  scheduledEnd: string;
+  /** Derived only from the real scheduled start / end. */
+  durationMinutes: number | null;
+  actualStart?: string;
+  actualEnd?: string;
+  status: MaintenanceStatus;
+  isEmergency: boolean;
+  reviewedBy?: string;
+  progressPct: number | null;
+  serviceRestorationChecks: MaintenanceChecklistStep[];
+  executionNotes: MaintenanceExecutionNote[];
+  completionReport?: { summary: string; verifiedBy: string; actualDowntimeMinutes: number; completedAt: string };
+  createdBy: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
 
+function durationBetween(start: string | null, end: string | null): number | null {
+  if (!start || !end) return null;
+  const ms = new Date(end).getTime() - new Date(start).getTime();
+  return Number.isFinite(ms) && ms >= 0 ? Math.round(ms / 60000) : null;
+}
+
+function toMaintRow(m: OpsMaintenanceWindow): MaintRow {
+  return {
+    id: m.id,
+    version: m.version,
+    trackingCode: m.id,
+    title: m.title,
+    reason: m.description ?? "",
+    departmentId: m.department_id,
+    scope: null,
+    impactLevel: null,
+    affectedServices: [],
+    scheduledStart: m.scheduled_start ?? "",
+    scheduledEnd: m.scheduled_end ?? "",
+    durationMinutes: durationBetween(m.scheduled_start, m.scheduled_end),
+    actualStart: m.actual_start ?? undefined,
+    actualEnd: m.actual_end ?? undefined,
+    status: (m.status as MaintenanceStatus) ?? "SCHEDULED",
+    isEmergency: false,
+    progressPct: null,
+    serviceRestorationChecks: [],
+    executionNotes: [],
+    createdBy: m.created_by,
+    createdAt: m.created_at,
+    updatedAt: m.updated_at,
+  };
+}
+
+function inHours(hours: number): string {
+  return instantToLocalInput(new Date(Date.now() + hours * 3600_000).toISOString());
+}
+
+export default function OperatorMaintenancePage() {
   const { can } = useOperatorPermissions();
   const canManage = can("system.manage");
 
-  // Shared Maintenance Store
-  const maintenanceWindows = useMaintenanceStore((s) => s.maintenanceWindows);
-  const platformWideMaintenanceActive = useMaintenanceStore((s) => s.platformWideMaintenanceActive);
-  const requestMaintenance = useMaintenanceStore((s) => s.requestMaintenance);
-  const startMaintenance = useMaintenanceStore((s) => s.startMaintenance);
-  const toggleServiceCheck = useMaintenanceStore((s) => s.toggleServiceCheck);
-  const addExecutionNote = useMaintenanceStore((s) => s.addExecutionNote);
-  const completeMaintenance = useMaintenanceStore((s) => s.completeMaintenance);
-  const cancelMaintenance = useMaintenanceStore((s) => s.cancelMaintenance);
-  const emergencyStop = useMaintenanceStore((s) => s.emergencyStop);
-
-  // Tenant Organizations list
-  const organizations = useMemo(() => {
-    try {
-      const saOrgs = useSuperAdminStore.getState().organizations;
-      if (saOrgs && saOrgs.length > 0) return saOrgs;
-    } catch {}
-    return DEFAULT_ORGS;
-  }, []);
+  const { state: windowsState, reload } = useOperatorResource(() => operatorApi.maintenance.list(), "maintenance");
+  const maintenanceWindows = useMemo(() => rowsOf(windowsState).map(toMaintRow), [windowsState]);
+  const isReady = windowsState.status === "ready";
+  const { busy, notice, clearNotice, run } = useOperatorMutation(reload);
 
   // Filter & Search State
   const [search, setSearch] = useState("");
@@ -163,46 +204,41 @@ export default function OperatorMaintenancePage() {
   const [reqTitle, setReqTitle] = useState("");
   const [reqReason, setReqReason] = useState("");
   const [reqScope, setReqScope] = useState<MaintenanceScope>("PLATFORM_WIDE");
-  const [reqOrgId, setReqOrgId] = useState(organizations[0]?.id || "org-acme");
   const [reqImpact, setReqImpact] = useState<MaintenanceImpactLevel>("Brief Slowdown");
   const [reqServices, setReqServices] = useState<MaintenanceServiceArea[]>([
     "Core Web API",
     "Webhook Delivery & Ingestion",
   ]);
-  const [reqStart, setReqStart] = useState("2026-11-15T03:00");
-  const [reqEnd, setReqEnd] = useState("2026-11-15T03:30");
+  const [reqStart, setReqStart] = useState(() => inHours(2));
+  const [reqEnd, setReqEnd] = useState(() => inHours(2.5));
   const [reqTimezone, setReqTimezone] = useState("UTC");
   const [reqCustomerNotice, setReqCustomerNotice] = useState(
     "ProWise is conducting scheduled infrastructure maintenance. Services will resume shortly."
   );
   const [reqRestorationTime, setReqRestorationTime] = useState("Within 30-minute window");
   const [reqNotifyCustomers, setReqNotifyCustomers] = useState(true);
-  const [reqIsEmergency, setReqIsEmergency] = useState(false);
+  const reqIsEmergency = false;
 
   // Execution Note Input (for Active Window)
   const [activeNoteText, setActiveNoteText] = useState("");
 
   // Start Window Confirmation Modal
-  const [startConfirmTarget, setStartConfirmTarget] = useState<MaintenanceWindowItem | null>(null);
+  const [startConfirmTarget, setStartConfirmTarget] = useState<MaintRow | null>(null);
 
   // Complete Report Modal
-  const [completeTarget, setCompleteTarget] = useState<MaintenanceWindowItem | null>(null);
+  const [completeTarget, setCompleteTarget] = useState<MaintRow | null>(null);
   const [completionSummary, setCompletionSummary] = useState("");
 
   // Cancel Request Modal
-  const [cancelTarget, setCancelTarget] = useState<MaintenanceWindowItem | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<MaintRow | null>(null);
   const [cancelReason, setCancelReason] = useState("");
 
   // Inspect Details Modal
-  const [inspectTarget, setInspectTarget] = useState<MaintenanceWindowItem | null>(null);
+  const [inspectTarget, setInspectTarget] = useState<MaintRow | null>(null);
 
   // KPIs
   const activeWindows = useMemo(
     () => maintenanceWindows.filter((m) => m.status === "IN_PROGRESS"),
-    [maintenanceWindows]
-  );
-  const pendingCount = useMemo(
-    () => maintenanceWindows.filter((m) => m.status === "PENDING_APPROVAL").length,
     [maintenanceWindows]
   );
   const scheduledCount = useMemo(
@@ -233,8 +269,7 @@ export default function OperatorMaintenancePage() {
         m.trackingCode.toLowerCase().includes(q) ||
         m.title.toLowerCase().includes(q) ||
         m.reason.toLowerCase().includes(q) ||
-        (m.targetOrgName && m.targetOrgName.toLowerCase().includes(q)) ||
-        m.affectedServices.some((s) => s.toLowerCase().includes(q));
+        (m.departmentId ?? "").toLowerCase().includes(q);
 
       const matchesStatus = statusFilter === "ALL" || m.status === statusFilter;
       const matchesScope = scopeFilter === "ALL" || m.scope === scopeFilter;
@@ -244,12 +279,16 @@ export default function OperatorMaintenancePage() {
     });
 
     return [...list].sort((a, b) => {
-      let va: any = a[sortField];
-      let vb: any = b[sortField];
-      if (typeof va === "string") {
-        return sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
+      const va = a[sortField];
+      const vb = b[sortField];
+      if (typeof va === "string" || typeof vb === "string") {
+        const sa = String(va ?? "");
+        const sb = String(vb ?? "");
+        return sortDir === "asc" ? sa.localeCompare(sb) : sb.localeCompare(sa);
       }
-      return sortDir === "asc" ? (va ?? 0) - (vb ?? 0) : (vb ?? 0) - (va ?? 0);
+      const na = (va as number | null) ?? 0;
+      const nb = (vb as number | null) ?? 0;
+      return sortDir === "asc" ? na - nb : nb - na;
     });
   }, [maintenanceWindows, search, statusFilter, scopeFilter, impactFilter, sortField, sortDir]);
 
@@ -257,8 +296,12 @@ export default function OperatorMaintenancePage() {
   const safePage = Math.min(page, totalPages);
   const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
 
-  // Request Submission Handler
-  const handleRequestSubmit = (e: React.FormEvent) => {
+  /** PATCH /v1/operator/maintenance/{id} with the version the page read (409 STALE_VERSION shows Reload). */
+  const changeStatus = (win: MaintRow, status: "IN_PROGRESS" | "COMPLETED" | "CANCELLED", success: string) =>
+    run(`status:${win.id}`, () => operatorApi.maintenance.update(win.id, { status }, win.version), success);
+
+  // Request Submission Handler: POST /v1/operator/maintenance (creates a SCHEDULED window; no version needed)
+  const handleRequestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canManage) {
       toast.error("Your role does not permit submitting maintenance requests.");
@@ -272,106 +315,65 @@ export default function OperatorMaintenancePage() {
       toast.error("Please provide a technical reason and justification.");
       return;
     }
-    if (reqServices.length === 0) {
-      toast.error("Please choose at least one affected service area.");
+    const start = localInputToInstant(reqStart);
+    const end = localInputToInstant(reqEnd);
+    if (!start || !end) {
+      toast.error("Please choose a scheduled start and end.");
+      return;
+    }
+    if (new Date(end).getTime() <= new Date(start).getTime()) {
+      toast.error("The scheduled end must be after the scheduled start.");
       return;
     }
 
-    const targetOrg = organizations.find((o) => o.id === reqOrgId);
-
-    const created = requestMaintenance({
-      title: reqTitle.trim(),
-      reason: reqReason.trim(),
-      scope: reqScope,
-      targetOrgId: reqScope === "ORGANIZATION_SPECIFIC" ? reqOrgId : undefined,
-      targetOrgName: reqScope === "ORGANIZATION_SPECIFIC" ? (targetOrg?.name || reqOrgId) : undefined,
-      impactLevel: reqImpact,
-      affectedServices: reqServices,
-      scheduledStart: new Date(reqStart).toISOString(),
-      scheduledEnd: new Date(reqEnd).toISOString(),
-      timezone: reqTimezone,
-      customerNoticeMessage: reqCustomerNotice.trim(),
-      estimatedRestorationTime: reqRestorationTime.trim(),
-      notifyCustomers: reqNotifyCustomers,
-      isEmergency: reqIsEmergency,
-      requestedBy: operatorName,
-      requestedByEmail: accountSettings.email,
-    });
-
-    toast.success(
-      reqIsEmergency
-        ? `EMERGENCY maintenance request ${created.trackingCode} submitted for expedited Super Admin sign-off!`
-        : `Maintenance request ${created.trackingCode} submitted for Super Admin review.`
+    const ok = await run(
+      "create",
+      () =>
+        operatorApi.maintenance.create({
+          title: reqTitle.trim(),
+          description: reqReason.trim(),
+          scheduled_start: start,
+          scheduled_end: end,
+        }),
+      "Maintenance window scheduled."
     );
-
-    setRequestModalOpen(false);
+    if (ok) setRequestModalOpen(false);
   };
 
-  // Start Window Handler (Requires Super Admin Approval Check)
-  const handleConfirmStart = () => {
+  // Start Window Handler: PATCH status IN_PROGRESS
+  const handleConfirmStart = async () => {
     if (!startConfirmTarget) return;
     if (!canManage) {
       toast.error("Your role does not permit starting maintenance.");
       return;
     }
-    const res = startMaintenance(startConfirmTarget.id, operatorName);
-    if (res.ok) {
-      toast.warning(`Maintenance window ${startConfirmTarget.trackingCode} started! Status is now IN_PROGRESS.`);
-      setStartConfirmTarget(null);
-    } else {
-      toast.error(res.error || "Cannot start maintenance.");
-    }
+    const target = startConfirmTarget;
+    setStartConfirmTarget(null);
+    await changeStatus(target, "IN_PROGRESS", `Maintenance window ${target.trackingCode} started.`);
   };
 
-  // Complete Maintenance Handler
-  const handleCompleteSubmit = () => {
+  // Complete Maintenance Handler: PATCH status COMPLETED
+  const handleCompleteSubmit = async () => {
     if (!completeTarget) return;
     if (!canManage) {
       toast.error("Your role does not permit completing maintenance.");
       return;
     }
-    if (!completionSummary.trim()) {
-      toast.error("Please provide a summary of service restoration checks.");
-      return;
-    }
-    const res = completeMaintenance(completeTarget.id, {
-      summary: completionSummary.trim(),
-      verifiedBy: operatorName,
-    });
-    if (res.ok) {
-      toast.success(`Maintenance window ${completeTarget.trackingCode} marked COMPLETED. Normal routing restored.`);
-      setCompleteTarget(null);
-    } else {
-      toast.error(res.error || "Completion failed.");
-    }
+    const target = completeTarget;
+    setCompleteTarget(null);
+    await changeStatus(target, "COMPLETED", `Maintenance window ${target.trackingCode} marked COMPLETED.`);
   };
 
-  // Cancel Handler
-  const handleCancelSubmit = () => {
+  // Cancel Handler: PATCH status CANCELLED
+  const handleCancelSubmit = async () => {
     if (!cancelTarget) return;
     if (!canManage) {
       toast.error("Your role does not permit cancelling maintenance.");
       return;
     }
-    if (!cancelReason.trim()) {
-      toast.error("Please provide a reason for cancelling this window.");
-      return;
-    }
-    const res = cancelMaintenance(cancelTarget.id, operatorName, cancelReason.trim());
-    if (res.ok) {
-      toast.info(`Maintenance window ${cancelTarget.trackingCode} cancelled.`);
-      setCancelTarget(null);
-    } else {
-      toast.error(res.error || "Cancellation failed.");
-    }
-  };
-
-  // Add Note to Active Window
-  const handleAddActiveNote = (windowId: string) => {
-    if (!activeNoteText.trim()) return;
-    addExecutionNote(windowId, activeNoteText.trim(), operatorName, "Platform Operator");
-    toast.success("Execution note recorded.");
-    setActiveNoteText("");
+    const target = cancelTarget;
+    setCancelTarget(null);
+    await changeStatus(target, "CANCELLED", `Maintenance window ${target.trackingCode} cancelled.`);
   };
 
   return (
@@ -380,6 +382,7 @@ export default function OperatorMaintenancePage() {
       <PageHeader
         title="Maintenance Operations"
         badge="System Operations"
+        liveData
         description="Author and submit infrastructure maintenance requests for Super Admin approval, execute authorized windows, monitor service restoration checks, and log completion reports."
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -388,9 +391,10 @@ export default function OperatorMaintenancePage() {
               size="sm"
               disabled={!canManage}
               onClick={() => {
-                setReqIsEmergency(false);
                 setReqTitle("");
                 setReqReason("");
+                setReqStart(inHours(2));
+                setReqEnd(inHours(2.5));
                 setRequestModalOpen(true);
               }}
             >
@@ -398,20 +402,10 @@ export default function OperatorMaintenancePage() {
               Request Maintenance
             </OpButton>
 
-            <OpButton
-              variant="danger"
-              size="sm"
-              disabled={!canManage}
-              onClick={() => {
-                setReqIsEmergency(true);
-                setReqTitle("EMERGENCY: Hotfix Service Patch");
-                setReqReason("Urgent production hotfix required to mitigate active tenant service disruption.");
-                setRequestModalOpen(true);
-              }}
-            >
+            <NotAvailableButton variant="danger" size="sm" reason="the server has no emergency maintenance flag or expedited approval">
               <Flame className="w-4 h-4" />
               Emergency Request
-            </OpButton>
+            </NotAvailableButton>
           </div>
         }
       />
@@ -421,32 +415,34 @@ export default function OperatorMaintenancePage() {
         description="Operator requests require Super Admin approval prior to activation. Active maintenance publishes live customer notices across targeted tenant workspaces while preserving full operator diagnostics access."
       />
 
+      <MutationNotice notice={notice} onReload={reload} onDismiss={clearNotice} />
+
       {/* 4 KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           label="Active Windows"
-          value={activeWindows.length}
+          value={isReady ? activeWindows.length : "-"}
           sublabel="Currently in progress"
           icon={Flame}
           tone={activeWindows.length > 0 ? "rose" : "slate"}
         />
         <KpiCard
           label="Pending Review"
-          value={pendingCount}
-          sublabel="Awaiting Super Admin approval"
+          value="—"
+          sublabel="Not available yet"
           icon={Clock}
-          tone={pendingCount > 0 ? "amber" : "slate"}
+          tone="slate"
         />
         <KpiCard
           label="Approved & Scheduled"
-          value={scheduledCount}
+          value={isReady ? scheduledCount : "-"}
           sublabel="Authorized for execution"
           icon={Calendar}
           tone="blue"
         />
         <KpiCard
           label="Completed & Restored"
-          value={completedCount}
+          value={isReady ? completedCount : "-"}
           sublabel="Verified operational history"
           icon={CheckCircle2}
           tone="emerald"
@@ -466,8 +462,6 @@ export default function OperatorMaintenancePage() {
 
           <div className="grid grid-cols-1 gap-4">
             {activeWindows.map((win) => {
-              const isPlatform = win.scope === "PLATFORM_WIDE";
-
               return (
                 <SurfaceCard
                   key={win.id}
@@ -481,10 +475,14 @@ export default function OperatorMaintenancePage() {
                         </span>
                         <StatusBadge label={win.status.replace("_", " ")} tone="danger" dot />
                         <StatusBadge
-                          label={isPlatform ? "Platform-Wide" : `Tenant: ${win.targetOrgName}`}
+                          label={win.departmentId ? humanizeCode(win.departmentId) : "Scope: Not available yet"}
                           tone="info"
                         />
-                        <StatusBadge label={win.impactLevel} tone={getImpactTone(win.impactLevel)} />
+                        {win.impactLevel ? (
+                          <StatusBadge label={win.impactLevel} tone={getImpactTone(win.impactLevel)} />
+                        ) : (
+                          <StatusBadge label="Impact: Not available yet" tone="neutral" />
+                        )}
                         {win.isEmergency && (
                           <span className="rounded bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:text-rose-300">
                             EMERGENCY LOCK
@@ -495,7 +493,8 @@ export default function OperatorMaintenancePage() {
                         {win.title}
                       </h4>
                       <p className="text-xs text-[var(--color-text-secondary)]">
-                        Started: {win.actualStart ? formatDateTime(win.actualStart) : "Just now"} · Target Duration: {win.durationMinutes} min
+                        Started: {win.actualStart ? formatDateTime(win.actualStart) : "—"} · Target Duration:{" "}
+                        {win.durationMinutes ?? "—"} min
                       </p>
                     </div>
 
@@ -503,7 +502,7 @@ export default function OperatorMaintenancePage() {
                       <OpButton
                         variant="primary"
                         size="sm"
-                        disabled={!canManage}
+                        disabled={!canManage || busy !== null}
                         onClick={() => {
                           setCompleteTarget(win);
                           setCompletionSummary("");
@@ -516,7 +515,7 @@ export default function OperatorMaintenancePage() {
                       <OpButton
                         variant="outline"
                         size="sm"
-                        disabled={!canManage}
+                        disabled={!canManage || busy !== null}
                         onClick={() => {
                           setCancelTarget(win);
                           setCancelReason("");
@@ -535,13 +534,13 @@ export default function OperatorMaintenancePage() {
                         Service Restoration Checklist Progress
                       </span>
                       <span className="font-bold text-blue-600 dark:text-blue-400">
-                        {win.progressPct}% Complete
+                        {win.progressPct === null ? <NotAvailableText reason={NA_FIELD} /> : `${win.progressPct}% Complete`}
                       </span>
                     </div>
                     <div className="h-2 w-full rounded-full bg-[var(--color-border)] overflow-hidden">
                       <div
                         className="h-full bg-blue-600 transition-all duration-300"
-                        style={{ width: `${win.progressPct}%` }}
+                        style={{ width: `${win.progressPct ?? 0}%` }}
                       />
                     </div>
                   </div>
@@ -561,13 +560,16 @@ export default function OperatorMaintenancePage() {
                       </div>
 
                       {win.serviceRestorationChecks.length === 0 ? (
-                        <p className="text-[11px] text-[var(--color-text-muted)]">No verification steps defined.</p>
+                        <p className="text-[11px] text-[var(--color-text-muted)]">
+                          No verification steps defined. <NotAvailableText reason="restoration checklists are not stored on the server" />
+                        </p>
                       ) : (
                         <div className="space-y-1.5">
                           {win.serviceRestorationChecks.map((chk) => (
                             <label
                               key={chk.id}
-                              className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${
+                              title={NOT_AVAILABLE}
+                              className={`flex items-center gap-2 p-2 rounded-lg border cursor-not-allowed transition-colors ${
                                 chk.completed
                                   ? "border-emerald-500/30 bg-emerald-500/10 text-[var(--color-text-primary)]"
                                   : "border-[var(--color-border)] bg-[var(--color-app-bg)] text-[var(--color-text-secondary)]"
@@ -576,8 +578,8 @@ export default function OperatorMaintenancePage() {
                               <input
                                 type="checkbox"
                                 checked={chk.completed}
-                                disabled={!canManage}
-                                onChange={() => toggleServiceCheck(win.id, chk.id, operatorName)}
+                                disabled
+                                readOnly
                                 className="h-4 w-4 rounded border-[var(--color-border)] text-emerald-600 focus:ring-emerald-500"
                               />
                               <span className={`text-[11px] ${chk.completed ? "font-medium" : ""}`}>
@@ -603,6 +605,11 @@ export default function OperatorMaintenancePage() {
                         </span>
 
                         <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                          {win.executionNotes.length === 0 && (
+                            <p className="text-[11px]">
+                              <NotAvailableText reason="execution notes are not stored on the server" />
+                            </p>
+                          )}
                           {win.executionNotes.map((nt) => (
                             <div
                               key={nt.id}
@@ -625,22 +632,14 @@ export default function OperatorMaintenancePage() {
                           value={activeNoteText}
                           onChange={(e) => setActiveNoteText(e.target.value)}
                           placeholder="Log diagnostic note or progress update..."
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              handleAddActiveNote(win.id);
-                            }
-                          }}
-                          className="flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] px-2.5 py-1.5 text-xs text-[var(--color-text-primary)]"
+                          disabled
+                          title={NOT_AVAILABLE}
+                          className="flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] px-2.5 py-1.5 text-xs text-[var(--color-text-primary)] disabled:opacity-50"
                         />
-                        <OpButton
-                          variant="subtle"
-                          size="xs"
-                          onClick={() => handleAddActiveNote(win.id)}
-                        >
+                        <NotAvailableButton variant="subtle" size="xs" hideLabel reason="execution notes are not stored on the server">
                           <Send className="w-3 h-3" />
                           Log
-                        </OpButton>
+                        </NotAvailableButton>
                       </div>
                     </div>
                   </div>
@@ -691,9 +690,11 @@ export default function OperatorMaintenancePage() {
                 />
               </div>
 
-              <div className="w-36">
+              <div className="w-36" title={`${NOT_AVAILABLE}: ${NA_FIELD}`}>
                 <OpSelect
                   value={scopeFilter}
+                  disabled
+                  aria-label="Filter scope (not available yet)"
                   onChange={(e) => {
                     setScopeFilter(e.target.value);
                     setPage(1);
@@ -706,9 +707,11 @@ export default function OperatorMaintenancePage() {
                 />
               </div>
 
-              <div className="w-36">
+              <div className="w-36" title={`${NOT_AVAILABLE}: ${NA_FIELD}`}>
                 <OpSelect
                   value={impactFilter}
+                  disabled
+                  aria-label="Filter impact (not available yet)"
                   onChange={(e) => {
                     setImpactFilter(e.target.value);
                     setPage(1);
@@ -725,7 +728,16 @@ export default function OperatorMaintenancePage() {
           }
         />
 
-        {paginated.length === 0 ? (
+        {!isReady || maintenanceWindows.length === 0 ? (
+          <OperatorResourceStatus
+            state={windowsState}
+            isEmpty={(d) => d.length === 0}
+            onRetry={reload}
+            emptyIcon={Wrench}
+            emptyTitle="No maintenance records found"
+            emptyDescription="The server has no maintenance windows yet. Use Request Maintenance to schedule one."
+          />
+        ) : paginated.length === 0 ? (
           <EmptyState
             icon={Wrench}
             title="No maintenance records found"
@@ -769,9 +781,9 @@ export default function OperatorMaintenancePage() {
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
                 {paginated.map((win) => {
-                  const isPlatform = win.scope === "PLATFORM_WIDE";
                   const isApproved = win.status === "SCHEDULED" || win.status === "APPROVED";
                   const isPending = win.status === "PENDING_APPROVAL";
+                  const rowBusy = busy === `status:${win.id}`;
 
                   return (
                     <tr key={win.id} className="hover:bg-[var(--color-hover)] transition-colors">
@@ -793,20 +805,23 @@ export default function OperatorMaintenancePage() {
                           {win.title}
                         </p>
                         <p className="text-[11px] text-[var(--color-text-secondary)] line-clamp-1 mt-0.5">
-                          {win.reason}
+                          {win.reason || "—"}
                         </p>
                       </td>
 
                       <td className="py-3 px-3.5 whitespace-nowrap">
-                        {isPlatform ? (
+                        {win.scope === "PLATFORM_WIDE" ? (
                           <StatusBadge label="Platform-Wide" tone="neutral" />
-                        ) : (
+                        ) : win.scope === "ORGANIZATION_SPECIFIC" ? (
                           <StatusBadge label={win.targetOrgName || "Tenant Specific"} tone="info" />
+                        ) : (
+                          <NotAvailableText reason={NA_FIELD} />
                         )}
                       </td>
 
                       <td className="py-3 px-3.5 whitespace-nowrap">
                         <div className="flex items-center gap-1 flex-wrap max-w-[180px]">
+                          {win.affectedServices.length === 0 && <NotAvailableText reason={NA_FIELD} />}
                           {win.affectedServices.slice(0, 2).map((s, idx) => (
                             <span
                               key={idx}
@@ -824,7 +839,11 @@ export default function OperatorMaintenancePage() {
                       </td>
 
                       <td className="py-3 px-3.5 whitespace-nowrap">
-                        <StatusBadge label={win.impactLevel} tone={getImpactTone(win.impactLevel)} />
+                        {win.impactLevel ? (
+                          <StatusBadge label={win.impactLevel} tone={getImpactTone(win.impactLevel)} />
+                        ) : (
+                          <NotAvailableText reason={NA_FIELD} />
+                        )}
                       </td>
 
                       <td className="py-3 px-3.5 whitespace-nowrap text-[11px] text-[var(--color-text-secondary)]">
@@ -832,7 +851,7 @@ export default function OperatorMaintenancePage() {
                           {formatDateTime(win.scheduledStart)}
                         </p>
                         <p className="text-[10px] text-[var(--color-text-muted)]">
-                          Duration: {win.durationMinutes} min ({win.timezone})
+                          Duration: {win.durationMinutes ?? "—"} min (your local time)
                         </p>
                       </td>
 
@@ -861,7 +880,8 @@ export default function OperatorMaintenancePage() {
                             <OpButton
                               variant="primary"
                               size="xs"
-                              disabled={!canManage}
+                              disabled={!canManage || busy !== null}
+                              isLoading={rowBusy}
                               onClick={() => setStartConfirmTarget(win)}
                               title="Start this approved maintenance window"
                             >
@@ -875,7 +895,8 @@ export default function OperatorMaintenancePage() {
                             <OpButton
                               variant="subtle"
                               size="xs"
-                              disabled={!canManage}
+                              disabled={!canManage || busy !== null}
+                              isLoading={rowBusy}
                               onClick={() => {
                                 setCompleteTarget(win);
                                 setCompletionSummary("");
@@ -887,17 +908,17 @@ export default function OperatorMaintenancePage() {
                             </OpButton>
                           )}
 
-                          {/* If Pending Approval, show badge or allow cancelling */}
-                          {isPending && (
+                          {/* Pending or scheduled windows can be cancelled (PATCH status CANCELLED) */}
+                          {(isPending || isApproved) && (
                             <OpButton
                               variant="outline"
                               size="xs"
-                              disabled={!canManage}
+                              disabled={!canManage || busy !== null}
                               onClick={() => {
                                 setCancelTarget(win);
                                 setCancelReason("");
                               }}
-                              title="Cancel pending request"
+                              title="Cancel this maintenance window"
                             >
                               Cancel
                             </OpButton>
@@ -947,10 +968,12 @@ export default function OperatorMaintenancePage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" title={`${NOT_AVAILABLE}: ${NA_FIELD}`}>
             <OpSelect
               label="Maintenance Scope"
               value={reqScope}
+              disabled
+              title={NOT_AVAILABLE}
               onChange={(e) => setReqScope(e.target.value as MaintenanceScope)}
               options={[
                 { label: "Platform-Wide (All Workspaces)", value: "PLATFORM_WIDE" },
@@ -961,19 +984,23 @@ export default function OperatorMaintenancePage() {
             {reqScope === "ORGANIZATION_SPECIFIC" ? (
               <OpSelect
                 label="Target Tenant Organization"
-                value={reqOrgId}
-                onChange={(e) => setReqOrgId(e.target.value)}
-                options={organizations.map((o) => ({ label: o.name, value: o.id }))}
+                value=""
+                disabled
+                options={[{ label: NOT_AVAILABLE, value: "" }]}
               />
             ) : (
               <OpSelect
                 label="Impact Level"
                 value={reqImpact}
+                disabled
                 onChange={(e) => setReqImpact(e.target.value as MaintenanceImpactLevel)}
                 options={IMPACT_LEVELS.map((lvl) => ({ label: lvl, value: lvl }))}
               />
             )}
           </div>
+          <p className="text-[10px] text-[var(--color-text-muted)] -mt-2">
+            Scope and impact level: {NOT_AVAILABLE}
+          </p>
 
           <OpInput
             label="Maintenance Title"
@@ -991,9 +1018,9 @@ export default function OperatorMaintenancePage() {
           />
 
           {/* Affected Services Selection */}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" title={`${NOT_AVAILABLE}: ${NA_FIELD}`}>
             <label className="text-xs font-semibold text-[var(--color-text-primary)] block">
-              Affected Service Areas
+              Affected Service Areas <span className="font-normal text-[10px] text-[var(--color-text-muted)]">({NOT_AVAILABLE})</span>
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {SERVICE_AREAS.map((svc) => {
@@ -1001,7 +1028,7 @@ export default function OperatorMaintenancePage() {
                 return (
                   <label
                     key={svc}
-                    className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                    className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-not-allowed opacity-60 transition-colors ${
                       isChecked
                         ? "border-blue-500 bg-blue-500/10 text-[var(--color-text-primary)] font-medium"
                         : "border-[var(--color-border)] bg-[var(--color-app-bg)] text-[var(--color-text-secondary)]"
@@ -1010,6 +1037,7 @@ export default function OperatorMaintenancePage() {
                     <input
                       type="checkbox"
                       checked={isChecked}
+                      disabled
                       onChange={() => {
                         if (isChecked) {
                           setReqServices(reqServices.filter((s) => s !== svc));
@@ -1032,51 +1060,81 @@ export default function OperatorMaintenancePage() {
               type="datetime-local"
               value={reqStart}
               onChange={(e) => setReqStart(e.target.value)}
+              helperText="Your local time"
             />
             <OpInput
               label="Scheduled End"
               type="datetime-local"
               value={reqEnd}
               onChange={(e) => setReqEnd(e.target.value)}
+              helperText="Your local time"
             />
-            <OpSelect
-              label="Timezone"
-              value={reqTimezone}
-              onChange={(e) => setReqTimezone(e.target.value)}
-              options={TIMEZONES.map((tz) => ({ label: tz, value: tz }))}
+            <div title={`${NOT_AVAILABLE}: times are entered in your local time and stored in UTC`}>
+              <OpSelect
+                label="Timezone"
+                value={reqTimezone}
+                disabled
+                title={NOT_AVAILABLE}
+                onChange={(e) => setReqTimezone(e.target.value)}
+                options={TIMEZONES.map((tz) => ({ label: tz, value: tz }))}
+              />
+              <p className="text-[11px] text-[var(--color-text-muted)]">{NOT_AVAILABLE}</p>
+            </div>
+          </div>
+
+          <div title={`${NOT_AVAILABLE}: customer notice banners are not published by the server`}>
+            <OpTextarea
+              label="Customer Notice Banner Message"
+              value={reqCustomerNotice}
+              disabled
+              helperText={NOT_AVAILABLE}
+              onChange={(e) => setReqCustomerNotice(e.target.value)}
+              rows={2}
             />
           </div>
 
-          <OpTextarea
-            label="Customer Notice Banner Message"
-            value={reqCustomerNotice}
-            onChange={(e) => setReqCustomerNotice(e.target.value)}
-            rows={2}
-          />
+          <div title={`${NOT_AVAILABLE}: ${NA_FIELD}`}>
+            <OpInput
+              label="Estimated Restoration Time"
+              value={reqRestorationTime}
+              disabled
+              helperText={NOT_AVAILABLE}
+              onChange={(e) => setReqRestorationTime(e.target.value)}
+              placeholder="e.g. 03:30 UTC"
+            />
+          </div>
 
-          <OpInput
-            label="Estimated Restoration Time"
-            value={reqRestorationTime}
-            onChange={(e) => setReqRestorationTime(e.target.value)}
-            placeholder="e.g. 03:30 UTC"
-          />
+          <p className="text-[11px] text-[var(--color-text-muted)]">
+            The server schedules the window right away (status Scheduled). Super Admin approval of maintenance requests is{" "}
+            {NOT_AVAILABLE.toLowerCase()}.
+          </p>
 
           <div className="flex items-center justify-between pt-2">
-            <label className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)] cursor-pointer">
+            <label
+              className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)] cursor-not-allowed"
+              title={`${NOT_AVAILABLE}: customer notice banners are not published by the server`}
+            >
               <input
                 type="checkbox"
                 checked={reqNotifyCustomers}
+                disabled
                 onChange={(e) => setReqNotifyCustomers(e.target.checked)}
                 className="rounded border-[var(--color-border)]"
               />
-              <span>Publish notice banner to customer workspaces during window</span>
+              <span>Publish notice banner to customer workspaces during window ({NOT_AVAILABLE})</span>
             </label>
 
             <div className="flex items-center gap-2">
               <OpButton type="button" variant="outline" size="sm" onClick={() => setRequestModalOpen(false)}>
                 Cancel
               </OpButton>
-              <OpButton type="submit" variant={reqIsEmergency ? "danger" : "primary"} size="sm">
+              <OpButton
+                type="submit"
+                variant={reqIsEmergency ? "danger" : "primary"}
+                size="sm"
+                disabled={!canManage || busy !== null}
+                isLoading={busy === "create"}
+              >
                 Submit for Super Admin Approval
               </OpButton>
             </div>
@@ -1096,7 +1154,7 @@ export default function OperatorMaintenancePage() {
         }
         confirmLabel="Start Maintenance Now"
         variant="primary"
-        onConfirm={handleConfirmStart}
+        onConfirm={() => void handleConfirmStart()}
       />
 
       {/* COMPLETION REPORT MODAL */}
@@ -1110,22 +1168,33 @@ export default function OperatorMaintenancePage() {
         <div className="space-y-4">
           <div className="rounded-lg border border-[var(--color-border)] p-3 text-xs bg-[var(--color-app-bg)] space-y-1">
             <p className="font-semibold text-[var(--color-text-primary)]">{completeTarget?.title}</p>
-            <p className="text-[var(--color-text-secondary)]">Affected: {completeTarget?.affectedServices.join(", ")}</p>
+            <p className="text-[var(--color-text-secondary)]">
+              Affected:{" "}
+              {completeTarget && completeTarget.affectedServices.length > 0 ? (
+                completeTarget.affectedServices.join(", ")
+              ) : (
+                <NotAvailableText reason={NA_FIELD} />
+              )}
+            </p>
           </div>
 
-          <OpTextarea
-            label="Completion Report & Verification Summary"
-            value={completionSummary}
-            onChange={(e) => setCompletionSummary(e.target.value)}
-            placeholder="Summarize verification outcome, health check results, and confirmation of normal traffic routing..."
-            rows={3}
-          />
+          <div title={`${NOT_AVAILABLE}: completion reports are not stored on the server`}>
+            <OpTextarea
+              label="Completion Report & Verification Summary"
+              value={completionSummary}
+              disabled
+              helperText={`${NOT_AVAILABLE}. Submitting marks the window Completed.`}
+              onChange={(e) => setCompletionSummary(e.target.value)}
+              placeholder="Summarize verification outcome, health check results, and confirmation of normal traffic routing..."
+              rows={3}
+            />
+          </div>
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
             <OpButton variant="outline" size="sm" onClick={() => setCompleteTarget(null)}>
               Cancel
             </OpButton>
-            <OpButton variant="primary" size="sm" onClick={handleCompleteSubmit}>
+            <OpButton variant="primary" size="sm" disabled={busy !== null} onClick={() => void handleCompleteSubmit()}>
               Submit Completion Report
             </OpButton>
           </div>
@@ -1141,19 +1210,23 @@ export default function OperatorMaintenancePage() {
         maxWidth="md"
       >
         <div className="space-y-4">
-          <OpTextarea
-            label="Cancellation Reason"
-            value={cancelReason}
-            onChange={(e) => setCancelReason(e.target.value)}
-            placeholder="Why is this window being cancelled?..."
-            rows={3}
-          />
+          <div title={`${NOT_AVAILABLE}: cancellation reasons are not stored on the server`}>
+            <OpTextarea
+              label="Cancellation Reason"
+              value={cancelReason}
+              disabled
+              helperText={`${NOT_AVAILABLE}. Confirming marks the window Cancelled.`}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Why is this window being cancelled?..."
+              rows={3}
+            />
+          </div>
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
             <OpButton variant="outline" size="sm" onClick={() => setCancelTarget(null)}>
               Back
             </OpButton>
-            <OpButton variant="danger" size="sm" onClick={handleCancelSubmit}>
+            <OpButton variant="danger" size="sm" disabled={busy !== null} onClick={() => void handleCancelSubmit()}>
               Confirm Cancellation
             </OpButton>
           </div>
@@ -1175,19 +1248,29 @@ export default function OperatorMaintenancePage() {
                 <span className="text-[10px] uppercase font-bold text-[var(--color-text-muted)]">Status</span>
                 <p className="font-semibold text-[var(--color-text-primary)]">{inspectTarget.status.replace("_", " ")}</p>
                 <p className="text-[10px] text-[var(--color-text-muted)]">
-                  {inspectTarget.reviewedBy ? `Approved by ${inspectTarget.reviewedBy}` : "Pending Review"}
+                  {inspectTarget.reviewedBy ? `Approved by ${inspectTarget.reviewedBy}` : `Approval: ${NOT_AVAILABLE}`}
                 </p>
               </div>
               <div className="rounded-lg border border-[var(--color-border)] p-3 bg-[var(--color-app-bg)] space-y-1">
                 <span className="text-[10px] uppercase font-bold text-[var(--color-text-muted)]">Scope &amp; Impact</span>
-                <p className="font-semibold text-[var(--color-text-primary)]">{inspectTarget.scope === "PLATFORM_WIDE" ? "Platform-Wide" : inspectTarget.targetOrgName}</p>
-                <p className="text-[10px] text-[var(--color-text-muted)]">{inspectTarget.impactLevel}</p>
+                <p className="font-semibold text-[var(--color-text-primary)]">
+                  {inspectTarget.departmentId ? humanizeCode(inspectTarget.departmentId) : <NotAvailableText reason={NA_FIELD} />}
+                </p>
+                <p className="text-[10px] text-[var(--color-text-muted)]">
+                  {inspectTarget.impactLevel ?? `Impact: ${NOT_AVAILABLE}`}
+                </p>
               </div>
             </div>
 
             <div className="rounded-lg border border-[var(--color-border)] p-3 bg-[var(--color-app-bg)] space-y-1">
               <span className="font-semibold text-[var(--color-text-primary)]">Reason:</span>
-              <p className="text-[var(--color-text-secondary)]">{inspectTarget.reason}</p>
+              <p className="text-[var(--color-text-secondary)]">{inspectTarget.reason || "—"}</p>
+              <p className="text-[10px] text-[var(--color-text-muted)]">
+                Window: {formatDateTime(inspectTarget.scheduledStart)} – {formatDateTime(inspectTarget.scheduledEnd)}
+                {inspectTarget.actualStart ? ` · Started ${formatDateTime(inspectTarget.actualStart)}` : ""}
+                {inspectTarget.actualEnd ? ` · Ended ${formatDateTime(inspectTarget.actualEnd)}` : ""}
+                {inspectTarget.createdBy ? ` · Created by ${inspectTarget.createdBy}` : ""}
+              </p>
             </div>
 
             {/* Checklist */}
@@ -1207,7 +1290,7 @@ export default function OperatorMaintenancePage() {
               </div>
             )}
 
-            {/* Completion Report if completed */}
+            {/* Completion Report if completed (the server stores none yet, so this only shows once it does) */}
             {inspectTarget.completionReport && (
               <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-1 text-emerald-950 dark:text-emerald-100">
                 <div className="flex items-center justify-between font-bold">
@@ -1223,16 +1306,7 @@ export default function OperatorMaintenancePage() {
             <div className="space-y-1.5 pt-2 border-t border-[var(--color-border)]">
               <span className="font-semibold text-[var(--color-text-primary)]">Audit Logs:</span>
               <div className="relative pl-4 space-y-2 border-l border-[var(--color-border)] ml-1 max-h-40 overflow-y-auto">
-                {inspectTarget.auditLogs.map((log) => (
-                  <div key={log.id} className="space-y-0.5 text-[11px]">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[var(--color-text-primary)]">{log.action}</span>
-                      <span className="text-[9px] text-[var(--color-text-muted)]">{formatDateTime(log.timestamp)}</span>
-                    </div>
-                    <p className="text-[10px] text-[var(--color-text-secondary)]">By {log.actor}</p>
-                    {log.details && <p className="text-[10px] text-[var(--color-text-muted)] italic">&quot;{log.details}&quot;</p>}
-                  </div>
-                ))}
+                <NotAvailableText reason="per-window audit history is not exposed by the server" />
               </div>
             </div>
 

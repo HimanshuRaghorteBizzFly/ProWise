@@ -2,6 +2,8 @@ package com.prowise.superadmin.emailtemplates;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -67,6 +69,7 @@ public class EmailTemplateEntity {
     @Column(name = "cta_url", length = 255)
     private String ctaUrl;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "variables", columnDefinition = "JSONB")
     private String variables = "[]";
 

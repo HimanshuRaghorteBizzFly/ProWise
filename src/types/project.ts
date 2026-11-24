@@ -4,11 +4,12 @@ export type ProjectLifecycle =
   | "PLANNED"
   | "ACTIVE"
   | "ON_HOLD"
+  | "AWAITING_ACCEPTANCE"
   | "DELIVERED"
   | "CLOSED"
   | "CANCELLED";
 
-export type ProjectHealth = "ON_TRACK" | "AT_RISK" | "DELAYED" | "UNKNOWN";
+export type ProjectHealth = "ON_TRACK" | "AT_RISK" | "DELAYED" | "OFF_TRACK" | "UNKNOWN";
 
 export type ReportingCadence = "DAILY" | "WEEKLY" | "FORTNIGHTLY";
 

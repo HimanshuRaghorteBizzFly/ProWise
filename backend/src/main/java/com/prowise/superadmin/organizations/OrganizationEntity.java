@@ -44,7 +44,7 @@ public class OrganizationEntity {
     private String state = "ACTIVE"; // ACTIVE, SUSPENDED, ARCHIVED
 
     @Column(name = "plan_id", length = 64)
-    private String planId = "plan-starter";
+    private String planId; // no plan until one is assigned (billing is dormant)
 
     @Column(name = "seats_limit")
     private Integer seatsLimit = 25;

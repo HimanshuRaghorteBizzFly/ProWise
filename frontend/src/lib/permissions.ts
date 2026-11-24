@@ -85,6 +85,7 @@ export function canAnyWithGrants(
   return keys.some((key) => canWithGrants(grants, key, target));
 }
 
+<<<<<<< HEAD
 export interface PermissionEnv {
   nodeEnv: string | undefined;
   useMocks: string | undefined;
@@ -112,23 +113,24 @@ export function mocksRequested(env: PermissionEnv, rolePreview = false): boolean
   return mocksAllowed(env) && (env.useMocks === "true" || rolePreview);
 }
 
+=======
+>>>>>>> 29db595 (Initial ProWise project upload)
 /** Status 0 (network failure) or a gateway error from the Next.js /api proxy. 500 is a normal error. */
 export function isBackendUnreachable(status: number): boolean {
   return status === 0 || status === 502 || status === 503 || status === 504;
 }
 
-export type FailureKind = "fixture" | "unauthenticated" | "forbidden" | "not-found" | "error";
+export type FailureKind = "unauthenticated" | "forbidden" | "not-found" | "error";
 
 /**
- * One rule for permissions and page data. Unreachable backend (network failure, missing base URL,
- * proxy 502/503/504) falls back to the typed fixture outside production only. 401/403/404 never do.
+ * One rule for permissions and page data. There is no sample-data fallback: an unreachable backend is an error
+ * like any other, shown as an error state with retry.
  */
-export function classifyFailure(error: unknown, env: PermissionEnv): FailureKind {
+export function classifyFailure(error: unknown): FailureKind {
   const status =
     typeof error === "object" && error !== null && "status" in error && typeof error.status === "number"
       ? error.status
       : 0;
-  if (isBackendUnreachable(status)) return mocksAllowed(env) ? "fixture" : "error";
   if (status === 401) return "unauthenticated";
   if (status === 403) return "forbidden";
   if (status === 404) return "not-found";

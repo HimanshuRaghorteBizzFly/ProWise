@@ -1,25 +1,21 @@
 "use client";
-import React from "react";
-import { useParams, useRouter } from "next/navigation";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { useProjects } from "@/hooks/useProjects";
-import { CheckInForm } from "@/components/developer/CheckInForm";
 
+import { useParams } from "next/navigation";
+
+import { PanelLayout } from "@/components/layouts/panel-layout";
+import { CheckInFormView } from "@/components/progress/CheckInViews";
+
+/** Task 2.2: the accountable developer's check-in form (a page, not a popup). Submissions start pending. */
 export default function IndividualNewCheckInPage() {
   const params = useParams();
-  const router = useRouter();
-  const orgId = (params.orgId as string) || "org-1";
-  const projectId = params.projectId as string;
-  const { projects } = useProjects(orgId);
-  const project = projects.find(p => p.id === projectId);
-
-  if (!project) return null;
-
+  const orgId = (params?.orgId as string) || "";
+  const projectId = (params?.projectId as string) || "";
+  const progress = `/org/${orgId}/developer/projects/${encodeURIComponent(projectId)}/individual/check-ins`;
   return (
-    <PanelLayout title="Submit Check-In" breadcrumb={[{ label: "Developer", href: `/org/${orgId}/developer` }, { label: project.name, href: `/org/${orgId}/developer/projects/${projectId}/individual` }, { label: "New Check-In" }]}>
-      <div className="max-w-2xl mx-auto space-y-6">
-        <CheckInForm project={project} onSuccess={() => router.push(`/org/${orgId}/developer/projects/${projectId}/individual`)} />
-      </div>
+    <PanelLayout title="New check-in">
+      <CheckInFormView projectId={projectId}
+        crumbs={[{ label: "Developer", href: `/org/${orgId}/developer` }, { label: "Check-ins", href: `/org/${orgId}/developer/checkins` }]}
+        back={{ href: progress, label: "Back to progress" }} />
     </PanelLayout>
   );
 }

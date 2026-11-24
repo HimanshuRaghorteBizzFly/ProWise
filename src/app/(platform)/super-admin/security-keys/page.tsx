@@ -1,889 +1,701 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
 import {
   KeyRound,
   Lock,
-  Database,
   Mail,
-  Shield,
-  ShieldCheck,
-  RefreshCw,
+  ServerCog,
+  Eye,
+  EyeOff,
   Copy,
   Check,
-  Download,
-  Upload,
   Plus,
-  Trash2,
-  FileCode,
-  CheckCircle2,
-  AlertCircle,
-  ExternalLink,
   Save,
-  Globe,
-  Sliders,
+  RefreshCw,
+  Trash2,
+  ShieldCheck,
   Sparkles,
+  Database,
+  Radio,
+  FileCode,
+  AlertTriangle,
 } from "lucide-react";
 import {
-  PageHeader,
-  SurfaceCard,
-  AdminInput,
+  apiClient,
+  type PlatformKeyItem,
+  type SmtpSettingsResponse,
+} from "@/lib/api";
+import {
   AdminButton,
+  PageHeader,
   StatusBadge,
-  ConfirmActionModal,
-  SimulationNotice,
+  SurfaceCard,
+  getStatusTone,
 } from "../_components/SuperAdminPrimitives";
-
-interface CustomEnvVar {
-  id: string;
-  key: string;
-  value: string;
-  description?: string;
-}
-
-const DEFAULT_SECRETS = {
-  jwtSigningKey: "",
-  jwtIssuer: "prowise",
-  accessTokenLifetimeMinutes: 15,
-  refreshTokenDays: 30,
-  authSecureCookies: false,
-
-  dbUrl: "jdbc:postgresql://localhost:5432/prowise",
-  dbUsername: "prowise",
-  dbPassword: "",
-  outboxPollDelayMs: 5000,
-
-  smtpHost: "smtp.gmail.com",
-  smtpPort: 587,
-  smtpUsername: "himanshuraghorteatwork@gmail.com",
-  smtpPassword: "",
-  smtpFrom: "himanshuraghorteatwork@gmail.com",
-
-  frontendUrl: "http://localhost:3000",
-  corsAllowedOrigins: "http://localhost:3000",
-};
+import { toast } from "sonner";
 
 export default function SuperAdminSecurityKeysPage() {
-  // Secrets State
-  const [jwtSigningKey, setJwtSigningKey] = useState(DEFAULT_SECRETS.jwtSigningKey);
-  const [jwtIssuer, setJwtIssuer] = useState(DEFAULT_SECRETS.jwtIssuer);
-  const [accessTokenLifetimeMinutes, setAccessTokenLifetimeMinutes] = useState(DEFAULT_SECRETS.accessTokenLifetimeMinutes);
-  const [refreshTokenDays, setRefreshTokenDays] = useState(DEFAULT_SECRETS.refreshTokenDays);
-  const [authSecureCookies, setAuthSecureCookies] = useState(DEFAULT_SECRETS.authSecureCookies);
+  const [keys, setKeys] = useState<PlatformKeyItem[]>([]);
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
+  const [envPath, setEnvPath] = useState<string>("backend/.env");
+  const [lastModified, setLastModified] = useState<number>(Date.now());
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isTestingSmtp, setIsTestingSmtp] = useState(false);
 
-  const [dbUrl, setDbUrl] = useState(DEFAULT_SECRETS.dbUrl);
-  const [dbUsername, setDbUsername] = useState(DEFAULT_SECRETS.dbUsername);
-  const [dbPassword, setDbPassword] = useState(DEFAULT_SECRETS.dbPassword);
-  const [outboxPollDelayMs, setOutboxPollDelayMs] = useState(DEFAULT_SECRETS.outboxPollDelayMs);
+  // Visibility state for masked secrets
+  const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const [smtpHost, setSmtpHost] = useState(DEFAULT_SECRETS.smtpHost);
-  const [smtpPort, setSmtpPort] = useState(DEFAULT_SECRETS.smtpPort);
-  const [smtpUsername, setSmtpUsername] = useState(DEFAULT_SECRETS.smtpUsername);
-  const [smtpPassword, setSmtpPassword] = useState(DEFAULT_SECRETS.smtpPassword);
-  const [smtpFrom, setSmtpFrom] = useState(DEFAULT_SECRETS.smtpFrom);
+  // Filter
+  const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
 
-  const [frontendUrl, setFrontendUrl] = useState(DEFAULT_SECRETS.frontendUrl);
-  const [corsAllowedOrigins, setCorsAllowedOrigins] = useState(DEFAULT_SECRETS.corsAllowedOrigins);
+  // Outgoing SMTP state
+  const [smtp, setSmtp] = useState<SmtpSettingsResponse | null>(null);
+  const [smtpError, setSmtpError] = useState<string | null>(null);
 
-  const [customVars, setCustomVars] = useState<CustomEnvVar[]>([
-    { id: "var-1", key: "OUTBOX_MAX_RETRIES", value: "5", description: "Dead-letter retry ceiling for transactional outbox" },
-    { id: "var-2", key: "RATE_LIMIT_LOGIN_MAX_ATTEMPTS", value: "5", description: "Consecutive failed login threshold before 15m lockout" },
-  ]);
+  // Add new secret modal
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyValue, setNewKeyValue] = useState("");
+  const [newKeyCategory, setNewKeyCategory] = useState("Custom Configuration");
+  const [newKeyPurpose, setNewKeyPurpose] = useState("");
+  const [newKeyIsSecret, setNewKeyIsSecret] = useState(true);
 
-  // UI Interactive States
-  const [copiedKey, setCopiedKey] = useState(false);
-  const [copiedAll, setCopiedAll] = useState(false);
-  const [testingDb, setTestingDb] = useState(false);
-  const [dbStatus, setDbStatus] = useState<"IDLE" | "CONNECTED" | "ERROR">("CONNECTED");
-  const [importModalOpen, setImportModalOpen] = useState(false);
-  const [importText, setImportText] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  // Load persisted secrets on mount
-  useEffect(() => {
+  const fetchKeysAndSmtp = async () => {
+    setIsLoading(true);
     try {
-      const stored = localStorage.getItem("prowise_platform_secrets");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.jwtSigningKey) setJwtSigningKey(parsed.jwtSigningKey);
-        if (parsed.jwtIssuer) setJwtIssuer(parsed.jwtIssuer);
-        if (parsed.accessTokenLifetimeMinutes !== undefined) setAccessTokenLifetimeMinutes(parsed.accessTokenLifetimeMinutes);
-        if (parsed.refreshTokenDays !== undefined) setRefreshTokenDays(parsed.refreshTokenDays);
-        if (parsed.authSecureCookies !== undefined) setAuthSecureCookies(parsed.authSecureCookies);
+      const [keysRes, smtpRes] = await Promise.allSettled([
+        apiClient.platformKeys.get(),
+        apiClient.smtp.settings(),
+      ]);
 
-        if (parsed.dbUrl) setDbUrl(parsed.dbUrl);
-        if (parsed.dbUsername) setDbUsername(parsed.dbUsername);
-        if (parsed.dbPassword) setDbPassword(parsed.dbPassword);
-        if (parsed.outboxPollDelayMs) setOutboxPollDelayMs(parsed.outboxPollDelayMs);
+      if (keysRes.status === "fulfilled" && keysRes.value) {
+        const fetchedKeys = keysRes.value.keys || [];
+        setKeys(fetchedKeys);
+        setEnvPath(keysRes.value.envPath || "backend/.env");
+        setLastModified(keysRes.value.lastModified || Date.now());
 
-        if (parsed.smtpHost) setSmtpHost(parsed.smtpHost);
-        if (parsed.smtpPort) setSmtpPort(parsed.smtpPort);
-        if (parsed.smtpUsername) setSmtpUsername(parsed.smtpUsername);
-        if (parsed.smtpPassword) setSmtpPassword(parsed.smtpPassword);
-        if (parsed.smtpFrom) setSmtpFrom(parsed.smtpFrom);
-
-        if (parsed.frontendUrl) setFrontendUrl(parsed.frontendUrl);
-        if (parsed.corsAllowedOrigins) setCorsAllowedOrigins(parsed.corsAllowedOrigins);
-        if (parsed.customVars) setCustomVars(parsed.customVars);
-      } else {
-        // Check if individual SMTP password was saved from SMTP Email page
-        const savedSmtpPass = localStorage.getItem("prowise_smtp_password");
-        if (savedSmtpPass) setSmtpPassword(savedSmtpPass);
+        const valuesMap: Record<string, string> = {};
+        fetchedKeys.forEach((k) => {
+          valuesMap[k.key] = k.value || "";
+        });
+        setFormValues(valuesMap);
+        setOriginalValues(valuesMap);
       }
-    } catch {
-      // safe fallback
+
+      if (smtpRes.status === "fulfilled" && smtpRes.value) {
+        setSmtp(smtpRes.value);
+        setSmtpError(null);
+      } else if (smtpRes.status === "rejected") {
+        setSmtpError(
+          smtpRes.reason instanceof Error
+            ? smtpRes.reason.message
+            : "Could not load SMTP live status."
+        );
+      }
+    } catch (err) {
+      toast.error("Failed to load server platform keys.");
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  useEffect(() => {
+    fetchKeysAndSmtp();
   }, []);
 
-  // Generate 256-bit HMAC key
-  const handleGenerateKey = () => {
+  const hasUnsavedChanges = useMemo(() => {
+    return Object.keys(formValues).some(
+      (k) => (formValues[k] || "") !== (originalValues[k] || "")
+    );
+  }, [formValues, originalValues]);
+
+  const toggleVisibility = (key: string) => {
+    setVisibleSecrets((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleCopy = async (key: string, val: string) => {
     try {
-      const array = new Uint8Array(32);
-      window.crypto.getRandomValues(array);
-      let binary = "";
-      for (let i = 0; i < array.length; i++) {
-        binary += String.fromCharCode(array[i]);
-      }
-      const base64 = btoa(binary);
-      setJwtSigningKey(base64);
-      toast.success("Generated new 256-bit cryptographically secure HMAC key");
+      await navigator.clipboard.writeText(val);
+      setCopiedKey(key);
+      toast.success(`Copied ${key} to clipboard`);
+      setTimeout(() => setCopiedKey(null), 2000);
     } catch {
-      const fallback = "K" + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2) + "=";
-      setJwtSigningKey(fallback);
-      toast.success("Generated 256-bit signing key");
+      toast.error("Failed to copy to clipboard");
     }
   };
 
-  // Build formatted .env content
-  const buildEnvContent = () => {
-    let content = `# ProWise Platform Environment Secrets & Configuration\n`;
-    content += `# Generated on ${new Date().toISOString()}\n\n`;
-    content += `DB_URL=${dbUrl}\n`;
-    content += `DB_USERNAME=${dbUsername}\n`;
-    content += `DB_PASSWORD=${dbPassword}\n`;
-    content += `OUTBOX_POLL_DELAY_MS=${outboxPollDelayMs}\n\n`;
-    content += `JWT_SIGNING_KEY=${jwtSigningKey}\n`;
-    content += `JWT_ISSUER=${jwtIssuer}\n`;
-    content += `AUTH_SECURE_COOKIES=${authSecureCookies}\n\n`;
-    content += `SMTP_HOST=${smtpHost}\n`;
-    content += `SMTP_PORT=${smtpPort}\n`;
-    content += `SMTP_USERNAME=${smtpUsername}\n`;
-    content += `SMTP_PASSWORD=${smtpPassword}\n`;
-    content += `SMTP_FROM=${smtpFrom}\n\n`;
-    content += `FRONTEND_URL=${frontendUrl}\n`;
-    content += `CORS_ALLOWED_ORIGINS=${corsAllowedOrigins}\n\n`;
-
-    if (customVars.length > 0) {
-      content += `# Custom Environment Variables\n`;
-      customVars.forEach((v) => {
-        if (v.key.trim()) {
-          content += `${v.key.trim()}=${v.value.trim()}\n`;
-        }
-      });
+  const handleGenerateJwtKey = async () => {
+    try {
+      const res = await apiClient.platformKeys.generateJwtKey();
+      if (res?.key) {
+        setFormValues((prev) => ({ ...prev, JWT_SIGNING_KEY: res.key }));
+        setVisibleSecrets((prev) => ({ ...prev, JWT_SIGNING_KEY: true }));
+        toast.success("Generated new 64-byte JWT signing key!");
+      }
+    } catch {
+      // Fallback local crypto generation
+      const bytes = new Uint8Array(64);
+      crypto.getRandomValues(bytes);
+      const binary = String.fromCharCode(...bytes);
+      const base64 = btoa(binary);
+      setFormValues((prev) => ({ ...prev, JWT_SIGNING_KEY: base64 }));
+      setVisibleSecrets((prev) => ({ ...prev, JWT_SIGNING_KEY: true }));
+      toast.success("Generated new 64-byte JWT signing key locally!");
     }
-    return content;
   };
 
-  // Copy .env to clipboard
-  const handleCopyAll = () => {
-    navigator.clipboard.writeText(buildEnvContent());
-    setCopiedAll(true);
-    setTimeout(() => setCopiedAll(false), 2000);
-    toast.success("All platform secrets copied in .env format");
+  const handleGenerateEncryptionKey = async () => {
+    try {
+      const res = await apiClient.platformKeys.generateEncryptionKey();
+      if (res?.key) {
+        setFormValues((prev) => ({ ...prev, SMTP_CREDENTIAL_ENCRYPTION_KEY: res.key }));
+        setVisibleSecrets((prev) => ({ ...prev, SMTP_CREDENTIAL_ENCRYPTION_KEY: true }));
+        toast.success("Generated new AES-256 encryption key!");
+      }
+    } catch {
+      const bytes = new Uint8Array(48);
+      crypto.getRandomValues(bytes);
+      const binary = String.fromCharCode(...bytes);
+      const base64 = btoa(binary);
+      setFormValues((prev) => ({ ...prev, SMTP_CREDENTIAL_ENCRYPTION_KEY: base64 }));
+      setVisibleSecrets((prev) => ({ ...prev, SMTP_CREDENTIAL_ENCRYPTION_KEY: true }));
+      toast.success("Generated new AES-256 encryption key locally!");
+    }
   };
 
-  // Download .env file
-  const handleDownloadEnv = () => {
-    const content = buildEnvContent();
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = ".env";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    toast.success("Downloaded .env configuration file");
+  const handleSaveAll = async () => {
+    setIsSaving(true);
+    try {
+      const res = await apiClient.platformKeys.save(formValues);
+      if (res?.ok) {
+        setOriginalValues({ ...formValues });
+        toast.success("All platform keys & secrets saved to server (.env) successfully!");
+        setLastModified(Date.now());
+      } else {
+        toast.error(res?.message || "Failed to save keys.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error saving configuration keys.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  // Test DB connection
-  const handleTestDb = async () => {
-    setTestingDb(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setTestingDb(false);
-    setDbStatus("CONNECTED");
-    toast.success("PostgreSQL connection verified successfully (Local port 5432/5433)");
+  const handleTestSmtpConnection = async () => {
+    setIsTestingSmtp(true);
+    try {
+      const res = await apiClient.smtp.testConnection();
+      if (res.status === "CONNECTED") {
+        toast.success(`SMTP connected successfully to ${res.host || "server"}!`);
+      } else {
+        toast.error(`SMTP Connection status: ${res.status}. ${res.detail || ""}`);
+      }
+      // Refresh status
+      const updated = await apiClient.smtp.settings().catch(() => null);
+      if (updated) setSmtp(updated);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to test connection.");
+    } finally {
+      setIsTestingSmtp(false);
+    }
   };
 
-  // Parse and Import .env content
-  const handleParseAndApplyEnv = () => {
-    if (!importText.trim()) {
-      toast.error("Please paste your .env file content");
+  const handleAddCustomKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanKey = newKeyName.trim().toUpperCase().replace(/[^A-Z0-9_.]/g, "_");
+    if (!cleanKey) {
+      toast.error("Please enter a valid key name.");
+      return;
+    }
+    if (keys.some((k) => k.key === cleanKey)) {
+      toast.error(`Key ${cleanKey} already exists.`);
       return;
     }
 
-    const lines = importText.split("\n");
-    let count = 0;
-    const newCustom: CustomEnvVar[] = [];
-
-    lines.forEach((line) => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) return;
-      const eqIdx = trimmed.indexOf("=");
-      if (eqIdx === -1) return;
-
-      const k = trimmed.substring(0, eqIdx).trim();
-      const v = trimmed.substring(eqIdx + 1).trim();
-
-      switch (k) {
-        case "JWT_SIGNING_KEY":
-          setJwtSigningKey(v);
-          count++;
-          break;
-        case "JWT_ISSUER":
-          setJwtIssuer(v);
-          count++;
-          break;
-        case "AUTH_SECURE_COOKIES":
-          setAuthSecureCookies(v.toLowerCase() === "true");
-          count++;
-          break;
-        case "DB_URL":
-          setDbUrl(v);
-          count++;
-          break;
-        case "DB_USERNAME":
-          setDbUsername(v);
-          count++;
-          break;
-        case "DB_PASSWORD":
-          setDbPassword(v);
-          count++;
-          break;
-        case "OUTBOX_POLL_DELAY_MS":
-          setOutboxPollDelayMs(Number(v) || 5000);
-          count++;
-          break;
-        case "SMTP_HOST":
-          setSmtpHost(v);
-          count++;
-          break;
-        case "SMTP_PORT":
-          setSmtpPort(Number(v) || 587);
-          count++;
-          break;
-        case "SMTP_USERNAME":
-          setSmtpUsername(v);
-          count++;
-          break;
-        case "SMTP_PASSWORD":
-          setSmtpPassword(v);
-          count++;
-          break;
-        case "SMTP_FROM":
-          setSmtpFrom(v);
-          count++;
-          break;
-        case "FRONTEND_URL":
-          setFrontendUrl(v);
-          count++;
-          break;
-        case "CORS_ALLOWED_ORIGINS":
-          setCorsAllowedOrigins(v);
-          count++;
-          break;
-        default:
-          newCustom.push({
-            id: `var-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            key: k,
-            value: v,
-          });
-          count++;
-          break;
-      }
-    });
-
-    if (newCustom.length > 0) {
-      setCustomVars((prev) => [...prev, ...newCustom]);
-    }
-
-    setImportModalOpen(false);
-    setImportText("");
-    toast.success(`Imported and applied ${count} variables from .env`);
-  };
-
-  // Save All Changes
-  const handleSaveAll = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-
-    const payload = {
-      jwtSigningKey,
-      jwtIssuer,
-      accessTokenLifetimeMinutes,
-      refreshTokenDays,
-      authSecureCookies,
-      dbUrl,
-      dbUsername,
-      dbPassword,
-      outboxPollDelayMs,
-      smtpHost,
-      smtpPort,
-      smtpUsername,
-      smtpPassword,
-      smtpFrom,
-      frontendUrl,
-      corsAllowedOrigins,
-      customVars,
+    const newItem: PlatformKeyItem = {
+      key: cleanKey,
+      value: newKeyValue,
+      category: newKeyCategory || "Custom Configuration",
+      purpose: newKeyPurpose.trim() || "Custom environment configuration variable",
+      secret: newKeyIsSecret,
+      required: false,
+      updatedAt: new Date().toISOString(),
     };
 
-    try {
-      localStorage.setItem("prowise_platform_secrets", JSON.stringify(payload));
-      localStorage.setItem("prowise_smtp_password", smtpPassword);
-    } catch {
-      // safe fallback
-    }
-
-    setTimeout(() => {
-      setSaving(false);
-      toast.success("Platform keys, database credentials, and secrets saved successfully");
-    }, 400);
+    setKeys((prev) => [...prev, newItem]);
+    setFormValues((prev) => ({ ...prev, [cleanKey]: newKeyValue }));
+    setIsAddModalOpen(false);
+    setNewKeyName("");
+    setNewKeyValue("");
+    setNewKeyPurpose("");
+    toast.success(`Added ${cleanKey}. Remember to save changes to server.`);
   };
 
+  const handleDeleteCustomKey = (keyToDelete: string) => {
+    if (!confirm(`Are you sure you want to delete ${keyToDelete}?`)) return;
+    setKeys((prev) => prev.filter((k) => k.key !== keyToDelete));
+    setFormValues((prev) => {
+      const next = { ...prev };
+      delete next[keyToDelete];
+      return next;
+    });
+    toast.info(`Removed ${keyToDelete}. Click 'Save to Server' to commit.`);
+  };
+
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    keys.forEach((k) => set.add(k.category || "General"));
+    return ["ALL", ...Array.from(set)];
+  }, [keys]);
+
+  const filteredKeys = useMemo(() => {
+    if (selectedCategory === "ALL") return keys;
+    return keys.filter((k) => k.category === selectedCategory);
+  }, [keys, selectedCategory]);
+
+  const groupedKeys = useMemo(() => {
+    const map = new Map<string, PlatformKeyItem[]>();
+    filteredKeys.forEach((k) => {
+      const cat = k.category || "Other";
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(k);
+    });
+    return map;
+  }, [filteredKeys]);
+
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-5 pb-16">
       <PageHeader
-        title="Platform Keys & Environment Secrets"
-        description="Configure cryptographic JWT signing keys, PostgreSQL database credentials, SMTP relay passwords, and platform environment secrets."
-        badge="Security & Governance"
+        title="Platform Keys & Secrets"
+        description="View, edit, add and persist server-side signing keys, database credentials, and SMTP secrets directly into server configuration."
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <AdminButton
               variant="outline"
               size="sm"
-              onClick={() => setImportModalOpen(true)}
+              onClick={() => setIsAddModalOpen(true)}
               className="gap-1.5"
             >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Import .env</span>
+              <Plus className="w-3.5 h-3.5" />
+              Add Key / Secret
             </AdminButton>
+
             <AdminButton
               variant="outline"
               size="sm"
-              onClick={handleCopyAll}
+              onClick={fetchKeysAndSmtp}
+              disabled={isLoading}
               className="gap-1.5"
             >
-              {copiedAll ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedAll ? "Copied All" : "Copy .env"}</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+              Reload
             </AdminButton>
-            <AdminButton
-              variant="outline"
-              size="sm"
-              onClick={handleDownloadEnv}
-              className="gap-1.5"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download .env</span>
-            </AdminButton>
+
             <AdminButton
               variant="primary"
               size="sm"
               onClick={handleSaveAll}
-              disabled={saving}
-              className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={isSaving || !hasUnsavedChanges}
+              className="gap-1.5 shadow-sm"
             >
-              <Save className="w-3.5 h-3.5" />
-              <span>{saving ? "Saving..." : "Save All Keys"}</span>
+              <Save className={`w-3.5 h-3.5 ${isSaving ? "animate-spin" : ""}`} />
+              {isSaving ? "Saving..." : "Save to Server (.env)"}
             </AdminButton>
           </div>
         }
       />
 
-      <SimulationNotice
-        title="Live Environment Vault"
-        description="Credentials and JWT keys configured here are loaded by Spring Boot Security and Next.js APIs. Toggle eye icons to reveal or verify passwords."
-      />
+      {hasUnsavedChanges && (
+        <div className="flex items-center justify-between p-3.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-xs">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              You have unsaved changes in your platform secrets. Click <strong>Save to Server (.env)</strong> to write them to the server configuration.
+            </span>
+          </div>
+          <AdminButton
+            size="sm"
+            variant="primary"
+            onClick={handleSaveAll}
+            disabled={isSaving}
+            className="shrink-0 text-xs py-1 px-3"
+          >
+            {isSaving ? "Saving..." : "Save Now"}
+          </AdminButton>
+        </div>
+      )}
 
-      <form onSubmit={handleSaveAll} className="space-y-6">
-        {/* ========================================================================= */}
-        {/* SECTION 1: JWT & CRYPTOGRAPHIC SIGNING KEYS                              */}
-        {/* ========================================================================= */}
-        <SurfaceCard className="p-5 space-y-4 border border-[var(--color-border)]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                <KeyRound className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-[var(--color-text-primary)]">
-                  JWT Authentication &amp; Cryptographic Signing Key
-                </h3>
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  Used by Spring Security 6 to sign and verify HMAC-SHA256 bearer tokens and session claims.
-                </p>
-              </div>
-            </div>
+      {/* Categories Filter Pills */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setSelectedCategory(cat)}
+            className={`px-3 py-1.5 rounded-md font-medium transition-colors whitespace-nowrap ${
+              selectedCategory === cat
+                ? "bg-blue-600 text-white"
+                : "bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] border border-[var(--color-border)]"
+            }`}
+          >
+            {cat} {cat === "ALL" ? `(${keys.length})` : `(${keys.filter((k) => k.category === cat).length})`}
+          </button>
+        ))}
+      </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+        {/* Main Editable Keys Section */}
+        <div className="xl:col-span-8 space-y-5">
+          {isLoading ? (
+            <SurfaceCard className="p-8 text-center text-sm text-[var(--color-text-muted)] space-y-2">
+              <RefreshCw className="w-5 h-5 animate-spin mx-auto text-blue-500" />
+              <p>Loading platform configuration from server...</p>
+            </SurfaceCard>
+          ) : (
+            Array.from(groupedKeys.entries()).map(([category, catKeys]) => (
+              <SurfaceCard key={category} className="p-4 sm:p-5 space-y-4">
+                <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
+                  <div className="flex items-center gap-2">
+                    {category === "Database" && <Database className="w-4 h-4 text-emerald-500" />}
+                    {category === "SMTP Email" && <Mail className="w-4 h-4 text-sky-500" />}
+                    {category === "Auth & Security" && <KeyRound className="w-4 h-4 text-indigo-500" />}
+                    {category === "Super Admin" && <ShieldCheck className="w-4 h-4 text-purple-500" />}
+                    {category === "Application & Web" && <Radio className="w-4 h-4 text-amber-500" />}
+                    {category === "Custom Configuration" && <FileCode className="w-4 h-4 text-slate-500" />}
+                    <div>
+                      <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{category}</h3>
+                      <p className="text-xs text-[var(--color-text-secondary)]">
+                        {catKeys.length} configured parameter{catKeys.length === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                  </div>
+                  {category === "Auth & Security" && (
+                    <AdminButton
+                      size="sm"
+                      variant="outline"
+                      onClick={handleGenerateJwtKey}
+                      className="text-xs gap-1"
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-500" /> Generate JWT Key
+                    </AdminButton>
+                  )}
+                  {category === "SMTP Email" && (
+                    <AdminButton
+                      size="sm"
+                      variant="outline"
+                      onClick={handleGenerateEncryptionKey}
+                      className="text-xs gap-1"
+                    >
+                      <Sparkles className="w-3 h-3 text-sky-500" /> Generate AES Key
+                    </AdminButton>
+                  )}
+                </div>
+
+                <div className="space-y-4 divide-y divide-[var(--color-border)]/60">
+                  {catKeys.map((item) => {
+                    const isVisible = visibleSecrets[item.key] || false;
+                    const currentValue = formValues[item.key] ?? item.value ?? "";
+                    const isModified = currentValue !== (originalValues[item.key] ?? "");
+                    const isCustom = item.category === "Custom Configuration";
+
+                    return (
+                      <div key={item.key} className="pt-3.5 first:pt-0 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-semibold text-[var(--color-text-primary)]">
+                              {item.key}
+                            </span>
+                            {item.required && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                Required
+                              </span>
+                            )}
+                            {item.secret && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
+                                Secret
+                              </span>
+                            )}
+                            {isModified && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                Modified
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {item.key === "JWT_SIGNING_KEY" && (
+                              <button
+                                type="button"
+                                onClick={handleGenerateJwtKey}
+                                className="text-[11px] text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium flex items-center gap-1 px-2 py-0.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                              >
+                                <Sparkles className="w-3 h-3" /> Generate New
+                              </button>
+                            )}
+                            {item.key === "SMTP_CREDENTIAL_ENCRYPTION_KEY" && (
+                              <button
+                                type="button"
+                                onClick={handleGenerateEncryptionKey}
+                                className="text-[11px] text-sky-600 hover:text-sky-700 dark:text-sky-400 font-medium flex items-center gap-1 px-2 py-0.5 rounded hover:bg-sky-50 dark:hover:bg-sky-900/20 transition-colors"
+                              >
+                                <Sparkles className="w-3 h-3" /> Generate AES Key
+                              </button>
+                            )}
+                            {isCustom && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCustomKey(item.key)}
+                                className="text-[11px] text-rose-600 hover:text-rose-700 dark:text-rose-400 font-medium flex items-center gap-1 px-2 py-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
+                              >
+                                <Trash2 className="w-3 h-3" /> Delete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <p className="text-[11px] text-[var(--color-text-secondary)]">{item.purpose}</p>
+
+                        <div className="relative flex items-center gap-1.5">
+                          <div className="relative flex-1">
+                            <input
+                              type={item.secret && !isVisible ? "password" : "text"}
+                              value={currentValue}
+                              onChange={(e) =>
+                                setFormValues((prev) => ({ ...prev, [item.key]: e.target.value }))
+                              }
+                              placeholder={`Enter ${item.key}...`}
+                              className={`w-full font-mono text-xs px-3 py-2 rounded-md border transition-colors bg-[var(--color-bg)] ${
+                                isModified
+                                  ? "border-blue-500 ring-1 ring-blue-500/30"
+                                  : "border-[var(--color-border)] focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+                              } pr-20`}
+                            />
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                              {item.secret && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleVisibility(item.key)}
+                                  className="p-1 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface)]"
+                                  title={isVisible ? "Hide secret" : "Show secret"}
+                                >
+                                  {isVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(item.key, currentValue)}
+                                className="p-1 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface)]"
+                                title="Copy value"
+                              >
+                                {copiedKey === item.key ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </SurfaceCard>
+            ))
+          )}
+        </div>
+
+        {/* Right Side Cards */}
+        <div className="xl:col-span-4 space-y-4">
+          {/* Outgoing Email (Live) */}
+          <SurfaceCard className="p-4 sm:p-5 space-y-3 text-xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
+                <Mail className="w-4 h-4 text-blue-500" /> Outgoing email (live)
+              </div>
               <AdminButton
-                type="button"
-                variant="outline"
                 size="sm"
-                onClick={handleGenerateKey}
-                className="gap-1 text-xs"
+                variant="outline"
+                onClick={handleTestSmtpConnection}
+                disabled={isTestingSmtp}
+                className="text-[11px] py-0.5 px-2"
               >
-                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                <span>Generate New 256-bit Key</span>
+                {isTestingSmtp ? "Testing..." : "Test Connection"}
               </AdminButton>
             </div>
-          </div>
 
-          <div className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-semibold text-[var(--color-text-primary)]">
-                  JWT Signing Secret (JWT_SIGNING_KEY) <span className="text-rose-500">*</span>
+            {smtpError && <p className="text-rose-600 dark:text-rose-400">{smtpError}</p>}
+            {!smtp && !smtpError && <p className="text-[var(--color-text-muted)]">Loading…</p>}
+
+            {smtp && (
+              <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-2 pt-1 border-t border-[var(--color-border)]">
+                <dt className="text-[var(--color-text-muted)] font-medium">Status</dt>
+                <dd>
+                  <StatusBadge
+                    label={smtp.connection_status.replace(/_/g, " ")}
+                    tone={getStatusTone(smtp.connection_status)}
+                    dot
+                  />
+                </dd>
+                <dt className="text-[var(--color-text-muted)] font-medium">Server Host</dt>
+                <dd className="break-all font-mono text-[11px]">
+                  {smtp.host || "smtp.gmail.com"}:{smtp.port} ({smtp.encryption})
+                </dd>
+                <dt className="text-[var(--color-text-muted)] font-medium">Credentials</dt>
+                <dd>
+                  {smtp.credentials_configured
+                    ? `Configured (${smtp.password_source.toLowerCase()})`
+                    : "Not configured"}
+                </dd>
+                <dt className="text-[var(--color-text-muted)] font-medium">Encryption Key</dt>
+                <dd>
+                  {smtp.encryption_key_configured
+                    ? "Configured (AES-256)"
+                    : "Missing (SMTP_CREDENTIAL_ENCRYPTION_KEY)"}
+                </dd>
+                <dt className="text-[var(--color-text-muted)] font-medium">Sender Email</dt>
+                <dd className="font-mono text-[11px] break-all">{smtp.from_email || smtp.username}</dd>
+              </dl>
+            )}
+
+            <div className="pt-2 border-t border-[var(--color-border)] flex items-center justify-between">
+              <span className="text-[11px] text-[var(--color-text-muted)]">Detailed SMTP management</span>
+              <Link href="/super-admin/email-settings">
+                <AdminButton variant="outline" size="sm" className="text-xs py-1">
+                  Configure SMTP
+                </AdminButton>
+              </Link>
+            </div>
+          </SurfaceCard>
+
+          {/* Server Storage & Sync Info */}
+          <SurfaceCard className="p-4 sm:p-5 space-y-3 text-xs text-[var(--color-text-secondary)]">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
+              <ServerCog className="w-4 h-4 text-emerald-500" /> Server Configuration File
+            </div>
+            <p>
+              Platform keys, passwords and signing secrets are written directly to the host environment file:
+            </p>
+            <div className="p-2.5 rounded bg-[var(--color-bg)] border border-[var(--color-border)] font-mono text-[11px] text-[var(--color-text-primary)] break-all">
+              {envPath}
+            </div>
+            <div className="text-[11px] space-y-1 text-[var(--color-text-muted)]">
+              <p>• Changes saved here are persisted securely to the host file system.</p>
+              <p>• The Spring Boot backend reloads environment variables automatically.</p>
+              <p>• Never commit production secrets to Git version control.</p>
+            </div>
+          </SurfaceCard>
+        </div>
+      </div>
+
+      {/* Add Custom Key Modal */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] p-5 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
+              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                Add Platform Secret / Key
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(false)}
+                className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAddCustomKey} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-medium text-[var(--color-text-secondary)] mb-1">
+                  Key Name (e.g. STRIPE_API_KEY, OPENAI_API_KEY)
                 </label>
-                <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                  256-bit HMAC-SHA256 (Base64)
-                </span>
+                <input
+                  type="text"
+                  required
+                  placeholder="MY_NEW_SECRET_KEY"
+                  value={newKeyName}
+                  onChange={(e) => setNewKeyName(e.target.value.toUpperCase().replace(/\s+/g, "_"))}
+                  className="w-full font-mono text-xs px-3 py-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)]"
+                />
               </div>
 
-              <div className="flex items-center gap-2">
-                <AdminInput
-                  type="password"
-                  value={jwtSigningKey}
-                  onChange={(e) => setJwtSigningKey(e.target.value)}
-                  placeholder="Base64 encoded 256-bit secret key"
-                  className="font-mono text-xs"
+              <div>
+                <label className="block text-[11px] font-medium text-[var(--color-text-secondary)] mb-1">
+                  Category
+                </label>
+                <select
+                  value={newKeyCategory}
+                  onChange={(e) => setNewKeyCategory(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)]"
+                >
+                  <option value="Custom Configuration">Custom Configuration</option>
+                  <option value="Auth & Security">Auth & Security</option>
+                  <option value="Database">Database</option>
+                  <option value="SMTP Email">SMTP Email</option>
+                  <option value="Application & Web">Application & Web</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-[var(--color-text-secondary)] mb-1">
+                  Purpose / Description
+                </label>
+                <input
+                  type="text"
+                  placeholder="Purpose of this configuration key..."
+                  value={newKeyPurpose}
+                  onChange={(e) => setNewKeyPurpose(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)]"
                 />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-[var(--color-text-secondary)] mb-1">
+                  Value
+                </label>
+                <input
+                  type={newKeyIsSecret ? "password" : "text"}
+                  required
+                  placeholder="Enter secret value..."
+                  value={newKeyValue}
+                  onChange={(e) => setNewKeyValue(e.target.value)}
+                  className="w-full font-mono text-xs px-3 py-2 rounded-md border border-[var(--color-border)] bg-[var(--color-bg)]"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="isSecretCheck"
+                  checked={newKeyIsSecret}
+                  onChange={(e) => setNewKeyIsSecret(e.target.checked)}
+                  className="rounded text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="isSecretCheck" className="text-xs text-[var(--color-text-secondary)]">
+                  Mask as secret (hide characters in UI by default)
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
                 <AdminButton
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    navigator.clipboard.writeText(jwtSigningKey);
-                    setCopiedKey(true);
-                    setTimeout(() => setCopiedKey(false), 2000);
-                    toast.success("Copied JWT Signing Key");
-                  }}
-                  className="h-9 px-3 text-xs gap-1 shrink-0"
+                  onClick={() => setIsAddModalOpen(false)}
                 >
-                  {copiedKey ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedKey ? "Copied" : "Copy"}</span>
+                  Cancel
+                </AdminButton>
+                <AdminButton type="submit" variant="primary" size="sm">
+                  Add Key
                 </AdminButton>
               </div>
-              <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
-                Must be at least 32 bytes (256 bits) in Base64 representation. Never commit production keys to git.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-              <AdminInput
-                label="JWT Issuer (JWT_ISSUER)"
-                value={jwtIssuer}
-                onChange={(e) => setJwtIssuer(e.target.value)}
-                placeholder="prowise"
-                className="text-xs font-mono"
-              />
-
-              <AdminInput
-                label="Access Token Lifetime (Minutes)"
-                type="number"
-                min={1}
-                max={1440}
-                value={accessTokenLifetimeMinutes}
-                onChange={(e) => setAccessTokenLifetimeMinutes(Number(e.target.value))}
-                className="text-xs"
-              />
-
-              <AdminInput
-                label="Refresh Token Duration (Days)"
-                type="number"
-                min={1}
-                max={365}
-                value={refreshTokenDays}
-                onChange={(e) => setRefreshTokenDays(Number(e.target.value))}
-                className="text-xs"
-              />
-            </div>
-
-            <div className="pt-2 border-t border-[var(--color-border)]">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={authSecureCookies}
-                  onChange={(e) => setAuthSecureCookies(e.target.checked)}
-                  className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
-                />
-                <div>
-                  <span className="text-xs font-semibold text-[var(--color-text-primary)] block">
-                    Enforce HTTPS Secure Cookies (AUTH_SECURE_COOKIES)
-                  </span>
-                  <span className="text-[11px] text-[var(--color-text-muted)]">
-                    Keep unchecked (false) for plain-HTTP localhost testing; enable for HTTPS staging/production.
-                  </span>
-                </div>
-              </label>
-            </div>
+            </form>
           </div>
-        </SurfaceCard>
-
-        {/* ========================================================================= */}
-        {/* SECTION 2: DATABASE CONNECTION & PASSWORD                                 */}
-        {/* ========================================================================= */}
-        <SurfaceCard className="p-5 space-y-4 border border-[var(--color-border)]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                <Database className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-[var(--color-text-primary)]">
-                  PostgreSQL Database Credentials
-                </h3>
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  HikariCP connection pool parameters and database user authentication.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <AdminButton
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={testingDb}
-                onClick={handleTestDb}
-                className="gap-1.5 text-xs"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${testingDb ? "animate-spin" : ""}`} />
-                <span>{testingDb ? "Testing..." : "Test Connection"}</span>
-              </AdminButton>
-              <StatusBadge
-                label={dbStatus === "CONNECTED" ? "Online" : "Checking"}
-                tone={dbStatus === "CONNECTED" ? "success" : "neutral"}
-                dot
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="sm:col-span-2">
-              <AdminInput
-                label="Database JDBC URL (DB_URL)"
-                value={dbUrl}
-                onChange={(e) => setDbUrl(e.target.value)}
-                placeholder="jdbc:postgresql://localhost:5432/prowise"
-                className="font-mono text-xs"
-              />
-            </div>
-
-            <AdminInput
-              label="Database Username (DB_USERNAME)"
-              value={dbUsername}
-              onChange={(e) => setDbUsername(e.target.value)}
-              placeholder="prowise"
-              className="font-mono text-xs"
-            />
-
-            <AdminInput
-              label="Database Password (DB_PASSWORD)"
-              type="password"
-              value={dbPassword}
-              onChange={(e) => setDbPassword(e.target.value)}
-              placeholder="Enter database password"
-              className="font-mono text-xs"
-            />
-
-            <div>
-              <AdminInput
-                label="Outbox Polling Delay (OUTBOX_POLL_DELAY_MS)"
-                type="number"
-                value={outboxPollDelayMs}
-                onChange={(e) => setOutboxPollDelayMs(Number(e.target.value))}
-                placeholder="5000"
-                className="text-xs font-mono"
-              />
-              <p className="text-[10px] text-[var(--color-text-muted)] mt-1">Milliseconds between background event dispatch cycles</p>
-            </div>
-          </div>
-        </SurfaceCard>
-
-        {/* ========================================================================= */}
-        {/* SECTION 3: OUTBOUND SMTP EMAIL SECRETS                                    */}
-        {/* ========================================================================= */}
-        <SurfaceCard className="p-5 space-y-4 border border-[var(--color-border)]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400">
-                <Mail className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-[var(--color-text-primary)]">
-                  SMTP Relay Credentials &amp; App Passwords
-                </h3>
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  Outbound transactional mail relay (Gmail, SendGrid, SES, or custom SMTP).
-                </p>
-              </div>
-            </div>
-
-            <Link href="/super-admin/email-settings">
-              <AdminButton variant="outline" size="sm" className="gap-1.5 text-xs">
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Open SMTP Gateway Console</span>
-              </AdminButton>
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="sm:col-span-2">
-              <AdminInput
-                label="SMTP Host (SMTP_HOST)"
-                value={smtpHost}
-                onChange={(e) => setSmtpHost(e.target.value)}
-                placeholder="smtp.gmail.com"
-                className="font-mono text-xs"
-              />
-            </div>
-
-            <AdminInput
-              label="SMTP Port (SMTP_PORT)"
-              type="number"
-              value={smtpPort}
-              onChange={(e) => setSmtpPort(Number(e.target.value))}
-              placeholder="587"
-              className="font-mono text-xs"
-            />
-
-            <AdminInput
-              label="SMTP Username (SMTP_USERNAME)"
-              value={smtpUsername}
-              onChange={(e) => setSmtpUsername(e.target.value)}
-              placeholder="e.g. himanshuraghorteatwork@gmail.com"
-              className="font-mono text-xs"
-            />
-
-            <AdminInput
-              label="SMTP Password / App Password (SMTP_PASSWORD)"
-              type="password"
-              value={smtpPassword}
-              onChange={(e) => setSmtpPassword(e.target.value)}
-              placeholder="e.g. kvmr rqxv ezey qijc"
-              className="font-mono text-xs"
-            />
-
-            <AdminInput
-              label="Default Sender Email (SMTP_FROM)"
-              type="email"
-              value={smtpFrom}
-              onChange={(e) => setSmtpFrom(e.target.value)}
-              placeholder="e.g. himanshuraghorteatwork@gmail.com"
-              className="text-xs"
-            />
-          </div>
-        </SurfaceCard>
-
-        {/* ========================================================================= */}
-        {/* SECTION 4: NETWORK & CORS ORIGINS                                         */}
-        {/* ========================================================================= */}
-        <SurfaceCard className="p-5 space-y-4 border border-[var(--color-border)]">
-          <div className="flex items-center gap-2.5 border-b border-[var(--color-border)] pb-3">
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-              <Globe className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-[var(--color-text-primary)]">
-                Network Routing &amp; CORS Allowed Origins
-              </h3>
-              <p className="text-xs text-[var(--color-text-secondary)]">
-                Public client domain and allowed cross-origin request headers.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <AdminInput
-              label="Frontend Web URL (FRONTEND_URL)"
-              value={frontendUrl}
-              onChange={(e) => setFrontendUrl(e.target.value)}
-              placeholder="http://localhost:3000"
-              className="font-mono text-xs"
-            />
-
-            <AdminInput
-              label="Allowed CORS Origins (CORS_ALLOWED_ORIGINS)"
-              value={corsAllowedOrigins}
-              onChange={(e) => setCorsAllowedOrigins(e.target.value)}
-              placeholder="http://localhost:3000,http://127.0.0.1:3000"
-              className="font-mono text-xs"
-            />
-          </div>
-        </SurfaceCard>
-
-        {/* ========================================================================= */}
-        {/* SECTION 5: CUSTOM ENVIRONMENT VARIABLES TABLE                             */}
-        {/* ========================================================================= */}
-        <SurfaceCard className="p-5 space-y-4 border border-[var(--color-border)]">
-          <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-slate-500/10 text-slate-600 dark:text-slate-400">
-                <FileCode className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-[var(--color-text-primary)]">
-                  Custom Platform Variables &amp; Feature Flags
-                </h3>
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  Add additional environment variables to inject into the platform runtime.
-                </p>
-              </div>
-            </div>
-
-            <AdminButton
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setCustomVars([
-                  ...customVars,
-                  { id: `var-${Date.now()}`, key: "", value: "", description: "" },
-                ]);
-              }}
-              className="gap-1.5 text-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Variable</span>
-            </AdminButton>
-          </div>
-
-          <div className="space-y-3">
-            {customVars.map((v, idx) => (
-              <div
-                key={v.id}
-                className="flex flex-col sm:flex-row sm:items-center gap-2 p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)]"
-              >
-                <div className="w-full sm:w-1/3">
-                  <AdminInput
-                    placeholder="VARIABLE_NAME"
-                    value={v.key}
-                    onChange={(e) => {
-                      const updated = [...customVars];
-                      updated[idx].key = e.target.value.toUpperCase();
-                      setCustomVars(updated);
-                    }}
-                    className="font-mono text-xs uppercase"
-                  />
-                </div>
-
-                <div className="w-full sm:w-1/2">
-                  <AdminInput
-                    type="password"
-                    placeholder="Variable value"
-                    value={v.value}
-                    onChange={(e) => {
-                      const updated = [...customVars];
-                      updated[idx].value = e.target.value;
-                      setCustomVars(updated);
-                    }}
-                    className="font-mono text-xs"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCustomVars(customVars.filter((item) => item.id !== v.id));
-                    toast.info(`Removed variable`);
-                  }}
-                  className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded transition-colors self-end sm:self-center"
-                  title="Remove variable"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </SurfaceCard>
-
-        {/* Save Footer Bar */}
-        <div className="flex items-center justify-between p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
-          <div className="text-xs text-[var(--color-text-secondary)]">
-            Changes apply to your active session and generate synchronized <code className="font-mono bg-[var(--color-app-bg)] px-1.5 py-0.5 rounded border border-[var(--color-border)]">.env</code> exports.
-          </div>
-          <div className="flex items-center gap-3">
-            <AdminButton
-              type="submit"
-              variant="primary"
-              disabled={saving}
-              className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>{saving ? "Saving..." : "Save All Platform Keys"}</span>
-            </AdminButton>
-          </div>
-        </div>
-      </form>
-
-      {/* ========================================================================= */}
-      {/* IMPORT .ENV MODAL                                                         */}
-      {/* ========================================================================= */}
-      {importModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <SurfaceCard className="w-full max-w-2xl p-6 border border-[var(--color-border)] shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
-              <div className="flex items-center gap-2">
-                <FileCode className="w-5 h-5 text-blue-600" />
-                <h3 className="text-base font-bold text-[var(--color-text-primary)]">
-                  Import Environment Secrets from .env
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setImportModalOpen(false)}
-                className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] text-sm p-1"
-              >
-                &times;
-              </button>
-            </div>
-
-            <p className="text-xs text-[var(--color-text-secondary)]">
-              Paste the contents of your <code className="font-mono">backend/.env</code> or <code className="font-mono">.env.example</code> file below. The parser will automatically map JWT keys, DB passwords, and SMTP credentials into the UI.
-            </p>
-
-            <textarea
-              rows={10}
-              value={importText}
-              onChange={(e) => setImportText(e.target.value)}
-              placeholder={`DB_URL=jdbc:postgresql://localhost:5432/prowise\nDB_USERNAME=prowise\nDB_PASSWORD=...\nJWT_SIGNING_KEY=...\nSMTP_HOST=smtp.gmail.com\nSMTP_PORT=587\nSMTP_USERNAME=...\nSMTP_PASSWORD=...`}
-              className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3 text-xs font-mono text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[var(--color-border)]">
-              <AdminButton
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setImportModalOpen(false)}
-              >
-                Cancel
-              </AdminButton>
-              <AdminButton
-                type="button"
-                variant="primary"
-                size="sm"
-                onClick={handleParseAndApplyEnv}
-                className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>Parse &amp; Apply Variables</span>
-              </AdminButton>
-            </div>
-          </SurfaceCard>
         </div>
       )}
     </div>

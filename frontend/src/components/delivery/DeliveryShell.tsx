@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import {
-  Bell,
   ChevronRight,
   ClipboardCheck,
   FolderKanban,
@@ -21,12 +20,15 @@ import { Toaster } from "sonner";
 import { cn } from "@/lib/utils";
 import { useThemeStore } from "@/store/theme-store";
 import { useAuthStore } from "@/store/auth-store";
+<<<<<<< HEAD
 import { useDeliveryStore } from "@/store/delivery-store";
 import { PEOPLE, VIEWERS } from "@/mocks/delivery-dashboards";
 import { apiClient } from "@/lib/api";
 import { previewEnabled } from "@/lib/permissions";
+=======
+import { apiClient } from "@/lib/api";
+>>>>>>> 29db595 (Initial ProWise project upload)
 import { DELIVERY_ROLES, rolePath, type DeliveryRole } from "./delivery-nav";
-import { daysFromToday, hoursSince } from "./DeliveryUI";
 
 const ROLE_ICON: Record<DeliveryRole, React.ElementType> = {
   manager: FolderKanban,
@@ -40,6 +42,7 @@ const ROLE_BADGE: Record<DeliveryRole, string> = {
   reviewer: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
 };
 
+<<<<<<< HEAD
 /** Live sidebar badge counts for each role, derived from the delivery store. */
 export function useNavBadges(role: DeliveryRole): Record<string, number> {
   const tasks = useDeliveryStore((s) => s.tasks);
@@ -83,6 +86,8 @@ export function useNavBadges(role: DeliveryRole): Record<string, number> {
   }, [role, tasks, blockers, projects, scopeChanges, checkIns, reviews, evidence, teams]);
 }
 
+=======
+>>>>>>> 29db595 (Initial ProWise project upload)
 export function DeliverySidebarBody({
   role,
   orgId,
@@ -98,7 +103,6 @@ export function DeliverySidebarBody({
 }) {
   const pathname = usePathname() || "";
   const config = DELIVERY_ROLES[role];
-  const badges = useNavBadges(role);
   const RoleIcon = ROLE_ICON[role];
   const dashboardHref = rolePath(role, orgId);
 
@@ -152,7 +156,6 @@ export function DeliverySidebarBody({
             {section.items.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.path);
-              const count = item.badgeKey ? badges[item.badgeKey] : undefined;
               return (
                 <Link
                   key={item.title}
@@ -174,11 +177,6 @@ export function DeliverySidebarBody({
                     )}
                   />
                   {!collapsed && <span className="truncate flex-1">{item.title}</span>}
-                  {!collapsed && count !== undefined && count > 0 && (
-                    <span className="ml-auto rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                      {count}
-                    </span>
-                  )}
                 </Link>
               );
             })}
@@ -217,8 +215,7 @@ export function DeliveryShell({ role, children }: { role: DeliveryRole; children
   const config = DELIVERY_ROLES[role];
 
   const { resolvedTheme, setTheme } = useThemeStore();
-  const { currentRole, setCurrentRole, logout } = useAuthStore();
-  const badges = useNavBadges(role);
+  const { currentRole, setCurrentRole, logout, currentUser, currentOrg } = useAuthStore();
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -273,6 +270,7 @@ export function DeliveryShell({ role, children }: { role: DeliveryRole; children
     return best;
   }, [config.sections, role, orgId, pathname]);
 
+<<<<<<< HEAD
   const preview = previewEnabled();
   const sessionUser = useAuthStore((state) => state.currentUser);
   const sessionOrgName = useAuthStore((state) => (state.currentOrg.id === orgId ? state.currentOrg.name : ""));
@@ -281,6 +279,13 @@ export function DeliveryShell({ role, children }: { role: DeliveryRole; children
   const viewer = preview ? sampleViewer : { ...sampleViewer, name: sessionUser.name || sessionUser.email, title: sessionOrgName };
   const viewerPerson = preview ? PEOPLE.find((p) => p.id === viewer.id) : { color: "#1A73E8", initials: initialsOf(viewer.name) };
   const alertCount = Object.values(badges).reduce((s, n) => s + n, 0);
+=======
+  const displayName = currentUser.name || currentUser.email;
+  const initials = displayName
+    ? displayName.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("")
+    : "";
+  const subtitle = currentOrg.name ? `${config.label} · ${currentOrg.name}` : config.label;
+>>>>>>> 29db595 (Initial ProWise project upload)
 
   return (
     <div className="min-h-screen w-full flex bg-[var(--color-app-bg)] text-[var(--color-text-primary)] overflow-x-clip">
@@ -344,34 +349,36 @@ export function DeliveryShell({ role, children }: { role: DeliveryRole; children
             >
               {mounted && resolvedTheme === "dark" ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
-            <Link
-              href={rolePath(role, orgId, config.alertsPath)}
-              aria-label={`${alertCount} items need attention`}
-              className="relative rounded-lg p-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text-primary)] transition-colors"
-            >
-              <Bell className="w-4 h-4" />
-              {alertCount > 0 && <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-rose-500" />}
-            </Link>
             <div className="flex items-center gap-2 pl-1">
               <div
                 className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white uppercase"
-                style={{ backgroundColor: viewerPerson?.color ?? "#1A73E8" }}
+                style={{ backgroundColor: "#1A73E8" }}
               >
-                {viewerPerson?.initials ?? "PW"}
+                {initials || "PW"}
               </div>
               <div className="hidden md:block min-w-0 leading-tight">
-                <p className="text-xs font-semibold truncate max-w-[160px]">{viewer.name}</p>
-                <p className="text-[10px] text-[var(--color-text-muted)] truncate max-w-[160px]">{viewer.title}</p>
+                <p className="text-xs font-semibold truncate max-w-[160px]">{displayName}</p>
+                <p className="text-[10px] text-[var(--color-text-muted)] truncate max-w-[160px]">{subtitle}</p>
               </div>
             </div>
             <button
               type="button"
               onClick={() => {
+<<<<<<< HEAD
                 // End the server session too (revokes it and clears the httpOnly cookies), then sign in again.
                 void apiClient.signout().catch(() => undefined).finally(() => {
                   logout();
                   router.push("/login");
                 });
+=======
+                void apiClient
+                  .signout()
+                  .catch(() => undefined)
+                  .finally(() => {
+                    logout();
+                    router.push("/login");
+                  });
+>>>>>>> 29db595 (Initial ProWise project upload)
               }}
               aria-label="Sign out"
               title="Sign out"

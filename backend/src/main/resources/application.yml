@@ -37,7 +37,10 @@ spring:
 
 server:
   shutdown: graceful
-  forward-headers-strategy: framework
+  # native = Tomcat RemoteIpValve: X-Forwarded-For/-Proto are honoured only from trusted internal proxies
+  # (loopback and private ranges by default; override with server.tomcat.remoteip.internal-proxies).
+  # "framework" would trust these headers from any client.
+  forward-headers-strategy: native
   error:
     include-message: never
     include-stacktrace: never
@@ -50,7 +53,9 @@ management:
       base-path: /actuator
   endpoint:
     health:
-      show-details: always
+      # Status only for anonymous callers (load balancers, probes); component details (database, mail, disk)
+      # are not published to the internet.
+      show-details: never
       probes:
         enabled: true
   health:
@@ -85,6 +90,10 @@ prowise:
     # creates one pending Super Admin and emails a single-use 72-hour setup link (SuperAdminBootstrapService).
     # There is no HTTP endpoint for this. Remove the variable once the account is active.
     super-admin-email: ${PROWISE_BOOTSTRAP_SUPER_ADMIN_EMAIL:}
+    # Optional initial password for that account. When set (and it meets the password policy) the account starts
+    # ACTIVE and must change the password at first sign-in; no setup email is sent. It never resets an active
+    # Super Admin. Remove it once the account is active.
+    super-admin-password: ${PROWISE_BOOTSTRAP_SUPER_ADMIN_PASSWORD:}
   auth:
 <<<<<<< HEAD
     jwt-signing-key: ${JWT_SIGNING_KEY:test-default-signing-key-that-is-at-least-32-bytes-long}

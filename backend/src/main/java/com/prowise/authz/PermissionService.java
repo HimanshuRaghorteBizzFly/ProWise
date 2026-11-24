@@ -90,6 +90,7 @@ public class PermissionService {
                   ON m.id = g.membership_id AND m.org_id = g.org_id
                 JOIN role_permissions rp
                   ON rp.role_id = COALESCE(g.template_role_id, g.org_role_id)
+                JOIN roles r ON r.id = rp.role_id AND r.is_active
                 WHERE g.org_id = ?
                   AND m.user_id = ?
                   AND m.status = 'ACTIVE'
@@ -161,6 +162,7 @@ public class PermissionService {
                 SELECT DISTINCT rp.permission_key, g.scope, g.scope_id
                 FROM grants g
                 JOIN role_permissions rp ON rp.role_id = COALESCE(g.template_role_id, g.org_role_id)
+                JOIN roles r ON r.id = rp.role_id AND r.is_active
                 WHERE g.org_id = ? AND g.membership_id = ?
                   AND (g.expires_at IS NULL OR g.expires_at > now())
                 ORDER BY rp.permission_key, g.scope, g.scope_id

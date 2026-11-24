@@ -184,7 +184,6 @@ describe("Task 2.2: Developer Progress & Team Lead Verification Frontend", () =>
     const client = createApiClient({
       baseUrl: "http://localhost:8080",
       fetch: mockFetch as typeof fetch,
-      isRolePreview: () => false,
     });
 
     // 1. Submit check-in with Idempotency-Key

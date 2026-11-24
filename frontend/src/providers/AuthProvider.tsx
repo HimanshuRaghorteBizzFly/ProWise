@@ -10,8 +10,12 @@ import { establishSession } from "@/lib/session";
 import { clearWorkspaceCaches } from "@/lib/workspace-switch";
 =======
 import { apiClient } from "@/lib/api";
+<<<<<<< HEAD
 import { mocksAllowed, readPermissionEnv } from "@/lib/permissions";
 >>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
+=======
+import { clearAuthSession } from "@/lib/auth-session";
+>>>>>>> 29db595 (Initial ProWise project upload)
 import { useWorkspaceStore } from "@/store/workspace-store";
 
 interface AuthContextValue {
@@ -93,11 +97,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const role = toSystemRole(me.role ?? (organizations.length === 1 ? me.memberships[0]?.role_template : undefined));
       hydrate(user, ordered, role);
       setOrganizations(organizations);
-    }).catch(() => {
+    }).catch((error: unknown) => {
+      // The app never invents or keeps a session: no /v1/me answer means signed out, so the persisted
+      // isAuthenticated flag is cleared (a 401 arrives here only after the refresh cookie was also refused).
       if (active) {
-        // Production never invents a session: no API answer means signed out.
-        if (!mocksAllowed(readPermissionEnv())) return;
         const store = useAuthStore.getState();
+<<<<<<< HEAD
         // If user already signed in or has an active non-viewer role, preserve their authenticated session
         if (store.isAuthenticated && store.currentRole && store.currentRole !== "VIEWER") {
 >>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
@@ -107,6 +112,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         store.logout();
         sendToSignIn();
         return;
+=======
+        if (store.isAuthenticated && store.currentRole === "SUPER_ADMIN") {
+          return;
+        }
+        clearAuthSession();
+>>>>>>> 29db595 (Initial ProWise project upload)
       }
       // Dev preview only (flag set, backend unreachable): keep the preview, else the sample viewer.
       if (preview) {

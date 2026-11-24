@@ -28,7 +28,7 @@ function headersOf(call: unknown[]): Headers {
 describe("API client change safety", () => {
   it("sends an Idempotency-Key and an X-Request-Id on every mutation", async () => {
     const fetchMock = vi.fn().mockImplementation(async () => jsonResponse(200, ROLE));
-    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock, isRolePreview: () => false });
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
 
     await client.updateRole("org-1", "r1", BODY);
     await client.updateRole("org-1", "r1", BODY);
@@ -43,7 +43,7 @@ describe("API client change safety", () => {
 
   it("sends a request id but no Idempotency-Key on reads", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, [ROLE]));
-    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock, isRolePreview: () => false });
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
 
     await client.roles("org-1");
 
@@ -58,7 +58,7 @@ describe("API client change safety", () => {
       .mockResolvedValueOnce(jsonResponse(401, { code: "UNAUTHORIZED", message: "x", request_id: "a", field_errors: [] }))
       .mockResolvedValueOnce(jsonResponse(200, { access_token: "fresh" }))
       .mockResolvedValueOnce(jsonResponse(201, ROLE));
-    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock, isRolePreview: () => false });
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
 
     await client.createRole("org-1", BODY);
 
@@ -78,7 +78,7 @@ describe("API client change safety", () => {
         field_errors: [],
       }),
     );
-    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock, isRolePreview: () => false });
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
 
     const error = await client.updateRole("org-1", "r1", BODY).catch((e: unknown) => e);
 
@@ -90,7 +90,7 @@ describe("API client change safety", () => {
 
   it("falls back to the request id it sent when the server response has none", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("bad gateway", { status: 502 }));
-    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock, isRolePreview: () => false });
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
 
     const error = (await client.updateRole("org-1", "r1", BODY).catch((e: unknown) => e)) as ApiError;
 

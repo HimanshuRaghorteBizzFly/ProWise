@@ -47,15 +47,7 @@ export function PageHeader({
               {badge}
             </span>
           )}
-          {simulationLabel && (
-            <span
-              title="Frontend mock service active — connect Spring Boot / Stripe / SMTP backend endpoints for live execution."
-              className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
-            >
-              <FlaskConical className="w-3 h-3 shrink-0" />
-              <span>{simulationLabel}</span>
-            </span>
-          )}
+
         </div>
         {description && (
           <p className="text-xs sm:text-sm text-[var(--color-text-secondary)] leading-relaxed">

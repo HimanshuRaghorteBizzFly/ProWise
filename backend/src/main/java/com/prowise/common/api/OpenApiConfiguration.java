@@ -78,6 +78,32 @@ public class OpenApiConfiguration {
                     .description("Error in the standard shape")
                     .content(new Content().addMediaType("application/json",
                             new MediaType().schema(new Schema<>().$ref(ERROR_REF))));
+            // Super Admin console mutations (rule 5): every POST/PUT/PATCH/DELETE accepts Idempotency-Key and can
+            // answer 409 STALE_VERSION when its expected_version (body) or expectedVersion (DELETE query) is stale.
+            if (openApi.getPaths() != null) {
+                ApiResponse conflict = new ApiResponse()
+                        .description("STALE_VERSION: expected_version no longer matches (or an Idempotency-Key conflict)")
+                        .content(new Content().addMediaType("application/json",
+                                new MediaType().schema(new Schema<>().$ref(ERROR_REF))));
+                openApi.getPaths().forEach((route, item) -> {
+                    if (!(route.startsWith("/v1/admin/") || route.startsWith("/v1/operators") || route.startsWith("/v1/operator/"))) {
+                        return;
+                    }
+                    java.util.stream.Stream.of(item.getPost(), item.getPut(), item.getPatch(), item.getDelete())
+                            .filter(java.util.Objects::nonNull)
+                            .forEach(operation -> {
+                                boolean hasKey = operation.getParameters() != null && operation.getParameters().stream()
+                                        .anyMatch(p -> "#/components/parameters/IdempotencyKey".equals(p.get$ref()));
+                                if (!hasKey) {
+                                    operation.addParametersItem(new io.swagger.v3.oas.models.parameters.Parameter()
+                                            .$ref("#/components/parameters/IdempotencyKey"));
+                                }
+                                if (operation.getResponses() != null && !operation.getResponses().containsKey("409")) {
+                                    operation.getResponses().addApiResponse("409", conflict);
+                                }
+                            });
+                });
+            }
             if (openApi.getPaths() != null) {
                 openApi.getPaths().values().forEach(path -> path.readOperations().forEach(operation -> {
                     if (operation.getResponses() != null && !operation.getResponses().containsKey("default")) {

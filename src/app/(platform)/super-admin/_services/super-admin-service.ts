@@ -364,7 +364,7 @@ export function printInvoicePdf(
   <title>${escapeHtml(invoice.invoiceNumber)} — ProWise Invoice</title>
   <style>
     @page { size: letter; margin: 16mm; }
-    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    * { box-sizing: border-box; font-family: Inter, sans-serif; }
     body { margin: 0; color: #0f172a; font-size: 12px; line-height: 1.5; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #2563eb; padding-bottom: 14px; margin-bottom: 18px; }
     .brand { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; color: #1e293b; }
@@ -391,7 +391,7 @@ export function printInvoicePdf(
       <div class="sub">Commercial Billing &amp; Governance Ledger</div>
     </div>
     <div style="text-align:right">
-      <div style="font-size:16px;font-weight:700;font-family:monospace">${escapeHtml(invoice.invoiceNumber)}</div>
+      <div style="font-size:16px;font-weight:700">${escapeHtml(invoice.invoiceNumber)}</div>
       <div class="sub">Issued ${escapeHtml(formatShortDate(invoice.issueDate))} • Due ${escapeHtml(formatShortDate(invoice.dueDate))}</div>
       <div style="margin-top:6px"><span class="badge">${escapeHtml(invoice.status)}</span></div>
     </div>

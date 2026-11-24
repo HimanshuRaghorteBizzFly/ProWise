@@ -13,7 +13,6 @@ import type { Notification } from "@/types";
 
 export interface NotificationsViewProps {
   notifications: Notification[];
-  source: "api" | "fixture";
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -34,7 +33,7 @@ function formatUtc(timestamp: string): string {
   }).format(new Date(timestamp))} UTC`;
 }
 
-export function NotificationsView({ notifications, source }: NotificationsViewProps) {
+export function NotificationsView({ notifications }: NotificationsViewProps) {
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const unread = notifications.filter((notification) => !notification.read).length;
   const visible = filter === "unread" ? notifications.filter((notification) => !notification.read) : notifications;
@@ -44,7 +43,6 @@ export function NotificationsView({ notifications, source }: NotificationsViewPr
       <PageHeader
         title="Notifications"
         description="Alerts for your membership in this organization. Only items you can still open are listed."
-        simulationLabel={source === "fixture" ? "Sample data" : undefined}
         actions={
           <>
             <LaterActionButton>Mark all read</LaterActionButton>

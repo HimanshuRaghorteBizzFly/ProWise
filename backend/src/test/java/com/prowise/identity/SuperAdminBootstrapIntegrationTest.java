@@ -275,6 +275,110 @@ class SuperAdminBootstrapIntegrationTest {
         assertThat(output.getAll()).doesNotContain(token).doesNotContain(SETUP_LINK);
     }
 
+    // ---- Optional initial password (PROWISE_BOOTSTRAP_SUPER_ADMIN_PASSWORD): active account, forced change on first login.
+
+    private static final String INITIAL_PASSWORD = "Initial-Owner-Pass-9";
+
+    @Test
+    void initialPasswordCreatesAnActiveSuperAdminThatMustChangeItOnFirstLogin() throws Exception {
+        SuperAdminBootstrapService.Result result = bootstrapService.bootstrap(adminEmail, INITIAL_PASSWORD);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.CREATED_WITH_INITIAL_PASSWORD);
+        Map<String, Object> user = jdbc.queryForMap(
+                "SELECT role, status, must_change_password, password_hash FROM users WHERE id = ?", result.userId());
+        assertThat(user).containsEntry("role", "SUPER_ADMIN").containsEntry("status", "ACTIVE")
+                .containsEntry("must_change_password", true);
+        assertThat(passwordEncoder.matches(INITIAL_PASSWORD, (String) user.get("password_hash"))).isTrue();
+        assertThat(count("SELECT count(*) FROM user_roles WHERE user_id = ? AND role_name = 'SUPER_ADMIN'", result.userId())).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM password_reset_tokens WHERE user_id = ?", result.userId())).isZero();
+        assertThat(count("SELECT count(*) FROM auth_audit_logs WHERE action = 'SUPER_ADMIN_BOOTSTRAP_CREATED' "
+                + "AND target_user_id = ? AND details ->> 'method' = 'initial_password'", result.userId())).isEqualTo(1);
+        // No email carries the password, and no setup link is needed.
+        verify(mailSender, never()).send(any(MimeMessage.class));
+
+        mockMvc.perform(post("/v1/auth/login").contentType("application/json").content(credentials(adminEmail, INITIAL_PASSWORD)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.must_change_password").value(true));
+    }
+
+    @Test
+    void aWeakInitialPasswordIsRefusedAndCreatesNothing() {
+        SuperAdminBootstrapService.Result result = bootstrapService.bootstrap(adminEmail, "short1!");
+
+        assertThat(result.outcome()).isEqualTo(Outcome.WEAK_INITIAL_PASSWORD);
+        assertThat(count("SELECT count(*) FROM users")).isZero();
+        verify(mailSender, never()).send(any(MimeMessage.class));
+    }
+
+    @Test
+    void aBlankInitialPasswordFallsBackToTheSetupLink() {
+        SuperAdminBootstrapService.Result result = bootstrapService.bootstrap(adminEmail, "   ");
+
+        assertThat(result.outcome()).isEqualTo(Outcome.CREATED);
+        assertThat(jdbc.queryForObject("SELECT status FROM users WHERE id = ?", String.class, result.userId()))
+                .isEqualTo("PENDING_ACTIVATION");
+    }
+
+    @Test
+    void initialPasswordActivatesAnAlreadyPendingBootstrapAccountAndRetiresItsSetupLinks() throws Exception {
+        UUID pending = bootstrapService.bootstrap(adminEmail).userId();
+        String oldToken = CapturedMail.token(CapturedMail.sentHtml(mailSender).get(0), SETUP_LINK);
+
+        SuperAdminBootstrapService.Result result = bootstrapService.bootstrap(adminEmail, INITIAL_PASSWORD);
+
+        assertThat(result.outcome()).isEqualTo(Outcome.ACTIVATED_WITH_INITIAL_PASSWORD);
+        assertThat(result.userId()).isEqualTo(pending);
+        assertThat(jdbc.queryForMap("SELECT status, must_change_password FROM users WHERE id = ?", pending))
+                .containsEntry("status", "ACTIVE").containsEntry("must_change_password", true);
+        assertThat(count("SELECT count(*) FROM password_reset_tokens WHERE token_hash = ? AND used_at IS NULL",
+                AccountTokenService.hash(oldToken))).isZero();
+        assertThat(count("SELECT count(*) FROM users")).isEqualTo(1);
+    }
+
+    @Test
+    void initialPasswordNeverResetsAnActiveSuperAdmin() {
+        bootstrapService.bootstrap(adminEmail, INITIAL_PASSWORD);
+        String hashBefore = jdbc.queryForObject("SELECT password_hash FROM users WHERE lower(email) = ?", String.class, adminEmail);
+
+        // A later restart with a different configured password must not become a password reset back door.
+        assertThat(bootstrapService.bootstrap(adminEmail, "Other-Owner-Pass-42").outcome())
+                .isEqualTo(Outcome.ACTIVE_SUPER_ADMIN_EXISTS);
+        assertThat(jdbc.queryForObject("SELECT password_hash FROM users WHERE lower(email) = ?", String.class, adminEmail))
+                .isEqualTo(hashBefore);
+    }
+
+    @Test
+    void concurrentStartsWithAnInitialPasswordCreateExactlyOneSuperAdmin() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(4);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<Outcome>> futures = new ArrayList<>();
+            for (int i = 0; i < 4; i++) {
+                futures.add(pool.submit(() -> {
+                    start.await();
+                    return bootstrapService.bootstrap(adminEmail, INITIAL_PASSWORD).outcome();
+                }));
+            }
+            start.countDown();
+            List<Outcome> outcomes = new ArrayList<>();
+            for (Future<Outcome> future : futures) {
+                outcomes.add(future.get());
+            }
+            assertThat(outcomes).containsOnlyOnce(Outcome.CREATED_WITH_INITIAL_PASSWORD);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(count("SELECT count(*) FROM users WHERE upper(role) = 'SUPER_ADMIN'")).isEqualTo(1);
+    }
+
+    @Test
+    void theInitialPasswordNeverReachesTheApplicationLog(CapturedOutput output) {
+        bootstrapService.bootstrap(adminEmail, INITIAL_PASSWORD);
+        bootstrapService.bootstrap("second." + adminEmail, "weak");
+
+        assertThat(output.getAll()).doesNotContain(INITIAL_PASSWORD);
+    }
+
     private List<Outcome> runConcurrently(String... emails) throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(emails.length);
         CountDownLatch start = new CountDownLatch(1);

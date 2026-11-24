@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import { Organization, SystemRole, User } from "@/types";
 import { apiClient } from "@/lib/api";
+import { clearAuthSession } from "@/lib/auth-session";
 import { useWorkspaceStore } from "@/store/workspace-store";
 
 interface AuthContextValue {
@@ -37,35 +38,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const user: User = {
         id: me.id,
         email: me.email,
-        name: me.email.split("@")[0],
+        name: me.name || me.email.split("@")[0],
         timezone: organizations[0]?.timezone || "UTC",
         createdAt: "",
       };
-      const role = toSystemRole(me.memberships[0]?.role_template);
-      hydrate(user, organizations, role);
+      // The role of this session (membership role in the bound organization, or a platform role), never just
+      // the first membership: the same person can hold different roles in different organizations.
+      const bound = me.organization_id ? organizations.find((o) => o.id === me.organization_id) : undefined;
+      const ordered = bound ? [bound, ...organizations.filter((o) => o.id !== bound.id)] : organizations;
+      const role = toSystemRole(me.role ?? (organizations.length === 1 ? me.memberships[0]?.role_template : undefined));
+      hydrate(user, ordered, role);
       setOrganizations(organizations);
-    }).catch(() => {
+    }).catch((error: unknown) => {
+      // The app never invents or keeps a session: no /v1/me answer means signed out, so the persisted
+      // isAuthenticated flag is cleared (a 401 arrives here only after the refresh cookie was also refused).
       if (active) {
-        const defaultOrg: Organization = {
-          id: "org-acme",
-          slug: "acme-health",
-          name: "Acme Health Technologies",
-          ownerId: "usr-owner",
-          timezone: "America/New_York",
-          workCalendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
-          createdAt: "2026-02-15T09:00:00Z",
-          plan: "ENTERPRISE",
-          status: "ACTIVE",
-        };
-        const defaultUser: User = {
-          id: "usr-viewer",
-          email: "jordan.lee@acmehealth.com",
-          name: "Jordan Lee (Viewer)",
-          timezone: "America/New_York",
-          createdAt: "2026-02-25T16:00:00Z",
-        };
-        hydrate(defaultUser, [defaultOrg], "VIEWER");
-        setOrganizations([defaultOrg]);
+        const store = useAuthStore.getState();
+        if (store.isAuthenticated && store.currentRole === "SUPER_ADMIN") {
+          return;
+        }
+        clearAuthSession();
       }
     });
     return () => {

@@ -98,7 +98,7 @@ const DASHBOARD_TABS = [
   {
     id: "structured",
     label: "Structured Delivery",
-    path: "/org/org-acme/developer/projects/proj-structured-cds/structured",
+    path: "/login",
     headline: "CDS API Core Platform — Baseline v2.4",
     kpis: [
       { k: "Approved Baseline", v: "125 Points" },
@@ -115,7 +115,7 @@ const DASHBOARD_TABS = [
   {
     id: "developer",
     label: "Developer Individual Mode",
-    path: "/org/org-acme/developer",
+    path: "/login",
     headline: "Individual Accountable Track — No Backlog Bloat",
     kpis: [
       { k: "Current Report", v: "78% Complete" },
@@ -132,7 +132,7 @@ const DASHBOARD_TABS = [
   {
     id: "admin",
     label: "Organization Admin",
-    path: "/org/org-acme/admin",
+    path: "/login",
     headline: "Tenant Policy, GitHub Repos & Team Governance",
     kpis: [
       { k: "Active Teams", v: "6 Engineering Squads" },
@@ -829,7 +829,6 @@ export function LandingSections({
             <ul className="space-y-1.5 text-[var(--color-text-secondary)]">
               <li><Link href="/login" className="hover:text-[var(--color-text-primary)]">Login</Link></li>
               <li><Link href="/signup" className="hover:text-[var(--color-text-primary)]">Sign Up</Link></li>
-              <li><Link href="/org/org-acme/viewer/dashboard" className="hover:text-blue-600 font-semibold text-blue-500">Viewer Panel</Link></li>
               <li><Link href="/super-admin" className="hover:text-[var(--color-text-primary)]">Super Admin Panel</Link></li>
               <li><Link href="/platform-operator" className="hover:text-[var(--color-text-primary)]">Platform Operator</Link></li>
             </ul>

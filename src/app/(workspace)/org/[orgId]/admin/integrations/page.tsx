@@ -1,1 +1,6 @@
-export { default } from "../../owner/integrations/page";
+import { ModuleUnavailable } from "@/components/feedback/ModuleUnavailable";
+
+/** No backend API serves this module yet, so the route shows a notice instead. */
+export default function Page({ params }: { params: { orgId: string } }) {
+  return <ModuleUnavailable module="Integrations" homeHref={`/org/${encodeURIComponent(params.orgId)}/admin/dashboard`} homeLabel="Back to dashboard" />;
+}

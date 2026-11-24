@@ -9,8 +9,8 @@ vi.mock("next/navigation", () => ({
 
 import { Sidebar } from "../src/components/navigation/sidebar";
 import { TopNav } from "../src/components/navigation/top-nav";
-import { FIXTURE_GRANTS } from "../src/lib/fixtures/permissions";
-import { SEEDED_ORGS } from "../src/lib/mock-data";
+import { FIXTURE_GRANTS } from "./fixtures/permissions";
+import { SEEDED_ORGS } from "./fixtures/mock-data";
 import { useAuthStore } from "../src/store/auth-store";
 import { permissionStore } from "../src/store/permission-store";
 import type { SystemRole } from "../src/types";
@@ -22,20 +22,18 @@ const authInitial = useAuthStore.getInitialState();
 const authDefaults = {
   currentRole: authInitial.currentRole,
   currentOrg: authInitial.currentOrg,
-  isRolePreview: authInitial.isRolePreview,
 };
 vi.spyOn(permissionStore, "getInitialState").mockImplementation(() => permissionStore.getState());
 
-function setup(role: SystemRole, source: "api" | "fixture" = "fixture", grants = FIXTURE_GRANTS[role]) {
-  Object.assign(authInitial, { currentRole: role, currentOrg: acme, isRolePreview: false });
-  useAuthStore.setState({ currentRole: role, currentOrg: acme, isRolePreview: false });
+function setup(role: SystemRole, grants = FIXTURE_GRANTS[role]) {
+  Object.assign(authInitial, { currentRole: role, currentOrg: acme });
+  useAuthStore.setState({ currentRole: role, currentOrg: acme });
   permissionStore.setState({
     orgId: acme.id,
     role,
-    preview: false,
     status: "ready",
-    source,
-    scopeReported: source === "fixture",
+    source: "api",
+    scopeReported: true,
     grants,
   });
 }
@@ -51,7 +49,6 @@ afterEach(() => {
   permissionStore.setState({
     orgId: "",
     role: null,
-    preview: false,
     status: "idle",
     source: null,
     scopeReported: false,
@@ -60,12 +57,15 @@ afterEach(() => {
 });
 
 describe("org shell sidebar", () => {
-  it("shows the owner menu without billing, subscriptions or workspaces", () => {
+  it("shows the owner menu without billing, subscriptions, workspaces or modules that have no API yet", () => {
     setup("ORGANIZATION_OWNER");
     const markup = renderSidebar();
-    expect(markup).toContain("Organization settings");
     expect(markup).toContain("Roles &amp; permissions");
+    expect(markup).toContain("Projects portfolio");
     expect(markup).not.toMatch(/billing|subscriptions|workspaces/i);
+    expect(markup).not.toContain("Organization settings");
+    expect(markup).not.toContain("Health &amp; risks");
+    expect(markup).not.toContain("Audit &amp; security");
   });
 
   it("marks the current page with aria-current", () => {
@@ -82,7 +82,7 @@ describe("org shell sidebar", () => {
   });
 
   it("hides links whose keys are not granted, even for the owner template", () => {
-    setup("ORGANIZATION_OWNER", "api", [{ key: "project.read", scope: "ORG" }]);
+    setup("ORGANIZATION_OWNER", [{ key: "project.read", scope: "ORG" }]);
     const markup = renderSidebar();
     expect(markup).toContain("Projects portfolio");
     expect(markup).not.toContain("Organization settings");
@@ -107,7 +107,8 @@ describe("org shell sidebar", () => {
     setup("PROJECT_MANAGER");
     const markup = renderSidebar();
     expect(markup).toContain("PM Dashboard");
-    expect(markup).toContain("/org/org-acme/manager/workload");
+    expect(markup).toContain("/org/org-acme/manager/projects");
+    expect(markup).not.toContain("/org/org-acme/manager/workload");
   });
 });
 
@@ -115,6 +116,7 @@ describe("org shell top nav", () => {
   const renderTopNav = () =>
     renderToStaticMarkup(<TopNav title="Members" breadcrumb={[{ label: acme.name }, { label: "Owner" }]} onOpenNavigation={() => undefined} />);
 
+<<<<<<< HEAD
   it("shows the Sample data badge while fixture permissions are in use", () => {
     setup("ORGANIZATION_OWNER", "fixture");
     expect(renderTopNav()).toContain("Sample data");
@@ -124,15 +126,19 @@ describe("org shell top nav", () => {
     vi.stubEnv("NEXT_PUBLIC_USE_MOCKS", "");
     onTestFinished(() => { vi.unstubAllEnvs(); });
     setup("ORGANIZATION_OWNER", "api");
+=======
+  it("never shows a sample-data badge", () => {
+    setup("ORGANIZATION_OWNER");
+>>>>>>> 29db595 (Initial ProWise project upload)
     expect(renderTopNav()).not.toContain("Sample data");
   });
 
   it("labels icon-only controls and hides the menu button at lg", () => {
-    setup("ORGANIZATION_OWNER", "api");
+    setup("ORGANIZATION_OWNER");
     const markup = renderTopNav();
     expect(markup).toContain('aria-label="Open primary navigation"');
     expect(markup).toMatch(/aria-label="Switch to (dark|light) mode"/);
-    expect(markup).toContain('aria-label="Notifications,');
+    expect(markup).toContain('aria-label="Account menu for');
     expect(markup).toContain("lg:hidden");
     expect(markup).toContain("<h1");
   });

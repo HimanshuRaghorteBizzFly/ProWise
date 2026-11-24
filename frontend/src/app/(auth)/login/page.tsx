@@ -1,6 +1,10 @@
 "use client";
 
+<<<<<<< HEAD
 import React, { useEffect, useState } from "react";
+=======
+import React, { useState, useEffect } from "react";
+>>>>>>> 29db595 (Initial ProWise project upload)
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 <<<<<<< HEAD
@@ -9,13 +13,18 @@ import { establishSession } from "@/lib/session";
 import { previewEnabled } from "@/lib/permissions";
 =======
 import { apiClient, ApiError } from "@/lib/api";
+<<<<<<< HEAD
 import { isBackendUnreachable, mocksAllowed, readPermissionEnv } from "@/lib/permissions";
 import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
 >>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
 import { useSuperAdminStore } from "@/app/(platform)/super-admin/_store/useSuperAdminStore";
+=======
+import { useAuthStore } from "@/store/auth-store";
+>>>>>>> 29db595 (Initial ProWise project upload)
 import { usePlatformOperatorStore } from "@/app/(platform)/platform-operator/_store/usePlatformOperatorStore";
 import { operatorAuthService } from "@/app/(platform)/platform-operator/_services/operator-auth-service";
 import { applyLoginResponse } from "@/lib/auth-session";
+import { attemptLogin, loginErrorMessage } from "@/lib/login-flow";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -25,18 +34,9 @@ import {
   EyeOff,
   ShieldCheck,
   ArrowRight,
-  Sparkles,
-  CheckCircle2,
-  Cpu,
-  Layers,
-  Crown,
-  Building2,
-  FolderKanban,
-  Users,
-  CheckSquare,
-  Zap,
 } from "lucide-react";
 
+<<<<<<< HEAD
 interface QuickCredential {
   label: string;
   role: string;
@@ -152,16 +152,17 @@ function loginFailureMessage(error: unknown): string {
   return "Sign-in failed. Try again.";
 }
 
+=======
+>>>>>>> 29db595 (Initial ProWise project upload)
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState<"ALL" | "Platform" | "Leadership" | "Delivery">("ALL");
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+<<<<<<< HEAD
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
   // Demo logins are a dev-preview aid only (NEXT_PUBLIC_USE_MOCKS=true, never in production).
   const showDemoLogins = previewEnabled();
@@ -171,19 +172,26 @@ export default function LoginPage() {
       setSessionNotice("Your session ended. Please sign in again.");
     }
   }, []);
+=======
+>>>>>>> 29db595 (Initial ProWise project upload)
 
-  // Development builds only (mocks allowed). No password is embedded anywhere: seeded logins with published
-  // passwords were disabled (approved decision D4). A preset fills the email and selects the offline preview role.
-  const showDemoPanel = mocksAllowed(readPermissionEnv());
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const urlEmail = params.get("email") || localStorage.getItem("prowise_reset_email");
+      if (urlEmail) setEmail(urlEmail);
 
-  const fillCredentials = (account: QuickCredential) => {
-    setEmail(account.email);
-    setPassword("");
-    setSelectedPreset(account.label);
-    toast.info(`Selected ${account.label}. Enter the password, or use the offline preview when the API is down.`);
-  };
+      if (params.get("password") === "changed") {
+        toast.success("Password reset successfully! Please sign in with your new password.");
+      }
+    }
+  }, []);
 
+<<<<<<< HEAD
   const executeLogin = async (targetEmail: string, targetPass: string, _presetLabel?: string) => {
+=======
+  const executeLogin = async (targetEmail: string, targetPass: string) => {
+>>>>>>> 29db595 (Initial ProWise project upload)
     const cleanEmail = targetEmail.trim();
     setLoginError(null);
     if (!cleanEmail || !targetPass) {
@@ -192,7 +200,9 @@ export default function LoginPage() {
     }
 
     setIsLoading(true);
+    setLoginError(null);
     try {
+<<<<<<< HEAD
 <<<<<<< HEAD
       // The server decides where this account lands: platform dashboards only for real platform accounts,
       // otherwise from the ACTIVE memberships (one workspace, the workspace picker, or "no workspace yet").
@@ -204,96 +214,36 @@ export default function LoginPage() {
       let destination = "";
       let userRole: SystemRole = "VIEWER";
       let userName = cleanEmail.split("@")[0];
+=======
+      const attempt = await attemptLogin(apiClient.login, cleanEmail, targetPass);
+>>>>>>> 29db595 (Initial ProWise project upload)
 
-      // 1. Attempt Spring Boot backend authentication
-      try {
-        const response = await apiClient.login({ email: cleanEmail, password: targetPass });
+      if (!attempt.ok) {
+        const backendError = attempt.error;
 
-        if (response.must_change_password) {
-          toast.info("Temporary password detected. Please set your new password.");
-          window.location.assign("/change-password");
-          return;
-        }
-
-        // Real session: the server's user, organization(s) and membership role. Never the demo organization.
-        const realDestination = applyLoginResponse(response);
-        const roleText = (response.user.role ?? "member").replace(/_/g, " ").toLowerCase();
-        toast.success(
-          response.requires_organization_selection
-            ? "Signed in. Choose the organization to open."
-            : `Signed in as ${roleText}.`,
-        );
-        window.location.assign(realDestination);
-        return;
-      } catch (backendError) {
-        // One login page for all nine roles: Platform Operators have their own account store, so a wrong
-        // password on the member login is tried once against the operator login before it is reported.
-        if (backendError instanceof ApiError && backendError.status === 401 && backendError.code === "INVALID_CREDENTIALS") {
+        // A platform operator signs in through the operator endpoint with the same form.
+        if (backendError.status === 401 && backendError.code === "INVALID_CREDENTIALS") {
           const operatorDestination = await tryOperatorLogin(cleanEmail, targetPass);
           if (operatorDestination) {
             window.location.assign(operatorDestination);
             return;
           }
-          throw backendError;
         }
-        // A real answer from the server (wrong password, account pending activation, disabled, rate limited)
-        // is always shown as-is. Only an unreachable backend in a development build may use the local
-        // preview session below; production builds never do.
-        const status = backendError instanceof ApiError ? backendError.status : 0;
-        if (!mocksAllowed(readPermissionEnv()) || !isBackendUnreachable(status)) {
-          throw backendError;
-        }
-        console.warn("Backend unreachable in development; using a local preview session.");
-        const normalized = cleanEmail.toLowerCase();
-        if (normalized.includes("superadmin") || presetLabel === "Super Admin") {
-          userRole = "SUPER_ADMIN";
-          userName = "Super Admin";
-          destination = "/super-admin/dashboard";
-        } else if (normalized.includes("operator") || presetLabel === "Platform Operator") {
-          userRole = "PLATFORM_OPERATOR";
-          userName = "Jordan Mercer";
-          destination = "/platform-operator/dashboard";
-        } else if (
-          normalized.includes("alex.rivera") ||
-          normalized.includes("developer") ||
-          presetLabel === "Developer"
-        ) {
-          userRole = "DEVELOPER";
-          userName = "Alex Rivera";
-          destination = "/org/org-acme/developer/dashboard";
-        } else if (normalized.includes("sarah.lin") || normalized.includes("owner") || presetLabel === "Org Owner") {
-          userRole = "ORGANIZATION_OWNER";
-          userName = "Dr. Sarah Lin";
-          destination = "/org/org-acme/owner/dashboard";
-        } else if (normalized.includes("david.kim") || normalized.includes("admin") || presetLabel === "Org Admin") {
-          userRole = "ORGANIZATION_ADMIN";
-          userName = "David Kim";
-          destination = "/org/org-acme/admin/dashboard";
-        } else if (normalized.includes("priya.raman") || normalized.includes("manager") || presetLabel === "Project Manager") {
-          userRole = "PROJECT_MANAGER";
-          userName = "Priya Raman";
-          destination = "/org/org-acme/manager/dashboard";
-        } else if (normalized.includes("marcus.chen") || normalized.includes("lead") || presetLabel === "Team Lead") {
-          userRole = "TEAM_LEAD";
-          userName = "Marcus Chen";
-          destination = "/org/org-acme/lead/dashboard";
-        } else if (normalized.includes("elena.ruiz") || normalized.includes("reviewer") || normalized.includes("qa") || presetLabel === "QA / Reviewer") {
-          userRole = "QA_REVIEWER";
-          userName = "Elena Ruiz";
-          destination = "/org/org-acme/reviewer/dashboard";
-        } else if (normalized.includes("jordan.lee") || normalized.includes("viewer") || presetLabel === "Viewer") {
-          userRole = "VIEWER";
-          userName = "Jordan Lee";
-          destination = "/org/org-acme/viewer/dashboard";
-        } else {
-          // Never default an unknown address to an administrator preview.
-          throw new Error("The server is unreachable. Start the backend and try again.");
-        }
+<<<<<<< HEAD
 >>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
+=======
+
+        const message = loginErrorMessage(backendError);
+        setLoginError(message);
+        toast.error(message);
+        setIsLoading(false);
+        return;
+>>>>>>> 29db595 (Initial ProWise project upload)
       }
       const session = await establishSession();
       const destination = session.target || response.target_dashboard_url;
 
+<<<<<<< HEAD
       if (session.platform && session.role === "SUPER_ADMIN") {
         try {
           useSuperAdminStore.getState().setActiveRolePreview("role-sa");
@@ -310,51 +260,51 @@ export default function LoginPage() {
     } catch (err) {
       setLoginError(loginFailureMessage(err));
     } finally {
+=======
+      const response = attempt.response;
+      if (response.must_change_password) {
+        applyLoginResponse(response);
+        toast.info("Temporary password detected. Please set your new password.");
+        window.location.assign("/change-password");
+        return;
+      }
+
+      // The role and destination come only from the server's answer.
+      const destination = applyLoginResponse(response);
+      const roleText = (response.user.role ?? "member").replace(/_/g, " ").toLowerCase();
+      toast.success(
+        response.requires_organization_selection
+          ? "Signed in. Choose the organization to open."
+          : `Signed in as ${roleText}.`,
+      );
+      window.location.assign(destination);
+    } catch (err) {
+      const message = err instanceof ApiError ? loginErrorMessage(err) : err instanceof Error ? err.message : "Unable to complete sign in.";
+      setLoginError(message);
+      toast.error(message);
+>>>>>>> 29db595 (Initial ProWise project upload)
       setIsLoading(false);
     }
   };
 
-  /** Platform Operator sign-in on the common page. Returns the dashboard, or null when the credentials are not an operator's. */
+  /** Platform Operator sign-in through the real operator endpoint; null when the account is not an operator. */
   const tryOperatorLogin = async (operatorEmail: string, operatorPassword: string): Promise<string | null> => {
     try {
       const res = await operatorAuthService.login(operatorEmail, operatorPassword, false);
-      usePlatformOperatorStore.getState().updateAccountSettings({
-        name: res.operator.name,
-        email: res.operator.email,
-        department: res.operator.departmentName as never,
-        shiftName: res.operator.shiftName,
-        mfaEnabled: res.operator.mfaEnabled,
-        activeOperatorId: res.operator.id,
-      });
+      usePlatformOperatorStore.getState().setOperatorProfile(res.operator);
       useAuthStore.getState().setCurrentRole("PLATFORM_OPERATOR");
       useAuthStore.getState().login(res.operator.email, "PLATFORM_OPERATOR");
       toast.success(`Welcome back, ${res.operator.name}.`);
       return "/platform-operator/dashboard";
-    } catch (operatorError) {
-      // A real operator refusal (suspended, setup unfinished, locked) is shown as-is; anything else means the
-      // address is not an operator, and the member login's "invalid credentials" answer stands.
-      const message = operatorError instanceof Error ? operatorError.message : "";
-      if (/suspend|disabled|locked|setup|invitation/i.test(message)) throw operatorError;
+    } catch {
       return null;
     }
   };
 
   const handleCustomLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    await executeLogin(email, password, selectedPreset || undefined);
+    await executeLogin(email, password);
   };
-
-  const handleInstantSignIn = async (account: QuickCredential) => {
-    fillCredentials(account);
-    // Not a password for any account: a reachable API rejects it, and only an unreachable API in a development
-    // build falls back to the local preview session for the selected role.
-    await executeLogin(account.email, OFFLINE_PREVIEW_PLACEHOLDER, account.label);
-  };
-
-  const visibleAccounts =
-    categoryFilter === "ALL"
-      ? QUICK_ACCOUNTS
-      : QUICK_ACCOUNTS.filter((a) => a.category === categoryFilter);
 
   return (
     <div className="relative min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-center items-center p-4 sm:p-6 overflow-hidden">
@@ -362,9 +312,9 @@ export default function LoginPage() {
       <div className="absolute top-[-10rem] left-1/2 -translate-x-1/2 w-[38rem] h-[38rem] bg-gradient-to-tr from-blue-500/20 via-indigo-500/20 to-purple-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-[-10rem] right-[-5rem] w-80 h-80 bg-blue-400/10 dark:bg-blue-600/10 rounded-full blur-2xl pointer-events-none" />
 
-      <div className="relative w-full max-w-md sm:max-w-lg transition-all">
+      <div className="relative w-full max-w-md transition-all">
         {/* Header Branding */}
-        <div className="text-center mb-5">
+        <div className="text-center mb-6">
           <div className="inline-flex h-14 w-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 items-center justify-center text-white font-bold text-2xl shadow-xl shadow-blue-500/25 mb-3 ring-4 ring-blue-500/10 transition-transform hover:scale-105">
             P
           </div>
@@ -376,6 +326,7 @@ export default function LoginPage() {
           </p>
         </div>
 
+<<<<<<< HEAD
         {/* Quick-fill Account Selector for Seamless Development & Access across all sections */}
 <<<<<<< HEAD
         {showDemoLogins && (
@@ -486,6 +437,8 @@ export default function LoginPage() {
         </div>
         )}
 
+=======
+>>>>>>> 29db595 (Initial ProWise project upload)
         {/* Main Login Card */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xl shadow-slate-200/40 dark:shadow-black/50 p-6 sm:p-7 backdrop-blur-md">
           <form onSubmit={handleCustomLogin} className="space-y-4" noValidate>
@@ -513,12 +466,10 @@ export default function LoginPage() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    if (selectedPreset) setSelectedPreset(null);
-                  }}
-                  placeholder="e.g. superadmin@prowise.com"
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.com"
                   required
+                  autoFocus
                   className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800/80 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
                 />
               </div>
@@ -544,10 +495,7 @@ export default function LoginPage() {
                 <input
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (selectedPreset) setSelectedPreset(null);
-                  }}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   required
                   className="w-full pl-9 pr-10 py-2 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800/80 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
@@ -575,6 +523,15 @@ export default function LoginPage() {
                 Remember me on this browser
               </label>
             </div>
+
+            {loginError && (
+              <div
+                role="alert"
+                className="rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-700 dark:text-rose-300"
+              >
+                {loginError}
+              </div>
+            )}
 
             {/* Submit Button */}
             <Button

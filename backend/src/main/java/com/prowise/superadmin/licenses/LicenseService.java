@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.prowise.common.api.ApiException;
+import com.prowise.common.persistence.ExpectedVersion;
 import com.prowise.superadmin.audit.AuditService;
 
 @Service
@@ -16,8 +17,11 @@ public class LicenseService {
 
     private final LicenseRepository repository;
     private final AuditService auditService;
+    private final com.prowise.superadmin.plans.PlanRepository planRepository;
 
-    public LicenseService(LicenseRepository repository, AuditService auditService) {
+    public LicenseService(LicenseRepository repository, AuditService auditService,
+            com.prowise.superadmin.plans.PlanRepository planRepository) {
+        this.planRepository = planRepository;
         this.repository = repository;
         this.auditService = auditService;
     }
@@ -37,7 +41,7 @@ public class LicenseService {
     @Transactional(readOnly = true)
     public LicenseDTOs.LicenseResponse getLicense(String id) {
         LicenseEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "LICENSE_NOT_FOUND", "License not found: " + id));
+                .orElseThrow(ApiException::notFound);
         return LicenseDTOs.LicenseResponse.fromEntity(entity);
     }
 
@@ -53,7 +57,12 @@ public class LicenseService {
         entity.setId(id);
         entity.setLicenseKey(key);
         entity.setOrgId(req.orgId());
-        entity.setPlanId(req.planId() != null ? req.planId() : "plan-enterprise");
+        // No invented default plan: null when none is given; an unknown plan is a validation error, not a 500.
+        if (req.planId() != null && !planRepository.existsById(req.planId())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, com.prowise.common.api.ErrorCodes.VALIDATION_FAILED, "Unknown plan.",
+                    java.util.List.of(new com.prowise.common.api.ApiError.FieldError("plan_id", "does not exist")));
+        }
+        entity.setPlanId(req.planId());
         entity.setMaxSeats(req.maxSeats());
         entity.setStatus("ACTIVE");
         entity.setIssuedAt(Instant.now());
@@ -62,13 +71,14 @@ public class LicenseService {
         entity.setUpdatedAt(Instant.now());
 
         LicenseEntity saved = repository.save(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "SECURITY",
                 "GENERATE_LICENSE",
                 "Generated enterprise license key: " + key + " (" + req.maxSeats() + " seats)",
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 key,
                 "INFO"
         );
@@ -92,7 +102,8 @@ public class LicenseService {
 
     public LicenseDTOs.LicenseResponse revokeLicense(String id, LicenseDTOs.RevokeLicenseRequest req, String actorEmail) {
         LicenseEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "LICENSE_NOT_FOUND", "License not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), req.expectedVersion());
 
         entity.setStatus("REVOKED");
         entity.setRevokedAt(Instant.now());
@@ -100,13 +111,14 @@ public class LicenseService {
         entity.setUpdatedAt(Instant.now());
 
         LicenseEntity updated = repository.save(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "SECURITY",
                 "REVOKE_LICENSE",
                 "Revoked license key " + updated.getLicenseKey() + ": " + req.reason(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getLicenseKey(),
                 "WARNING"
         );

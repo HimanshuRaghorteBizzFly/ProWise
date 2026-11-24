@@ -69,6 +69,19 @@ public class OperatorAuthService {
     private final long accessTokenMinutes;
     /** Same minimum as user accounts (AuthService). */
     static final int MIN_PASSWORD_LENGTH = 12;
+    static final int MAX_FAILED_ATTEMPTS = 5;
+    static final int LOCK_MINUTES = 15;
+    /** BCrypt of a random value nobody knows: compared against for unknown emails so timing reveals nothing. */
+    private static final String DUMMY_HASH =
+            new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode(randomToken());
+
+    /** Shared per-address limit with user sign-in; optional so unit tests can build the service without it. */
+    private com.prowise.identity.RequestThrottle throttle;
+
+    @Autowired(required = false)
+    public void setRequestThrottle(com.prowise.identity.RequestThrottle throttle) {
+        this.throttle = throttle;
+    }
     private EmailCredentialService emailCredentialService;
 
     /** Optional so unit tests can build the service without the mail stack; when absent no reset email is sent. */
@@ -105,10 +118,17 @@ public class OperatorAuthService {
         this.accessTokenMinutes = accessTokenMinutes;
     }
 
+    /**
+     * Same rules as user sign-in: per-address and per-email throttling, a timing-safe miss for unknown addresses,
+     * the lock checked before the password, five wrong passwords in a row lock the account for 15 minutes, and an
+     * inactive account is only revealed after the right password (no account enumeration).
+     */
+    @Transactional(noRollbackFor = ApiException.class)
     public OperatorAuthDTOs.OperatorAuthResponse login(
             String rawEmail, String password, Boolean rememberMe, String ipAddress, String userAgent
     ) {
         String email = normalize(rawEmail);
+        if (throttle != null) throttle.checkIp("signin", ipAddress);
         enforceRateLimit("op:login:" + (ipAddress != null ? ipAddress : "") + ":" + email);
 
         if (email.isBlank() || password == null || password.isBlank()) {
@@ -118,21 +138,31 @@ public class OperatorAuthService {
 
         Optional<PlatformOperatorEntity> opt = operatorRepository.findByEmailIgnoreCase(email);
         if (opt.isEmpty()) {
+            passwordEncoder.matches(password, DUMMY_HASH); // same work as a real check: no timing hint
             recordLoginHistory(null, email, "FAILED_INVALID_CREDENTIALS", ipAddress, userAgent, "No operator matching email");
             throw invalidCredentials();
         }
 
         PlatformOperatorEntity operator = opt.get();
 
+        if (Boolean.TRUE.equals(operatorRepository.isLocked(operator.getId()))) {
+            recordLoginHistory(operator.getId(), email, "FAILED_LOCKED", ipAddress, userAgent, "Account locked");
+            throw new ApiException(HttpStatus.LOCKED, "ACCOUNT_LOCKED",
+                    "Too many failed sign-in attempts. Try again in " + LOCK_MINUTES + " minutes or reset your password.");
+        }
+
+        if (operator.getPasswordHash() == null || !passwordEncoder.matches(password, operator.getPasswordHash())) {
+            operatorRepository.registerFailedLogin(operator.getId(), MAX_FAILED_ATTEMPTS, LOCK_MINUTES);
+            recordLoginHistory(operator.getId(), email, "FAILED_INVALID_CREDENTIALS", ipAddress, userAgent, "Password mismatch");
+            throw invalidCredentials();
+        }
+        operatorRepository.clearFailedLogins(operator.getId());
+
+        // Checked after the password so the answer does not reveal which addresses belong to operators.
         if (!"ACTIVE".equalsIgnoreCase(operator.getStatus())) {
             recordLoginHistory(operator.getId(), email, "FAILED_INACTIVE", ipAddress, userAgent, "Account status: " + operator.getStatus());
             throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_INACTIVE",
                     "Your platform operator account is " + operator.getStatus().toLowerCase() + ". Please contact Super Admin.");
-        }
-
-        if (operator.getPasswordHash() == null || !passwordEncoder.matches(password, operator.getPasswordHash())) {
-            recordLoginHistory(operator.getId(), email, "FAILED_INVALID_CREDENTIALS", ipAddress, userAgent, "Password mismatch");
-            throw invalidCredentials();
         }
 
         // An operator activated by status change alone has never chosen a password through the invitation.
@@ -154,6 +184,11 @@ public class OperatorAuthService {
         return issueOperatorSession(operator, ipAddress, userAgent);
     }
 
+    /**
+     * Rotates the refresh session. The claim is atomic (one refresh token yields at most one new session), and a
+     * refresh token that was already rotated or revoked is treated as stolen: every session of that operator ends.
+     */
+    @Transactional(noRollbackFor = ApiException.class)
     public OperatorAuthDTOs.OperatorAuthResponse refresh(
             String refreshToken, String ipAddress, String userAgent
     ) {
@@ -166,7 +201,9 @@ public class OperatorAuthService {
         Optional<OperatorSessionEntity> optSession = sessionRepository.findByRefreshTokenHashAndRevokedFalse(hash);
 
         if (optSession.isEmpty()) {
-            // Possible token reuse attack or invalid token
+            for (String operatorId : sessionRepository.findOperatorIdsByRevokedRefreshTokenHash(hash)) {
+                sessionRepository.revokeAllByOperatorId(operatorId, "REFRESH_TOKEN_REUSE");
+            }
             throw invalidCredentials();
         }
 
@@ -190,11 +227,11 @@ public class OperatorAuthService {
             throw invalidCredentials();
         }
 
-        // Revoke current session (token rotation)
-        currentSession.setRevoked(true);
-        currentSession.setRevokedAt(Instant.now());
-        currentSession.setRevokedBy("TOKEN_ROTATED");
-        sessionRepository.save(currentSession);
+        // Revoke the current session atomically (token rotation); a concurrent loser counts as reuse.
+        if (sessionRepository.claimForRotation(currentSession.getId()) != 1) {
+            sessionRepository.revokeAllByOperatorId(operator.getId(), "REFRESH_TOKEN_REUSE");
+            throw invalidCredentials();
+        }
 
         // Issue new rotated session
         return issueOperatorSession(operator, ipAddress, userAgent);
@@ -249,10 +286,10 @@ public class OperatorAuthService {
 
     @Transactional
     public void resetPassword(String token, String newPassword) {
-        if (token == null || token.isBlank() || newPassword == null || newPassword.length() < MIN_PASSWORD_LENGTH) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED,
-                    "Password reset link and a new password with at least 12 characters are required.");
+        if (token == null || token.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, "A password reset link is required.");
         }
+        requireAcceptablePassword(newPassword);
 
         String tokenHash = hash(token.trim());
         OperatorPasswordResetEntity reset = passwordResetRepository.findByTokenHash(tokenHash)
@@ -275,16 +312,31 @@ public class OperatorAuthService {
         sessionRepository.revokeAllByOperatorId(operator.getId(), "PASSWORD_RESET");
     }
 
+    /** The platform-wide password rule (PasswordPolicy), checked before any single-use link is consumed. */
+    private static void requireAcceptablePassword(String password) {
+        List<String> problems = com.prowise.identity.PasswordPolicy.violations(password);
+        if (!problems.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED,
+                    com.prowise.identity.PasswordPolicy.SUMMARY,
+                    problems.stream().map(p -> new com.prowise.common.api.ApiError.FieldError("new_password", p)).toList());
+        }
+    }
+
     private static ApiException invalidResetLink() {
         return new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_CREDENTIALS,
                 "This reset link is invalid, already used or expired.");
     }
 
+    /**
+     * Accepts an invitation once: the full password policy applies, the open unexpired invitation is claimed
+     * atomically (concurrent submissions: exactly one wins), and every earlier session of the operator ends.
+     */
+    @Transactional
     public OperatorAuthDTOs.OperatorAuthResponse acceptInvitation(String token, String newPassword, String name) {
-        if (token == null || token.isBlank() || newPassword == null || newPassword.length() < MIN_PASSWORD_LENGTH) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED,
-                    "Invitation link and a password with at least 12 characters are required.");
+        if (token == null || token.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, "An invitation link is required.");
         }
+        requireAcceptablePassword(newPassword);
 
         String tokenHash = hash(token.trim());
         OperatorInvitationEntity invite = invitationRepository.findByTokenHashAndAcceptedAtIsNull(tokenHash)
@@ -294,6 +346,10 @@ public class OperatorAuthService {
         if (invite.getExpiresAt().isBefore(Instant.now())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_CREDENTIALS,
                     "Invitation token has expired.");
+        }
+        if (invitationRepository.markAcceptedIfOpen(tokenHash, Instant.now()) != 1) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_CREDENTIALS,
+                    "Invalid or expired invitation token.");
         }
 
         PlatformOperatorEntity operator = operatorRepository.findById(invite.getOperatorId())
@@ -309,9 +365,7 @@ public class OperatorAuthService {
         operator.setLastActiveAt(Instant.now());
         operator.setUpdatedAt(Instant.now());
         PlatformOperatorEntity saved = operatorRepository.save(operator);
-
-        invite.setAcceptedAt(Instant.now());
-        invitationRepository.save(invite);
+        sessionRepository.revokeAllByOperatorId(saved.getId(), "INVITATION_ACCEPTED");
 
         // Issue fresh session and immediately sign in
         return issueOperatorSession(saved, null, "Invitation Setup");

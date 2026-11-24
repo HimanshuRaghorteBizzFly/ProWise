@@ -25,7 +25,8 @@ public final class AnnouncementDTOs {
             Instant publishedAt,
             String createdBy,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            long version
     ) {
         public static AnnouncementResponse fromEntity(
                 AnnouncementEntity e,
@@ -48,7 +49,8 @@ public final class AnnouncementDTOs {
                     e.getPublishedAt(),
                     e.getCreatedBy(),
                     e.getCreatedAt(),
-                    e.getUpdatedAt()
+                    e.getUpdatedAt(),
+                    e.getVersion() == null ? 0L : e.getVersion()
             );
         }
     }
@@ -76,10 +78,7 @@ public final class AnnouncementDTOs {
             List<String> channels,
             String status,
             Instant scheduledFor,
-            Instant expiresAt
-    ) {}
-
-    public record BulkDeleteRequest(
-            @NotNull List<String> ids
+            Instant expiresAt,
+            Long expectedVersion
     ) {}
 }

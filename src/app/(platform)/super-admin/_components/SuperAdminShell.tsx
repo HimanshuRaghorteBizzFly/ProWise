@@ -39,6 +39,7 @@ import {
   Sliders,
   Sparkles,
   Sun,
+  UserCheck,
   UserCog,
   Users,
   Webhook,
@@ -55,6 +56,7 @@ import { PERMISSION_CATALOG } from "../_data/seed";
 import { useAdminPermissions, useSuperAdminStore } from "../_store/useSuperAdminStore";
 import { useMaintenanceStore } from "@/store/maintenance-store";
 import { formatDateTime } from "../_services/super-admin-service";
+
 
 interface SidebarNavItem {
   title: string;
@@ -74,6 +76,7 @@ interface SidebarSectionConfig {
 const ROUTE_TITLES: Record<string, { section: string; label: string }> = {
   "/super-admin": { section: "Overview", label: "Dashboard" },
   "/super-admin/dashboard": { section: "Overview", label: "Dashboard" },
+  "/super-admin/users": { section: "Overview", label: "User Management" },
   "/super-admin/organizations": { section: "Overview", label: "Organizations" },
   "/super-admin/operators": { section: "Overview", label: "Platform Operators" },
   "/super-admin/roles-permissions": { section: "Overview", label: "Roles & Permissions" },
@@ -97,6 +100,7 @@ const ROUTE_TITLES: Record<string, { section: string; label: string }> = {
   "/super-admin/email-templates": { section: "Communication", label: "Email Templates" },
   "/super-admin/announcements": { section: "Communication", label: "Announcements" },
   "/super-admin/configuration": { section: "Platform Management", label: "Platform Configuration" },
+  "/super-admin/maintenance": { section: "Platform Management", label: "Maintenance Mode" },
   "/super-admin/configuration/maintenance": { section: "Platform Management", label: "Maintenance Mode" },
   "/super-admin/reports": { section: "Platform Management", label: "Reports & Analytics" },
   "/super-admin/settings": { section: "Platform Management", label: "Settings" },
@@ -150,7 +154,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   const { resolvedTheme, setTheme } = useThemeStore();
-  const { currentRole, switchRoleAndNavigate, setCurrentRole, logout } = useAuthStore();
+  const { currentRole, setCurrentRole, logout } = useAuthStore();
 
   const organizations = useSuperAdminStore((s) => s.organizations);
   const operators = useSuperAdminStore((s) => s.operators);
@@ -187,10 +191,10 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
     useSuperAdminStore.persist.rehydrate();
     const saved = localStorage.getItem("prowise-theme") as "light" | "dark" | "system" | null;
     if (saved) setTheme(saved);
-    if (currentRole !== "SUPER_ADMIN") {
+    if (activeRoleId === "role-super-admin" && currentRole !== "SUPER_ADMIN") {
       setCurrentRole("SUPER_ADMIN");
     }
-  }, [setTheme, currentRole, setCurrentRole]);
+  }, [setTheme, currentRole, setCurrentRole, activeRoleId]);
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -227,7 +231,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
   const openIncidentsCount = incidents.filter((i) => i.status !== "Resolved").length;
   const escalatedSupportCount = supportTickets.filter((t) => t.status === "Escalated").length;
   const publishedAnnouncementsCount = announcements.filter((a) => a.status === "PUBLISHED").length;
-  const pendingMaintenanceCount = useMaintenanceStore((s) => s.maintenanceWindows.filter((m) => m.status === "PENDING_APPROVAL").length);
+  const pendingMaintenanceCount = useMaintenanceStore((s: any) => s.maintenanceWindows?.filter((m: any) => m.status === "PENDING_APPROVAL").length || 0);
 
   const sections: SidebarSectionConfig[] = useMemo(
     () => [
@@ -240,6 +244,12 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
             href: "/super-admin/dashboard",
             matchPaths: ["/super-admin", "/super-admin/dashboard"],
             icon: LayoutDashboard,
+          },
+          {
+            title: "User Management",
+            href: "/super-admin/users",
+            icon: UserCheck,
+            requiredAny: ["operators.view", "operators.manage"],
           },
           {
             title: "Organizations",
@@ -408,8 +418,12 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
           },
           {
             title: "Maintenance Mode",
-            href: "/super-admin/configuration?tab=maintenance",
-            matchPaths: ["/super-admin/configuration/maintenance"],
+            href: "/super-admin/maintenance",
+            matchPaths: [
+              "/super-admin/maintenance",
+              "/super-admin/configuration/maintenance",
+              "/super-admin/configuration?tab=maintenance",
+            ],
             icon: Wrench,
             requiredAny: ["config.manage"],
             badgeCount: pendingMaintenanceCount > 0 ? pendingMaintenanceCount : undefined,
@@ -455,22 +469,23 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
       openIncidentsCount,
       publishedAnnouncementsCount,
       escalatedSupportCount,
+      pendingMaintenanceCount,
     ]
   );
 
   const visibleSections = useMemo(() => {
     return sections
-      .map((section) => ({
+      .map((section: any) => ({
         ...section,
         items: section.items.filter(
-          (item) => !item.requiredAny || item.requiredAny.some((perm) => can(perm))
+          (item: any) => !item.requiredAny || item.requiredAny.some((perm: any) => can(perm))
         ),
       }))
-      .filter((section) => section.items.length > 0);
+      .filter((section: any) => section.items.length > 0);
   }, [sections, can]);
 
   const activeNavItem = useMemo(() => {
-    for (const section of sections) {
+    for (const section of visibleSections) {
       for (const item of section.items) {
         const matches = item.matchPaths
           ? item.matchPaths.includes(pathname)
@@ -479,16 +494,19 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
       }
     }
     return undefined;
-  }, [sections, pathname]);
+  }, [visibleSections, pathname]);
 
   const isRouteRestricted = Boolean(
-    activeNavItem?.requiredAny && !activeNavItem.requiredAny.some((perm) => can(perm))
+    activeNavItem &&
+      "requiredAny" in activeNavItem &&
+      activeNavItem.requiredAny &&
+      !activeNavItem.requiredAny.some((perm: any) => can(perm))
   );
 
   const requiredPermissionLabels = useMemo(() => {
-    if (!activeNavItem?.requiredAny) return [];
+    if (!activeNavItem || !("requiredAny" in activeNavItem) || !activeNavItem.requiredAny) return [];
     return activeNavItem.requiredAny.map(
-      (k) => PERMISSION_CATALOG.find((p) => p.key === k)?.label || k
+      (k: any) => PERMISSION_CATALOG.find((p: any) => p.key === k)?.label || k
     );
   }, [activeNavItem]);
 
@@ -496,8 +514,8 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
 
   const searchResults = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    const pages = visibleSections.flatMap((s) =>
-      s.items.map((item) => ({ ...item, sectionTitle: s.title }))
+    const pages = visibleSections.flatMap((s: any) =>
+      s.items.map((item: any) => ({ ...item, sectionTitle: s.title }))
     );
 
     if (!q) {
@@ -512,7 +530,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
 
     return {
       pages: pages.filter(
-        (p) => p.title.toLowerCase().includes(q) || p.sectionTitle.toLowerCase().includes(q)
+        (p: any) => p.title.toLowerCase().includes(q) || p.sectionTitle.toLowerCase().includes(q)
       ),
       orgs: organizations.filter(
         (o) =>
@@ -572,7 +590,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
 
       {/* Navigation Sections */}
       <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4" aria-label="Super Admin Navigation">
-        {visibleSections.map((section) => (
+        {visibleSections.map((section: any) => (
           <div key={section.id} className="space-y-0.5">
             {!collapsed ? (
               <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
@@ -582,7 +600,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
               <div className="mx-2 my-1.5 border-t border-[var(--color-border)]" />
             )}
 
-            {section.items.map((item) => {
+            {section.items.map((item: any) => {
               const Icon = item.icon;
               const isActive = item.matchPaths
                 ? item.matchPaths.includes(pathname)
@@ -722,69 +740,10 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
               <Search className="w-4 h-4" />
             </button>
 
-            {/* Active Admin Role Permission Preview Switcher */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setRoleMenuOpen((o) => !o);
-                  setNotifOpen(false);
-                  setProfileMenuOpen(false);
-                }}
-                title="Switch Super Admin role access preview"
-                className={cn(
-                  "flex items-center gap-1.5 rounded-lg border px-2.5 h-8 text-xs font-medium transition-colors",
-                  activeRoleId !== "role-super-admin"
-                    ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                    : "border-[var(--color-border)] bg-[var(--color-app-bg)] text-[var(--color-text-primary)] hover:bg-[var(--color-hover)]"
-                )}
-              >
-                <Shield className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                <span className="hidden sm:inline max-w-[140px] truncate">
-                  {activeRole?.name || "Super Administrator"}
-                </span>
-                <ChevronDown className="w-3 h-3 text-[var(--color-text-muted)]" />
-              </button>
-
-              {roleMenuOpen && (
-                <div className="absolute right-0 mt-2 w-72 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-2xl z-50">
-                  <div className="px-2.5 py-1.5 border-b border-[var(--color-border)]">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-                      Role Access Preview
-                    </p>
-                    <p className="text-[11px] text-[var(--color-text-secondary)] mt-0.5">
-                      Preview how navigation and actions appear for each role
-                    </p>
-                  </div>
-                  <div className="mt-1.5 max-h-64 overflow-y-auto space-y-0.5">
-                    {roles.map((role) => (
-                      <button
-                        key={role.id}
-                        type="button"
-                        onClick={() => {
-                          setActiveRolePreview(role.id);
-                          setRoleMenuOpen(false);
-                          toast.info(`Switched access view to ${role.name}`);
-                        }}
-                        className={cn(
-                          "w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors",
-                          activeRoleId === role.id
-                            ? "bg-blue-500/15 text-blue-700 dark:text-blue-300 font-semibold"
-                            : "text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text-primary)]"
-                        )}
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate">{role.name}</div>
-                          <div className="text-[10px] text-[var(--color-text-muted)]">
-                            {role.permissions.length} permissions enabled
-                          </div>
-                        </div>
-                        {activeRoleId === role.id && <Check className="w-3.5 h-3.5 shrink-0" />}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+            {/* Static Super Admin Role Indicator */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-blue-500/20 bg-blue-500/10 px-2.5 h-8 text-xs font-semibold text-blue-700 dark:text-blue-300">
+              <Shield className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span className="hidden sm:inline">Super Administrator</span>
             </div>
 
             {/* Theme Switcher */}
@@ -991,27 +950,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* Active Role Preview Banner */}
-        {activeRoleId !== "role-super-admin" && (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 sm:px-6 py-2 text-xs text-amber-800 dark:text-amber-200">
-            <div className="flex items-center gap-2">
-              <Lock className="w-3.5 h-3.5 shrink-0" />
-              <span>
-                Previewing role <strong>{activeRole?.name}</strong> ({activeRole?.permissions.length} permissions enabled). Restricted sections and actions are protected.
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveRolePreview("role-super-admin");
-                toast.success("Restored full Super Administrator access");
-              }}
-              className="rounded-md bg-amber-500/20 hover:bg-amber-500/30 px-2.5 py-1 text-[11px] font-semibold transition-colors"
-            >
-              Restore Full Access
-            </button>
-          </div>
-        )}
+
 
         {/* Fluid Ultrawide-Friendly Workspace Canvas */}
         <main className="flex-1 w-full max-w-[1960px] mx-auto px-3.5 sm:px-6 lg:px-7 py-4 sm:py-6 min-w-0">
@@ -1089,7 +1028,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
                     Navigation
                   </p>
                   <div className="space-y-0.5">
-                    {searchResults.pages.map((p) => {
+                    {searchResults.pages.map((p: any) => {
                       const Icon = p.icon;
                       return (
                         <button
@@ -1188,7 +1127,7 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <Toaster position="top-right" theme={resolvedTheme} richColors />
+      <Toaster position="bottom-right" theme={resolvedTheme} richColors closeButton />
     </div>
   );
 }

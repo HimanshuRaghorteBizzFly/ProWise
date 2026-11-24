@@ -47,15 +47,7 @@ export function PageHeader({
               {badge}
             </span>
           )}
-          {simulationLabel && (
-            <span
-              title="Frontend mock service active — connect Spring Boot / Stripe / SMTP backend endpoints for live execution."
-              className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
-            >
-              <FlaskConical className="w-3 h-3 shrink-0" />
-              <span>{simulationLabel}</span>
-            </span>
-          )}
+
         </div>
         {description && (
           <p className="text-xs sm:text-sm text-[var(--color-text-secondary)] leading-relaxed">
@@ -424,13 +416,13 @@ export function StatusBadge({
 
 export function getStatusTone(status: string): StatusTone {
   const s = status.toUpperCase();
-  if (["ACTIVE", "PAID", "SUCCEEDED", "PUBLISHED", "CONNECTED", "DELIVERED_SIMULATED", "APPROVED", "ENFORCED", "OPERATIONAL", "HEALTHY", "RESOLVED"].includes(s)) {
+  if (["ACTIVE", "PAID", "SUCCEEDED", "PUBLISHED", "CONNECTED", "SMTP_ACCEPTED", "DELIVERED_SIMULATED", "APPROVED", "ENFORCED", "OPERATIONAL", "HEALTHY", "RESOLVED"].includes(s)) {
     return "success";
   }
-  if (["TRIAL", "TRIALING", "OPEN", "SCHEDULED", "PENDING", "INVITED", "PARTIALLY_REFUNDED", "UNTESTED", "MONITORING", "DRAFT"].includes(s)) {
+  if (["TRIAL", "TRIALING", "OPEN", "SCHEDULED", "PENDING", "INVITED", "PARTIALLY_REFUNDED", "UNTESTED", "NOT_TESTED", "NOT_CONFIGURED", "NOT_SENT", "QUEUED", "PROCESSING", "RETRY_PENDING", "MONITORING", "DRAFT"].includes(s)) {
     return "warning";
   }
-  if (["SUSPENDED", "FAILED", "OVERDUE", "CANCELLED", "REFUNDED", "FAILED_SIMULATED", "CRITICAL", "DENIED", "INACTIVE"].includes(s)) {
+  if (["SUSPENDED", "FAILED", "OVERDUE", "CANCELLED", "REFUNDED", "FAILED_SIMULATED", "DISCONNECTED", "AUTHENTICATION_FAILED", "TLS_FAILURE", "CONNECTION_TIMEOUT", "SERVER_UNAVAILABLE", "SENDER_REJECTED", "RECIPIENT_REJECTED", "RATE_LIMITED", "CRITICAL", "DENIED", "INACTIVE"].includes(s)) {
     return "danger";
   }
   if (["RELEASE", "INFO", "SYSTEM"].includes(s)) {

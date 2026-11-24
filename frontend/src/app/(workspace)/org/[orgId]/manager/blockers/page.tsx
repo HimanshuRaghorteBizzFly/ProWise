@@ -1,5 +1,6 @@
-"use client";
+import { ModuleUnavailable } from "@/components/feedback/ModuleUnavailable";
 
+<<<<<<< HEAD
 import { previewEnabled } from "@/lib/permissions";
 import { BlockersView, BlockerDetailView, DependenciesPageView } from "@/components/work/DependencyViews";
 import { RequireAnyKey } from "@/components/calendar/CalendarViews";
@@ -114,6 +115,11 @@ function PreviewManagerBlockersPage() {
       </Panel>
     </PageFrame>
   );
+=======
+/** No backend API serves this module yet, so the route shows a notice instead. */
+export default function Page({ params }: { params: { orgId: string } }) {
+  return <ModuleUnavailable module="Blockers" homeHref={`/org/${encodeURIComponent(params.orgId)}/manager`} homeLabel="Back to dashboard" />;
+>>>>>>> 29db595 (Initial ProWise project upload)
 }
 
 /** Task 3.4: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */

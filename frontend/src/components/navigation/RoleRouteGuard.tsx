@@ -9,7 +9,7 @@ import type { SystemRole } from "@/types";
 /**
  * Keeps a signed-in member inside the panel of the role they hold in this organization. It is a navigation aid
  * only: every API call is still authorized on the server (membership + scoped grant), so a forged URL shows
- * nothing either way. Role preview (development) switches personas on purpose and is not restricted here.
+ * nothing either way.
  */
 export const PANEL_ROLES: Record<string, SystemRole[]> = {
   owner: ["ORGANIZATION_OWNER"],
@@ -37,11 +37,10 @@ export function RoleRouteGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const role = useAuthStore((s) => s.currentRole);
   const authenticated = useAuthStore((s) => s.isAuthenticated);
-  const preview = useAuthStore((s) => s.isRolePreview);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const blocked = mounted && authenticated && !preview && !mayOpenPanel(role, pathname);
+  const blocked = mounted && authenticated && !mayOpenPanel(role, pathname);
   useEffect(() => {
     if (blocked) router.replace("/unauthorized");
   }, [blocked, router]);

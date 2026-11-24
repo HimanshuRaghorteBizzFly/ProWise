@@ -3,15 +3,19 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
-import { Bell, ChevronRight, Crown, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, ShieldHalf, Sun, X } from "lucide-react";
+import { ChevronRight, Crown, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, ShieldHalf, Sun, X } from "lucide-react";
 import { Toaster } from "sonner";
 import { cn } from "@/lib/utils";
 import { useThemeStore } from "@/store/theme-store";
 import { useAuthStore } from "@/store/auth-store";
+<<<<<<< HEAD
 import { useOrgConsoleStore } from "@/store/org-console-store";
 import { ORG_VIEWERS } from "@/mocks/org-console";
 import { apiClient } from "@/lib/api";
 import { previewEnabled } from "@/lib/permissions";
+=======
+import { apiClient } from "@/lib/api";
+>>>>>>> 29db595 (Initial ProWise project upload)
 import { ORG_SHELL, orgPath } from "./org-nav-config";
 import type { OrgFamily } from "./role-rules";
 
@@ -20,6 +24,7 @@ const ROLE_BADGE: Record<OrgFamily, string> = {
   admin: "bg-blue-500/15 text-blue-600 dark:text-blue-300",
 };
 
+<<<<<<< HEAD
 /** Live sidebar badge counts derived from the org console store. */
 export function useOrgBadges(): Record<string, number> {
   const invitations = useOrgConsoleStore((s) => s.invitations);
@@ -38,8 +43,12 @@ export function useOrgBadges(): Record<string, number> {
     }),
     [preview, invitations, repositories, notifications, risks, members]
   );
+=======
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : parts[0]?.slice(0, 2) ?? "").toUpperCase() || "PW";
+>>>>>>> 29db595 (Initial ProWise project upload)
 }
-
 export function OrgSidebarBody({
   family,
   orgId,
@@ -55,11 +64,15 @@ export function OrgSidebarBody({
 }) {
   const pathname = usePathname() || "";
   const config = ORG_SHELL[family];
+<<<<<<< HEAD
   const badges = useOrgBadges();
   const sampleOrgName = useOrgConsoleStore((s) => s.settings.name);
   // The real organization from the session; the sample name only in the dev preview.
   const sessionOrgName = useAuthStore((s) => (s.currentOrg.id === orgId ? s.currentOrg.name : ""));
   const orgName = previewEnabled() ? sampleOrgName : sessionOrgName;
+=======
+  const orgName = useAuthStore((s) => (s.currentOrg.id === orgId ? s.currentOrg.name : ""));
+>>>>>>> 29db595 (Initial ProWise project upload)
   const Icon = family === "owner" ? Crown : ShieldHalf;
 
   return (
@@ -97,7 +110,6 @@ export function OrgSidebarBody({
             {section.items.map((item) => {
               const href = orgPath(family, orgId, item.path);
               const active = pathname === href || pathname.startsWith(`${href}/`);
-              const count = item.badgeKey ? badges[item.badgeKey] : 0;
               const ItemIcon = item.icon;
               return (
                 <Link
@@ -115,9 +127,6 @@ export function OrgSidebarBody({
                 >
                   <ItemIcon className={cn("w-4 h-4 shrink-0", active ? "text-blue-600 dark:text-blue-400" : "text-[var(--color-text-muted)] group-hover:text-[var(--color-text-primary)]")} />
                   {!collapsed && <span className="truncate flex-1">{item.title}</span>}
-                  {!collapsed && count > 0 && (
-                    <span className="ml-auto rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">{count}</span>
-                  )}
                 </Link>
               );
             })}
@@ -149,8 +158,7 @@ export function OrgShell({ family, children }: { family: OrgFamily; children: Re
   const config = ORG_SHELL[family];
   const { resolvedTheme, setTheme } = useThemeStore();
   const logout = useAuthStore((s) => s.logout);
-  const badges = useOrgBadges();
-  const members = useOrgConsoleStore((s) => s.members);
+  const currentUser = useAuthStore((s) => s.currentUser);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -198,6 +206,7 @@ export function OrgShell({ family, children }: { family: OrgFamily; children: Re
     return { section: "Overview", label: "Dashboard" };
   }, [config.sections, family, orgId, pathname]);
 
+<<<<<<< HEAD
   const preview = previewEnabled();
   const sessionUser = useAuthStore((s) => s.currentUser);
   const sessionOrg = useAuthStore((s) => (s.currentOrg.id === orgId ? s.currentOrg.name : ""));
@@ -206,6 +215,17 @@ export function OrgShell({ family, children }: { family: OrgFamily; children: Re
   const person = preview ? members.find((m) => m.id === viewer.id) : { color: "#1A73E8", initials: (viewer.name.replace(/@.*/, "").split(/[s._-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("") || "PW").toUpperCase() };
   const alerts = family === "owner" ? badges.notifications ?? 0 : (badges.attention ?? 0) + (badges.repos ?? 0);
 
+=======
+  const displayName = currentUser.name || currentUser.email;
+  const signOut = async () => {
+    try {
+      await apiClient.signout();
+    } finally {
+      logout();
+      router.push("/login");
+    }
+  };
+>>>>>>> 29db595 (Initial ProWise project upload)
   return (
     <div className="min-h-screen w-full flex bg-[var(--color-app-bg)] text-[var(--color-text-primary)] overflow-x-clip">
       <style>{`
@@ -247,18 +267,18 @@ export function OrgShell({ family, children }: { family: OrgFamily; children: Re
             <button type="button" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} aria-label="Toggle color theme" className="rounded-lg p-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text-primary)] transition-colors">
               {mounted && resolvedTheme === "dark" ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
-            <Link href={orgPath(family, orgId, config.alertsPath)} aria-label={`${alerts} items need attention`} className="relative rounded-lg p-2 text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text-primary)] transition-colors">
-              <Bell className="w-4 h-4" />
-              {alerts > 0 && <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-rose-500" />}
-            </Link>
             <div className="flex items-center gap-2 pl-1">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white uppercase" style={{ backgroundColor: person?.color ?? "#1A73E8" }}>{person?.initials ?? "PW"}</div>
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#1A73E8] text-[11px] font-bold text-white uppercase">{initials(displayName)}</div>
               <div className="hidden md:block min-w-0 leading-tight">
-                <p className="text-xs font-semibold truncate max-w-[160px]">{viewer.name}</p>
-                <p className="text-[10px] text-[var(--color-text-muted)] truncate max-w-[160px]">{viewer.title}</p>
+                <p className="text-xs font-semibold truncate max-w-[160px]">{displayName}</p>
+                <p className="text-[10px] text-[var(--color-text-muted)] truncate max-w-[160px]">{config.label}</p>
               </div>
             </div>
+<<<<<<< HEAD
             <button type="button" onClick={() => { void apiClient.signout().catch(() => undefined).finally(() => { logout(); router.push("/login"); }); }} aria-label="Sign out" title="Sign out" className="rounded-lg p-2 text-[var(--color-text-secondary)] hover:bg-rose-500/10 hover:text-rose-600 transition-colors">
+=======
+            <button type="button" onClick={() => void signOut()} aria-label="Sign out" title="Sign out" className="rounded-lg p-2 text-[var(--color-text-secondary)] hover:bg-rose-500/10 hover:text-rose-600 transition-colors">
+>>>>>>> 29db595 (Initial ProWise project upload)
               <LogOut className="w-4 h-4" />
             </button>
           </div>

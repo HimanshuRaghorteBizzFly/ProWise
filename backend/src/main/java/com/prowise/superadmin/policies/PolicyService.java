@@ -5,10 +5,15 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.prowise.common.persistence.ExpectedVersion;
 import com.prowise.superadmin.audit.AuditService;
 import com.prowise.superadmin.featureflags.FeatureFlagDTOs;
 import com.prowise.superadmin.featureflags.FeatureFlagService;
 
+/**
+ * Platform policies and branding: one row each. A PUT carries expected_version (the version from the last GET;
+ * 0 when the row has never been saved) and is audited in the same transaction.
+ */
 @Service
 @Transactional
 public class PolicyService {
@@ -30,11 +35,11 @@ public class PolicyService {
         this.auditService = auditService;
     }
 
-    @Transactional(readOnly = true)
     public PolicyDTOs.PlatformPolicyResponse getPolicySettings() {
         PlatformPolicyEntity policy = policyRepository.findAll().stream().findFirst().orElseGet(() -> {
-            PlatformPolicyEntity def = new PlatformPolicyEntity();
-            return policyRepository.save(def);
+            PlatformPolicyEntity def = policyRepository.save(new PlatformPolicyEntity());
+            policyRepository.flush();
+            return def;
         });
 
         List<FeatureFlagDTOs.FeatureFlagResponse> flags = featureFlagService.listFeatureFlags();
@@ -42,10 +47,8 @@ public class PolicyService {
     }
 
     public PolicyDTOs.PlatformPolicyResponse updatePolicySettings(PolicyDTOs.UpdatePolicySettingsRequest req, String actorEmail) {
-        PlatformPolicyEntity policy = policyRepository.findAll().stream().findFirst().orElseGet(() -> {
-            PlatformPolicyEntity def = new PlatformPolicyEntity();
-            return def;
-        });
+        PlatformPolicyEntity policy = policyRepository.findAll().stream().findFirst().orElseGet(PlatformPolicyEntity::new);
+        ExpectedVersion.checkRequired(policy.getVersion(), req.expectedVersion());
 
         policy.setCheckinGraceWorkingDays(req.checkinGraceWorkingDays());
         policy.setStaleWebhookMinutes(req.staleWebhookMinutes());
@@ -58,13 +61,14 @@ public class PolicyService {
         policy.setUpdatedAt(Instant.now());
 
         PlatformPolicyEntity saved = policyRepository.save(policy);
+        policyRepository.flush();
 
         auditService.logActivity(
                 "SECURITY",
                 "UPDATE_PLATFORM_POLICIES",
                 "Updated global platform security, retention and grace policies",
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 "Global Policies",
                 "WARNING"
         );
@@ -73,20 +77,18 @@ public class PolicyService {
         return PolicyDTOs.PlatformPolicyResponse.fromEntity(saved, flags);
     }
 
-    @Transactional(readOnly = true)
     public PolicyDTOs.PlatformBrandingResponse getBrandingPreferences() {
         PlatformBrandingEntity branding = brandingRepository.findAll().stream().findFirst().orElseGet(() -> {
-            PlatformBrandingEntity def = new PlatformBrandingEntity();
-            return brandingRepository.save(def);
+            PlatformBrandingEntity def = brandingRepository.save(new PlatformBrandingEntity());
+            brandingRepository.flush();
+            return def;
         });
         return PolicyDTOs.PlatformBrandingResponse.fromEntity(branding);
     }
 
     public PolicyDTOs.PlatformBrandingResponse updateBrandingPreferences(PolicyDTOs.UpdateBrandingRequest req, String actorEmail) {
-        PlatformBrandingEntity branding = brandingRepository.findAll().stream().findFirst().orElseGet(() -> {
-            PlatformBrandingEntity def = new PlatformBrandingEntity();
-            return def;
-        });
+        PlatformBrandingEntity branding = brandingRepository.findAll().stream().findFirst().orElseGet(PlatformBrandingEntity::new);
+        ExpectedVersion.checkRequired(branding.getVersion(), req.expectedVersion());
 
         branding.setPlatformName(req.platformName().trim());
         branding.setSupportEmail(req.supportEmail().trim());
@@ -99,13 +101,14 @@ public class PolicyService {
         branding.setUpdatedAt(Instant.now());
 
         PlatformBrandingEntity saved = brandingRepository.save(branding);
+        brandingRepository.flush();
 
         auditService.logActivity(
                 "PLATFORM",
                 "UPDATE_BRANDING_PREFERENCES",
                 "Updated platform global branding: " + saved.getPlatformName(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 saved.getPlatformName(),
                 "INFO"
         );

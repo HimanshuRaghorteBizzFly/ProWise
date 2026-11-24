@@ -19,15 +19,19 @@ export function PageHeader({
   title,
   description,
   badge,
-  demoLabel = "Demo Data (Simulated)",
+  demoLabel: demoLabelProp,
+  liveData = false,
   actions,
 }: {
   title: string;
   description?: string;
   badge?: string;
   demoLabel?: string;
+  /** The page reads the real backend: shows a "Live data" badge instead of the simulated-data badge. */
+  liveData?: boolean;
   actions?: React.ReactNode;
 }) {
+  const demoLabel = liveData ? undefined : demoLabelProp ?? "Demo Data (Simulated)";
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
       <div className="min-w-0 space-y-1">
@@ -49,6 +53,15 @@ export function PageHeader({
               <span>{demoLabel}</span>
             </span>
           )}
+          {liveData && (
+            <span
+              title="Loaded from the ProWise API. Controls marked Not available yet have no server endpoint."
+              className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+              <span>Live data</span>
+            </span>
+          )}
         </div>
         {description && (
           <p className="text-xs sm:text-sm text-[var(--color-text-secondary)] leading-relaxed">
@@ -61,29 +74,12 @@ export function PageHeader({
   );
 }
 
-export function DemoDataBanner({
-  title,
-  description,
-  className,
-}: {
-  title: string;
-  description: string;
+export function DemoDataBanner(_props: {
+  title?: string;
+  description?: string;
   className?: string;
 }) {
-  return (
-    <div
-      className={cn(
-        "flex items-start gap-2.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3.5 py-2.5 text-xs text-teal-900 dark:text-teal-200",
-        className
-      )}
-    >
-      <FlaskConical className="w-4 h-4 shrink-0 mt-0.5 text-teal-600 dark:text-teal-400" />
-      <div className="min-w-0">
-        <span className="font-semibold">{title}: </span>
-        <span className="text-teal-800 dark:text-teal-200/90">{description}</span>
-      </div>
-    </div>
-  );
+  return null;
 }
 
 export function SurfaceCard({

@@ -18,7 +18,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 if (-not (Test-Path (Join-Path $backend ".env"))) {
     throw "backend/.env is missing. Copy backend/.env.example to backend/.env and fill in your values."
 }
-$env:API_BACKEND_URL = "http://localhost:8080"
+$env:API_BACKEND_URL = "http://localhost:8081"
 
 $postgresService = Get-Service -Name "postgresql-x64-18" -ErrorAction SilentlyContinue
 if (-not $postgresService) {
@@ -29,11 +29,15 @@ if ($postgresService.Status -ne "Running") {
     Start-Service -Name "postgresql-x64-18"
 }
 
-Write-Host "Starting backend on http://localhost:8080..."
+Write-Host "Starting backend on http://localhost:8081..."
 $backendProcess = Start-Process `
     -FilePath (Join-Path $backend "mvnw.cmd") `
     -WorkingDirectory $backend `
+<<<<<<< HEAD
     -ArgumentList "spring-boot:run", "-Dspring-boot.run.profiles=dev", "-Dspring-boot.run.arguments=--server.port=8080" `
+=======
+    -ArgumentList "spring-boot:run", "-Dspring-boot.run.arguments=--server.port=8081" `
+>>>>>>> 29db595 (Initial ProWise project upload)
     -PassThru
 
 Write-Host "Starting frontend on http://localhost:3000..."
@@ -45,7 +49,7 @@ $frontendProcess = Start-Process `
 
 Write-Host ""
 Write-Host "Prowise is starting:"
-Write-Host "  Backend:  http://localhost:8080/v1/health"
+Write-Host "  Backend:  http://localhost:8081/v1/health"
 Write-Host "  Frontend: http://localhost:3000"
 Write-Host "Close this window or press Ctrl+C to stop the application processes."
 

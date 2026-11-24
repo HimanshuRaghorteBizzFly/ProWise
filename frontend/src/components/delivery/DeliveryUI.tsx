@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { rolePath, type DeliveryRole } from "./delivery-nav";
-import { useDeliveryStore } from "@/store/delivery-store";
 import { ArrowLeft, ArrowUpRight, ChevronRight, SearchX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -15,17 +14,9 @@ import {
   SurfaceCard,
   type StatusTone,
 } from "@/app/(platform)/super-admin/_components/SuperAdminPrimitives";
-import {
-  DEMO_NOW,
-  DEMO_TODAY,
-  type EvidenceType,
-  type Health,
-  type Person,
-  type Priority,
-  type ReviewStatus,
-  type Severity,
-  type TaskStatus,
-} from "@/mocks/delivery-dashboards";
+import type { AvatarPerson, Health, Priority, ReviewStatus, Severity, TaskStatus } from "@/types/delivery-dashboard";
+
+export type { AvatarPerson, Health, Priority, ReviewStatus, Severity, TaskStatus } from "@/types/delivery-dashboard";
 
 export {
   AdminButton,
@@ -43,25 +34,8 @@ export {
 /** Returns a function that builds links inside the given role workspace. */
 export function useRoleHref(role: DeliveryRole) {
   const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
+  const orgId = (params?.orgId as string) || "";
   return useCallback((path = "") => rolePath(role, orgId, path), [role, orgId]);
-}
-
-/** Id lookups over the delivery store (people, projects, tasks). */
-export function useLookups() {
-  const people = useDeliveryStore((s) => s.people);
-  const projects = useDeliveryStore((s) => s.projects);
-  const tasks = useDeliveryStore((s) => s.tasks);
-  return React.useMemo(() => {
-    const pm = new Map(people.map((p) => [p.id, p]));
-    const prm = new Map(projects.map((p) => [p.id, p]));
-    const tm = new Map(tasks.map((t) => [t.id, t]));
-    return {
-      person: (id?: string | null) => (id ? pm.get(id) ?? null : null),
-      project: (id?: string | null) => (id ? prm.get(id) ?? null : null),
-      task: (id?: string | null) => (id ? tm.get(id) ?? null : null),
-    };
-  }, [people, projects, tasks]);
 }
 
 /** Read one query-string value on the client (no Suspense boundary needed). */
@@ -74,7 +48,7 @@ export function useQueryParam(name: string) {
 }
 
 /* ============================================================================
- * Formatting helpers (deterministic: UTC, fixed demo "today")
+ * Formatting helpers (UTC)
  * ========================================================================== */
 
 const DAY_MS = 86_400_000;
@@ -102,13 +76,17 @@ export function formatDateTime(value: string) {
   });
 }
 
-/** Whole days from demo today to the date (negative = in the past). */
+function utcToday() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Whole days from today (UTC) to the date (negative = in the past). */
 export function daysFromToday(date: string) {
-  return Math.round((toUtcDate(date.slice(0, 10)).getTime() - toUtcDate(DEMO_TODAY).getTime()) / DAY_MS);
+  return Math.round((toUtcDate(date.slice(0, 10)).getTime() - toUtcDate(utcToday()).getTime()) / DAY_MS);
 }
 
 export function hoursSince(instant: string) {
-  return Math.max(0, Math.round((toUtcDate(DEMO_NOW).getTime() - toUtcDate(instant).getTime()) / 3_600_000));
+  return Math.max(0, Math.round((Date.now() - toUtcDate(instant).getTime()) / 3_600_000));
 }
 
 export function formatWaiting(hours: number) {
@@ -128,29 +106,10 @@ export function dueLabel(date: string, done = false): { label: string; tone: Sta
 }
 
 /* ============================================================================
- * Simulated data loading (loading / error / empty states)
- * ?state=error shows the error state once, ?state=empty forces empty lists.
+ * Page load state
  * ========================================================================== */
 
 export type LoadStatus = "loading" | "ready" | "error";
-
-export function useDemoLoad(delay = 420) {
-  const [status, setStatus] = useState<LoadStatus>("loading");
-  const [forceEmpty, setForceEmpty] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setForceEmpty(params.get("state") === "empty");
-    const wantsError = params.get("state") === "error" && attempt === 0;
-    setStatus("loading");
-    const timer = window.setTimeout(() => setStatus(wantsError ? "error" : "ready"), delay);
-    return () => window.clearTimeout(timer);
-  }, [attempt, delay]);
-
-  const retry = useCallback(() => setAttempt((a) => a + 1), []);
-  return { status, retry, forceEmpty };
-}
 
 /* ============================================================================
  * Page frame: breadcrumb + back link + header + state handling
@@ -320,11 +279,11 @@ export function KpiTile({
   chip?: { label: string; tone: StatusTone };
   meta?: React.ReactNode;
   footer: string;
-  href: string;
+  /** Optional: without a destination the tile is a plain card. */
+  href?: string;
 }) {
   const t = TONES[tone];
-  return (
-    <Link href={href} className="group block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-w-0">
+  const tile = (
       <SurfaceCard
         className={cn(
           "relative overflow-hidden h-full p-4 flex flex-col justify-between gap-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md cursor-pointer",
@@ -351,9 +310,14 @@ export function KpiTile({
         </div>
         <div className={cn("pt-2 border-t border-[var(--color-border)] flex items-center justify-between text-[11px] font-medium", t.footer)}>
           <span className="truncate">{footer}</span>
-          <ArrowUpRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+          {href && <ArrowUpRight className="w-3.5 h-3.5 shrink-0 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />}
         </div>
       </SurfaceCard>
+  );
+  if (!href) return <div className="group block rounded-xl min-w-0">{tile}</div>;
+  return (
+    <Link href={href} className="group block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 min-w-0">
+      {tile}
     </Link>
   );
 }
@@ -488,7 +452,7 @@ export function ProgressBar({
   );
 }
 
-export function Avatar({ person, size = "md" }: { person?: Pick<Person, "initials" | "color" | "name"> | null; size?: "sm" | "md" | "lg" }) {
+export function Avatar({ person, size = "md" }: { person?: Pick<AvatarPerson, "initials" | "color" | "name"> | null; size?: "sm" | "md" | "lg" }) {
   const sizes = { sm: "h-6 w-6 text-[9px]", md: "h-8 w-8 text-[11px]", lg: "h-14 w-14 text-base" };
   if (!person) {
     return (
@@ -508,7 +472,7 @@ export function Avatar({ person, size = "md" }: { person?: Pick<Person, "initial
   );
 }
 
-export function AvatarStack({ people, max = 4 }: { people: Pick<Person, "id" | "initials" | "color" | "name">[]; max?: number }) {
+export function AvatarStack({ people, max = 4 }: { people: Pick<AvatarPerson, "id" | "initials" | "color" | "name">[]; max?: number }) {
   const shown = people.slice(0, max);
   return (
     <div className="flex items-center -space-x-1.5">
@@ -586,14 +550,6 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
   const [label, tone] = PRIORITY[severity];
   return <StatusBadge label={label} tone={tone} dot />;
 }
-
-export const EVIDENCE_LABEL: Record<EvidenceType, string> = {
-  PULL_REQUEST: "Pull request",
-  TEST_REPORT: "Test report",
-  SCREENSHOT: "Screenshot",
-  DEMO_VIDEO: "Demo video",
-  DOCUMENT: "Document",
-};
 
 const REVIEW: Record<ReviewStatus, [string, StatusTone]> = {
   PENDING: ["Awaiting review", "warning"],

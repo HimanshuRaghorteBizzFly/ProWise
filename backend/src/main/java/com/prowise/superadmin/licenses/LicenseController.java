@@ -15,13 +15,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prowise.identity.AuthPrincipal;
+import com.prowise.superadmin.common.AdminRequests;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping({"/v1/admin/licenses", "/api/v1/admin/licenses"})
-@Tag(name = "Super Admin Licenses", description = "Enterprise license key generation, validation, and revocation")
+@Tag(name = "Super Admin Licenses", description = "Enterprise license keys. Revoke needs expected_version (409 STALE_VERSION when stale) and accepts Idempotency-Key.")
 public class LicenseController {
 
     private final LicenseService licenseService;
@@ -54,8 +54,7 @@ public class LicenseController {
             HttpServletRequest request,
             @Valid @RequestBody LicenseDTOs.GenerateLicenseRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(licenseService.generateLicense(body, actor));
     }
 
@@ -70,14 +69,13 @@ public class LicenseController {
 
     @PostMapping("/{id}/revoke")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('security.manage')")
-    @Operation(summary = "Revoke an enterprise license key")
+    @Operation(summary = "Revoke an enterprise license key (body: reason, expected_version)")
     public ResponseEntity<LicenseDTOs.LicenseResponse> revokeLicense(
             HttpServletRequest request,
             @PathVariable String id,
             @Valid @RequestBody LicenseDTOs.RevokeLicenseRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.ok(licenseService.revokeLicense(id, body, actor));
     }
 }

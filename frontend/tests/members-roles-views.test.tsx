@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import { MembersView } from "../src/components/owner/MembersView";
 import { RolesView } from "../src/components/owner/RolesView";
 import { OwnerLaterBadge } from "../src/components/owner/OwnerLaterBadge";
-import { FIXTURE_MEMBERS, FIXTURE_ROLES } from "../src/lib/fixtures/org-admin";
-import { FIXTURE_GRANTS } from "../src/lib/fixtures/permissions";
+import { FIXTURE_MEMBERS, FIXTURE_ROLES } from "./fixtures/org-admin";
+import { FIXTURE_GRANTS } from "./fixtures/permissions";
 import { canWithGrants } from "../src/lib/permissions";
 import type { PermissionKey } from "../src/types/permission";
 
@@ -30,7 +30,6 @@ describe("MembersView", () => {
         family="owner"
         orgId="org-acme"
         members={members}
-        source="fixture"
         can={canFor("ORGANIZATION_OWNER")}
         isCurrentOwner
         {...props}
@@ -88,7 +87,6 @@ describe("RolesView", () => {
     renderToStaticMarkup(
       <RolesView
         roles={FIXTURE_ROLES}
-        source="fixture"
         canManageRoles
         heldGrants={FIXTURE_GRANTS.ORGANIZATION_OWNER}
         {...props}

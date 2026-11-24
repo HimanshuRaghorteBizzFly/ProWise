@@ -23,8 +23,8 @@ const { isOverdue } = await import("../src/components/developer/DevUI");
 const { Sidebar } = await import("../src/components/navigation/sidebar");
 const { useAuthStore } = await import("../src/store/auth-store");
 const { permissionStore } = await import("../src/store/permission-store");
-const { FIXTURE_GRANTS } = await import("../src/lib/fixtures/permissions");
-const { SEEDED_ORGS } = await import("../src/lib/mock-data");
+const { FIXTURE_GRANTS } = await import("./fixtures/permissions");
+const { SEEDED_ORGS } = await import("./fixtures/mock-data");
 const TaskPage = (await import("../src/app/(workspace)/org/[orgId]/developer/tasks/[taskId]/page")).default;
 
 import type { ReviewHistoryDto, WorkItemDto } from "../src/types/work";
@@ -93,11 +93,11 @@ describe("folded routes", () => {
 describe("developer sidebar", () => {
   beforeEach(() => {
     const acme = SEEDED_ORGS[0];
-    Object.assign(useAuthStore.getInitialState(), { currentRole: "DEVELOPER", currentOrg: acme, isRolePreview: false });
-    useAuthStore.setState({ currentRole: "DEVELOPER", currentOrg: acme, isRolePreview: false });
+    Object.assign(useAuthStore.getInitialState(), { currentRole: "DEVELOPER", currentOrg: acme });
+    useAuthStore.setState({ currentRole: "DEVELOPER", currentOrg: acme });
     vi.spyOn(permissionStore, "getInitialState").mockImplementation(() => permissionStore.getState());
     permissionStore.setState({
-      orgId: acme.id, role: "DEVELOPER", preview: false, status: "ready", source: "fixture", scopeReported: true,
+      orgId: acme.id, role: "DEVELOPER", status: "ready", source: "api", scopeReported: true,
       grants: FIXTURE_GRANTS.DEVELOPER,
     });
   });
@@ -200,35 +200,23 @@ describe("developer task detail", () => {
   });
 });
 
-/* ------------------------------------------------------------------ role preview */
+/* ------------------------------------------------------------------ unreachable API */
 
-const { withFixture, SampleData } = await import("../src/components/org-console/useRoleApi");
+const { toState } = await import("../src/components/org-console/useRoleApi");
 const { classifyFailure } = await import("../src/lib/permissions");
-const { previewDashboardData } = await import("../src/lib/live-dashboard-data");
-const DEV_ENV = { nodeEnv: "development", useMocks: undefined };
-const PROD_ENV = { nodeEnv: "production", useMocks: undefined };
 
-describe("role preview and unreachable API", () => {
-  const preview = new ApiError(0, "ROLE_PREVIEW", "API requests are disabled during role preview.", "");
-
-  it("shows labelled sample data outside production instead of an error", async () => {
-    const result = await withFixture(() => Promise.reject(preview), () => ["sample"]);
-    expect(result).toBeInstanceOf(SampleData);
-    expect(classifyFailure(preview, DEV_ENV)).toBe("fixture");
+describe("unreachable API", () => {
+  it("shows an error state with retry, never sample data", () => {
+    const refetch = vi.fn();
+    const state = toState({ isPending: false, error: new ApiError(0, "NETWORK_ERROR", "down", ""), data: undefined, refetch });
+    expect(state.kind).toBe("error");
+    if (state.kind === "error") state.retry();
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 
-  it("never falls back in production, and never for real 401/403/404/500 answers", () => {
-    expect(classifyFailure(preview, PROD_ENV)).toBe("error");
+  it("maps real 401/403/404/500 answers to their own states", () => {
     for (const [status, kind] of [[401, "unauthenticated"], [403, "forbidden"], [404, "not-found"], [500, "error"]] as const) {
-      expect(classifyFailure(new ApiError(status, "X", "x", ""), DEV_ENV)).toBe(kind);
+      expect(classifyFailure(new ApiError(status, "X", "x", ""))).toBe(kind);
     }
-  });
-
-  it("has a sample dashboard for every role, including the Team Lead approval queue", () => {
-    expect(previewDashboardData("lead")).toMatchObject({ kind: "lead" });
-    expect((previewDashboardData("lead") as { pendingReviews: unknown[] }).pendingReviews.length).toBeGreaterThan(0);
-    expect(previewDashboardData("owner").kind).toBe("organization");
-    expect(previewDashboardData("manager").kind).toBe("manager");
-    expect(previewDashboardData("reviewer").kind).toBe("reviewer");
   });
 });

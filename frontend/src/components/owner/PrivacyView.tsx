@@ -10,7 +10,7 @@ export interface PrivacyViewProps {
   can: (key: PermissionKey) => boolean;
 }
 
-/** Owner-only privacy operations (task 5.6). No data is shown, so no fixture or Sample data badge. */
+/** Owner-only privacy operations (task 5.6). No data is shown until the privacy API exists. */
 export function PrivacyView({ can }: PrivacyViewProps) {
   const header = (
     <PageHeader

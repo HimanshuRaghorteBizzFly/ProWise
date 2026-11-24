@@ -7,7 +7,7 @@ import { getNavigationConfig } from "@/config/navigation";
 import { Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function DeveloperSidebar({ orgId = "org-1" }: { orgId?: string }) {
+export function DeveloperSidebar({ orgId = "" }: { orgId?: string }) {
   const pathname = usePathname();
   const sections = getNavigationConfig("DEVELOPER", orgId);
 

@@ -1,5 +1,6 @@
-"use client";
+import { ModuleUnavailable } from "@/components/feedback/ModuleUnavailable";
 
+<<<<<<< HEAD
 import { previewEnabled } from "@/lib/permissions";
 import { WorkItemsView, WorkItemView, TeamWorkView, TeamMemberView, ProjectPlanningView } from "@/components/work/WorkListViews";
 import { RequireAnyKey } from "@/components/calendar/CalendarViews";
@@ -132,6 +133,11 @@ function PreviewTeamLeadMemberPage() {
       )}
     </PageFrame>
   );
+=======
+/** No backend API serves this module yet, so the route shows a notice instead. */
+export default function Page({ params }: { params: { orgId: string } }) {
+  return <ModuleUnavailable module="Team members" homeHref={`/org/${encodeURIComponent(params.orgId)}/lead`} homeLabel="Back to dashboard" />;
+>>>>>>> 29db595 (Initial ProWise project upload)
 }
 
 /** Task 3.1: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */

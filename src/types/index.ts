@@ -11,6 +11,10 @@ export * from "./delivery";
 export * from "./permission";
 export * from "./api";
 
+// Explicit re-exports to resolve ambiguous exports between ./project, ./delivery and ./api
+export type { ProjectMode, ProjectLifecycle, ProjectHealth } from "./project";
+export type { DeliveryChecklistItem, DeliveryAcceptanceRequest } from "./delivery";
+
 // ------------------------------------------
 // Repositories & Engineering Activity (GitHub)
 // ------------------------------------------

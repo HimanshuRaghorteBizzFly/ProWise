@@ -1,5 +1,6 @@
 "use client";
 
+<<<<<<< HEAD
 import { useParams } from "next/navigation";
 import { ProgressListView, ProjectProgressPageView } from "@/components/work/ReviewViews";
 import { RequireAnyKey } from "@/components/calendar/CalendarViews";
@@ -14,4 +15,8 @@ export default function TeamLeadProgressPage() {
       <ProgressListView crumbs={[{ label: "Team Lead", href: home }]} back={{ href: home, label: "Back to dashboard" }} />
     </RequireAnyKey>
   );
+=======
+export default function Page({ params }: { params: { orgId: string } }) {
+  redirect(`/org/${params.orgId}/lead`);
+>>>>>>> 29db595 (Initial ProWise project upload)
 }

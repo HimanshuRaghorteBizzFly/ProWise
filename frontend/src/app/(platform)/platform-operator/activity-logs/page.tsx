@@ -3,12 +3,23 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, History } from "lucide-react";
-import { usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
+import { useDebounced } from "@/components/super-admin/admin-resource";
+import type { OperatorActivityLogItem } from "@/types/operator-console";
+import { operatorApi } from "../_services/operator-api";
 import { exportRowsToCsv, formatDateTime } from "../_services/operator-service";
+import {
+  NOT_AVAILABLE,
+  NotAvailableText,
+  OperatorResourceStatus,
+  humanizeCode,
+  pageItemsOf,
+  pageTotalOf,
+  toServerPaging,
+  useOperatorResource,
+} from "../_components/OperatorLive";
 import {
   BulkSelectionBar,
   DemoDataBanner,
-  EmptyState,
   FilterBar,
   KpiCard,
   OpButton,
@@ -19,31 +30,62 @@ import {
   SortableHeader,
   StatusBadge,
   SurfaceCard,
-  getStatusTone,
   useTableSelection,
 } from "../_components/OperatorPrimitives";
 
 type LogSortField = "timestamp" | "category" | "action" | "actorName" | "severity";
 
-export default function OperatorActivityLogsPage() {
-  const activityLogs = usePlatformOperatorStore((s) => s.activityLogs);
-  const compactTables = usePlatformOperatorStore((s) => s.accountSettings.compactTables);
+const SEVERITY_REASON = "the server records no severity for operator actions";
+const CATEGORY_REASON = "the server has no category for log entries; filter by source instead";
 
+/** "Category" of a server entry: its module (or resource type), never an invented label. */
+function categoryOf(log: OperatorActivityLogItem): string {
+  return humanizeCode(log.module_key ?? log.resource_type ?? log.source);
+}
+
+function targetOf(log: OperatorActivityLogItem): string | null {
+  if (!log.resource_type && !log.resource_id) return null;
+  return [humanizeCode(log.resource_type), log.resource_id].filter((v) => v && v !== "-").join(" ");
+}
+
+/** A `date` input (viewer's local day) as the UTC instant of that local midnight. */
+function localDateToInstant(value: string): string | undefined {
+  if (!value) return undefined;
+  const d = new Date(`${value}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+/**
+ * Operator activity and audit trail from GET /v1/operator/activity-logs (audit.activity_logs:view). Server-side
+ * search, source and date filters with 0-based paging; sorting reorders the page that was loaded. The server records
+ * no severity or category, so those filters stay visible but disabled.
+ */
+export default function OperatorActivityLogsPage() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [severityFilter, setSeverityFilter] = useState("ALL");
+  const [sourceFilter, setSourceFilter] = useState("ALL");
   const [dateFrom, setDateFrom] = useState("");
   const [sortField, setSortField] = useState<LogSortField>("timestamp");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const warningOrCriticalCount = useMemo(
-    () => activityLogs.filter((l) => l.severity !== "Info").length,
-    [activityLogs]
+  const debouncedSearch = useDebounced(search);
+  const from = localDateToInstant(dateFrom);
+  const paging = toServerPaging(page, pageSize);
+  const filters = { search: debouncedSearch, source: sourceFilter, from, ...paging };
+
+  const { state, reload } = useOperatorResource(
+    () => operatorApi.activityLogs(filters),
+    `activity-logs:${debouncedSearch}:${sourceFilter}:${from ?? ""}:${paging.page}:${paging.size}`,
   );
+  const isReady = state.status === "ready";
+  const logs = useMemo(() => pageItemsOf(state), [state]);
+  const total = pageTotalOf(state);
 
   const handleSort = (field: LogSortField) => {
+    if (field === "severity") return;
     if (sortField === field) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
@@ -52,42 +94,20 @@ export default function OperatorActivityLogsPage() {
     }
   };
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const fromMs = dateFrom ? new Date(dateFrom).getTime() : null;
-    const sevRank: Record<string, number> = { Critical: 0, Warning: 1, Info: 2 };
-
-    const list = activityLogs.filter((log) => {
-      const matchesQ =
-        !q ||
-        log.action.toLowerCase().includes(q) ||
-        log.summary.toLowerCase().includes(q) ||
-        log.actorName.toLowerCase().includes(q) ||
-        (log.target || "").toLowerCase().includes(q);
-      const matchesCat = categoryFilter === "ALL" || log.category === categoryFilter;
-      const matchesSev = severityFilter === "ALL" || log.severity === severityFilter;
-      const matchesDate = !fromMs || new Date(log.timestamp).getTime() >= fromMs;
-      return matchesQ && matchesCat && matchesSev && matchesDate;
-    });
-
-    return [...list].sort((a, b) => {
+  const sorted = useMemo(() => {
+    return [...logs].sort((a, b) => {
       let cmp = 0;
-      if (sortField === "category") cmp = a.category.localeCompare(b.category);
+      if (sortField === "category") cmp = categoryOf(a).localeCompare(categoryOf(b));
       else if (sortField === "action") cmp = a.action.localeCompare(b.action);
-      else if (sortField === "actorName") cmp = a.actorName.localeCompare(b.actorName);
-      else if (sortField === "severity") cmp = (sevRank[a.severity] ?? 9) - (sevRank[b.severity] ?? 9);
-      else cmp = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+      else if (sortField === "actorName") cmp = (a.operator_name ?? "").localeCompare(b.operator_name ?? "");
+      else cmp = new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime();
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [activityLogs, search, categoryFilter, severityFilter, dateFrom, sortField, sortDir]);
+  }, [logs, sortField, sortDir]);
 
   useEffect(() => {
     setPage(1);
-  }, [search, categoryFilter, severityFilter, dateFrom, pageSize]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  }, [debouncedSearch, sourceFilter, dateFrom, pageSize]);
 
   const {
     selectedIds,
@@ -98,34 +118,38 @@ export default function OperatorActivityLogsPage() {
     toggleSelectPage,
     toggleSelectOne,
   } = useTableSelection(
-    filtered.map((l) => l.id),
-    paginated.map((l) => l.id)
+    sorted.map((l) => l.id),
+    sorted.map((l) => l.id)
   );
+
+  const csvRow = (l: OperatorActivityLogItem, i?: number) => {
+    const base = [
+      formatDateTime(l.occurred_at),
+      l.source,
+      categoryOf(l),
+      l.action,
+      l.details ?? "",
+      l.operator_name ?? l.operator_id ?? "—",
+      targetOf(l) ?? "—",
+    ];
+    return i === undefined ? base : [i + 1, ...base];
+  };
 
   const handleExportCsv = () => {
     exportRowsToCsv(
       `prowise-operator-activity-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Sr No", "Timestamp", "Category", "Severity", "Action", "Summary", "Operator", "Target"],
-      filtered.map((l, i) => [
-        i + 1,
-        l.timestamp,
-        l.category,
-        l.severity,
-        l.action,
-        l.summary,
-        l.actorName,
-        l.target || "—",
-      ])
+      ["Sr No", "Timestamp", "Source", "Category", "Action", "Summary", "Operator", "Target"],
+      sorted.map((l, i) => csvRow(l, i))
     );
-    toast.success(`Exported ${filtered.length} operational log record(s) to CSV.`);
+    toast.success(`Exported ${sorted.length} operational log record(s) to CSV.`);
   };
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Operational Activity Logs"
-        badge={`${activityLogs.length} Events`}
-        demoLabel="Local Audit Trail"
+        badge={isReady ? `${total} Events` : undefined}
+        liveData
         description="Searchable operational history recording incident actions, retries, ticket replies, backups, and escalations."
       />
 
@@ -137,24 +161,24 @@ export default function OperatorActivityLogsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiCard
           label="Recorded Operator Actions"
-          value={activityLogs.length}
-          sublabel="Persisted locally for session continuity"
+          value={isReady ? total : "-"}
+          sublabel="Matching entries recorded on the server"
           icon={History}
           tone="teal"
         />
         <KpiCard
           label="Warning / Critical Actions"
-          value={warningOrCriticalCount}
-          sublabel="Escalations, pauses, and sensitive steps"
+          value="—"
+          sublabel={`${NOT_AVAILABLE}: ${SEVERITY_REASON}`}
           icon={AlertTriangle}
-          tone={warningOrCriticalCount > 0 ? "amber" : "emerald"}
+          tone="slate"
         />
         <KpiCard
           label="Routine Operations"
-          value={activityLogs.length - warningOrCriticalCount}
-          sublabel="Probes, ticket updates, and deliveries"
+          value="—"
+          sublabel={`${NOT_AVAILABLE}: ${SEVERITY_REASON}`}
           icon={CheckCircle2}
-          tone="emerald"
+          tone="slate"
         />
       </div>
 
@@ -163,22 +187,37 @@ export default function OperatorActivityLogsPage() {
           search={search}
           onSearchChange={setSearch}
           searchPlaceholder="Search action, operator, target, or summary..."
-          hasActiveFilters={Boolean(search || categoryFilter !== "ALL" || severityFilter !== "ALL" || dateFrom)}
+          hasActiveFilters={Boolean(search || sourceFilter !== "ALL" || dateFrom)}
           onResetFilters={() => {
             setSearch("");
             setCategoryFilter("ALL");
             setSeverityFilter("ALL");
+            setSourceFilter("ALL");
             setDateFrom("");
           }}
           onExportCsv={handleExportCsv}
-          exportDisabled={filtered.length === 0}
+          exportDisabled={sorted.length === 0}
           filters={
             <div className="flex flex-wrap items-center gap-2">
-              <div className="w-40">
+              <div className="w-36">
+                <OpSelect
+                  value={sourceFilter}
+                  onChange={(e) => setSourceFilter(e.target.value)}
+                  aria-label="Filter log source"
+                  options={[
+                    { label: "All Sources", value: "ALL" },
+                    { label: "Activity", value: "ACTIVITY" },
+                    { label: "Audit", value: "AUDIT" },
+                  ]}
+                />
+              </div>
+              <div className="w-40" title={`${NOT_AVAILABLE}: ${CATEGORY_REASON}`} data-not-available="true">
                 <OpSelect
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value)}
                   aria-label="Filter log category"
+                  disabled
+                  title={`${NOT_AVAILABLE}: ${CATEGORY_REASON}`}
                   options={[
                     { label: "All Categories", value: "ALL" },
                     { label: "Incident", value: "Incident" },
@@ -190,12 +229,15 @@ export default function OperatorActivityLogsPage() {
                     { label: "Account", value: "Account" },
                   ]}
                 />
+                <span className="text-[10px] leading-none text-[var(--color-text-muted)]">{NOT_AVAILABLE}</span>
               </div>
-              <div className="w-36">
+              <div className="w-36" title={`${NOT_AVAILABLE}: ${SEVERITY_REASON}`} data-not-available="true">
                 <OpSelect
                   value={severityFilter}
                   onChange={(e) => setSeverityFilter(e.target.value)}
                   aria-label="Filter log severity"
+                  disabled
+                  title={`${NOT_AVAILABLE}: ${SEVERITY_REASON}`}
                   options={[
                     { label: "All Levels", value: "ALL" },
                     { label: "Info", value: "Info" },
@@ -203,6 +245,7 @@ export default function OperatorActivityLogsPage() {
                     { label: "Critical", value: "Critical" },
                   ]}
                 />
+                <span className="text-[10px] leading-none text-[var(--color-text-muted)]">{NOT_AVAILABLE}</span>
               </div>
               <div className="w-40">
                 <OpInput
@@ -216,29 +259,32 @@ export default function OperatorActivityLogsPage() {
           }
         />
 
-        {paginated.length === 0 ? (
-          <EmptyState
-            icon={History}
-            title="No operational logs match your filter"
-            description="Adjust category, severity, date, or search terms to view logged actions."
+        {state.status !== "ready" || sorted.length === 0 ? (
+          <OperatorResourceStatus
+            state={state.status === "ready" ? { status: "ready", data: sorted } : state}
+            isEmpty={(data) => data.length === 0}
+            onRetry={() => void reload()}
+            emptyIcon={History}
+            emptyTitle="No operational logs match your filter"
+            emptyDescription="Adjust source, date, or search terms to view logged actions."
           />
         ) : (
           <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
             <BulkSelectionBar
               selectedCount={selectedIds.length}
-              totalFilteredCount={filtered.length}
-              onSelectAllMatching={() => setSelectedIds(filtered.map((l) => l.id))}
+              totalFilteredCount={sorted.length}
+              onSelectAllMatching={() => setSelectedIds(sorted.map((l) => l.id))}
               onClear={() => setSelectedIds([])}
               actions={
                 <OpButton
                   variant="outline"
                   size="xs"
                   onClick={() => {
-                    const chosen = activityLogs.filter((l) => selectedSet.has(l.id));
+                    const chosen = sorted.filter((l) => selectedSet.has(l.id));
                     exportRowsToCsv(
                       `prowise-selected-logs-${new Date().toISOString().slice(0, 10)}.csv`,
-                      ["Timestamp", "Category", "Severity", "Action", "Summary", "Operator"],
-                      chosen.map((l) => [l.timestamp, l.category, l.severity, l.action, l.summary, l.actorName])
+                      ["Timestamp", "Source", "Category", "Action", "Summary", "Operator", "Target"],
+                      chosen.map((l) => csvRow(l))
                     );
                     toast.success(`Exported ${chosen.length} selected log entry(ies).`);
                   }}
@@ -276,16 +322,17 @@ export default function OperatorActivityLogsPage() {
                     <th className="py-2.5 px-3.5">
                       <SortableHeader label="Operator" active={sortField === "actorName"} direction={sortDir} onSort={() => handleSort("actorName")} />
                     </th>
-                    <th className="py-2.5 px-3.5">
-                      <SortableHeader label="Severity" active={sortField === "severity"} direction={sortDir} onSort={() => handleSort("severity")} />
+                    <th className="py-2.5 px-3.5" title={`${NOT_AVAILABLE}: ${SEVERITY_REASON}`}>
+                      <SortableHeader label="Severity" active={false} direction={sortDir} onSort={() => handleSort("severity")} />
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-border)] text-xs">
-                  {paginated.map((log, idx) => {
-                    const srNo = (safePage - 1) * pageSize + idx + 1;
+                  {sorted.map((log, idx) => {
+                    const srNo = (page - 1) * pageSize + idx + 1;
                     const isSelected = selectedSet.has(log.id);
-                    const cellPy = compactTables ? "py-2" : "py-3";
+                    const cellPy = "py-3";
+                    const target = targetOf(log);
                     return (
                       <tr key={log.id} className={isSelected ? "bg-teal-500/5" : "hover:bg-[var(--color-hover)]/50"}>
                         <td className={`${cellPy} px-3.5`}>
@@ -301,25 +348,29 @@ export default function OperatorActivityLogsPage() {
                           {srNo}
                         </td>
                         <td className={`${cellPy} px-3.5 whitespace-nowrap text-[var(--color-text-secondary)]`}>
-                          {formatDateTime(log.timestamp)}
+                          {formatDateTime(log.occurred_at)}
                         </td>
                         <td className={`${cellPy} px-3.5 whitespace-nowrap`}>
-                          <StatusBadge label={log.category} tone="neutral" />
+                          <StatusBadge label={categoryOf(log)} tone="neutral" />
+                          <div className="text-[10px] text-[var(--color-text-muted)] mt-1">{humanizeCode(log.source)}</div>
                         </td>
                         <td className={`${cellPy} px-3.5 min-w-[260px]`}>
                           <p className="font-semibold text-[var(--color-text-primary)]">{log.action}</p>
-                          <p className="text-[var(--color-text-secondary)] mt-0.5">{log.summary}</p>
-                          {log.target && (
+                          {log.details && <p className="text-[var(--color-text-secondary)] mt-0.5 break-words">{log.details}</p>}
+                          {target && (
                             <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
-                              Target: {log.target}
+                              Target: {target}
                             </p>
                           )}
                         </td>
                         <td className={`${cellPy} px-3.5 whitespace-nowrap font-medium text-[var(--color-text-primary)]`}>
-                          {log.actorName}
+                          {log.operator_name ?? log.operator_id ?? "—"}
+                          {log.ip_address && (
+                            <div className="text-[10px] font-normal text-[var(--color-text-muted)]">{log.ip_address}</div>
+                          )}
                         </td>
                         <td className={`${cellPy} px-3.5 whitespace-nowrap`}>
-                          <StatusBadge label={log.severity} tone={getStatusTone(log.severity)} dot />
+                          <NotAvailableText reason={SEVERITY_REASON} />
                         </td>
                       </tr>
                     );
@@ -331,8 +382,8 @@ export default function OperatorActivityLogsPage() {
         )}
 
         <PaginationBar
-          currentPage={safePage}
-          totalItems={filtered.length}
+          currentPage={page}
+          totalItems={total}
           pageSize={pageSize}
           onPageChange={setPage}
           onPageSizeChange={(n) => {

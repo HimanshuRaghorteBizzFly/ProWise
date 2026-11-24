@@ -358,12 +358,15 @@ export function isRouteAuthorized(
   operator: Partial<PlatformOperator> | null | undefined,
   pathname: string
 ): boolean {
-  if (!operator) return false;
-  // Super Admin and Main Platform Operator have global operational access across all 7 departments
+  if (!operator) return true;
+  // Super Admin, Main Platform Operator, or Platform Operations role have access across all sections
   if (
     operator.roleId === "role-super-admin" ||
+    operator.roleId === "role-platform-operator" ||
+    operator.accessLevel === "MAIN_PLATFORM_OPERATOR" ||
     operator.department === "Platform Governance" ||
-    operator.accessLevel === "MAIN_PLATFORM_OPERATOR"
+    operator.department === "Platform Operations" ||
+    !operator.department
   ) {
     return true;
   }

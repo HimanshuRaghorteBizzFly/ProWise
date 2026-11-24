@@ -31,7 +31,8 @@ public class PlanDTOs {
             PlanLimitsDTO limits,
             List<String> features,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            long version
     ) {}
 
     public record CreatePlanRequest(
@@ -64,6 +65,7 @@ public class PlanDTOs {
             String aiTokenQuota,
             Integer trialDays,
             PlanLimitsDTO limits,
-            List<String> features
+            List<String> features,
+            Long expectedVersion
     ) {}
 }

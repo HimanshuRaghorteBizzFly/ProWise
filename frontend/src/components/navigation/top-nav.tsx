@@ -2,9 +2,10 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Menu, Bell, Sun, Moon, ChevronDown, ChevronRight, LogOut, Shield, Check, CheckCheck, Settings, GitBranch } from "lucide-react";
+import { Search, Menu, Sun, Moon, ChevronDown, ChevronRight, LogOut, Shield, Check, Settings, GitBranch } from "lucide-react";
 import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
 import { useThemeStore } from "@/store/theme-store";
+<<<<<<< HEAD
 import { useProjectStore } from "@/store/project-store";
 import { Organization, SystemRole } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
@@ -15,6 +16,11 @@ import { apiClient } from "@/lib/api";
 import { previewEnabled } from "@/lib/permissions";
 import { establishSession } from "@/lib/session";
 import { clearWorkspaceCaches, switchWorkspace } from "@/lib/workspace-switch";
+=======
+import { SystemRole } from "@/types";
+import { Avatar } from "@/components/ui/avatar";
+import { GlobalSearchModal } from "./global-search-modal";
+>>>>>>> 29db595 (Initial ProWise project upload)
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api";
 import { switchWorkspace } from "@/lib/workspace-switch";
@@ -27,7 +33,7 @@ interface TopNavProps {
   navigationButtonRef?: React.RefObject<HTMLButtonElement>;
 }
 
-type OpenMenu = "notifications" | "profile" | null;
+type OpenMenu = "profile" | null;
 
 const ICON_BUTTON =
   "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-app-text-secondary transition-colors hover:bg-app-hover hover:text-app-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent motion-reduce:transition-none";
@@ -57,6 +63,7 @@ export function TopNav({
   navigationButtonRef,
 }: TopNavProps) {
   const router = useRouter();
+<<<<<<< HEAD
 <<<<<<< HEAD
   const { currentUser, currentRole, currentOrg, setCurrentOrg, switchRoleAndNavigate, logout } = useAuthStore();
   const realOrganizations = useAuthStore((state) => state.organizations);
@@ -100,21 +107,23 @@ export function TopNav({
   // A signed-in member switches between their own organizations; the demo list is only for preview (development).
   const switchableOrgs = isAuthenticated && !isRolePreview ? organizations : SEEDED_ORGS;
 >>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
+=======
+  const { currentUser, currentRole, currentOrg, logout, organizations, isAuthenticated } = useAuthStore();
+  // Only the signed-in person's own memberships (from /v1/me) can be switched to.
+  const switchableOrgs = isAuthenticated ? organizations : [];
+>>>>>>> 29db595 (Initial ProWise project upload)
   const { setTheme, resolvedTheme } = useThemeStore();
-  const { notifications, markNotificationRead, markAllNotificationsRead } = useProjectStore();
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
-  const notificationsRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
-  const unreadNotifications = notifications.filter((n) => !n.read);
   const toggleMenu = (menu: Exclude<OpenMenu, null>) => setOpenMenu((current) => (current === menu ? null : menu));
 
   // Escape and outside clicks close the open menu.
   useEffect(() => {
     if (!openMenu) return;
-    const activeRef = openMenu === "notifications" ? notificationsRef : profileRef;
+    const activeRef = profileRef;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpenMenu(null);
@@ -197,8 +206,6 @@ export function TopNav({
 
         {/* Right: actions */}
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-          <SampleDataBadge />
-
           <button type="button" onClick={() => setIsSearchOpen(true)} aria-label="Search" className={cn(ICON_BUTTON, "lg:hidden")}>
             <Search className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -215,79 +222,6 @@ export function TopNav({
               <Moon className="h-4 w-4" aria-hidden="true" />
             )}
           </button>
-
-          {/* Notifications */}
-          <div ref={notificationsRef} className="relative">
-            <button
-              type="button"
-              onClick={() => toggleMenu("notifications")}
-              aria-label={`Notifications, ${unreadNotifications.length} unread`}
-              aria-haspopup="true"
-              aria-expanded={openMenu === "notifications"}
-              className={cn(ICON_BUTTON, "relative")}
-            >
-              <Bell className="h-4 w-4" aria-hidden="true" />
-              {unreadNotifications.length > 0 && (
-                <span className="absolute right-1.5 top-1.5 flex h-2 w-2" aria-hidden="true">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75 motion-reduce:animate-none" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-600" />
-                </span>
-              )}
-            </button>
-
-            {openMenu === "notifications" && (
-              <div className="absolute right-0 z-50 mt-2 w-80 max-w-[92vw] rounded-xl border border-app-border bg-app-surface p-3 shadow-2xl">
-                <div className="flex items-center justify-between border-b border-app-border pb-2">
-                  <span className="text-xs font-bold text-app-text-primary">
-                    Notifications ({unreadNotifications.length})
-                  </span>
-                  {unreadNotifications.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => markAllNotificationsRead()}
-                      className="flex items-center gap-1 rounded text-[11px] text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:text-blue-400"
-                    >
-                      <CheckCheck className="h-3 w-3" aria-hidden="true" /> Mark all read
-                    </button>
-                  )}
-                </div>
-                <ul className="mt-1 max-h-64 divide-y divide-app-border overflow-y-auto">
-                  {notifications.map((n) => (
-                    <li key={n.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          markNotificationRead(n.id);
-                          setOpenMenu(null);
-                          router.push(n.targetUrl);
-                        }}
-                        className={cn(
-                          "w-full rounded-lg p-2.5 text-left text-xs transition-colors hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent motion-reduce:transition-none",
-                          !n.read && "bg-blue-500/5",
-                        )}
-                      >
-                        <span className="flex items-center justify-between">
-                          <span className="truncate font-semibold text-app-text-primary">{n.title}</span>
-                          {!n.read && (
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-600">
-                              <span className="sr-only">Unread</span>
-                            </span>
-                          )}
-                        </span>
-                        <span className="mt-0.5 line-clamp-2 block text-app-text-secondary">{n.message}</span>
-                        <span className="mt-1 block text-[10px] text-app-text-muted">
-                          {new Date(n.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                  {notifications.length === 0 && (
-                    <li className="py-6 text-center text-xs text-app-text-muted">No notifications yet</li>
-                  )}
-                </ul>
-              </div>
-            )}
-          </div>
 
           {/* Active panel indicator */}
           <span className="hidden h-8 items-center gap-1.5 rounded-lg border border-app-border bg-app-bg px-2.5 text-xs font-medium text-app-text-primary sm:inline-flex">
@@ -398,6 +332,7 @@ export function TopNav({
                   )}
                 </div>
 
+                {switchableOrgs.length > 0 && (
                 <div className="border-b border-app-border py-2">
                   <p className={MENU_SECTION_TITLE}>Switch organization</p>
                   <div className="space-y-0.5">
@@ -407,11 +342,6 @@ export function TopNav({
                         type="button"
                         onClick={async () => {
                           setOpenMenu(null);
-                          if (isRolePreview || !isAuthenticated) {
-                            setCurrentOrg(org);
-                            router.push(getRoleDashboardPath(currentRole, org.id));
-                            return;
-                          }
                           // Real session: a token bound to that organization and the role held there (server).
                           const result = await switchWorkspace(org.id);
                           if (!result.ok) return;
@@ -426,6 +356,10 @@ export function TopNav({
                     ))}
 >>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
                   </div>
+<<<<<<< HEAD
+=======
+                </div>
+>>>>>>> 29db595 (Initial ProWise project upload)
                 )}
 
                 <div className="pt-1">
@@ -451,7 +385,7 @@ export function TopNav({
                       try {
                         await apiClient.signout();
                       } catch {
-                        /* already signed out or offline preview: clearing local state below is enough */
+                        /* already signed out or offline: clearing local state below is enough */
                       }
                       logout();
                       router.push("/login");

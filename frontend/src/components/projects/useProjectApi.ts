@@ -3,7 +3,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api";
-import { classifyFailure, readPermissionEnv } from "@/lib/permissions";
+import { classifyFailure } from "@/lib/permissions";
 import type {
   CreateProjectDto,
   ProjectDateChangeDto,
@@ -12,8 +12,7 @@ import type {
   ProjectOptionsDto,
   UpdateProjectDto,
 } from "@/types/api";
-import { toState, withFixture, type LoadState } from "@/components/org-console/useRoleApi";
-import { PREVIEW_PROJECTS } from "@/lib/fixtures/preview-data";
+import { toState, type LoadState } from "@/components/org-console/useRoleApi";
 
 /** Task 2.1: project records on the real API (no sample fallback: these screens create and edit). */
 
@@ -41,14 +40,13 @@ export function usePortfolio(orgId: string, filters: PortfolioFilters): Portfoli
   let state: LoadState<ProjectDto[]>;
   if (query.isPending) state = { kind: "loading" };
   else if (query.error) {
-    const kind = classifyFailure(query.error, readPermissionEnv());
-    state = kind === "fixture" ? { kind: "ready", data: PREVIEW_PROJECTS.filter((p) => !filters.mode || p.mode === filters.mode), sample: true }
-      : kind === "forbidden" ? { kind: "forbidden" }
+    const kind = classifyFailure(query.error);
+    state = kind === "forbidden" ? { kind: "forbidden" }
       : kind === "not-found" ? { kind: "access-lost" }
         : kind === "unauthenticated" ? { kind: "unauthenticated" }
           : { kind: "error", retry: () => void query.refetch() };
   } else {
-    state = { kind: "ready", data: (query.data?.pages ?? []).flatMap((page) => page.items), sample: false };
+    state = { kind: "ready", data: (query.data?.pages ?? []).flatMap((page) => page.items) };
   }
   return {
     state,
@@ -61,7 +59,7 @@ export function usePortfolio(orgId: string, filters: PortfolioFilters): Portfoli
 export function useProject(orgId: string, projectId: string): LoadState<ProjectDto> {
   return toState(useQuery({
     queryKey: ["project", orgId, projectId],
-    queryFn: () => withFixture(() => apiClient.project(orgId, projectId), () => PREVIEW_PROJECTS.find((p) => p.id === projectId) ?? PREVIEW_PROJECTS[0]),
+    queryFn: () => apiClient.project(orgId, projectId),
     enabled: Boolean(projectId),
     ...QUERY,
   }));

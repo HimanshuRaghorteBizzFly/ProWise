@@ -34,7 +34,8 @@ export interface ProjectsPortfolioViewProps {
   projects: ProjectDto[];
   users: Array<{ id: string; name: string; email: string }>;
   teams: Array<{ id: string; name: string }>;
-  source: "api" | "fixture";
+  /** False while the archive/create endpoints are not available to this view: those actions show as "Later". */
+  actionsAvailable?: boolean;
   can: (key: PermissionKey) => boolean;
   basePath?: string;
   now?: string;
@@ -99,7 +100,7 @@ export function ProjectsPortfolioView({
   projects,
   users,
   teams,
-  source,
+  actionsAvailable = true,
   can,
   basePath,
   now,
@@ -195,7 +196,6 @@ export function ProjectsPortfolioView({
     <PageHeader
       title="Projects portfolio"
       description="Every project you may read in this organization. Individual and Structured progress are shown separately and never combined into one figure."
-      simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={
         canCreate ? (
           basePath ? (
@@ -205,7 +205,7 @@ export function ProjectsPortfolioView({
             >
               Create project
             </Link>
-          ) : source === "api" ? (
+          ) : actionsAvailable ? (
             <button
               type="button"
               onClick={() => setIsCreateOpen(true)}
@@ -263,7 +263,7 @@ export function ProjectsPortfolioView({
 
   const archiveAction = (project: ProjectDto) => {
     if (!canArchive) return null;
-    if (source === "fixture") {
+    if (!actionsAvailable) {
       return (
         <LaterActionButton title="Available when task 2.4 ships">
           {project.archived ? "Restore" : "Archive"}

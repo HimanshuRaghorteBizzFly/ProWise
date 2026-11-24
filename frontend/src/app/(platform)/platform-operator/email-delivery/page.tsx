@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Mail, RefreshCw } from "lucide-react";
-import { operatorAuthService, type OperatorEmailDelivery } from "../_services/operator-auth-service";
+import { operatorApi } from "../_services/operator-api";
+import { OperatorResourceStatus, rowsOf, useOperatorResource } from "../_components/OperatorLive";
 import { formatDateTime } from "../_services/operator-service";
 import {
-  EmptyState,
   FilterBar,
   KpiCard,
   OpButton,
@@ -24,29 +24,14 @@ const STATUSES = ["ALL", "SMTP_ACCEPTED", "FAILED", "NOT_SENT", "PROCESSING", "Q
  * they cannot change SMTP settings or "retry" a logged email (account links are single use and never stored).
  */
 export default function OperatorEmailDeliveryPage() {
-  const [rows, setRows] = useState<OperatorEmailDelivery[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("ALL");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setRows(await operatorAuthService.listEmailDeliveries(status));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load email delivery logs.");
-    } finally {
-      setLoading(false);
-    }
-  }, [status]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { state, reload } = useOperatorResource(() => operatorApi.emailDelivery.list(status), `email-delivery:${status}`);
+  const loading = state.status === "loading";
+  const rows = useMemo(() => rowsOf(state), [state]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -62,9 +47,10 @@ export default function OperatorEmailDeliveryPage() {
     <div className="space-y-5">
       <PageHeader
         title="Email Delivery"
+        liveData
         description="Every email the platform attempted and what the SMTP server answered. SMTP accepted is not proof of inbox delivery."
         actions={
-          <OpButton variant="outline" size="sm" isLoading={loading} onClick={() => void load()}>
+          <OpButton variant="outline" size="sm" isLoading={loading} onClick={() => void reload()}>
             <RefreshCw className="w-3.5 h-3.5" />
             Refresh
           </OpButton>
@@ -72,9 +58,9 @@ export default function OperatorEmailDeliveryPage() {
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <KpiCard icon={Mail} label="Attempts shown" value={rows.length} />
-        <KpiCard icon={CheckCircle2} label="Accepted by SMTP server" value={accepted} />
-        <KpiCard icon={AlertTriangle} label="Failed or not sent" value={failed} />
+        <KpiCard icon={Mail} label="Attempts shown" value={state.status === "ready" ? rows.length : "—"} />
+        <KpiCard icon={CheckCircle2} label="Accepted by SMTP server" value={state.status === "ready" ? accepted : "—"} />
+        <KpiCard icon={AlertTriangle} label="Failed or not sent" value={state.status === "ready" ? failed : "—"} />
       </div>
 
       <SurfaceCard className="overflow-hidden">
@@ -97,10 +83,15 @@ export default function OperatorEmailDeliveryPage() {
           }
         />
 
-        {error && <div className="px-5 py-3 text-xs text-rose-700 dark:text-rose-300">{error}</div>}
-
-        {!loading && filtered.length === 0 && !error ? (
-          <EmptyState icon={Mail} title="No email delivery attempts" description="Nothing matches these filters yet." />
+        {state.status !== "ready" || filtered.length === 0 ? (
+          <OperatorResourceStatus
+            state={state.status === "ready" ? { status: "ready", data: filtered } : state}
+            isEmpty={(data) => data.length === 0}
+            onRetry={() => void reload()}
+            emptyIcon={Mail}
+            emptyTitle="No email delivery attempts"
+            emptyDescription="Nothing matches these filters yet."
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -128,11 +119,11 @@ export default function OperatorEmailDeliveryPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 hidden lg:table-cell text-[11px] text-rose-700 dark:text-rose-300 max-w-[320px] break-words">
-                      {row.errorMessage ?? row.errorCode ?? ""}
+                      {row.error_message ?? row.error_code ?? ""}
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell text-right text-[var(--color-text-muted)] whitespace-nowrap">
-                      <div>{formatDateTime(row.createdAt)}</div>
-                      <div className="text-[10px]">{row.sentAt ? `sent ${formatDateTime(row.sentAt)}` : "not sent"}</div>
+                      <div>{formatDateTime(row.created_at ?? "")}</div>
+                      <div className="text-[10px]">{row.sent_at ? `sent ${formatDateTime(row.sent_at)}` : "not sent"}</div>
                     </td>
                   </tr>
                 ))}

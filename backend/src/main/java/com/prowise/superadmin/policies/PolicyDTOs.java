@@ -21,7 +21,8 @@ public final class PolicyDTOs {
             int maxAttachmentMb,
             boolean maintenanceBannerMode,
             List<FeatureFlagDTOs.FeatureFlagResponse> featureFlags,
-            Instant updatedAt
+            Instant updatedAt,
+            long version
     ) {
         public static PlatformPolicyResponse fromEntity(
                 PlatformPolicyEntity e,
@@ -37,7 +38,8 @@ public final class PolicyDTOs {
                     e.getMaxAttachmentMb(),
                     Boolean.TRUE.equals(e.getMaintenanceBannerMode()),
                     flags,
-                    e.getUpdatedAt()
+                    e.getUpdatedAt(),
+                    e.getVersion() == null ? 0L : e.getVersion()
             );
         }
     }
@@ -50,7 +52,8 @@ public final class PolicyDTOs {
             @NotNull Integer autoSuspendAfterPastDueDays,
             @NotNull Integer defaultTrialDays,
             @NotNull Integer maxAttachmentMb,
-            @NotNull Boolean maintenanceBannerMode
+            @NotNull Boolean maintenanceBannerMode,
+            Long expectedVersion
     ) {}
 
     public record PlatformBrandingResponse(
@@ -62,7 +65,8 @@ public final class PolicyDTOs {
             String dateFormat,
             String currencyDisplay,
             boolean compactDensity,
-            Instant updatedAt
+            Instant updatedAt,
+            long version
     ) {
         public static PlatformBrandingResponse fromEntity(PlatformBrandingEntity e) {
             return new PlatformBrandingResponse(
@@ -74,7 +78,8 @@ public final class PolicyDTOs {
                     e.getDateFormat(),
                     e.getCurrencyDisplay(),
                     Boolean.TRUE.equals(e.getCompactDensity()),
-                    e.getUpdatedAt()
+                    e.getUpdatedAt(),
+                    e.getVersion() == null ? 0L : e.getVersion()
             );
         }
     }
@@ -87,6 +92,7 @@ public final class PolicyDTOs {
             String defaultLanguage,
             String dateFormat,
             String currencyDisplay,
-            Boolean compactDensity
+            Boolean compactDensity,
+            Long expectedVersion
     ) {}
 }

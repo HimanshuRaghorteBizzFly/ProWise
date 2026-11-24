@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -10,9 +9,19 @@ import {
   RefreshCw,
   RotateCcw,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
-import { SyncJobItem } from "../_types";
+import type { OpsBackgroundJob } from "@/types/operator-console";
+import { useOperatorPermissions } from "../_services/operator-access";
+import { operatorApi } from "../_services/operator-api";
 import { formatDateTime } from "../_services/operator-service";
+import {
+  NotAvailableButton,
+  NotAvailableText,
+  OperatorResourceStatus,
+  humanizeCode,
+  readyValue,
+  rowsOf,
+  useOperatorResource,
+} from "../_components/OperatorLive";
 import {
   BulkSelectionBar,
   ConfirmModal,
@@ -33,11 +42,44 @@ import {
 
 type SyncSortField = "jobCode" | "queue" | "orgName" | "status" | "retries" | "lastRunAt";
 
+const RETRY_REASON = "the server queues the job but no worker consumes it yet";
+const PAUSE_REASON = "there is no pause or resume endpoint for jobs";
+
+/** One background job as the table shows it (GET /v1/operator/jobs). */
+interface SyncJobRow {
+  id: string;
+  jobCode: string;
+  name: string;
+  queue: string;
+  orgName: string;
+  status: string;
+  attempts: number;
+  maxAttempts: number;
+  retries: number;
+  lastRunAt: string;
+  note: string;
+}
+
+function toRow(j: OpsBackgroundJob): SyncJobRow {
+  return {
+    id: j.id,
+    jobCode: j.id,
+    name: j.job_name,
+    queue: j.queue_name,
+    orgName: "",
+    status: humanizeCode(j.status),
+    attempts: j.attempts,
+    maxAttempts: j.max_attempts,
+    retries: j.attempts,
+    lastRunAt: j.completed_at ?? j.started_at ?? j.scheduled_at ?? j.created_at ?? "",
+    note: j.error_details ?? "",
+  };
+}
+
 export default function OperatorSyncJobsPage() {
-  const syncJobs = usePlatformOperatorStore((s) => s.syncJobs);
-  const retrySyncJob = usePlatformOperatorStore((s) => s.retrySyncJob);
-  const toggleSyncJobPause = usePlatformOperatorStore((s) => s.toggleSyncJobPause);
-  const bulkRetrySyncJobs = usePlatformOperatorStore((s) => s.bulkRetrySyncJobs);
+  const { state, reload } = useOperatorResource(() => operatorApi.jobs(), "jobs");
+  const syncJobs = useMemo(() => rowsOf(state).map(toRow), [state]);
+  const queueOptions = useMemo(() => Array.from(new Set(syncJobs.map((j) => j.queue))).sort(), [syncJobs]);
   const { can } = useOperatorPermissions();
   const canManage = can("integrations.manage");
 
@@ -48,7 +90,8 @@ export default function OperatorSyncJobsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
-  const [pauseTarget, setPauseTarget] = useState<SyncJobItem | null>(null);
+  // Pause / Resume has no endpoint: the confirmation stays in place but nothing opens it yet.
+  const [pauseTarget, setPauseTarget] = useState<SyncJobRow | null>(null);
 
   const activeJobsCount = useMemo(
     () => syncJobs.filter((j) => j.status === "Running" || j.status === "Queued").length,
@@ -123,9 +166,15 @@ export default function OperatorSyncJobsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Sync Jobs & Queues"
-        badge={`${syncJobs.length} Jobs`}
-        demoLabel="Demo Worker Queues"
+        badge={`${state.status === "ready" ? syncJobs.length : "-"} Jobs`}
+        liveData
         description="Monitor background synchronization queues, retry stalled jobs, and pause or resume authorized queue workers."
+        actions={
+          <OpButton variant="outline" size="sm" onClick={() => void reload()}>
+            <RefreshCw className="w-3.5 h-3.5" />
+            Refresh
+          </OpButton>
+        }
       />
 
       <DemoDataBanner
@@ -136,21 +185,21 @@ export default function OperatorSyncJobsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiCard
           label="Running / Queued"
-          value={activeJobsCount}
+          value={readyValue(state, () => activeJobsCount)}
           sublabel="Currently processing items"
           icon={RefreshCw}
           tone="teal"
         />
         <KpiCard
           label="Failed Jobs"
-          value={failedJobsCount}
+          value={readyValue(state, () => failedJobsCount)}
           sublabel="Waiting for operator retry"
           icon={AlertTriangle}
           tone={failedJobsCount > 0 ? "rose" : "emerald"}
         />
         <KpiCard
           label="Completed Jobs"
-          value={completedJobsCount}
+          value={readyValue(state, () => completedJobsCount)}
           sublabel="Processed cleanly"
           icon={CheckCircle2}
           tone="emerald"
@@ -177,10 +226,7 @@ export default function OperatorSyncJobsPage() {
                   aria-label="Filter queue"
                   options={[
                     { label: "All Queues", value: "ALL" },
-                    { label: "Webhook Ingestion", value: "Webhook Ingestion" },
-                    { label: "GitHub Repo Sync", value: "GitHub Repo Sync" },
-                    { label: "Invoice & Email Queue", value: "Invoice & Email Queue" },
-                    { label: "Metrics Rollup", value: "Metrics Rollup" },
+                    ...queueOptions.map((q) => ({ label: q, value: q })),
                   ]}
                 />
               </div>
@@ -203,7 +249,16 @@ export default function OperatorSyncJobsPage() {
           }
         />
 
-        {paginated.length === 0 ? (
+        {state.status !== "ready" || state.data.length === 0 ? (
+          <OperatorResourceStatus
+            state={state}
+            isEmpty={(d) => d.length === 0}
+            onRetry={() => void reload()}
+            emptyIcon={RefreshCw}
+            emptyTitle="No background jobs"
+            emptyDescription="The server has no queued, running or finished jobs to show."
+          />
+        ) : paginated.length === 0 ? (
           <EmptyState
             icon={RefreshCw}
             title="No sync jobs match your filter"
@@ -217,20 +272,10 @@ export default function OperatorSyncJobsPage() {
               onSelectAllMatching={() => setSelectedIds(filtered.map((j) => j.id))}
               onClear={() => setSelectedIds([])}
               actions={
-                <OpButton
-                  variant="primary"
-                  size="xs"
-                  disabled={!canManage}
-                  onClick={() => {
-                    const count = bulkRetrySyncJobs(selectedIds);
-                    if (count > 0) toast.success(`Retried ${count} queued/failed sync job(s).`);
-                    else toast.info("Selected jobs are already completed.");
-                    setSelectedIds([]);
-                  }}
-                >
+                <NotAvailableButton variant="primary" size="xs" reason={RETRY_REASON} hideLabel>
                   <RotateCcw className="w-3.5 h-3.5" />
                   Retry Selected ({selectedIds.length})
-                </OpButton>
+                </NotAvailableButton>
               }
             />
             <div className="overflow-x-auto">
@@ -267,7 +312,6 @@ export default function OperatorSyncJobsPage() {
                   {paginated.map((job, idx) => {
                     const srNo = (safePage - 1) * pageSize + idx + 1;
                     const isSelected = selectedSet.has(job.id);
-                    const pct = job.totalCount > 0 ? Math.round((job.processedCount / job.totalCount) * 100) : 100;
                     return (
                       <tr key={job.id} className={isSelected ? "bg-teal-500/5" : "hover:bg-[var(--color-hover)]/50"}>
                         <td className="py-3 px-3.5">
@@ -297,20 +341,19 @@ export default function OperatorSyncJobsPage() {
                         <td className="py-3 px-3.5 whitespace-nowrap">
                           <StatusBadge label={job.queue} tone="neutral" />
                           <p className="text-[11px] font-medium text-[var(--color-text-secondary)] mt-1">
-                            {job.orgName}
+                            {job.orgName || "—"}
                           </p>
                         </td>
                         <td className="py-3 px-3.5 min-w-[160px]">
                           <div className="space-y-1">
                             <div className="flex justify-between text-[11px] text-[var(--color-text-muted)]">
+                              {/* Item counts are not reported by the server; attempts are. */}
+                              <NotAvailableText reason="the server does not report processed item counts" />
                               <span>
-                                {job.processedCount} / {job.totalCount} ({pct}%)
+                                {job.attempts} / {job.maxAttempts} attempts
                               </span>
-                              <span>{job.retries} retry</span>
                             </div>
-                            <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
-                              <div className="h-full rounded-full bg-teal-500" style={{ width: `${pct}%` }} />
-                            </div>
+                            <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden" />
                           </div>
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
@@ -319,26 +362,13 @@ export default function OperatorSyncJobsPage() {
                         <td className="py-3 px-3.5 whitespace-nowrap text-right">
                           <div className="inline-flex items-center gap-1.5">
                             {(job.status === "Failed" || job.status === "Queued") && (
-                              <OpButton
-                                variant="primary"
-                                size="xs"
-                                disabled={!canManage}
-                                onClick={() => {
-                                  retrySyncJob(job.id);
-                                  toast.success(`Job ${job.jobCode} retried and completed (simulated).`);
-                                }}
-                              >
+                              <NotAvailableButton variant="primary" size="xs" reason={RETRY_REASON} hideLabel>
                                 <RotateCcw className="w-3.5 h-3.5" />
                                 Retry
-                              </OpButton>
+                              </NotAvailableButton>
                             )}
                             {job.status !== "Completed" && (
-                              <OpButton
-                                variant="outline"
-                                size="xs"
-                                disabled={!canManage}
-                                onClick={() => setPauseTarget(job)}
-                              >
+                              <NotAvailableButton variant="outline" size="xs" reason={PAUSE_REASON} hideLabel>
                                 {job.status === "Paused" ? (
                                   <>
                                     <PlayCircle className="w-3.5 h-3.5" />
@@ -350,8 +380,9 @@ export default function OperatorSyncJobsPage() {
                                     Pause
                                   </>
                                 )}
-                              </OpButton>
+                              </NotAvailableButton>
                             )}
+                            {!canManage && <span className="sr-only">Your role cannot manage jobs.</span>}
                           </div>
                         </td>
                       </tr>
@@ -391,10 +422,8 @@ export default function OperatorSyncJobsPage() {
         confirmLabel={pauseTarget?.status === "Paused" ? "Resume Job" : "Pause Job"}
         variant={pauseTarget?.status === "Paused" ? "primary" : "danger"}
         onConfirm={() => {
-          if (pauseTarget) {
-            toggleSyncJobPause(pauseTarget.id);
-            toast.success(`${pauseTarget.jobCode} ${pauseTarget.status === "Paused" ? "resumed" : "paused"}.`);
-          }
+          // No pause/resume endpoint exists; nothing is changed locally either.
+          setPauseTarget(null);
         }}
       />
     </div>

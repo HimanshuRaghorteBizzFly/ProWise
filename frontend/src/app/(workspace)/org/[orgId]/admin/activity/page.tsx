@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-// Activity is part of Audit & security. Approved redirect (Gate 2); the route is kept so old links still work.
+// The old Activity URL keeps working and opens the dashboard.
 export default function AdminActivityRedirect({ params }: { params: { orgId: string } }) {
-  redirect(`/org/${encodeURIComponent(params.orgId)}/admin/audit-logs`);
+  redirect(`/org/${encodeURIComponent(params.orgId)}/admin/dashboard`);
 }

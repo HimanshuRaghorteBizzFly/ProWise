@@ -38,6 +38,16 @@ export default function SelectOrgPage() {
   const [pending, setPending] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
+  React.useEffect(() => {
+    const role = useAuthStore.getState().currentRole;
+    const email = useAuthStore.getState().currentUser?.email?.toLowerCase() || "";
+    if (role === "SUPER_ADMIN" || email.includes("superadmin")) {
+      router.replace("/super-admin/dashboard");
+    } else if (role === "PLATFORM_OPERATOR") {
+      router.replace("/platform-operator/dashboard");
+    }
+  }, [router]);
+
   const roleFor = (orgId: string) => choices.find((c) => c.organization_id === orgId)?.role;
 
   const handleSelect = async (org: (typeof organizations)[number]) => {

@@ -3,7 +3,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { safeJSONStorage } from "@/lib/safe-storage";
-import { useAuthStore } from "@/store/auth-store";
 import {
   AnnouncementDraft,
   ApiEndpointMetric,
@@ -79,6 +78,8 @@ interface PlatformOperatorStoreState {
   accountSettings: OperatorAccountSettings;
   sidebarCollapsed: boolean;
   lastTelemetryTickAt: string;
+  operatorProfile: any | null;
+  setOperatorProfile: (profile: any) => void;
 
   setSidebarCollapsed: (collapsed: boolean) => void;
   tickLiveDemoMetrics: () => void;
@@ -251,30 +252,164 @@ function appendLog(
 export const usePlatformOperatorStore = create<PlatformOperatorStoreState>()(
   persist(
     (set, get) => ({
-      orgHealth: SEED_ORG_SERVICE_HEALTH,
-      systemMetrics: SEED_SYSTEM_METRICS,
-      incidents: SEED_OPERATOR_INCIDENTS,
-      tickets: SEED_OPERATOR_TICKETS,
-      accessRequests: SEED_ACCESS_REQUESTS,
-      integrations: SEED_INTEGRATIONS_HEALTH,
-      githubApps: SEED_GH_MONITORING,
-      webhooks: SEED_WEBHOOK_DELIVERIES,
-      syncJobs: SEED_SYNC_JOBS,
-      apiEndpoints: SEED_API_ENDPOINTS,
-      emailDeliveries: SEED_EMAIL_DELIVERIES,
-      smtpHealth: SEED_SMTP_HEALTH,
-      emailDrafts: SEED_EMAIL_DRAFTS,
-      announcementDrafts: SEED_ANNOUNCEMENT_DRAFTS,
-      subscriptions: SEED_SUBSCRIPTION_STATUS,
-      paymentFailures: SEED_PAYMENT_FAILURES,
-      invoiceDeliveries: SEED_INVOICE_DELIVERIES,
-      backups: SEED_BACKUPS,
-      maintenanceWindows: SEED_MAINTENANCE_WINDOWS,
-      alerts: SEED_ALERTS,
-      activityLogs: SEED_OPERATOR_LOGS,
-      accountSettings: SEED_OPERATOR_ACCOUNT,
+      operatorProfile: null,
+      setOperatorProfile: (profile: any) => set({ operatorProfile: profile }),
+      orgHealth: [],
+      systemMetrics: [
+        {
+          id: "srv-api",
+          serviceName: "Core API Gateway",
+          category: "API & Compute",
+          status: "Operational",
+          cpuPct: 18,
+          memoryPct: 42,
+          latencyMs: 14,
+          uptime30d: "99.99%",
+          queueDepth: 0,
+          dbConnectionsPct: 24,
+          note: "Operating nominally across all regions.",
+          updatedAt: nowIso(),
+        },
+        {
+          id: "srv-db",
+          serviceName: "PostgreSQL Production Cluster",
+          category: "Database & Cache",
+          status: "Operational",
+          cpuPct: 22,
+          memoryPct: 46,
+          latencyMs: 6,
+          uptime30d: "100.0%",
+          queueDepth: 0,
+          dbConnectionsPct: 32,
+          note: "WAL archiving active, connections within pool limit.",
+          updatedAt: nowIso(),
+        },
+      ],
+      incidents: [],
+      tickets: [],
+      accessRequests: [],
+      integrations: [
+        {
+          id: "int-github",
+          name: "GitHub App Integration",
+          category: "Source Control",
+          status: "Healthy",
+          errorRatePct: 0.0,
+          avgLatencyMs: 42,
+          failureCount24h: 0,
+          lastDiagnosticSummary: "Webhook delivery nominal. All HMAC signatures valid.",
+          lastCheckAt: nowIso(),
+        },
+        {
+          id: "int-stripe",
+          name: "Stripe Payment Gateway",
+          category: "Billing & Payments",
+          status: "Healthy",
+          errorRatePct: 0.0,
+          avgLatencyMs: 85,
+          failureCount24h: 0,
+          lastDiagnosticSummary: "Payment intents and webhooks operating normally.",
+          lastCheckAt: nowIso(),
+        },
+        {
+          id: "int-smtp",
+          name: "Transactional Mail Relay",
+          category: "Email Relay",
+          status: "Healthy",
+          errorRatePct: 0.0,
+          avgLatencyMs: 65,
+          failureCount24h: 0,
+          lastDiagnosticSummary: "SMTP handshake and delivery active. Zero queue backlog.",
+          lastCheckAt: nowIso(),
+        },
+      ],
+      githubApps: [],
+      webhooks: [],
+      syncJobs: [],
+      apiEndpoints: [
+        {
+          id: "ep-auth",
+          endpointLabel: "POST /v1/auth/login",
+          serviceArea: "Authentication",
+          avgLatencyMs: 48,
+          p95LatencyMs: 95,
+          requestsPerMin: 120,
+          errorRatePct: 0.0,
+          status: "Normal",
+          topIssueSummary: "Nominal response times and zero auth errors.",
+        },
+        {
+          id: "ep-projects",
+          endpointLabel: "GET /v1/projects",
+          serviceArea: "Workspaces",
+          avgLatencyMs: 32,
+          p95LatencyMs: 70,
+          requestsPerMin: 280,
+          errorRatePct: 0.0,
+          status: "Normal",
+          topIssueSummary: "Cache hit ratio 94.2%. Response times nominal.",
+        },
+      ],
+      emailDeliveries: [],
+      smtpHealth: {
+        providerLabel: "Primary Transactional Mail Relay",
+        connectionState: "Healthy",
+        inboxPlacementPct: 99.8,
+        bounceRatePct: 0.0,
+        dailySent: 0,
+        dailyQuota: 50000,
+        lastCheckedAt: nowIso(),
+        checks: [
+          { label: "Mail Relay Connection", passed: true, detail: "Relay server responding normally." },
+          { label: "Domain Sender Verification", passed: true, detail: "SPF and DKIM active." },
+          { label: "Queue Backlog", passed: true, detail: "0 messages waiting." },
+        ],
+      },
+      emailDrafts: [],
+      announcementDrafts: [],
+      subscriptions: [],
+      paymentFailures: [],
+      invoiceDeliveries: [],
+      backups: [
+        {
+          id: "bk-wal",
+          snapshotCode: "SNAP-WAL-001",
+          scope: "Primary Database",
+          sizeGb: 12.4,
+          status: "Verified",
+          durationSec: 45,
+          region: "us-east-1",
+          retentionDays: 30,
+          restoreStatus: "None",
+          createdAt: nowIso(),
+        },
+      ],
+      maintenanceWindows: [],
+      alerts: [],
+      activityLogs: [],
+      accountSettings: {
+        name: "Platform Director",
+        roleTitle: "Lead Platform Operator",
+        email: "main.operator@prowise.io",
+        department: "Platform Operations",
+        shiftName: "Executive Operations Lead",
+        activeOperatorId: "op-main-1",
+        timezone: "UTC",
+        autoRefreshSeconds: 30,
+        mfaEnabled: true,
+        mfaMethod: "Authenticator App",
+        passwordUpdatedAt: nowIso(),
+        compactTables: false,
+        notifications: {
+          criticalAlerts: true,
+          incidentAssignments: true,
+          webhookFailures: true,
+          slaWarnings: true,
+          approvalDecisions: true,
+        },
+      },
       sidebarCollapsed: false,
-      lastTelemetryTickAt: "2026-11-12T06:10:00Z",
+      lastTelemetryTickAt: nowIso(),
 
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
 
@@ -1826,78 +1961,172 @@ export const usePlatformOperatorStore = create<PlatformOperatorStoreState>()(
 
       resetOperatorDemoData: () =>
         set({
-          orgHealth: SEED_ORG_SERVICE_HEALTH,
-          systemMetrics: SEED_SYSTEM_METRICS,
-          incidents: SEED_OPERATOR_INCIDENTS,
-          tickets: SEED_OPERATOR_TICKETS,
-          accessRequests: SEED_ACCESS_REQUESTS,
-          integrations: SEED_INTEGRATIONS_HEALTH,
-          githubApps: SEED_GH_MONITORING,
-          webhooks: SEED_WEBHOOK_DELIVERIES,
-          syncJobs: SEED_SYNC_JOBS,
-          apiEndpoints: SEED_API_ENDPOINTS,
-          emailDeliveries: SEED_EMAIL_DELIVERIES,
-          smtpHealth: SEED_SMTP_HEALTH,
-          emailDrafts: SEED_EMAIL_DRAFTS,
-          announcementDrafts: SEED_ANNOUNCEMENT_DRAFTS,
-          subscriptions: SEED_SUBSCRIPTION_STATUS,
-          paymentFailures: SEED_PAYMENT_FAILURES,
-          invoiceDeliveries: SEED_INVOICE_DELIVERIES,
-          backups: SEED_BACKUPS,
-          maintenanceWindows: SEED_MAINTENANCE_WINDOWS,
-          alerts: SEED_ALERTS,
-          activityLogs: SEED_OPERATOR_LOGS,
-          accountSettings: SEED_OPERATOR_ACCOUNT,
+          orgHealth: [],
+          systemMetrics: [
+            {
+              id: "srv-api",
+              serviceName: "Core API Gateway",
+              category: "API & Compute",
+              status: "Operational",
+              cpuPct: 18,
+              memoryPct: 42,
+              latencyMs: 14,
+              uptime30d: "99.99%",
+              queueDepth: 0,
+              dbConnectionsPct: 24,
+              note: "Operating nominally across all regions.",
+              updatedAt: nowIso(),
+            },
+            {
+              id: "srv-db",
+              serviceName: "PostgreSQL Production Cluster",
+              category: "Database & Cache",
+              status: "Operational",
+              cpuPct: 22,
+              memoryPct: 46,
+              latencyMs: 6,
+              uptime30d: "100.0%",
+              queueDepth: 0,
+              dbConnectionsPct: 32,
+              note: "WAL archiving active, connections within pool limit.",
+              updatedAt: nowIso(),
+            },
+          ],
+          incidents: [],
+          tickets: [],
+          accessRequests: [],
+          integrations: [
+            {
+              id: "int-github",
+              name: "GitHub App Integration",
+              category: "Source Control",
+              status: "Healthy",
+              errorRatePct: 0.0,
+              avgLatencyMs: 42,
+              failureCount24h: 0,
+              lastDiagnosticSummary: "Webhook delivery nominal. All HMAC signatures valid.",
+              lastCheckAt: nowIso(),
+            },
+            {
+              id: "int-stripe",
+              name: "Stripe Payment Gateway",
+              category: "Billing & Payments",
+              status: "Healthy",
+              errorRatePct: 0.0,
+              avgLatencyMs: 85,
+              failureCount24h: 0,
+              lastDiagnosticSummary: "Payment intents and webhooks operating normally.",
+              lastCheckAt: nowIso(),
+            },
+            {
+              id: "int-smtp",
+              name: "Transactional Mail Relay",
+              category: "Email Relay",
+              status: "Healthy",
+              errorRatePct: 0.0,
+              avgLatencyMs: 65,
+              failureCount24h: 0,
+              lastDiagnosticSummary: "SMTP handshake and delivery active. Zero queue backlog.",
+              lastCheckAt: nowIso(),
+            },
+          ],
+          githubApps: [],
+          webhooks: [],
+          syncJobs: [],
+          apiEndpoints: [
+            {
+              id: "ep-auth",
+              endpointLabel: "POST /v1/auth/login",
+              serviceArea: "Authentication",
+              avgLatencyMs: 48,
+              p95LatencyMs: 95,
+              requestsPerMin: 120,
+              errorRatePct: 0.0,
+              status: "Normal",
+              topIssueSummary: "Nominal response times and zero auth errors.",
+            },
+            {
+              id: "ep-projects",
+              endpointLabel: "GET /v1/projects",
+              serviceArea: "Workspaces",
+              avgLatencyMs: 32,
+              p95LatencyMs: 70,
+              requestsPerMin: 280,
+              errorRatePct: 0.0,
+              status: "Normal",
+              topIssueSummary: "Cache hit ratio 94.2%. Response times nominal.",
+            },
+          ],
+          emailDeliveries: [],
+          smtpHealth: {
+            providerLabel: "Primary Transactional Mail Relay",
+            connectionState: "Healthy",
+            inboxPlacementPct: 99.8,
+            bounceRatePct: 0.0,
+            dailySent: 0,
+            dailyQuota: 50000,
+            lastCheckedAt: nowIso(),
+            checks: [
+              { label: "Mail Relay Connection", passed: true, detail: "Relay server responding normally." },
+              { label: "Domain Sender Verification", passed: true, detail: "SPF and DKIM active." },
+              { label: "Queue Backlog", passed: true, detail: "0 messages waiting." },
+            ],
+          },
+          emailDrafts: [],
+          announcementDrafts: [],
+          subscriptions: [],
+          paymentFailures: [],
+          invoiceDeliveries: [],
+          backups: [
+            {
+              id: "bk-wal",
+              snapshotCode: "SNAP-WAL-001",
+              scope: "Primary Database",
+              sizeGb: 12.4,
+              status: "Verified",
+              durationSec: 45,
+              region: "us-east-1",
+              retentionDays: 30,
+              restoreStatus: "None",
+              createdAt: nowIso(),
+            },
+          ],
+          maintenanceWindows: [],
+          alerts: [],
+          activityLogs: [],
+          accountSettings: {
+            name: "Platform Director",
+            roleTitle: "Lead Platform Operator",
+            email: "main.operator@prowise.io",
+            department: "Platform Operations",
+            shiftName: "Executive Operations Lead",
+            activeOperatorId: "op-main-1",
+            timezone: "UTC",
+            autoRefreshSeconds: 30,
+            mfaEnabled: true,
+            mfaMethod: "Authenticator App",
+            passwordUpdatedAt: nowIso(),
+            compactTables: false,
+            notifications: {
+              criticalAlerts: true,
+              incidentAssignments: true,
+              webhookFailures: true,
+              slaWarnings: true,
+              approvalDecisions: true,
+            },
+          },
           lastTelemetryTickAt: nowIso(),
         }),
     }),
     {
-      name: "prowise-platform-operator-store-v1",
+      name: "prowise-platform-operator-store-v3",
       storage: safeJSONStorage,
       skipHydration: true,
     }
   )
 );
 
-export type OperatorPermission =
-  | "incidents.manage"
-  | "tickets.manage"
-  | "access.request"
-  | "integrations.manage"
-  | "communications.draft"
-  | "billing.triage"
-  | "system.manage"
-  | "settings.manage"
-  | "governance.super_admin_only";
-
-const OPERATOR_ALLOWED_PERMISSIONS = new Set<OperatorPermission>([
-  "incidents.manage",
-  "tickets.manage",
-  "access.request",
-  "integrations.manage",
-  "communications.draft",
-  "billing.triage",
-  "system.manage",
-  "settings.manage",
-]);
-
-/**
- * Returns permission checks enforcing the Platform Operator delegated scope.
- * Operators handle day-to-day incidents, tickets, retries, drafts, and triage,
- * while Super Admin-only governance decisions remain locked unless explicitly granted.
- */
-export function useOperatorPermissions() {
-  const currentRole = useAuthStore((s) => s.currentRole);
-  const can = (permission: OperatorPermission) => {
-    if (currentRole === "SUPER_ADMIN") return true;
-    if (currentRole !== "PLATFORM_OPERATOR") return false;
-    return OPERATOR_ALLOWED_PERMISSIONS.has(permission);
-  };
-  return {
-    currentRole,
-    can,
-    isOperatorScope: currentRole === "PLATFORM_OPERATOR",
-  };
-}
+/* Moved unchanged to ../_services/operator-access.ts so live pages can gate without importing this demo store. */
+export { useOperatorPermissions, type OperatorPermission } from "../_services/operator-access";
 
 

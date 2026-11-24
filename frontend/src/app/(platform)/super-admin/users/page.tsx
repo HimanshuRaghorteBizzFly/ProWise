@@ -1,7 +1,11 @@
 "use client";
 
+<<<<<<< HEAD
 import { previewEnabled } from "@/lib/permissions";
 import React, { useEffect, useMemo, useState, useCallback } from "react";
+=======
+import React, { useEffect, useState, useCallback } from "react";
+>>>>>>> 29db595 (Initial ProWise project upload)
 import {
   AlertCircle,
   ArrowUpDown,
@@ -33,8 +37,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { apiClient, SuperAdminUserItem, UserLoginHistoryItem } from "@/lib/api";
-import { useSuperAdminStore } from "../_store/useSuperAdminStore";
+import { apiClient, ApiError, SuperAdminUserItem, UserLoginHistoryItem } from "@/lib/api";
 import {
   AdminButton,
   AdminInput,
@@ -118,243 +121,13 @@ const ROLE_BADGE_STYLES: Record<string, string> = {
   VIEWER: "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300",
 };
 
-const SEED_USERS: SuperAdminUserItem[] = [
-  {
-    id: "usr-alex-rivera",
-    name: "Alex Rivera",
-    email: "alex.rivera@acmehealth.com",
-    role: "DEVELOPER",
-    department: "Platform Squad",
-    organization_id: "org-acme-health",
-    organization_name: "Acme Health Systems",
-    phone: "+1 (555) 234-5678",
-    status: "ACTIVE",
-    must_change_password: false,
-    last_login_at: "2026-11-23T10:15:00Z",
-    created_at: "2026-08-01T09:00:00Z",
-    email_delivery_status: "DELIVERED",
-  },
-  {
-    id: "usr-priya-raman",
-    name: "Priya Raman",
-    email: "priya.raman@acme.dev",
-    role: "PROJECT_MANAGER",
-    department: "Platform Squad",
-    organization_id: "org-acme-health",
-    organization_name: "Acme Health Systems",
-    phone: "+44 20 7946 0912",
-    status: "ACTIVE",
-    must_change_password: false,
-    last_login_at: "2026-11-23T09:45:00Z",
-    created_at: "2026-08-01T09:00:00Z",
-    email_delivery_status: "DELIVERED",
-  },
-  {
-    id: "usr-marcus-chen",
-    name: "Marcus Chen",
-    email: "marcus.chen@acme.dev",
-    role: "TEAM_LEAD",
-    department: "Platform Squad",
-    organization_id: "org-acme-health",
-    organization_name: "Acme Health Systems",
-    phone: "+1 (416) 555-0199",
-    status: "ACTIVE",
-    must_change_password: false,
-    last_login_at: "2026-11-23T08:30:00Z",
-    created_at: "2026-08-01T09:00:00Z",
-    email_delivery_status: "DELIVERED",
-  },
-  {
-    id: "usr-elena-ruiz",
-    name: "Elena Ruiz",
-    email: "elena.ruiz@acme.dev",
-    role: "QA_REVIEWER",
-    department: "Platform Squad",
-    organization_id: "org-acme-health",
-    organization_name: "Acme Health Systems",
-    phone: "+34 91 123 4567",
-    status: "ACTIVE",
-    must_change_password: false,
-    last_login_at: "2026-11-22T17:20:00Z",
-    created_at: "2026-08-05T10:00:00Z",
-    email_delivery_status: "DELIVERED",
-  },
-  {
-    id: "usr-aisha-bello",
-    name: "Aisha Bello",
-    email: "aisha.bello@acme.dev",
-    role: "DEVELOPER",
-    department: "Platform Squad",
-    organization_id: "org-acme-health",
-    organization_name: "Acme Health Systems",
-    phone: "+234 1 234 5678",
-    status: "ACTIVE",
-    must_change_password: false,
-    last_login_at: "2026-11-23T11:00:00Z",
-    created_at: "2026-08-10T11:00:00Z",
-    email_delivery_status: "DELIVERED",
-  },
-  {
-    id: "usr-diego-alvarez",
-    name: "Diego Alvarez",
-    email: "diego.alvarez@acme.dev",
-    role: "DEVELOPER",
-    department: "Platform Squad",
-    organization_id: "org-acme-health",
-    organization_name: "Acme Health Systems",
-    phone: "+52 55 1234 5678",
-    status: "ACTIVE",
-    must_change_password: false,
-    last_login_at: "2026-11-22T15:10:00Z",
-    created_at: "2026-08-12T14:30:00Z",
-    email_delivery_status: "DELIVERED",
-  },
-  {
-    id: "usr-sofia-novak",
-    name: "Sofia Novak",
-    email: "sofia.novak@acme.dev",
-    role: "DEVELOPER",
-    department: "Platform Squad",
-    organization_id: "org-acme-health",
-    organization_name: "Acme Health Systems",
-    phone: "+420 2 1234 5678",
-    status: "ACTIVE",
-    must_change_password: false,
-    last_login_at: "2026-11-21T14:40:00Z",
-    created_at: "2026-08-15T09:20:00Z",
-    email_delivery_status: "DELIVERED",
-  },
-  {
-    id: "usr-liam-oconnor",
-    name: "Liam O'Connor",
-    email: "liam.oconnor@acme.dev",
-    role: "DEVELOPER",
-    department: "Platform Squad",
-    organization_id: "org-acme-health",
-    organization_name: "Acme Health Systems",
-    phone: "+353 1 496 0000",
-    status: "ACTIVE",
-    must_change_password: false,
-    last_login_at: "2026-11-23T07:55:00Z",
-    created_at: "2026-08-18T16:00:00Z",
-    email_delivery_status: "DELIVERED",
-  },
-  {
-    id: "usr-yuki-tanaka",
-    name: "Yuki Tanaka",
-    email: "yuki.tanaka@acme.dev",
-    role: "DEVELOPER",
-    department: "Platform Squad",
-    organization_id: "org-acme-health",
-    organization_name: "Acme Health Systems",
-    phone: "+81 6 1234 5678",
-    status: "PENDING_ACTIVATION",
-    must_change_password: true,
-    last_login_at: null,
-    created_at: "2026-11-20T12:00:00Z",
-    email_delivery_status: "DELIVERED",
-    email_delivery_message: "Setup invitation email sent successfully to yuki.tanaka@acme.dev",
-  },
-  {
-    id: "usr-himanshu-raghorte",
-    name: "Himanshu Raghorte",
-    email: "himanshuraghorteatwork@gmail.com",
-    role: "ORGANIZATION_OWNER",
-    department: "Executive Management",
-    organization_id: "org-acme-health",
-    organization_name: "Acme Health Systems",
-    phone: "+91 98765 43210",
-    status: "ACTIVE",
-    must_change_password: false,
-    last_login_at: "2026-11-23T11:15:00Z",
-    created_at: "2026-07-15T08:00:00Z",
-    email_delivery_status: "DELIVERED",
-  },
-  {
-    id: "usr-sarah-jenkins",
-    name: "Sarah Jenkins",
-    email: "sarah.jenkins@globalfreight.com",
-    role: "ORGANIZATION_ADMIN",
-    department: "Operations",
-    organization_id: "org-global-logistics",
-    organization_name: "Global Logistics Corp",
-    phone: "+1 (312) 555-0144",
-    status: "ACTIVE",
-    must_change_password: false,
-    last_login_at: "2026-11-22T16:05:00Z",
-    created_at: "2026-09-01T10:00:00Z",
-    email_delivery_status: "DELIVERED",
-  },
-  {
-    id: "usr-david-miller",
-    name: "David Miller",
-    email: "david.miller@novafin.com",
-    role: "ORGANIZATION_OWNER",
-    department: "Leadership",
-    organization_id: "org-nova-fintech",
-    organization_name: "Nova FinTech",
-    phone: "+1 (212) 555-0177",
-    status: "DISABLED",
-    must_change_password: false,
-    last_login_at: "2026-10-14T09:00:00Z",
-    created_at: "2026-08-20T13:00:00Z",
-    email_delivery_status: "DELIVERED",
-  },
-  {
-    id: "usr-jordan-lee",
-    name: "Jordan Lee",
-    email: "jordan.lee@acme.dev",
-    role: "VIEWER",
-    department: "Product & Executive",
-    organization_id: "org-acme-health",
-    organization_name: "Acme Health Systems",
-    phone: "+1 (555) 789-0123",
-    status: "ACTIVE",
-    must_change_password: false,
-    last_login_at: "2026-11-20T11:30:00Z",
-    created_at: "2026-09-10T14:15:00Z",
-    email_delivery_status: "DELIVERED",
-  },
-  {
-    id: "usr-hana-kim",
-    name: "Hana Kim",
-    email: "hana.kim@acme.dev",
-    role: "TEAM_LEAD",
-    department: "Mobile Crew",
-    organization_id: "org-acme-health",
-    organization_name: "Acme Health Systems",
-    phone: "+82 2 1234 5678",
-    status: "PENDING_ACTIVATION",
-    must_change_password: true,
-    last_login_at: null,
-    created_at: "2026-11-21T15:30:00Z",
-    email_delivery_status: "DELIVERED",
-    email_delivery_message: "Setup invitation email sent successfully to hana.kim@acme.dev",
-  },
-];
-
-function getLocalUsers(): SuperAdminUserItem[] {
-  if (typeof window !== "undefined") {
-    const raw = localStorage.getItem("prowise_superadmin_users");
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {
-        // ignore
-      }
-    }
-  }
-  return SEED_USERS;
-}
-
-function saveLocalUsers(list: SuperAdminUserItem[]) {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("prowise_superadmin_users", JSON.stringify(list));
-  }
+/** The server's message for a failed call; never a made-up success. */
+function errorText(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? err.message || fallback : err instanceof Error ? err.message || fallback : fallback;
 }
 
 export default function SuperAdminUsersPage() {
+<<<<<<< HEAD
   const sampleOrganizations = useSuperAdminStore((s) => s.organizations);
   // Real organizations for the filter; the sample list only in the dev preview.
   const [realOrganizations, setRealOrganizations] = useState<{ id: string; name: string }[]>([]);
@@ -363,11 +136,22 @@ export default function SuperAdminUsersPage() {
     apiClient.adminOrganizations().then(setRealOrganizations).catch(() => setRealOrganizations([]));
   }, []);
   const organizations = previewEnabled() ? sampleOrganizations : realOrganizations;
+=======
+  // Organization choices come from the server, never from local demo state.
+  const [organizations, setOrganizations] = useState<{ id: string; name: string; slug: string; domain: string }[]>([]);
+  useEffect(() => {
+    apiClient.admin.organizations
+      .list()
+      .then((orgs) => setOrganizations(orgs.map((o) => ({ id: o.id, name: o.name, slug: o.slug, domain: o.domain ?? "" }))))
+      .catch(() => setOrganizations([]));
+  }, []);
+>>>>>>> 29db595 (Initial ProWise project upload)
 
   // Users state
   const [users, setUsers] = useState<SuperAdminUserItem[]>([]);
-  const [allUsersCount, setAllUsersCount] = useState<number>(SEED_USERS.length);
-  const [totalElements, setTotalElements] = useState<number>(SEED_USERS.length);
+  const [allUsersCount, setAllUsersCount] = useState<number>(0);
+  const [totalElements, setTotalElements] = useState<number>(0);
+  const [statusCounts, setStatusCounts] = useState<{ active: number; pending: number; disabled: number } | null>(null);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [page, setPage] = useState<number>(0);
   const [pageSize, setPageSize] = useState<number>(12);
@@ -423,7 +207,7 @@ export default function SuperAdminUsersPage() {
     phone: "",
   });
 
-  // Load users from backend API with seamless local fallback
+  // Load users from the backend. A failure shows an error with Retry; nothing is invented.
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -435,6 +219,7 @@ export default function SuperAdminUsersPage() {
         page,
         size: pageSize,
       });
+<<<<<<< HEAD
 
       if (res && res.content && res.content.length > 0) {
         setUsers(res.content);
@@ -476,58 +261,64 @@ export default function SuperAdminUsersPage() {
 =======
       // Backend returned 404 or connection error: fall back to local platform users
 >>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
+=======
+      setUsers(res.content ?? []);
+      setTotalElements(res.total_elements ?? 0);
+      setTotalPages(Math.max(1, res.total_pages || 1));
+      setLoadError(null);
+    } catch (err) {
+      setUsers([]);
+      setTotalElements(0);
+      setTotalPages(1);
+      setLoadError(errorText(err, "The user list could not be loaded."));
+    } finally {
+      setIsLoading(false);
+>>>>>>> 29db595 (Initial ProWise project upload)
     }
-
-    // Seamless Local Fallback
-    const all = getLocalUsers();
-    setAllUsersCount(all.length);
-
-    let filtered = all;
-    if (searchTerm.trim()) {
-      const q = searchTerm.trim().toLowerCase();
-      filtered = filtered.filter(
-        (u) =>
-          u.name.toLowerCase().includes(q) ||
-          u.email.toLowerCase().includes(q) ||
-          (u.department && u.department.toLowerCase().includes(q))
-      );
-    }
-    if (selectedRole !== "ALL") {
-      filtered = filtered.filter((u) => u.role === selectedRole);
-    }
-    if (selectedStatus !== "ALL") {
-      filtered = filtered.filter((u) => u.status === selectedStatus);
-    }
-    if (selectedOrg === "NONE") {
-      filtered = filtered.filter((u) => !u.organization_id);
-    } else if (selectedOrg !== "ALL") {
-      filtered = filtered.filter((u) => u.organization_id === selectedOrg);
-    }
-
-    const start = page * pageSize;
-    const paginated = filtered.slice(start, start + pageSize);
-    setUsers(paginated);
-    setTotalElements(filtered.length);
-    setTotalPages(Math.max(1, Math.ceil(filtered.length / pageSize)));
-    setLoadError(null);
-    setIsLoading(false);
   }, [searchTerm, selectedRole, selectedStatus, selectedOrg, page, pageSize]);
 
+  // Roster totals come from the server's own counts (one tiny page per status).
+  const fetchCounts = useCallback(async () => {
+    try {
+      const [all, active, pending, disabled] = await Promise.all([
+        apiClient.superAdminUsers.list({ page: 0, size: 1 }),
+        apiClient.superAdminUsers.list({ status: "ACTIVE", page: 0, size: 1 }),
+        apiClient.superAdminUsers.list({ status: "PENDING_ACTIVATION", page: 0, size: 1 }),
+        apiClient.superAdminUsers.list({ status: "DISABLED", page: 0, size: 1 }),
+      ]);
+      setAllUsersCount(all.total_elements ?? 0);
+      setStatusCounts({
+        active: active.total_elements ?? 0,
+        pending: pending.total_elements ?? 0,
+        disabled: disabled.total_elements ?? 0,
+      });
+    } catch {
+      setStatusCounts(null);
+    }
+  }, []);
+
+  const refresh = useCallback(() => {
+    void fetchUsers();
+    void fetchCounts();
+  }, [fetchUsers, fetchCounts]);
+
   useEffect(() => {
-    fetchUsers();
+    void fetchUsers();
   }, [fetchUsers]);
 
-  // Global Statistics across full user roster
-  const allCurrentUsers = useMemo(() => getLocalUsers(), [users]);
-  const activeCount = useMemo(() => allCurrentUsers.filter((u) => u.status === "ACTIVE").length, [allCurrentUsers]);
-  const pendingActivationCount = useMemo(() => allCurrentUsers.filter((u) => u.status === "PENDING_ACTIVATION").length, [allCurrentUsers]);
-  const disabledCount = useMemo(() => allCurrentUsers.filter((u) => u.status === "DISABLED").length, [allCurrentUsers]);
+  useEffect(() => {
+    void fetchCounts();
+  }, [fetchCounts]);
+
+  const activeCount = statusCounts?.active ?? 0;
+  const pendingActivationCount = statusCounts?.pending ?? 0;
+  const disabledCount = statusCounts?.disabled ?? 0;
 
   // Handle Create User Submit
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValidEmail(createForm.email)) {
-      toast.error("Please enter a valid Gmail / email address.");
+      toast.error("Please enter a valid email address.");
       return;
     }
     if (!createForm.name.trim()) {
@@ -566,52 +357,9 @@ export default function SuperAdminUsersPage() {
         sendEmail: true,
       });
 
-      fetchUsers();
-    } catch {
-      // Local fallback create
-      const matchedOrg = organizations.find((o) => o.id === createForm.organizationId);
-      const newUser: SuperAdminUserItem = {
-        id: `usr-${Date.now()}`,
-        name: createForm.name.trim(),
-        email: createForm.email.trim(),
-        role: createForm.role,
-        department: createForm.department || "Platform Squad",
-        organization_id: createForm.organizationId || null,
-        organization_name: matchedOrg?.name || (createForm.organizationId ? "Assigned Workspace" : null),
-        phone: createForm.phone.trim() || null,
-        status: "PENDING_ACTIVATION",
-        must_change_password: true,
-        last_login_at: null,
-        created_at: new Date().toISOString(),
-        email_delivery_status: createForm.sendEmail ? "DELIVERED" : "NOT_REQUESTED",
-        email_delivery_message: createForm.sendEmail ? `Setup invitation email delivered to ${createForm.email}` : undefined,
-      };
-
-      const current = getLocalUsers();
-      saveLocalUsers([newUser, ...current]);
-
-      toast.success(`Account created for ${newUser.email}. It stays pending until the owner sets a password.`);
-      setCreateModalOpen(false);
-
-      setCredentialDetails({
-        email: newUser.email,
-        deliveryStatus: newUser.email_delivery_status || "NOT_REQUESTED",
-        deliveryMessage: newUser.email_delivery_message || undefined,
-        actionType: "CREATE",
-      });
-      setCredentialsModalOpen(true);
-
-      setCreateForm({
-        name: "",
-        email: "",
-        role: "DEVELOPER",
-        department: "",
-        organizationId: "",
-        phone: "",
-        sendEmail: true,
-      });
-
-      fetchUsers();
+      refresh();
+    } catch (err) {
+      toast.error(errorText(err, "The account could not be created."));
     }
   };
 
@@ -631,28 +379,9 @@ export default function SuperAdminUsersPage() {
 
       toast.success(`User ${selectedUser.email} updated.`);
       setEditModalOpen(false);
-      fetchUsers();
-    } catch {
-      const matchedOrg = organizations.find((o) => o.id === editForm.organizationId);
-      const current = getLocalUsers();
-      const updated = current.map((u) => {
-        if (u.id === selectedUser.id) {
-          return {
-            ...u,
-            name: editForm.name.trim(),
-            role: NON_ASSIGNABLE_ROLES.has(editForm.role) ? u.role : editForm.role,
-            department: editForm.department || u.department,
-            organization_id: editForm.organizationId || null,
-            organization_name: matchedOrg?.name || (editForm.organizationId ? u.organization_name : null),
-            phone: editForm.phone.trim() || u.phone,
-          };
-        }
-        return u;
-      });
-      saveLocalUsers(updated);
-      toast.success(`User ${selectedUser.email} updated.`);
-      setEditModalOpen(false);
-      fetchUsers();
+      refresh();
+    } catch (err) {
+      toast.error(errorText(err, "The user could not be updated."));
     }
   };
 
@@ -667,16 +396,9 @@ export default function SuperAdminUsersPage() {
         actionType: "RESET",
       });
       setCredentialsModalOpen(true);
-      fetchUsers();
-    } catch {
-      setCredentialDetails({
-        email: user.email,
-        deliveryStatus: "DELIVERED",
-        deliveryMessage: `Password reset instructions sent to ${user.email}`,
-        actionType: "RESET",
-      });
-      setCredentialsModalOpen(true);
-      fetchUsers();
+      refresh();
+    } catch (err) {
+      toast.error(errorText(err, "The reset link could not be sent."));
     }
   };
 
@@ -691,28 +413,9 @@ export default function SuperAdminUsersPage() {
         actionType: "RESEND",
       });
       setCredentialsModalOpen(true);
-      fetchUsers();
-    } catch {
-      const current = getLocalUsers();
-      const updated = current.map((u) => {
-        if (u.id === user.id) {
-          return {
-            ...u,
-            email_delivery_status: "DELIVERED",
-            email_delivery_message: `Setup invitation email delivered to ${user.email}`,
-          };
-        }
-        return u;
-      });
-      saveLocalUsers(updated);
-      setCredentialDetails({
-        email: user.email,
-        deliveryStatus: "DELIVERED",
-        deliveryMessage: `Setup invitation email delivered to ${user.email}`,
-        actionType: "RESEND",
-      });
-      setCredentialsModalOpen(true);
-      fetchUsers();
+      refresh();
+    } catch (err) {
+      toast.error(errorText(err, "The setup link could not be sent."));
     }
   };
 
@@ -729,24 +432,9 @@ export default function SuperAdminUsersPage() {
       );
       setConfirmStatusModalOpen(false);
       setStatusActionTarget(null);
-      fetchUsers();
-    } catch {
-      const current = getLocalUsers();
-      const updated = current.map((u) => {
-        if (u.id === statusActionTarget.id) {
-          return { ...u, status: nextStatus };
-        }
-        return u;
-      });
-      saveLocalUsers(updated);
-      toast.success(
-        nextStatus === "ACTIVE"
-          ? `User ${statusActionTarget.email} reactivated.`
-          : `User ${statusActionTarget.email} deactivated. Active sessions invalidated.`
-      );
-      setConfirmStatusModalOpen(false);
-      setStatusActionTarget(null);
-      fetchUsers();
+      refresh();
+    } catch (err) {
+      toast.error(errorText(err, "The status could not be changed."));
     }
   };
 
@@ -755,49 +443,14 @@ export default function SuperAdminUsersPage() {
     setSelectedUser(user);
     setHistoryModalOpen(true);
     setLoadingHistory(true);
+    setHistoryList([]);
     try {
-      const history = await apiClient.superAdminUsers.loginHistory(user.id);
-      if (history && history.length > 0) {
-        setHistoryList(history);
-        setLoadingHistory(false);
-        return;
-      }
-    } catch {
-      // Local fallback
+      setHistoryList((await apiClient.superAdminUsers.loginHistory(user.id)) ?? []);
+    } catch (err) {
+      toast.error(errorText(err, "Login history could not be loaded."));
+    } finally {
+      setLoadingHistory(false);
     }
-
-    const mockHistory: UserLoginHistoryItem[] = [
-      {
-        id: `lh-${user.id}-1`,
-        user_id: user.id,
-        email: user.email,
-        ip_address: "192.168.1.104",
-        user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0",
-        status: user.status === "DISABLED" ? "FAILED" : "SUCCESS",
-        failure_reason: user.status === "DISABLED" ? "Account is deactivated" : undefined,
-        created_at: user.last_login_at || new Date(Date.now() - 3600000).toISOString(),
-      },
-      {
-        id: `lh-${user.id}-2`,
-        user_id: user.id,
-        email: user.email,
-        ip_address: "192.168.1.104",
-        user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0",
-        status: "SUCCESS",
-        created_at: new Date(Date.now() - 86400000).toISOString(),
-      },
-      {
-        id: `lh-${user.id}-3`,
-        user_id: user.id,
-        email: user.email,
-        ip_address: "10.0.4.15",
-        user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15",
-        status: "SUCCESS",
-        created_at: new Date(Date.now() - 172800000).toISOString(),
-      },
-    ];
-    setHistoryList(mockHistory);
-    setLoadingHistory(false);
   };
 
   // Open Edit Modal
@@ -813,9 +466,8 @@ export default function SuperAdminUsersPage() {
     setEditModalOpen(true);
   };
 
-  // Export CSV
+  // Export CSV of the rows currently loaded from the server
   const handleExportCsv = () => {
-    const all = getLocalUsers();
     const headers = [
       "Name",
       "Email",
@@ -827,7 +479,7 @@ export default function SuperAdminUsersPage() {
       "LastLogin",
       "Created",
     ];
-    const rows = all.map((u) => [
+    const rows = users.map((u) => [
       u.name,
       u.email,
       u.role,
@@ -843,7 +495,7 @@ export default function SuperAdminUsersPage() {
       headers,
       rows
     );
-    toast.success("User catalog exported to CSV.");
+    toast.success("Loaded users exported to CSV.");
   };
 
   return (
@@ -864,7 +516,7 @@ export default function SuperAdminUsersPage() {
             </AdminButton>
             <AdminButton
               variant="secondary"
-              onClick={() => fetchUsers()}
+              onClick={() => refresh()}
               isLoading={isLoading}
             >
               <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
@@ -1007,7 +659,7 @@ export default function SuperAdminUsersPage() {
             title="Could not load users"
             description={loadError}
             actionLabel="Try again"
-            onAction={() => fetchUsers()}
+            onAction={() => refresh()}
           />
         ) : users.length === 0 && !isLoading ? (
           <EmptyStateView

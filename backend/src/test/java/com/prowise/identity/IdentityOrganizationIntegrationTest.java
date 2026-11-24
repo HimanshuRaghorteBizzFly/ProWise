@@ -56,7 +56,7 @@ class IdentityOrganizationIntegrationTest {
             String email = uniqueEmail();
             String slug = "registration-" + UUID.randomUUID().toString().replace("-", "");
             mockMvc.perform(post("/v1/auth/signup")
-                            .header("X-Forwarded-For", TestAccounts.randomClientAddress())
+                            .with(com.prowise.testsupport.TestAccounts.randomClient())
                             .contentType("application/json")
                             .content(registrationBody(email, slug, requestedRole)))
                     .andExpect(status().isAccepted())

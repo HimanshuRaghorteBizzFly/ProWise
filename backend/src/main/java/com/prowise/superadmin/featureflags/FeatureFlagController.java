@@ -13,15 +13,16 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prowise.identity.AuthPrincipal;
+import com.prowise.superadmin.common.AdminRequests;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping({"/v1/admin/feature-flags", "/api/v1/admin/feature-flags"})
-@Tag(name = "Super Admin Feature Flags", description = "Platform capability rollout flags and targeting")
+@Tag(name = "Super Admin Feature Flags", description = "Platform feature flags. Mutations need expected_version (409 STALE_VERSION when stale) and accept Idempotency-Key.")
 public class FeatureFlagController {
 
     private final FeatureFlagService flagService;
@@ -51,47 +52,44 @@ public class FeatureFlagController {
             HttpServletRequest request,
             @Valid @RequestBody FeatureFlagDTOs.CreateFeatureFlagRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(flagService.createFeatureFlag(body, actor));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('config.manage')")
-    @Operation(summary = "Update an existing feature flag")
+    @Operation(summary = "Update an existing feature flag (expected_version required)")
     public ResponseEntity<FeatureFlagDTOs.FeatureFlagResponse> updateFeatureFlag(
             HttpServletRequest request,
             @PathVariable String id,
             @Valid @RequestBody FeatureFlagDTOs.UpdateFeatureFlagRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.ok(flagService.updateFeatureFlag(id, body, actor));
     }
 
     @PostMapping("/{id}/toggle")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('config.manage')")
-    @Operation(summary = "Toggle active status of a feature flag")
+    @Operation(summary = "Toggle active status of a feature flag (body: enabled, expected_version)")
     public ResponseEntity<FeatureFlagDTOs.FeatureFlagResponse> toggleFeatureFlag(
             HttpServletRequest request,
             @PathVariable String id,
             @Valid @RequestBody FeatureFlagDTOs.ToggleFlagRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        return ResponseEntity.ok(flagService.toggleFeatureFlag(id, body.enabled(), actor));
+        String actor = AdminRequests.actor(request);
+        return ResponseEntity.ok(flagService.toggleFeatureFlag(id, body.enabled(), body.expectedVersion(), actor));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('config.manage')")
-    @Operation(summary = "Delete a feature flag")
+    @Operation(summary = "Delete a feature flag (?expectedVersion= required)")
     public ResponseEntity<Void> deleteFeatureFlag(
             HttpServletRequest request,
-            @PathVariable String id
+            @PathVariable String id,
+            @RequestParam(required = false) Long expectedVersion
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        flagService.deleteFeatureFlag(id, actor);
+        String actor = AdminRequests.actor(request);
+        flagService.deleteFeatureFlag(id, expectedVersion, actor);
         return ResponseEntity.noContent().build();
     }
 }

@@ -377,7 +377,8 @@ class RoleBasedLoginIntegrationTest {
         member(org, user("me@acme.test", "VIEWER", "ACTIVE"), "DEVELOPER");
         member(org, user("other@acme.test", "VIEWER", "ACTIVE"), "DEVELOPER");
         JsonNode laptop = login("me@acme.test", PASSWORD).andReturn().body();
-        JsonNode phone = login("me@acme.test", PASSWORD).andReturn().body();
+        Login phoneLogin = login("me@acme.test", PASSWORD);
+        JsonNode phone = phoneLogin.body();
         String otherToken = login("other@acme.test", PASSWORD).andReturn().body().path("access_token").asText();
 
         JsonNode sessions = json(mockMvc.perform(auth(get("/v1/me/sessions"), laptop.path("access_token").asText()))
@@ -394,7 +395,7 @@ class RoleBasedLoginIntegrationTest {
                 .andExpect(status().isNoContent());
         mockMvc.perform(auth(get("/v1/me"), phone.path("access_token").asText())).andExpect(status().isUnauthorized());
         mockMvc.perform(post("/v1/auth/refresh").contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("refresh_token", phone.path("refresh_token").asText()))))
+                        .content(objectMapper.writeValueAsString(Map.of("refresh_token", phoneLogin.refresh()))))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(auth(get("/v1/me"), laptop.path("access_token").asText())).andExpect(status().isOk());
     }
@@ -405,17 +406,18 @@ class RoleBasedLoginIntegrationTest {
         UUID org = organization("acme");
         UUID person = user("promoted@acme.test", "VIEWER", "ACTIVE");
         member(org, person, "DEVELOPER");
-        JsonNode first = login("promoted@acme.test", PASSWORD).andReturn().body();
+        Login firstLogin = login("promoted@acme.test", PASSWORD);
+        JsonNode first = firstLogin.body();
         jdbc.update("UPDATE memberships SET role_template = 'TEAM_LEAD' WHERE user_id = ?", person);
 
         JsonNode refreshed = json(mockMvc.perform(post("/v1/auth/refresh").contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("refresh_token", first.path("refresh_token").asText()))))
+                        .content(objectMapper.writeValueAsString(Map.of("refresh_token", firstLogin.refresh()))))
                 .andExpect(status().isOk()).andReturn());
         mockMvc.perform(auth(get("/v1/me"), refreshed.path("access_token").asText()))
                 .andExpect(jsonPath("$.role").value("TEAM_LEAD"));
         // The used refresh token is dead; replaying it closes the whole family.
         mockMvc.perform(post("/v1/auth/refresh").contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("refresh_token", first.path("refresh_token").asText()))))
+                        .content(objectMapper.writeValueAsString(Map.of("refresh_token", firstLogin.refresh()))))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(auth(get("/v1/me"), refreshed.path("access_token").asText())).andExpect(status().isUnauthorized());
     }
@@ -447,6 +449,11 @@ class RoleBasedLoginIntegrationTest {
             return this;
         }
 
+        /** The refresh token, from its HttpOnly cookie (it is never in the response body). */
+        String refresh() {
+            return actions.andReturn().getResponse().getCookie("prowise_refresh_token").getValue();
+        }
+
         Login andReturn() {
             return this;
         }
@@ -458,7 +465,7 @@ class RoleBasedLoginIntegrationTest {
 
     private Login login(String email, String password) throws Exception {
         return new Login(mockMvc.perform(post("/v1/auth/login")
-                .header("X-Forwarded-For", TestAccounts.randomClientAddress())
+                .with(com.prowise.testsupport.TestAccounts.randomClient())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("email", email, "password", password)))), objectMapper);
     }

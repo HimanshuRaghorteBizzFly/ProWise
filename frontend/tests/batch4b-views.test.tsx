@@ -11,15 +11,14 @@ import { OwnerDashboardView } from "../src/components/owner/OwnerDashboardView";
 import { OwnerOrganizationSettingsView } from "../src/components/owner/OwnerOrganizationSettingsView";
 import { PrivacyView } from "../src/components/owner/PrivacyView";
 import { ReportsView } from "../src/components/owner/ReportsView";
-import { getOwnerDashboardStart } from "../src/hooks/useOwnerDashboard";
 import {
   FIXTURE_AUDIT,
   FIXTURE_NOTIFICATIONS,
   FIXTURE_PORTFOLIO,
   FIXTURE_REPOSITORIES,
-} from "../src/lib/fixtures/org-admin";
-import { FIXTURE_GRANTS } from "../src/lib/fixtures/permissions";
-import { SEEDED_ORGS, SEEDED_PROJECTS, SEEDED_USERS } from "../src/lib/mock-data";
+} from "./fixtures/org-admin";
+import { FIXTURE_GRANTS } from "./fixtures/permissions";
+import { SEEDED_ORGS, SEEDED_PROJECTS, SEEDED_USERS } from "./fixtures/mock-data";
 import { canWithGrants } from "../src/lib/permissions";
 import type { PermissionKey } from "../src/types/permission";
 
@@ -28,6 +27,7 @@ const NOW = "2026-11-17T12:00:00Z";
 const canFor = (role: keyof typeof FIXTURE_GRANTS) => (key: PermissionKey) => canWithGrants(FIXTURE_GRANTS[role], key);
 const enabledButton = (label: string) => new RegExp(`<button(?![^>]*disabled)[^>]*>\\s*${label}`);
 
+<<<<<<< HEAD
 describe("Owner dashboard in production", () => {
   it("never starts from fixture data in a production build", () => {
     expect(getOwnerDashboardStart(ORG, { nodeEnv: "production", useMocks: "true" })).toEqual({ status: "unavailable", orgId: ORG });
@@ -39,6 +39,8 @@ describe("Owner dashboard in production", () => {
   });
 });
 
+=======
+>>>>>>> 29db595 (Initial ProWise project upload)
 describe("Who can resolve is labelled as recorded data", () => {
   it("on the dashboard", () => {
     const markup = renderToStaticMarkup(
@@ -57,7 +59,7 @@ describe("Who can resolve is labelled as recorded data", () => {
   it("on Health & risks", () => {
     const portfolio = FIXTURE_PORTFOLIO(ORG);
     const markup = renderToStaticMarkup(
-      <HealthRisksView projects={portfolio.projects} users={portfolio.users} source="fixture" can={canFor("ORGANIZATION_OWNER")} now={NOW} />,
+      <HealthRisksView projects={portfolio.projects} users={portfolio.users} can={canFor("ORGANIZATION_OWNER")} now={NOW} />,
     );
     expect(markup).toContain("From the project record");
   });
@@ -66,7 +68,7 @@ describe("Who can resolve is labelled as recorded data", () => {
 describe("IntegrationsView", () => {
   const render = (props: Partial<React.ComponentProps<typeof IntegrationsView>> = {}) =>
     renderToStaticMarkup(
-      <IntegrationsView family="owner" repositories={FIXTURE_REPOSITORIES(ORG)} source="fixture" can={canFor("ORGANIZATION_OWNER")} {...props} />,
+      <IntegrationsView family="owner" repositories={FIXTURE_REPOSITORIES(ORG)} can={canFor("ORGANIZATION_OWNER")} {...props} />,
     );
 
   it("lists repositories with sync status and failure reason", () => {
@@ -101,7 +103,7 @@ describe("IntegrationsView", () => {
 describe("ReportsView", () => {
   const portfolio = FIXTURE_PORTFOLIO(ORG);
   const render = (props: Partial<React.ComponentProps<typeof ReportsView>> = {}) =>
-    renderToStaticMarkup(<ReportsView projects={portfolio.projects} source="fixture" can={canFor("ORGANIZATION_OWNER")} now={NOW} {...props} />);
+    renderToStaticMarkup(<ReportsView projects={portfolio.projects} can={canFor("ORGANIZATION_OWNER")} now={NOW} {...props} />);
 
   it("offers the four blueprint reports", () => {
     const markup = render();
@@ -128,7 +130,7 @@ describe("ReportsView", () => {
 describe("NotificationsView", () => {
   const notifications = FIXTURE_NOTIFICATIONS(ORG, "usr-owner", `/org/${ORG}/owner`);
   const render = (props: Partial<React.ComponentProps<typeof NotificationsView>> = {}) =>
-    renderToStaticMarkup(<NotificationsView notifications={notifications} source="fixture" {...props} />);
+    renderToStaticMarkup(<NotificationsView notifications={notifications} {...props} />);
 
   it("lists only the viewer's notifications with links inside their family", () => {
     expect(notifications.length).toBeGreaterThan(0);
@@ -150,7 +152,7 @@ describe("NotificationsView", () => {
 
 describe("AuditView", () => {
   const render = (props: Partial<React.ComponentProps<typeof AuditView>> = {}) =>
-    renderToStaticMarkup(<AuditView records={FIXTURE_AUDIT(ORG)} source="fixture" can={canFor("ORGANIZATION_ADMIN")} {...props} />);
+    renderToStaticMarkup(<AuditView records={FIXTURE_AUDIT(ORG)} can={canFor("ORGANIZATION_ADMIN")} {...props} />);
 
   it("lists audit records with actor, action and UTC time", () => {
     const markup = render();

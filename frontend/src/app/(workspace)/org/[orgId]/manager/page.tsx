@@ -59,7 +59,7 @@ export default function ManagerDashboardPage() {
             tone="emerald"
             chip={{ label: `${metrics.projectsReportingProgress} projects`, tone: "success" }}
             footer="Progress records"
-            href={href("progress")}
+            href={href("projects")}
           />
         )}
       </KpiGrid>

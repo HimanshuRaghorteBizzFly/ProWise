@@ -76,6 +76,7 @@ describe("typed API client", () => {
     await expect(client.health()).rejects.toMatchObject({ status: 0, code: "NETWORK_ERROR" });
   });
 
+<<<<<<< HEAD
   it("never lets a role preview block a real session's API without NEXT_PUBLIC_USE_MOCKS=true", async () => {
     vi.stubEnv("NEXT_PUBLIC_USE_MOCKS", "");
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "u", email: "e", memberships: [] })));
@@ -100,11 +101,13 @@ describe("typed API client", () => {
   });
 
   it("allows sign-out while role preview blocks business API requests", async () => {
+=======
+  it("signs out through the API", async () => {
+>>>>>>> 29db595 (Initial ProWise project upload)
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     const client = createApiClient({
       baseUrl: "http://api.test",
       fetch: fetchMock,
-      isRolePreview: () => true,
     });
 
     await expect(client.signout()).resolves.toBeUndefined();

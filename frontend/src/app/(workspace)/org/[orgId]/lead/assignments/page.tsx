@@ -1,5 +1,6 @@
-"use client";
+import { ModuleUnavailable } from "@/components/feedback/ModuleUnavailable";
 
+<<<<<<< HEAD
 import { useParams } from "next/navigation";
 import { previewEnabled } from "@/lib/permissions";
 import { AssignWorkView } from "@/components/work/WorkViews";
@@ -144,6 +145,11 @@ function PreviewTeamLeadAssignPage() {
       </div>
     </PageFrame>
   );
+=======
+/** No backend API serves this module yet, so the route shows a notice instead. */
+export default function Page({ params }: { params: { orgId: string } }) {
+  return <ModuleUnavailable module="Work assignment" homeHref={`/org/${encodeURIComponent(params.orgId)}/lead`} homeLabel="Back to dashboard" />;
+>>>>>>> 29db595 (Initial ProWise project upload)
 }
 
 /** Task 3.1: real task assignment by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */

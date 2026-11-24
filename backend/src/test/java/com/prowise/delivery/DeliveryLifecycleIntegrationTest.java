@@ -130,14 +130,15 @@ class DeliveryLifecycleIntegrationTest {
                             "key": "%s",
                             "name": "%s",
                             "mode": "INDIVIDUAL",
-                            "lifecycle": "ACTIVE",
+                            "status": "ACTIVE",
                             "priority": "HIGH",
-                            "accountableDeveloperId": "%s",
+                            "accountable_membership_id": "%s",
                             "timezone": "Europe/London",
-                            "startDate": "2026-06-01T09:00:00Z",
-                            "targetDate": "2026-06-30T17:00:00Z"
+                            "start_on": "2026-06-01",
+                            "target_on": "2026-06-30"
                         }
-                        """.formatted(key, name, devId)))
+                        """.formatted(key, name, jdbc.queryForObject(
+                                "SELECT id FROM memberships WHERE org_id = ? AND user_id = ?", UUID.class, ws.id(), devId))))
                 .andExpect(status().isCreated()).andReturn();
         return json(res).path("id").asText();
     }
@@ -200,7 +201,7 @@ class DeliveryLifecycleIntegrationTest {
                 .andExpect(status().isOk());
 
         // Verify project is STILL ACTIVE with 100% progress (NOT auto-delivered!)
-        MvcResult projRes = mockMvc.perform(withToken(get("/v1/projects/" + projectId), devToken))
+        MvcResult projRes = mockMvc.perform(withToken(get("/v1/organizations/" + ws.id() + "/projects/" + projectId), devToken))
                 .andExpect(status().isOk()).andReturn();
         JsonNode projNode = json(projRes);
         assertThat(projNode.path("lifecycle").asText()).isEqualTo("ACTIVE");
@@ -229,7 +230,7 @@ class DeliveryLifecycleIntegrationTest {
         String requestId = json(reqRes).path("id").asText();
 
         // Verify project lifecycle moved to AWAITING_ACCEPTANCE
-        MvcResult projAwaiting = mockMvc.perform(withToken(get("/v1/projects/" + projectId), devToken))
+        MvcResult projAwaiting = mockMvc.perform(withToken(get("/v1/organizations/" + ws.id() + "/projects/" + projectId), devToken))
                 .andExpect(status().isOk()).andReturn();
         assertThat(json(projAwaiting).path("lifecycle").asText()).isEqualTo("AWAITING_ACCEPTANCE");
         long awaitingVersion = json(projAwaiting).path("version").asLong();
@@ -260,7 +261,7 @@ class DeliveryLifecycleIntegrationTest {
                 .andExpect(jsonPath("$.decision").value("ACCEPTED"));
 
         // Verify project lifecycle is now DELIVERED
-        MvcResult deliveredRes = mockMvc.perform(withToken(get("/v1/projects/" + projectId), devToken))
+        MvcResult deliveredRes = mockMvc.perform(withToken(get("/v1/organizations/" + ws.id() + "/projects/" + projectId), devToken))
                 .andExpect(status().isOk()).andReturn();
         JsonNode deliveredProj = json(deliveredRes);
         assertThat(deliveredProj.path("lifecycle").asText()).isEqualTo("DELIVERED");
@@ -292,7 +293,7 @@ class DeliveryLifecycleIntegrationTest {
                 .andExpect(jsonPath("$.handover_note").value("Transferred to operations team, client sign-off complete"));
 
         // Verify project lifecycle is CLOSED
-        MvcResult closedRes = mockMvc.perform(withToken(get("/v1/projects/" + projectId), ws.ownerToken()))
+        MvcResult closedRes = mockMvc.perform(withToken(get("/v1/organizations/" + ws.id() + "/projects/" + projectId), ws.ownerToken()))
                 .andExpect(status().isOk()).andReturn();
         assertThat(json(closedRes).path("lifecycle").asText()).isEqualTo("CLOSED");
     }
@@ -345,7 +346,7 @@ class DeliveryLifecycleIntegrationTest {
                 .andExpect(status().isCreated()).andReturn();
         String requestId = json(reqRes).path("id").asText();
 
-        MvcResult projNode = mockMvc.perform(withToken(get("/v1/projects/" + projectId), ws.ownerToken()))
+        MvcResult projNode = mockMvc.perform(withToken(get("/v1/organizations/" + ws.id() + "/projects/" + projectId), ws.ownerToken()))
                 .andExpect(status().isOk()).andReturn();
         long version = json(projNode).path("version").asLong();
 
@@ -388,7 +389,7 @@ class DeliveryLifecycleIntegrationTest {
                 .andExpect(jsonPath("$.decision").value("ACCEPTED"));
 
         // Project is DELIVERED
-        MvcResult delivProj = mockMvc.perform(withToken(get("/v1/projects/" + projectId), ws.ownerToken()))
+        MvcResult delivProj = mockMvc.perform(withToken(get("/v1/organizations/" + ws.id() + "/projects/" + projectId), ws.ownerToken()))
                 .andExpect(status().isOk()).andReturn();
         assertThat(json(delivProj).path("lifecycle").asText()).isEqualTo("DELIVERED");
     }
@@ -408,7 +409,7 @@ class DeliveryLifecycleIntegrationTest {
 
         String projectId = createProject(ws, "ARC01", "Archive Flow Project", dev.id());
 
-        MvcResult projRes = mockMvc.perform(withToken(get("/v1/projects/" + projectId), ws.ownerToken()))
+        MvcResult projRes = mockMvc.perform(withToken(get("/v1/organizations/" + ws.id() + "/projects/" + projectId), ws.ownerToken()))
                 .andExpect(status().isOk()).andReturn();
         long version = json(projRes).path("version").asLong();
 
@@ -433,7 +434,7 @@ class DeliveryLifecycleIntegrationTest {
                 .andExpect(jsonPath("$.code").value("PROJECT_ARCHIVED"));
 
         // 3. Restore the project
-        MvcResult archivedProjRes = mockMvc.perform(withToken(get("/v1/projects/" + projectId), ws.ownerToken()))
+        MvcResult archivedProjRes = mockMvc.perform(withToken(get("/v1/organizations/" + ws.id() + "/projects/" + projectId), ws.ownerToken()))
                 .andExpect(status().isOk()).andReturn();
         long archivedVersion = json(archivedProjRes).path("version").asLong();
 

@@ -1,5 +1,6 @@
-"use client";
+import { ModuleUnavailable } from "@/components/feedback/ModuleUnavailable";
 
+<<<<<<< HEAD
 import { previewEnabled } from "@/lib/permissions";
 import { ReviewQueueView } from "@/components/work/ReviewViews";
 import { useParams } from "next/navigation";
@@ -97,6 +98,11 @@ function PreviewReviewerQueuePage() {
       </SurfaceCard>
     </PageFrame>
   );
+=======
+/** No backend API serves this module yet, so the route shows a notice instead. */
+export default function Page({ params }: { params: { orgId: string } }) {
+  return <ModuleUnavailable module="Review queue" homeHref={`/org/${encodeURIComponent(params.orgId)}/reviewer`} homeLabel="Back to dashboard" />;
+>>>>>>> 29db595 (Initial ProWise project upload)
 }
 
 /** Task 3.3: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */

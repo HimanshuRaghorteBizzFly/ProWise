@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,8 +30,6 @@ public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private static final int MAX_ATTEMPTS_PER_WINDOW = 10;
-    private static final long RATE_WINDOW_MILLIS = 60_000L;
-    private static final Map<String, RateAttempt> RATE_ATTEMPTS = new ConcurrentHashMap<>();
     /** Wrong passwords in a row before the account is locked, and for how long. */
     static final int MAX_FAILED_ATTEMPTS = 5;
     static final int LOCK_MINUTES = 15;
@@ -51,8 +48,13 @@ public class AuthService {
     private final AccountTokenService accountTokenService;
     private final long refreshTokenDays;
     private final long accessTokenMinutes;
+<<<<<<< HEAD
     private final boolean slidingRefresh;
     private final long reuseGraceSeconds;
+=======
+    private final int signupMaxPerIpPerMinute;
+    private final RequestThrottle throttle;
+>>>>>>> 29db595 (Initial ProWise project upload)
 
     public AuthService(
             JdbcTemplate jdbc,
@@ -61,12 +63,20 @@ public class AuthService {
             OrganizationService organizationService,
             EmailSender emailSender,
             ObjectProvider<EmailCredentialService> emailCredentialServiceProvider,
+<<<<<<< HEAD
             @Value("${prowise.auth.refresh-token-days}") long refreshTokenDays,
             @Value("${prowise.auth.access-token-minutes}") long accessTokenMinutes,
             @Value("${prowise.auth.refresh-sliding}") boolean slidingRefresh,
             @Value("${prowise.auth.refresh-reuse-grace-seconds}") long reuseGraceSeconds) {
         this.slidingRefresh = slidingRefresh;
         this.reuseGraceSeconds = reuseGraceSeconds;
+=======
+            AccountTokenService accountTokenService,
+            RequestThrottle throttle,
+            @Value("${prowise.auth.refresh-token-days:30}") long refreshTokenDays,
+            @Value("${prowise.auth.access-token-minutes:15}") long accessTokenMinutes,
+            @Value("${prowise.auth.signup-max-per-ip-per-minute:20}") int signupMaxPerIpPerMinute) {
+>>>>>>> 29db595 (Initial ProWise project upload)
         this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
@@ -77,6 +87,7 @@ public class AuthService {
         this.refreshTokenDays = refreshTokenDays;
         this.accessTokenMinutes = accessTokenMinutes;
         this.signupMaxPerIpPerMinute = signupMaxPerIpPerMinute;
+        this.throttle = throttle;
     }
 
     /**
@@ -143,8 +154,8 @@ public class AuthService {
                 .findFirst().orElse(null);
     }
 
-    @Transactional
     public TokenPair signin(String email, String password) {
+<<<<<<< HEAD
         enforceRateLimit("signin:" + normalizeForRateLimit(email));
         Map<String, Object> user;
         try {
@@ -167,23 +178,35 @@ public class AuthService {
 
     public AuthResponse login(String email, String password, String ip, String userAgent) {
         return login(email, password, null, ip, userAgent);
+=======
+        return signin(email, password, null, null);
+>>>>>>> 29db595 (Initial ProWise project upload)
     }
 
     /**
-     * The one sign-in for all nine roles. Platform roles (Super Admin, Platform Operator) come from the account and
-     * are never bound to an organization. Every organization role comes from the member's ACTIVE membership in an
-     * ACTIVE organization, never from the {@code users.role} column, so the same person can be a Developer in one
-     * organization and an Owner in another. With several usable memberships the session starts unbound and the
-     * client asks the person to choose (switch endpoint), unless {@code requestedOrganizationId} names one of them.
-     *
-     * <p>Five wrong passwords in a row lock the account for 15 minutes; the lock is checked before the password, so
-     * guessing stops even with the right one. A pending account is only revealed after the right password.
+     * Legacy sign-in. Same checks as {@link #login} (rate limits, lockout, login history, pending/disabled answers)
+     * through {@link #authenticate}; only the session differs: it is not bound to any organization, the client binds
+     * one explicitly through the switch endpoint (task 1.3, T06).
      */
     @Transactional(noRollbackFor = ApiException.class)
-    public AuthResponse login(String email, String password, UUID requestedOrganizationId, String ip, String userAgent) {
+    public TokenPair signin(String email, String password, String ip, String userAgent) {
+        Map<String, Object> user = authenticate(email, password, ip, userAgent);
+        UUID userId = (UUID) user.get("id");
+        jdbc.update("UPDATE users SET last_login_at = now() WHERE id = ?", userId);
+        recordLoginAttempt(userId, normalize(email), ip, userAgent, "SUCCESS", null);
+        return issueSession(userId, (String) user.get("email"));
+    }
+
+    /**
+     * The credential check every sign-in path shares: per-email and per-address throttling, a timing-safe miss for
+     * unknown addresses, DISABLED answered directly, the lock checked before the password, five wrong passwords in a
+     * row lock the account, and a pending account revealed only after the right password. Returns the users row.
+     */
+    private Map<String, Object> authenticate(String email, String password, String ip, String userAgent) {
         if (email == null || email.isBlank() || password == null || password.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, "Email and password are required.");
         }
+        throttle.checkIp("signin", ip);
         enforceRateLimit("signin:" + normalizeForRateLimit(email));
 
         String normalizedEmail = normalize(email);
@@ -202,10 +225,8 @@ public class AuthService {
         Map<String, Object> user = rows.get(0);
         UUID userId = (UUID) user.get("id");
         String status = (String) user.get("status");
-        String name = (String) user.get("name");
-        String accountRole = user.get("role") == null ? "" : ((String) user.get("role")).trim().toUpperCase(java.util.Locale.ROOT);
-        String department = (String) user.get("department");
-        boolean mustChangePassword = Boolean.TRUE.equals(user.get("must_change_password"));
+
+        // Every address follows the same rules: no account (whatever its email or role) bypasses a check below.
 
         // A suspended account is told so directly (approved decision D4: seeded logins answer ACCOUNT_DISABLED).
         if ("DISABLED".equalsIgnoreCase(status)) {
@@ -218,6 +239,7 @@ public class AuthService {
             throw new ApiException(HttpStatus.LOCKED, "ACCOUNT_LOCKED",
                     "Too many failed sign-in attempts. Try again in " + LOCK_MINUTES + " minutes or reset your password.");
         }
+
         if (!passwordEncoder.matches(password, (String) user.get("password_hash"))) {
             registerFailedAttempt(userId);
             recordLoginAttempt(userId, normalizedEmail, ip, userAgent, "FAILED", "Invalid password");
@@ -226,6 +248,7 @@ public class AuthService {
         jdbc.update("UPDATE users SET failed_login_count = 0, locked_until = NULL "
                 + "WHERE id = ? AND (failed_login_count > 0 OR locked_until IS NOT NULL)", userId);
 
+<<<<<<< HEAD
         // The landing page comes from the real account type and ACTIVE memberships, never from a default:
         // platform dashboards only for platform accounts; one workspace = bound session; several = picker; none =
         // "no workspace yet". A platform account is never bound to an organization.
@@ -234,6 +257,40 @@ public class AuthService {
         role = landing.role();
         String targetDashboardUrl = Boolean.TRUE.equals(mustChangePassword) ? LandingPolicy.CHANGE_PASSWORD
                 : landing.targetUrl();
+=======
+        // Checked after the password so the response does not reveal that a pending account exists.
+        if ("PENDING_ACTIVATION".equalsIgnoreCase(status)) {
+            recordLoginAttempt(userId, normalizedEmail, ip, userAgent, "FAILED", "Account pending activation");
+            throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_PENDING_ACTIVATION",
+                    "Activate your account using the link we emailed you, then sign in.");
+        }
+        return user;
+    }
+
+    public AuthResponse login(String email, String password, String ip, String userAgent) {
+        return login(email, password, null, ip, userAgent);
+    }
+
+    /**
+     * The one sign-in for all nine roles. Platform roles (Super Admin, Platform Operator) come from the account and
+     * are never bound to an organization. Every organization role comes from the member's ACTIVE membership in an
+     * ACTIVE organization, never from the {@code users.role} column, so the same person can be a Developer in one
+     * organization and an Owner in another. With several usable memberships the session starts unbound and the
+     * client asks the person to choose (switch endpoint), unless {@code requestedOrganizationId} names one of them.
+     *
+     * <p>Five wrong passwords in a row lock the account for 15 minutes; the lock is checked before the password, so
+     * guessing stops even with the right one. A pending account is only revealed after the right password.
+     */
+    @Transactional(noRollbackFor = ApiException.class)
+    public AuthResponse login(String email, String password, UUID requestedOrganizationId, String ip, String userAgent) {
+        Map<String, Object> user = authenticate(email, password, ip, userAgent);
+        String normalizedEmail = normalize(email);
+        UUID userId = (UUID) user.get("id");
+        String name = (String) user.get("name");
+        String accountRole = user.get("role") == null ? "" : ((String) user.get("role")).trim().toUpperCase(java.util.Locale.ROOT);
+        String department = (String) user.get("department");
+        boolean mustChangePassword = Boolean.TRUE.equals(user.get("must_change_password"));
+>>>>>>> 29db595 (Initial ProWise project upload)
 
         TokenPair tokens = issueSession(userId, normalizedEmail, UUID.randomUUID(), organizationId, role, name, Boolean.TRUE.equals(mustChangePassword));
 
@@ -378,6 +435,7 @@ public class AuthService {
         Map<String, Object> row = rows.get(0);
         UUID sessionId = (UUID) row.get("id");
         UUID userId = (UUID) row.get("user_id");
+<<<<<<< HEAD
         if (row.get("revoked_at") != null || Boolean.TRUE.equals(row.get("expired"))) {
             throw sessionEnded();
         }
@@ -385,6 +443,14 @@ public class AuthService {
             jdbc.update("UPDATE sessions SET revoked_at = now(), revoked_reason = 'USER_INACTIVE' WHERE id = ?", sessionId);
             recordAuditLog("REFRESH_DENIED", userId, (String) row.get("email"), userId, "{\"reason\":\"user_inactive\"}", ip);
             throw sessionEnded();
+=======
+        // Claim the token atomically: of two concurrent refreshes with the same token only one revokes the row;
+        // the loser is treated as reuse and closes the family, exactly like a replay after rotation.
+        int claimed = jdbc.update("UPDATE sessions SET revoked_at = now() WHERE id = ? AND revoked_at IS NULL", row.get("id"));
+        if (claimed != 1) {
+            jdbc.update("UPDATE sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE family_id = ?", familyId);
+            throw invalidCredentials();
+>>>>>>> 29db595 (Initial ProWise project upload)
         }
         Map<String, Object> user = jdbc.queryForMap(
                 "SELECT email, status, role, name, must_change_password FROM users WHERE id = ?", userId);
@@ -602,6 +668,12 @@ public class AuthService {
 
     @Transactional
     public void requestPasswordReset(String email) {
+        requestPasswordReset(email, null);
+    }
+
+    /** Throttled per address as well as per email, so one client cannot spray reset emails across many accounts. */
+    public void requestPasswordReset(String email, String ip) {
+        throttle.checkIp("password-reset", ip);
         enforceRateLimit("password-reset:" + normalizeForRateLimit(email));
         // Pending accounts finish setup through their invitation link (or an administrator's resend),
         // so a reset request for them silently issues nothing, like an unknown address.
@@ -785,22 +857,12 @@ public class AuthService {
         return email == null ? "" : normalize(email);
     }
 
-    private static void enforceRateLimit(String key) {
+    private void enforceRateLimit(String key) {
         enforceRateLimit(key, MAX_ATTEMPTS_PER_WINDOW);
     }
 
-    private static void enforceRateLimit(String key, int maxAttempts) {
-        long now = System.currentTimeMillis();
-        RateAttempt attempt = RATE_ATTEMPTS.compute(key, (ignored, current) -> {
-            if (current == null || now - current.startedAt() >= RATE_WINDOW_MILLIS) {
-                return new RateAttempt(now, 1);
-            }
-            return new RateAttempt(current.startedAt(), current.count() + 1);
-        });
-        if (attempt.count() > maxAttempts) {
-            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, ErrorCodes.RATE_LIMITED,
-                    "Too many attempts. Try again later.");
-        }
+    private void enforceRateLimit(String key, int maxAttempts) {
+        throttle.check(key, maxAttempts);
     }
 
     private static String randomToken() {
@@ -811,7 +873,11 @@ public class AuthService {
         return AccountTokenService.hash(value);
     }
 
+<<<<<<< HEAD
     /** refreshToken is null when a refresh only renewed the access token (concurrent refresh within the grace window). */
+=======
+    /** The refresh token travels only in the HttpOnly cookie; it is never serialised into a response body. */
+>>>>>>> 29db595 (Initial ProWise project upload)
     public record TokenPair(String accessToken, @com.fasterxml.jackson.annotation.JsonIgnore String refreshToken) {}
     public record MeResponse(UUID id, String email, List<MembershipResponse> memberships) {}
     public record ExtendedMeResponse(
@@ -856,7 +922,6 @@ public class AuthService {
     ) {}
     public record MembershipResponse(UUID id, UUID orgId, String roleTemplate, String status,
             String name, String slug, String timezone, String workCalendar) {}
-    private record RateAttempt(long startedAt, int count) {}
     private record MembershipRow(UUID orgId, String orgName, String role, String membershipStatus, String orgState) {
         boolean usable() {
             return "ACTIVE".equals(membershipStatus) && "ACTIVE".equals(orgState);

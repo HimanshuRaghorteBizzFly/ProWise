@@ -1,5 +1,6 @@
-"use client";
+import { ModuleUnavailable } from "@/components/feedback/ModuleUnavailable";
 
+<<<<<<< HEAD
 import { previewEnabled } from "@/lib/permissions";
 import { WorkItemsView, WorkItemView, TeamWorkView, TeamMemberView, ProjectPlanningView } from "@/components/work/WorkListViews";
 import { RequireAnyKey } from "@/components/calendar/CalendarViews";
@@ -419,6 +420,11 @@ function PreviewViewerTeamPage() {
       )}
     </div>
   );
+=======
+/** No live API backs this Viewer module yet; it is hidden from navigation until one ships. */
+export default function Page({ params }: { params: { orgId: string } }) {
+  return <ModuleUnavailable module="Team directory" homeHref={`/org/${encodeURIComponent(params.orgId)}/viewer/dashboard`} />;
+>>>>>>> 29db595 (Initial ProWise project upload)
 }
 
 /** Task 3.1: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */

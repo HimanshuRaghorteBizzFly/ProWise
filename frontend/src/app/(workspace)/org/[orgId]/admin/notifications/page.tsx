@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-// Admin activity alerts live in Audit Activity.
+// The old URL keeps working and opens the dashboard.
 export default function Page({ params }: { params: { orgId: string } }) {
-  redirect(`/org/${encodeURIComponent(params.orgId)}/admin/audit-logs`);
+  redirect(`/org/${encodeURIComponent(params.orgId)}/admin/dashboard`);
 }

@@ -49,9 +49,16 @@ public class AuthController {
 
     @PostMapping("/auth/signin")
     @PreAuthorize("permitAll()")
+<<<<<<< HEAD
     @Operation(summary = "Sign in and start a session")
     public ResponseEntity<AccessTokenResponse> signin(@RequestBody Credentials request) {
         return cookies.withTokens(authService.signin(request.email(), request.password()), 200);
+=======
+    @Operation(summary = "Sign in and rotate a refresh session")
+    public ResponseEntity<AccessTokenResponse> signin(HttpServletRequest httpRequest, @RequestBody Credentials request) {
+        return withRefreshCookie(authService.signin(request.email(), request.password(),
+                extractClientIp(httpRequest), httpRequest.getHeader(HttpHeaders.USER_AGENT)), 200);
+>>>>>>> 29db595 (Initial ProWise project upload)
     }
 
     @PostMapping("/auth/login")
@@ -108,8 +115,8 @@ public class AuthController {
     @PostMapping({"/auth/forgot-password", "/auth/password-reset/request"})
     @PreAuthorize("permitAll()")
     @Operation(summary = "Request password reset instructions")
-    public ResponseEntity<Void> forgotPassword(@RequestBody EmailRequest request) {
-        authService.requestPasswordReset(request.email());
+    public ResponseEntity<Void> forgotPassword(HttpServletRequest httpRequest, @RequestBody EmailRequest request) {
+        authService.requestPasswordReset(request.email(), extractClientIp(httpRequest));
         return ResponseEntity.accepted().build();
     }
 
@@ -149,10 +156,6 @@ public class AuthController {
     public record AccessTokenResponse(String accessToken) {}
 
     private static String extractClientIp(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isBlank()) {
-            return xForwardedFor.split(",")[0].trim();
-        }
-        return request.getRemoteAddr() != null ? request.getRemoteAddr() : "127.0.0.1";
+        return com.prowise.common.api.ClientAddress.of(request);
     }
 }

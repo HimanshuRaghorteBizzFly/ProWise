@@ -1,39 +1,40 @@
 package com.prowise.superadmin.organizations;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.prowise.common.api.ApiException;
+import com.prowise.common.persistence.ExpectedVersion;
 import com.prowise.superadmin.audit.AuditService;
-import com.prowise.superadmin.plans.PlanEntity;
-import com.prowise.superadmin.plans.PlanRepository;
-import com.prowise.superadmin.subscriptions.SubscriptionEntity;
-import com.prowise.superadmin.subscriptions.SubscriptionRepository;
 
+/**
+ * Tenant organization lifecycle for the Super Admin. Every change is version-checked (rule 5) and writes its
+ * admin audit row in the same transaction (rule 4). Usage figures come from real rows (memberships, projects,
+ * active subscriptions); nothing is invented when there is no data.
+ */
 @Service
 @Transactional
 public class SuperAdminOrgService {
 
     private final OrganizationRepository orgRepository;
-    private final PlanRepository planRepository;
-    private final SubscriptionRepository subscriptionRepository;
     private final AuditService auditService;
+    private final JdbcTemplate jdbc;
 
     public SuperAdminOrgService(
             OrganizationRepository orgRepository,
-            PlanRepository planRepository,
-            SubscriptionRepository subscriptionRepository,
-            AuditService auditService
+            AuditService auditService,
+            JdbcTemplate jdbc
     ) {
         this.orgRepository = orgRepository;
-        this.planRepository = planRepository;
-        this.subscriptionRepository = subscriptionRepository;
         this.auditService = auditService;
+        this.jdbc = jdbc;
     }
 
     @Transactional(readOnly = true)
@@ -57,9 +58,7 @@ public class SuperAdminOrgService {
 
     @Transactional(readOnly = true)
     public SuperAdminOrgDTOs.OrgDetailResponse getOrganization(UUID id) {
-        OrganizationEntity org = orgRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_NOT_FOUND", "Organization not found: " + id));
-        return buildOrgResponse(org);
+        return buildOrgResponse(find(id));
     }
 
     public SuperAdminOrgDTOs.OrgDetailResponse createOrganization(SuperAdminOrgDTOs.CreateOrgRequest req, String actorEmail) {
@@ -73,37 +72,30 @@ public class SuperAdminOrgService {
         entity.setId(orgId);
         entity.setName(req.name().trim());
         entity.setSlug(cleanSlug);
-        entity.setDomain(req.domain() != null ? req.domain().trim() : (cleanSlug + ".prowise.io"));
-        entity.setIndustry(req.industry() != null ? req.industry().trim() : "Enterprise Software");
-        entity.setCountry(req.country() != null ? req.country().trim() : "United States");
+        entity.setDomain(req.domain() != null && !req.domain().isBlank() ? req.domain().trim() : null);
+        entity.setIndustry(req.industry() != null && !req.industry().isBlank() ? req.industry().trim() : null);
+        entity.setCountry(req.country() != null && !req.country().isBlank() ? req.country().trim() : null);
         entity.setTimezone(req.timezone() != null ? req.timezone().trim() : "UTC");
         entity.setOwnerName(req.ownerName().trim());
         entity.setOwnerEmail(req.ownerEmail().trim().toLowerCase(java.util.Locale.ROOT));
         entity.setState("ACTIVE");
-        entity.setPlanId(req.planId() != null ? req.planId() : "plan-starter");
+        entity.setPlanId(req.planId()); // null = no plan (no invented default; billing is dormant)
         entity.setSeatsLimit(req.seatsLimit() != null ? req.seatsLimit() : 25);
         entity.setNotes(req.notes());
         entity.setCreatedAt(Instant.now());
         entity.setUpdatedAt(Instant.now());
 
         OrganizationEntity saved = orgRepository.save(entity);
+        orgRepository.flush();
 
-        auditService.logActivity(
-                "ORGANIZATION",
-                "CREATE_ORGANIZATION",
-                "Created new tenant organization: " + saved.getName() + " (" + saved.getSlug() + ")",
-                "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
-                saved.getName(),
-                "INFO"
-        );
-
+        audit("CREATE_ORGANIZATION", "Created new tenant organization: " + saved.getName() + " (" + saved.getSlug() + ")",
+                actorEmail, saved.getName(), "INFO");
         return buildOrgResponse(saved);
     }
 
     public SuperAdminOrgDTOs.OrgDetailResponse updateOrganization(UUID id, SuperAdminOrgDTOs.UpdateOrgRequest req, String actorEmail) {
-        OrganizationEntity org = orgRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_NOT_FOUND", "Organization not found: " + id));
+        OrganizationEntity org = find(id);
+        ExpectedVersion.checkRequired(org.getVersion(), req.expectedVersion());
 
         if (req.name() != null) org.setName(req.name().trim());
         if (req.domain() != null) org.setDomain(req.domain().trim());
@@ -115,102 +107,64 @@ public class SuperAdminOrgService {
         if (req.planId() != null) org.setPlanId(req.planId());
         if (req.seatsLimit() != null) org.setSeatsLimit(req.seatsLimit());
         if (req.notes() != null) org.setNotes(req.notes());
-        org.setUpdatedAt(Instant.now());
 
-        OrganizationEntity updated = orgRepository.save(org);
-
-        auditService.logActivity(
-                "ORGANIZATION",
-                "UPDATE_ORGANIZATION",
-                "Updated details for organization: " + updated.getName(),
-                "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
-                updated.getName(),
-                "INFO"
-        );
-
+        OrganizationEntity updated = save(org);
+        audit("UPDATE_ORGANIZATION", "Updated details for organization: " + updated.getName(), actorEmail, updated.getName(), "INFO");
         return buildOrgResponse(updated);
     }
 
     public SuperAdminOrgDTOs.OrgDetailResponse suspendOrganization(UUID id, SuperAdminOrgDTOs.SuspendOrgRequest req, String actorEmail) {
-        OrganizationEntity org = orgRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_NOT_FOUND", "Organization not found: " + id));
+        OrganizationEntity org = find(id);
+        ExpectedVersion.checkRequired(org.getVersion(), req.expectedVersion());
 
         org.setState("SUSPENDED");
         org.setSuspendedReason(req.reason());
-        org.setUpdatedAt(Instant.now());
-        OrganizationEntity updated = orgRepository.save(org);
+        OrganizationEntity updated = save(org);
 
-        auditService.logActivity(
-                "ORGANIZATION",
-                "SUSPEND_ORGANIZATION",
-                "Suspended organization: " + updated.getName() + " (Reason: " + req.reason() + ")",
-                "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
-                updated.getName(),
-                "WARNING"
-        );
-
+        audit("SUSPEND_ORGANIZATION", "Suspended organization: " + updated.getName() + " (Reason: " + req.reason() + ")",
+                actorEmail, updated.getName(), "WARNING");
         return buildOrgResponse(updated);
     }
 
-    public SuperAdminOrgDTOs.OrgDetailResponse reactivateOrganization(UUID id, String actorEmail) {
-        OrganizationEntity org = orgRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_NOT_FOUND", "Organization not found: " + id));
+    public SuperAdminOrgDTOs.OrgDetailResponse reactivateOrganization(UUID id, Long expectedVersion, String actorEmail) {
+        OrganizationEntity org = find(id);
+        ExpectedVersion.checkRequired(org.getVersion(), expectedVersion);
 
         org.setState("ACTIVE");
         org.setSuspendedReason(null);
-        org.setUpdatedAt(Instant.now());
-        OrganizationEntity updated = orgRepository.save(org);
+        OrganizationEntity updated = save(org);
 
-        auditService.logActivity(
-                "ORGANIZATION",
-                "REACTIVATE_ORGANIZATION",
-                "Reactivated tenant organization: " + updated.getName(),
-                "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
-                updated.getName(),
-                "INFO"
-        );
-
+        audit("REACTIVATE_ORGANIZATION", "Reactivated tenant organization: " + updated.getName(), actorEmail, updated.getName(), "INFO");
         return buildOrgResponse(updated);
     }
 
-    public void deleteOrganization(UUID id, String actorEmail) {
-        OrganizationEntity org = orgRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_NOT_FOUND", "Organization not found: " + id));
+    public void deleteOrganization(UUID id, Long expectedVersion, String actorEmail) {
+        OrganizationEntity org = find(id);
+        ExpectedVersion.checkRequired(org.getVersion(), expectedVersion);
 
         orgRepository.delete(org);
+        orgRepository.flush();
 
-        auditService.logActivity(
-                "ORGANIZATION",
-                "DELETE_ORGANIZATION",
-                "Deleted organization " + org.getName() + " (" + org.getId() + ")",
-                "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
-                org.getName(),
-                "CRITICAL"
-        );
+        audit("DELETE_ORGANIZATION", "Deleted organization " + org.getName() + " (" + org.getId() + ")", actorEmail, org.getName(), "CRITICAL");
     }
 
+    /**
+     * All-or-nothing: every item must exist and carry its current version, otherwise nothing is suspended
+     * (404 for an unknown id, 409 STALE_VERSION for an outdated one).
+     */
     public void bulkSuspend(SuperAdminOrgDTOs.BulkSuspendRequest req, String actorEmail) {
-        List<OrganizationEntity> orgs = orgRepository.findAllById(req.orgIds());
-        for (OrganizationEntity org : orgs) {
+        for (SuperAdminOrgDTOs.BulkSuspendItem item : req.items()) {
+            OrganizationEntity org = find(item.id());
+            ExpectedVersion.checkRequired(org.getVersion(), item.expectedVersion());
             org.setState("SUSPENDED");
             org.setSuspendedReason(req.reason());
             org.setUpdatedAt(Instant.now());
+            orgRepository.save(org);
         }
-        orgRepository.saveAll(orgs);
+        orgRepository.flush();
 
-        auditService.logActivity(
-                "ORGANIZATION",
-                "BULK_SUSPEND",
-                "Bulk suspended " + orgs.size() + " organizations. Reason: " + req.reason(),
-                "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
-                orgs.size() + " tenants",
-                "WARNING"
-        );
+        audit("BULK_SUSPEND", "Bulk suspended " + req.items().size() + " organizations. Reason: " + req.reason(),
+                actorEmail, req.items().size() + " tenants", "WARNING");
     }
 
     @Transactional(readOnly = true)
@@ -230,14 +184,13 @@ public class SuperAdminOrgService {
             } else {
                 active++;
             }
-
-            BigDecimal mrr = getMrrForOrg(o);
-            totalMrr = totalMrr.add(mrr);
+            totalMrr = totalMrr.add(mrrFor(o.getId()));
         }
 
         return new SuperAdminOrgDTOs.OrgSummaryResponse(total, active, trial, suspended, totalMrr);
     }
 
+<<<<<<< HEAD
     private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     /** Optional so the plain constructor stays usable in unit tests; Spring always provides it at runtime. */
@@ -277,15 +230,51 @@ public class SuperAdminOrgService {
                 ORDER BY m.created_at LIMIT 1
                 """, (rs, n) -> new String[] {rs.getString("name"), rs.getString("email")}, orgId)
                 .stream().findFirst().orElse(null);
+=======
+    private OrganizationEntity find(UUID id) {
+        return orgRepository.findById(id).orElseThrow(ApiException::notFound);
+>>>>>>> 29db595 (Initial ProWise project upload)
     }
 
-    private BigDecimal getMrrForOrg(OrganizationEntity org) {
-        if (org.getPlanId() != null) {
-            PlanEntity plan = planRepository.findById(org.getPlanId()).orElse(null);
-            if (plan != null && plan.getMonthlyPrice() != null) {
-                return plan.getMonthlyPrice();
-            }
+    private OrganizationEntity save(OrganizationEntity org) {
+        org.setUpdatedAt(Instant.now());
+        OrganizationEntity saved = orgRepository.save(org);
+        orgRepository.flush();
+        return saved;
+    }
+
+    private void audit(String action, String summary, String actorEmail, String target, String severity) {
+        auditService.logActivity("ORGANIZATION", action, summary, "Super Admin", actorEmail, target, severity);
+    }
+
+    private SuperAdminOrgDTOs.OrgDetailResponse buildOrgResponse(OrganizationEntity org) {
+        int seatsUsed = count("SELECT count(*) FROM memberships WHERE org_id = ? AND status = 'ACTIVE'", org.getId());
+        int projectsCount = count("SELECT count(*) FROM projects WHERE org_id = ?", org.getId());
+        // No storage accounting exists yet: 0 (not an estimate).
+        return SuperAdminOrgDTOs.OrgDetailResponse.fromEntity(org, seatsUsed, projectsCount, 0.0, mrrFor(org.getId()));
+    }
+
+    private int count(String sql, UUID orgId) {
+        if (orgId == null) {
+            return 0;
         }
+<<<<<<< HEAD
         return BigDecimal.ZERO; // no plan stored: no revenue assumed
+=======
+        Integer value = jdbc.queryForObject(sql, Integer.class, orgId);
+        return value == null ? 0 : value;
+    }
+
+    /** Monthly recurring revenue from the organization's ACTIVE subscriptions (annual amounts / 12); 0 when none. */
+    private BigDecimal mrrFor(UUID orgId) {
+        if (orgId == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal value = jdbc.queryForObject("""
+                SELECT COALESCE(SUM(CASE WHEN billing_cycle = 'ANNUAL' THEN amount / 12 ELSE amount END), 0)
+                FROM subscriptions WHERE org_id = ? AND status = 'ACTIVE'
+                """, BigDecimal.class, orgId);
+        return value == null ? BigDecimal.ZERO : value.setScale(2, RoundingMode.HALF_UP);
+>>>>>>> 29db595 (Initial ProWise project upload)
     }
 }

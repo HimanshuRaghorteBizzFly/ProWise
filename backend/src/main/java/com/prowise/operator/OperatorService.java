@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.prowise.common.api.ApiException;
 import com.prowise.common.api.ErrorCodes;
+import com.prowise.common.persistence.ExpectedVersion;
 import com.prowise.identity.EmailCredentialService;
 import com.prowise.operator.auth.OperatorAuthService;
 
@@ -109,7 +110,7 @@ public class OperatorService {
     @Transactional(readOnly = true)
     public OperatorDTOs.OperatorResponse getOperator(String id) {
         PlatformOperatorEntity op = operatorRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + id));
+                .orElseThrow(ApiException::notFound);
         return toResponse(op);
     }
 
@@ -175,8 +176,7 @@ public class OperatorService {
     /** noRollbackFor: a refused role assignment keeps its OPERATOR_ROLE_REFUSED audit row (validation runs before any change). */
     @Transactional(noRollbackFor = ApiException.class)
     public OperatorDTOs.OperatorResponse updateOperator(String id, OperatorDTOs.UpdateOperatorRequest req, String actor) {
-        PlatformOperatorEntity op = operatorRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + id));
+        PlatformOperatorEntity op = findOperator(id);
 
         // Prevent deactivating or changing role of last active super admin
         if ("role-super-admin".equalsIgnoreCase(op.getRoleId())) {
@@ -198,6 +198,7 @@ public class OperatorService {
         String requestedDept = (req.department() != null && !req.department().trim().isEmpty())
                 ? strictDepartment(req.department())
                 : null;
+        guardVersion(op, req.expectedVersion());
 
         if (req.name() != null && !req.name().trim().isEmpty()) {
             op.setName(req.name().trim());
@@ -317,12 +318,13 @@ public class OperatorService {
         return roleId.toLowerCase(java.util.Locale.ROOT);
     }
 
-    public OperatorDTOs.OperatorResponse updateAccessLevel(String id, String targetLevel, String actor) {
-        PlatformOperatorEntity op = operatorRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + id));
+    public OperatorDTOs.OperatorResponse updateAccessLevel(String id, String targetLevel, Long expectedVersion, String actor) {
+        PlatformOperatorEntity op = findOperator(id);
 
         OperatorAccessLevel newLevel = strictAccessLevel(targetLevel);
+        ExpectedVersion.checkRequired(op.getVersion(), expectedVersion);
         if (op.getAccessLevel() != newLevel) {
+            guardVersion(op, expectedVersion);
             op.setAccessLevel(newLevel);
             if (newLevel == OperatorAccessLevel.MAIN_PLATFORM_OPERATOR) {
                 op.setDepartmentId(null);
@@ -339,12 +341,13 @@ public class OperatorService {
         return toResponse(op);
     }
 
-    public OperatorDTOs.OperatorResponse updateDepartment(String id, String newDepartment, String actor) {
-        PlatformOperatorEntity op = operatorRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + id));
+    public OperatorDTOs.OperatorResponse updateDepartment(String id, String newDepartment, Long expectedVersion, String actor) {
+        PlatformOperatorEntity op = findOperator(id);
 
         String targetDept = strictDepartment(newDepartment);
+        ExpectedVersion.checkRequired(op.getVersion(), expectedVersion);
         if (op.getDepartmentId() == null || !op.getDepartmentId().equals(targetDept)) {
+            guardVersion(op, expectedVersion);
             op.setDepartmentId(targetDept);
             op.setUpdatedAt(Instant.now());
             PlatformOperatorEntity saved = operatorRepository.save(op);
@@ -358,9 +361,9 @@ public class OperatorService {
         return toResponse(op);
     }
 
-    public OperatorDTOs.OperatorResponse toggleOperatorStatus(String id, String actor) {
-        PlatformOperatorEntity op = operatorRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + id));
+    public OperatorDTOs.OperatorResponse toggleOperatorStatus(String id, Long expectedVersion, String actor) {
+        PlatformOperatorEntity op = findOperator(id);
+        ExpectedVersion.checkRequired(op.getVersion(), expectedVersion);
 
         String targetStatus = "ACTIVE".equalsIgnoreCase(op.getStatus()) ? "INACTIVE" : "ACTIVE";
 
@@ -368,6 +371,7 @@ public class OperatorService {
             assertNotLastActiveSuperAdmin(id);
             sessionRepository.revokeAllByOperatorId(id, actor);
         }
+        guardVersion(op, expectedVersion);
 
         op.setStatus(targetStatus);
         op.setUpdatedAt(Instant.now());
@@ -380,11 +384,12 @@ public class OperatorService {
         return toResponse(saved);
     }
 
-    public void deleteOperator(String id, String actor) {
-        PlatformOperatorEntity op = operatorRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + id));
+    public void deleteOperator(String id, Long expectedVersion, String actor) {
+        PlatformOperatorEntity op = findOperator(id);
 
+        ExpectedVersion.checkRequired(op.getVersion(), expectedVersion);
         assertNotLastActiveSuperAdmin(id);
+        guardVersion(op, expectedVersion);
 
         sessionRepository.revokeAllByOperatorId(id, actor);
         overrideRepository.deleteByOperatorId(id);
@@ -393,6 +398,21 @@ public class OperatorService {
         auditLogRepository.save(new OperatorAuditLogEntity(
                 id, actor, "OPERATOR_DELETED", "operators", "Operator " + op.getName() + " (" + op.getEmail() + ") deleted"
         ));
+    }
+
+    /** Unknown or foreign ids: 404 with no metadata (rule 6). */
+    private PlatformOperatorEntity findOperator(String id) {
+        return operatorRepository.findById(id).orElseThrow(ApiException::notFound);
+    }
+
+    /**
+     * Rule 5 for Super Admin edits: expected_version must match, then a version-guarded UPDATE bumps it (a
+     * concurrent edit that already bumped it makes this 409 STALE_VERSION). Sign-in never touches the column.
+     */
+    private void guardVersion(PlatformOperatorEntity op, Long expectedVersion) {
+        long expected = ExpectedVersion.checkRequired(op.getVersion(), expectedVersion);
+        ExpectedVersion.requireUpdated(operatorRepository.bumpVersion(op.getId(), expected));
+        op.markVersion(expected + 1);
     }
 
     private void assertNotLastActiveSuperAdmin(String targetOperatorId) {
@@ -412,7 +432,7 @@ public class OperatorService {
     @Transactional(readOnly = true)
     public OperatorDTOs.EffectivePermissionsResponse getEffectivePermissions(String operatorId) {
         PlatformOperatorEntity op = operatorRepository.findById(operatorId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + operatorId));
+                .orElseThrow(ApiException::notFound);
 
         OperatorDepartment dept = OperatorDepartment.fromId(op.getDepartmentId());
         boolean isMain = op.getAccessLevel() == OperatorAccessLevel.MAIN_PLATFORM_OPERATOR;
@@ -488,8 +508,8 @@ public class OperatorService {
     public OperatorDTOs.EffectivePermissionsResponse updatePermissions(
             String operatorId, OperatorDTOs.UpdatePermissionsPayload payload, String actor
     ) {
-        PlatformOperatorEntity op = operatorRepository.findById(operatorId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + operatorId));
+        PlatformOperatorEntity op = findOperator(operatorId);
+        guardVersion(op, payload.expectedVersion());
 
         if (payload.resetToDefaults()) {
             overrideRepository.deleteByOperatorId(operatorId);
@@ -544,7 +564,7 @@ public class OperatorService {
 
     public void resendInvitation(String operatorId, String actor) {
         PlatformOperatorEntity op = operatorRepository.findById(operatorId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + operatorId));
+                .orElseThrow(ApiException::notFound);
 
         String emailStatus = issueInvitation(op);
 
@@ -578,17 +598,18 @@ public class OperatorService {
         return emailCredentialService.sendOperatorInvitationEmail(op.getEmail(), op.getName(), rawInviteToken).status();
     }
 
-    public OperatorDTOs.OperatorResponse updateOperatorStatus(String id, String targetStatus, String actor) {
-        PlatformOperatorEntity op = operatorRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator not found: " + id));
+    public OperatorDTOs.OperatorResponse updateOperatorStatus(String id, String targetStatus, Long expectedVersion, String actor) {
+        PlatformOperatorEntity op = findOperator(id);
 
         String status = (targetStatus != null && !targetStatus.isBlank()) ? targetStatus.trim().toUpperCase() : "ACTIVE";
         validateStatus(status);
+        ExpectedVersion.checkRequired(op.getVersion(), expectedVersion);
 
         if ("INACTIVE".equalsIgnoreCase(status) || "SUSPENDED".equalsIgnoreCase(status)) {
             assertNotLastActiveSuperAdmin(id);
             sessionRepository.revokeAllByOperatorId(id, actor);
         }
+        guardVersion(op, expectedVersion);
 
         op.setStatus(status);
         op.setUpdatedAt(Instant.now());
@@ -761,80 +782,6 @@ public class OperatorService {
     }
 
     @Transactional(readOnly = true)
-    public OperatorDTOs.OperatorDashboardResponse getDashboardSummary(String email) {
-        PlatformOperatorEntity op = operatorRepository.findByEmailIgnoreCase(email)
-                .or(() -> operatorRepository.findById("op-2"))
-                .orElse(null);
-
-        String deptId = (op != null) ? op.getDepartmentId() : "site-reliability";
-        OperatorDepartment dept = OperatorDepartment.fromId(deptId);
-
-        List<OperatorDTOs.DashboardMetric> kpis = new ArrayList<>();
-        Map<String, Object> data = new HashMap<>();
-
-        switch (dept) {
-            case SITE_RELIABILITY -> {
-                kpis.add(new OperatorDTOs.DashboardMetric("System Uptime", "99.98%", "+0.02%", "emerald"));
-                kpis.add(new OperatorDTOs.DashboardMetric("p99 API Latency", "142 ms", "-18 ms", "emerald"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Failed Webhooks", "4", "2 Retrying", "amber"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Active Incidents", "1", "Sev-2 Investigating", "rose"));
-                data.put("backupStatus", "All 6 database snapshots verified OK");
-                data.put("queueLag", "18 ms avg processing delay");
-            }
-            case LIFECYCLE_MESSAGING -> {
-                kpis.add(new OperatorDTOs.DashboardMetric("Emails Delivered", "148,290", "99.4% rate", "emerald"));
-                kpis.add(new OperatorDTOs.DashboardMetric("SMTP Bounce Rate", "0.38%", "-0.05%", "emerald"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Pending Drafts", "3", "Awaiting review", "blue"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Active Alerts", "0", "All relays healthy", "emerald"));
-                data.put("relayHealth", "SendGrid & AWS SES clusters optimal");
-            }
-            case REVENUE_OPERATIONS -> {
-                kpis.add(new OperatorDTOs.DashboardMetric("Active Subscriptions", "428", "+14 this month", "blue"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Failed Payments", "3", "$4,850 at risk", "rose"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Pending Invoices", "8", "6 delivered", "amber"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Billing Incidents", "0", "Normal processing", "emerald"));
-                data.put("recoveryRate", "82% recovered within 48h retry");
-            }
-            case CUSTOMER_COMMUNICATIONS -> {
-                kpis.add(new OperatorDTOs.DashboardMetric("Open Tickets", "12", "3 urgent", "amber"));
-                kpis.add(new OperatorDTOs.DashboardMetric("SLA Compliance", "96.4%", "Target > 95%", "emerald"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Pending Access Requests", "2", "Require sign-off", "violet"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Avg Response Time", "14 min", "-3 min", "emerald"));
-                data.put("activeEscalations", "CloudPulse webhook delay ticket in progress");
-            }
-            case FINANCE_TAX -> {
-                kpis.add(new OperatorDTOs.DashboardMetric("Processed Invoices", "$184,200", "Current billing cycle", "emerald"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Payment Retries", "3", "Automated smart retry", "amber"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Tax Settlements", "100%", "Stripe Tax verified", "emerald"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Billing Alerts", "0", "No open gateway faults", "emerald"));
-                data.put("auditState", "Ready for Q4 reconciliation");
-            }
-            case TRUST_COMPLIANCE -> {
-                kpis.add(new OperatorDTOs.DashboardMetric("Security Alerts", "1", "Investigating origin", "amber"));
-                kpis.add(new OperatorDTOs.DashboardMetric("MFA Enforcement", "100%", "All operators compliant", "emerald"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Tenant Access Audits", "14", "Dual-custody verified", "blue"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Audit Log Health", "Active", "Zero tampering detected", "emerald"));
-                data.put("complianceStatus", "SOC 2 Type II audit controls active");
-            }
-            default -> {
-                kpis.add(new OperatorDTOs.DashboardMetric("Global Availability", "99.96%", "Optimal", "emerald"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Active Organizations", "8", "All reporting OK", "blue"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Open Incidents", "1", "Under investigation", "amber"));
-                kpis.add(new OperatorDTOs.DashboardMetric("Maintenance Mode", "Normal", "Next window Sunday", "emerald"));
-                data.put("operationalStatus", "Core Web API & databases operating within thresholds");
-            }
-        }
-
-        return new OperatorDTOs.OperatorDashboardResponse(
-                dept.getId(),
-                dept.getDisplayName(),
-                kpis,
-                dept.getAuthorizedModules(),
-                data
-        );
-    }
-
-    @Transactional(readOnly = true)
     public List<OperatorDTOs.DepartmentResponse> listDepartments() {
         return departmentRepository.findAll().stream().map(d -> {
             int permCount = departmentPermissionRepository.findByDepartmentId(d.getId()).size();
@@ -905,7 +852,8 @@ public class OperatorService {
                 activeSessions,
                 totalPerms,
                 op.getLastActiveAt(),
-                op.getCreatedAt()
+                op.getCreatedAt(),
+                op.getVersion()
         );
     }
 }
