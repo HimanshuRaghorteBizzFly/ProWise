@@ -63,15 +63,9 @@ export interface AuthUserSummary {
   id: string;
   email: string;
   name: string;
-<<<<<<< HEAD
   /** Null when no workspace is selected yet (workspace picker or no workspace). */
   role: string | null;
   department?: string | null;
-=======
-  /** Null while a person with several organizations has not chosen one yet. */
-  role: string | null;
-  department?: string;
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
   organization_id?: string | null;
   organization_name?: string | null;
   must_change_password: boolean;
@@ -324,12 +318,11 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
   return {
     health,
-<<<<<<< HEAD
     signup: (body: {
       email: string;
       password: string;
       name: string;
-      organization: {
+      organization?: {
         name: string;
         slug: string;
         timezone: string;
@@ -343,38 +336,20 @@ export function createApiClient(options: ApiClientOptions = {}) {
         accessToken = tokens.access_token;
         return tokens;
       }),
-=======
-    /**
-     * Public signup (approved decision D9). The account stays pending and no session is issued: the API emails a
-     * single-use link, the owner opens it (verifyEmail), then signs in. The answer is the same for known addresses.
-     */
-    signup: (body: { email: string; password: string; name?: string }) =>
-      json<{ message: string }>("/v1/auth/signup", { method: "POST", body }),
-    /** Activates a self-registered account from the token in its emailed link. Single use. */
-    verifyEmail: (token: string) => request("/v1/auth/verify-email", { method: "POST", body: { token } }),
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
     signin: (body: { email: string; password: string }) =>
       json<{ access_token: string }>("/v1/auth/signin", { method: "POST", body }).then((tokens) => {
         accessToken = tokens.access_token;
         return tokens;
       }),
-<<<<<<< HEAD
     login: (body: { email: string; password: string }) =>
       // /v1 path: the base URL is "/api" and only /api/v1/* is proxied ("/api/auth/login" became /api/api/... = 404).
-=======
-    login: (body: { email: string; password: string; organization_id?: string }) =>
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
       json<AuthLoginResponse>("/v1/auth/login", { method: "POST", body }).then((res) => {
         accessToken = res.access_token;
         return res;
       }),
     changePassword: (body: { currentPassword?: string; newPassword: string }) =>
-<<<<<<< HEAD
       // /v1 path: the base URL is "/api" and only /api/v1/* is proxied to the backend.
       json<{ access_token: string }>("/v1/auth/change-password", {
-=======
-      json<{ access_token: string; refresh_token: string }>("/v1/auth/change-password", {
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
         method: "POST",
         body: {
           current_password: body.currentPassword,
@@ -391,8 +366,6 @@ export function createApiClient(options: ApiClientOptions = {}) {
       await request("/v1/auth/logout-all", { method: "POST" });
       accessToken = null;
     },
-    /** A request through the session-aware client (Bearer + refresh on 401) for older helpers that build their own paths. */
-    call: (path: string, init: { method?: string; body?: unknown } = {}) => request(path, init),
     signout: async () => {
       // /v1 path: the base URL is "/api" and only /api/v1/* is proxied to the backend; also the one sign-out
       // path allowed during role preview.

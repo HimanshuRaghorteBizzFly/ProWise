@@ -1,6 +1,5 @@
-import { redirect } from "next/navigation";
+"use client";
 
-<<<<<<< HEAD
 import { previewEnabled } from "@/lib/permissions";
 import { LiveDeveloperDashboard } from "@/components/dashboards/LiveRoleDashboards";
 import React, { useEffect, useState } from "react";
@@ -431,10 +430,6 @@ function PreviewDeveloperDashboard() {
       </div>
     </PanelLayout>
   );
-=======
-export default function Page({ params }: { params: { orgId: string } }) {
-  redirect(`/org/${params.orgId}/developer/dashboard`);
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
 }
 
 /** Real data by default; the sample dashboard only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */

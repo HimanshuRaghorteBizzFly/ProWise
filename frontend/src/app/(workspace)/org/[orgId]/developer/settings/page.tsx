@@ -190,7 +190,9 @@ export default function DeveloperSettingsPage() {
         description="Your profile, appearance and notification preferences."
       >
         <DevGate state={prefs} what="Your settings" back={{ href: home, label: "Back to dashboard" }} skeleton="detail">
-          {(data) => <PreferencesForm initial={data} />}
+          {(data) => data ? <PreferencesForm initial={data} /> : (
+            <p className="text-xs text-[var(--color-text-secondary)]">Your settings could not be loaded. Please retry.</p>
+          )}
         </DevGate>
         <p className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)]">
           <Settings className="h-3.5 w-3.5" /> Repository connections are managed by your organization; they are not set here.

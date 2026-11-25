@@ -16,8 +16,6 @@ import { previewEnabled } from "@/lib/permissions";
 import { establishSession } from "@/lib/session";
 import { clearWorkspaceCaches, switchWorkspace } from "@/lib/workspace-switch";
 import { cn } from "@/lib/utils";
-import { apiClient } from "@/lib/api";
-import { switchWorkspace } from "@/lib/workspace-switch";
 
 interface TopNavProps {
   title?: string;
@@ -57,7 +55,6 @@ export function TopNav({
   navigationButtonRef,
 }: TopNavProps) {
   const router = useRouter();
-<<<<<<< HEAD
   const { currentUser, currentRole, currentOrg, setCurrentOrg, switchRoleAndNavigate, logout } = useAuthStore();
   const realOrganizations = useAuthStore((state) => state.organizations);
   const preview = previewEnabled();
@@ -95,11 +92,6 @@ export function TopNav({
     logout();
     router.replace("/login");
   };
-=======
-  const { currentUser, currentRole, currentOrg, setCurrentOrg, switchRoleAndNavigate, logout, organizations, isAuthenticated, isRolePreview } = useAuthStore();
-  // A signed-in member switches between their own organizations; the demo list is only for preview (development).
-  const switchableOrgs = isAuthenticated && !isRolePreview ? organizations : SEEDED_ORGS;
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
   const { setTheme, resolvedTheme } = useThemeStore();
   const { notifications, markNotificationRead, markAllNotificationsRead } = useProjectStore();
 
@@ -321,7 +313,6 @@ export function TopNav({
                   <p className="truncate text-[11px] text-app-text-muted mt-0.5">{currentUser.email}</p>
                 </div>
 
-<<<<<<< HEAD
                 {preview && (
                   <div className="border-b border-app-border py-2">
                     <p className={MENU_SECTION_TITLE}>Switch active panel / role (preview)</p>
@@ -365,66 +356,6 @@ export function TopNav({
                         </button>
                       ))}
                     </div>
-=======
-                <div className="border-b border-app-border py-1.5 space-y-0.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(null);
-                      if (currentRole === "DEVELOPER") {
-                        router.push(`/org/${currentOrg.id}/developer/settings`);
-                      } else {
-                        router.push(getRoleDashboardPath(currentRole, currentOrg.id));
-                      }
-                    }}
-                    className={cn(MENU_ITEM, MENU_ITEM_IDLE, "justify-start gap-2")}
-                  >
-                    <Settings className="h-3.5 w-3.5 text-app-text-muted" aria-hidden="true" />
-                    <span>Settings &amp; Preferences</span>
-                  </button>
-
-                  {currentRole === "DEVELOPER" && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOpenMenu(null);
-                        router.push(`/org/${currentOrg.id}/developer/github`);
-                      }}
-                      className={cn(MENU_ITEM, MENU_ITEM_IDLE, "justify-start gap-2")}
-                    >
-                      <GitBranch className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" aria-hidden="true" />
-                      <span>GitHub Repositories</span>
-                    </button>
-                  )}
-                </div>
-
-                <div className="border-b border-app-border py-2">
-                  <p className={MENU_SECTION_TITLE}>Switch organization</p>
-                  <div className="space-y-0.5">
-                    {switchableOrgs.map((org) => (
-                      <button
-                        key={org.id}
-                        type="button"
-                        onClick={async () => {
-                          setOpenMenu(null);
-                          if (isRolePreview || !isAuthenticated) {
-                            setCurrentOrg(org);
-                            router.push(getRoleDashboardPath(currentRole, org.id));
-                            return;
-                          }
-                          // Real session: a token bound to that organization and the role held there (server).
-                          const result = await switchWorkspace(org.id);
-                          if (!result.ok) return;
-                          router.push(result.targetDashboardUrl || getRoleDashboardPath(currentRole, org.id));
-                        }}
-                        aria-current={currentOrg.id === org.id ? "true" : undefined}
-                        className={cn(MENU_ITEM, currentOrg.id === org.id ? MENU_ITEM_ACTIVE : MENU_ITEM_IDLE)}
-                      >
-                        <span className="truncate">{org.name}</span>
-                        {currentOrg.id === org.id && <Check className="h-3.5 w-3.5 text-blue-600" aria-hidden="true" />}
-                      </button>
-                    ))}
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
                   </div>
                 )}
 
@@ -433,29 +364,7 @@ export function TopNav({
                     type="button"
                     onClick={() => {
                       setOpenMenu(null);
-<<<<<<< HEAD
                       void signOut();
-=======
-                      router.push("/account/sessions");
-                    }}
-                    className={cn(MENU_ITEM, MENU_ITEM_IDLE, "justify-start gap-2")}
-                  >
-                    <Shield className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span>My sessions</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setOpenMenu(null);
-                      // Revoke the session on the server too; local state alone would leave the refresh token usable.
-                      try {
-                        await apiClient.signout();
-                      } catch {
-                        /* already signed out or offline preview: clearing local state below is enough */
-                      }
-                      logout();
-                      router.push("/login");
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
                     }}
                     className={cn(MENU_ITEM, "justify-start font-medium text-rose-600 hover:bg-rose-500/10 dark:text-rose-400")}
                   >

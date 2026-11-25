@@ -1,56 +1,6 @@
-<<<<<<< HEAD
-"use client";
-import React from "react";
-import { useParams } from "next/navigation";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { useProjects } from "@/hooks/useProjects";
-import { Card } from "@/components/ui/card";
-import { previewEnabled } from "@/lib/permissions";
-import { ProjectScheduleView, RequireAnyKey } from "@/components/calendar/CalendarViews";
-
-/** Task 2.3: the project's real check-in schedule; the sample card only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
-export default function IndividualDeadlinesPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "";
-  const projectId = (params?.projectId as string) ?? "";
-  const home = `/org/${orgId}/developer`;
-  if (previewEnabled()) return <PreviewIndividualDeadlinesPage />;
-  return (
-    <RequireAnyKey keys={["project.read"]} backHref={home}>
-      <ProjectScheduleView projectId={projectId}
-        crumbs={[{ label: "Developer", href: home }, { label: "Project", href: `${home}/projects/${projectId}/individual` }]}
-        back={{ href: `${home}/projects/${projectId}/individual`, label: "Back to project" }} />
-    </RequireAnyKey>
-  );
-}
-
-function PreviewIndividualDeadlinesPage() {
-  const params = useParams();
-  const orgId = (params.orgId as string) || "org-1";
-  const projectId = params.projectId as string;
-  const { projects } = useProjects(orgId);
-  const project = projects.find(p => p.id === projectId);
-
-  return (
-    <PanelLayout title="Deadlines & Cadence" breadcrumb={[{ label: "Developer", href: `/org/${orgId}/developer` }, { label: project?.name || "Project", href: `/org/${orgId}/developer/projects/${projectId}/individual` }, { label: "Deadlines" }]}>
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-xl font-bold">Delivery Cadence & Target Dates</h2>
-          <p className="text-xs text-[var(--color-text-secondary)]">Check-in frequency, grace periods, and expected finish date</p>
-        </div>
-        <Card className="p-5 border border-[var(--color-border)] bg-[var(--color-surface)] space-y-2">
-          <div className="text-xs">Target Date: <strong>{project?.targetDate}</strong></div>
-          <div className="text-xs">Reporting Cadence: <strong>{project?.cadence}</strong></div>
-          <div className="text-xs">Grace Working Days: <strong>{project?.graceWorkingDays} days</strong></div>
-        </Card>
-      </div>
-    </PanelLayout>
-  );
-=======
 import { redirect } from "next/navigation";
 
-/** Folded into the Developer workspace: this old URL now opens the page that holds the same real data. */
+/** Folded into the Developer workspace; keep this legacy URL working. */
 export default function Page({ params }: { params: { orgId: string; projectId: string; taskId?: string } }) {
   redirect(`/org/${params.orgId}/developer/projects/${params.projectId}/individual`);
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
 }

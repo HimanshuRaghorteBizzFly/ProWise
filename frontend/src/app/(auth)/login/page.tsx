@@ -3,15 +3,10 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-<<<<<<< HEAD
 import { ApiError, apiClient } from "@/lib/api";
 import { establishSession } from "@/lib/session";
-import { previewEnabled } from "@/lib/permissions";
-=======
-import { apiClient, ApiError } from "@/lib/api";
-import { isBackendUnreachable, mocksAllowed, readPermissionEnv } from "@/lib/permissions";
-import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
+import { mocksAllowed, previewEnabled, readPermissionEnv } from "@/lib/permissions";
+import { useAuthStore } from "@/store/auth-store";
 import { useSuperAdminStore } from "@/app/(platform)/super-admin/_store/useSuperAdminStore";
 import { usePlatformOperatorStore } from "@/app/(platform)/platform-operator/_store/usePlatformOperatorStore";
 import { operatorAuthService } from "@/app/(platform)/platform-operator/_services/operator-auth-service";
@@ -193,103 +188,12 @@ export default function LoginPage() {
 
     setIsLoading(true);
     try {
-<<<<<<< HEAD
       // The server decides where this account lands: platform dashboards only for real platform accounts,
       // otherwise from the ACTIVE memberships (one workspace, the workspace picker, or "no workspace yet").
       const response = await apiClient.login({ email: cleanEmail, password: targetPass });
       if (response.must_change_password) {
         router.replace("/change-password");
         return;
-=======
-      let destination = "";
-      let userRole: SystemRole = "VIEWER";
-      let userName = cleanEmail.split("@")[0];
-
-      // 1. Attempt Spring Boot backend authentication
-      try {
-        const response = await apiClient.login({ email: cleanEmail, password: targetPass });
-
-        if (response.must_change_password) {
-          toast.info("Temporary password detected. Please set your new password.");
-          window.location.assign("/change-password");
-          return;
-        }
-
-        // Real session: the server's user, organization(s) and membership role. Never the demo organization.
-        const realDestination = applyLoginResponse(response);
-        const roleText = (response.user.role ?? "member").replace(/_/g, " ").toLowerCase();
-        toast.success(
-          response.requires_organization_selection
-            ? "Signed in. Choose the organization to open."
-            : `Signed in as ${roleText}.`,
-        );
-        window.location.assign(realDestination);
-        return;
-      } catch (backendError) {
-        // One login page for all nine roles: Platform Operators have their own account store, so a wrong
-        // password on the member login is tried once against the operator login before it is reported.
-        if (backendError instanceof ApiError && backendError.status === 401 && backendError.code === "INVALID_CREDENTIALS") {
-          const operatorDestination = await tryOperatorLogin(cleanEmail, targetPass);
-          if (operatorDestination) {
-            window.location.assign(operatorDestination);
-            return;
-          }
-          throw backendError;
-        }
-        // A real answer from the server (wrong password, account pending activation, disabled, rate limited)
-        // is always shown as-is. Only an unreachable backend in a development build may use the local
-        // preview session below; production builds never do.
-        const status = backendError instanceof ApiError ? backendError.status : 0;
-        if (!mocksAllowed(readPermissionEnv()) || !isBackendUnreachable(status)) {
-          throw backendError;
-        }
-        console.warn("Backend unreachable in development; using a local preview session.");
-        const normalized = cleanEmail.toLowerCase();
-        if (normalized.includes("superadmin") || presetLabel === "Super Admin") {
-          userRole = "SUPER_ADMIN";
-          userName = "Super Admin";
-          destination = "/super-admin/dashboard";
-        } else if (normalized.includes("operator") || presetLabel === "Platform Operator") {
-          userRole = "PLATFORM_OPERATOR";
-          userName = "Jordan Mercer";
-          destination = "/platform-operator/dashboard";
-        } else if (
-          normalized.includes("alex.rivera") ||
-          normalized.includes("developer") ||
-          presetLabel === "Developer"
-        ) {
-          userRole = "DEVELOPER";
-          userName = "Alex Rivera";
-          destination = "/org/org-acme/developer/dashboard";
-        } else if (normalized.includes("sarah.lin") || normalized.includes("owner") || presetLabel === "Org Owner") {
-          userRole = "ORGANIZATION_OWNER";
-          userName = "Dr. Sarah Lin";
-          destination = "/org/org-acme/owner/dashboard";
-        } else if (normalized.includes("david.kim") || normalized.includes("admin") || presetLabel === "Org Admin") {
-          userRole = "ORGANIZATION_ADMIN";
-          userName = "David Kim";
-          destination = "/org/org-acme/admin/dashboard";
-        } else if (normalized.includes("priya.raman") || normalized.includes("manager") || presetLabel === "Project Manager") {
-          userRole = "PROJECT_MANAGER";
-          userName = "Priya Raman";
-          destination = "/org/org-acme/manager/dashboard";
-        } else if (normalized.includes("marcus.chen") || normalized.includes("lead") || presetLabel === "Team Lead") {
-          userRole = "TEAM_LEAD";
-          userName = "Marcus Chen";
-          destination = "/org/org-acme/lead/dashboard";
-        } else if (normalized.includes("elena.ruiz") || normalized.includes("reviewer") || normalized.includes("qa") || presetLabel === "QA / Reviewer") {
-          userRole = "QA_REVIEWER";
-          userName = "Elena Ruiz";
-          destination = "/org/org-acme/reviewer/dashboard";
-        } else if (normalized.includes("jordan.lee") || normalized.includes("viewer") || presetLabel === "Viewer") {
-          userRole = "VIEWER";
-          userName = "Jordan Lee";
-          destination = "/org/org-acme/viewer/dashboard";
-        } else {
-          // Never default an unknown address to an administrator preview.
-          throw new Error("The server is unreachable. Start the backend and try again.");
-        }
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
       }
       const session = await establishSession();
       const destination = session.target || response.target_dashboard_url;
@@ -377,11 +281,7 @@ export default function LoginPage() {
         </div>
 
         {/* Quick-fill Account Selector for Seamless Development & Access across all sections */}
-<<<<<<< HEAD
         {showDemoLogins && (
-=======
-        {showDemoPanel && (
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
         <div className="mb-5 bg-white/85 dark:bg-slate-900/85 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3.5 sm:p-4 shadow-sm">
           <div className="flex items-center justify-between mb-2 px-0.5">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">

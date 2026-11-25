@@ -1,18 +1,9 @@
 "use client";
 
-<<<<<<< HEAD
-import { previewEnabled } from "@/lib/permissions";
-import { ProgressListView, ProjectProgressPageView } from "@/components/work/ReviewViews";
-import { RequireAnyKey } from "@/components/calendar/CalendarViews";
-
-import React, { useState, useMemo, useEffect } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-=======
 import React, { useState } from "react";
 import { useParams } from "next/navigation";
 import { FolderKanban } from "lucide-react";
 
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
 import { PanelLayout } from "@/components/layouts/panel-layout";
 import { EmptyStateView, PageFrame, SegmentTabs } from "@/components/delivery/DeliveryUI";
 import { MyCheckInProjectsView } from "@/components/progress/CheckInViews";
@@ -21,18 +12,10 @@ import { useDevProjects } from "@/components/developer/useDeveloperData";
 import { StructuredProgressView } from "@/components/developer/progress/StructuredProgressView";
 import { cn } from "@/lib/utils";
 
-<<<<<<< HEAD
-function PreviewDeveloperProgressTrackerPage() {
-=======
 type Mode = "INDIVIDUAL" | "STRUCTURED";
 
-/**
- * Progress & Tracker. Individual: self-reported check-ins, which become the project figure only after approval.
- * Structured: the server-calculated figure from accepted work over the approved baseline. Neither is ever derived
- * from tasks, elapsed time or Git activity on this page.
- */
+/** Progress is reported through check-ins for individual projects and calculated from accepted work for structured projects. */
 export default function DeveloperProgressPage() {
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
   const params = useParams();
   const orgId = (params?.orgId as string) || "";
   const home = `/org/${orgId}/developer/dashboard`;
@@ -67,19 +50,6 @@ export default function DeveloperProgressPage() {
   );
 }
 
-<<<<<<< HEAD
-/** Task 3.5: real data by default; the sample page only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
-export default function DeveloperProgressTrackerPage() {
-  const params = useParams();
-  const orgId = (params?.orgId as string) || "";
-  const home = `/org/${orgId}/developer`;
-  if (previewEnabled()) return <PreviewDeveloperProgressTrackerPage />;
-  return (
-    <RequireAnyKey keys={["project.read"]} backHref={home}>
-      <ProgressListView crumbs={[{ label: "Developer", href: home }]} back={{ href: home, label: "Back to dashboard" }}
-        projectHref={(p) => (p.mode === "STRUCTURED" ? `${home}/projects/${p.id}/structured/progress` : `${home}/projects/${p.id}/individual`)} />
-    </RequireAnyKey>
-=======
 function StructuredSection({ orgId, crumbs, back }: {
   orgId: string;
   crumbs: { label: string; href?: string }[];
@@ -101,16 +71,16 @@ function StructuredSection({ orgId, crumbs, back }: {
           return (
             <div className="space-y-5">
               <div className="flex flex-wrap gap-2" role="tablist" aria-label="Structured projects">
-                {structured.map((p) => (
-                  <button key={p.id} type="button" role="tab" aria-selected={p.id === current.id}
-                    onClick={() => setSelected(p.id)}
+                {structured.map((project) => (
+                  <button key={project.id} type="button" role="tab" aria-selected={project.id === current.id}
+                    onClick={() => setSelected(project.id)}
                     className={cn(
                       "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
-                      p.id === current.id
+                      project.id === current.id
                         ? "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300"
                         : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-hover)]",
                     )}>
-                    {p.code} · {p.name}
+                    {project.code} · {project.name}
                   </button>
                 ))}
               </div>
@@ -120,6 +90,5 @@ function StructuredSection({ orgId, crumbs, back }: {
         }}
       </DevGate>
     </PageFrame>
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
   );
 }

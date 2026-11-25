@@ -1,12 +1,5 @@
 "use client";
 
-<<<<<<< HEAD
-import { SelectWorkspaceView } from "@/components/auth/WorkspaceViews";
-
-/** Older path kept for existing links: same workspace picker as /select-workspace. */
-export default function SelectOrgPage() {
-  return <SelectWorkspaceView />;
-=======
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -108,5 +101,4 @@ export default function SelectOrgPage() {
       </div>
     </div>
   );
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
 }

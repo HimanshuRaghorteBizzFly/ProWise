@@ -2,13 +2,9 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-<<<<<<< HEAD
 import { useRouter } from "next/navigation";
-import { ApiError, apiClient } from "@/lib/api";
-import { establishSession } from "@/lib/session";
-=======
 import { apiClient } from "@/lib/api";
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
+import { establishSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -24,11 +20,11 @@ import {
 } from "lucide-react";
 
 export default function SignupPage() {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
 
@@ -44,39 +40,12 @@ export default function SignupPage() {
     setIsLoading(true);
     setSignupError(null);
     try {
-<<<<<<< HEAD
-      const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      // The body never carries a role or an organization id: the server makes this user the one Owner of the new
-      // organization and binds the session to it.
-      const created = await apiClient.signup({
-        email: email.trim(),
-        password,
-        name: name.trim(),
-        organization: {
-          name: orgName.trim(),
-          slug,
-          timezone,
-          calendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
-        },
-      });
+      const created = await apiClient.signup({ email: email.trim(), password, name: name.trim() });
       const session = await establishSession();
       toast.success("Workspace created. Welcome to your Owner dashboard.");
       router.replace(created.target_dashboard_url || session.target);
     } catch (error) {
-      const reference = error instanceof ApiError && error.requestId ? ` (Reference: ${error.requestId})` : "";
-      setSignupError(error instanceof ApiError && error.code === "EMAIL_IN_USE"
-        ? "An account already exists for this email. Sign in instead."
-        : error instanceof ApiError && error.code === "DUPLICATE_SLUG"
-          ? "That company name is already taken. Choose another name."
-          : `${error instanceof Error ? error.message : "Unable to create the workspace."}${reference}`);
-=======
-      // No session yet: the account activates from the emailed link (approved decision D9). The same answer is
-      // shown whether or not the address was already registered.
-      await apiClient.signup({ email: email.trim(), password, name: name.trim() });
-      setSubmitted(true);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to register right now.");
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
+      setSignupError(error instanceof Error ? error.message : "Unable to register right now.");
     } finally {
       setIsLoading(false);
     }
@@ -106,22 +75,12 @@ export default function SignupPage() {
         <div className="mb-5 p-3 rounded-2xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/50 text-xs text-blue-900 dark:text-blue-300 flex items-start gap-2.5 shadow-sm">
           <ShieldAlert className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
           <div className="leading-relaxed">
-            Confirm your email from the link we send, then sign in to create your workspace as its <strong>Organization Owner</strong>. Enterprise roles (<em>Super Admin</em> &amp; <em>Platform Operator</em>) are provisioned through centralized system administration.
+            Create a workspace and become its <strong>Organization Owner</strong>. Enterprise roles (<em>Super Admin</em> &amp; <em>Platform Operator</em>) are provisioned through centralized system administration.
           </div>
         </div>
 
         {/* Signup Card */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xl shadow-slate-200/40 dark:shadow-black/50 p-6 sm:p-7 backdrop-blur-md">
-          {submitted ? (
-            <div className="text-center py-4" role="status">
-              <Mail className="w-10 h-10 text-blue-600 dark:text-blue-400 mx-auto mb-3" />
-              <h2 className="text-base font-semibold text-slate-900 dark:text-white">Check your email</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
-                If <strong>{email.trim()}</strong> can be registered, we have sent a link to activate the account. It works
-                once and expires in 72 hours. After activating, sign in to create your workspace.
-              </p>
-            </div>
-          ) : (
           <form onSubmit={handleSignup} className="space-y-4">
             {signupError && (
               <p role="alert" data-testid="signup-error"
@@ -222,7 +181,6 @@ export default function SignupPage() {
               {!isLoading && <ArrowRight className="w-4 h-4" />}
             </Button>
           </form>
-          )}
         </div>
 
         {/* Back to Login Link */}

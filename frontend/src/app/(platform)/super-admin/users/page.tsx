@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { previewEnabled } from "@/lib/permissions";
 import React, { useEffect, useMemo, useState, useCallback } from "react";
@@ -446,7 +446,6 @@ export default function SuperAdminUsersPage() {
         return;
       }
     } catch {
-<<<<<<< HEAD
       if (!previewEnabled()) {
         // Normal use: never an invented user list; show the real (empty) state and the error.
         toast.error("Users could not be loaded from the server.");
@@ -473,9 +472,6 @@ export default function SuperAdminUsersPage() {
       setTotalPages(1);
     } finally {
       setIsLoading(false);
-=======
-      // Backend returned 404 or connection error: fall back to local platform users
->>>>>>> 425eba1c2e8cca7686bf3db85b1311460d0d56e4
     }
 
     // Seamless Local Fallback
@@ -1287,7 +1283,7 @@ export default function SuperAdminUsersPage() {
                 <option value="">No Organization (Global Platform / Viewer)</option>
                 {organizations.map((org) => (
                   <option key={org.id} value={org.id}>
-                    🏢 {org.name} ({org.slug || org.domain})
+                    ðŸ¢ {org.name}
                   </option>
                 ))}
               </select>
@@ -1382,7 +1378,7 @@ export default function SuperAdminUsersPage() {
       <AdminModal
         isOpen={editModalOpen}
         onClose={() => setEditModalOpen(false)}
-        title={`Edit User — ${selectedUser?.email}`}
+        title={`Edit User â€” ${selectedUser?.email}`}
         description="Update role assignment, organization workspace, or contact details."
       >
         <form onSubmit={handleEditSubmit} className="space-y-4">
@@ -1448,7 +1444,7 @@ export default function SuperAdminUsersPage() {
                   <option value="">No Organization (Global Platform / Viewer)</option>
                   {organizations.map((org) => (
                     <option key={org.id} value={org.id}>
-                      🏢 {org.name} ({org.slug || org.domain})
+                      ðŸ¢ {org.name}
                     </option>
                   ))}
                 </select>
@@ -1474,7 +1470,7 @@ export default function SuperAdminUsersPage() {
       <AdminModal
         isOpen={historyModalOpen}
         onClose={() => setHistoryModalOpen(false)}
-        title={`Login History — ${selectedUser?.email}`}
+        title={`Login History â€” ${selectedUser?.email}`}
         description="Audit records of recent authentication attempts for this user account."
       >
         <div className="space-y-3">
