@@ -56,7 +56,8 @@ class AuthorizationArchitectureTest {
             "com.prowise.org.InvitationAcceptController.publicPreview",
             "com.prowise.org.InvitationAcceptController.activate",
             // GitHub calls it without a session: authenticated by the HMAC signature of the connection's secret.
-            "com.prowise.integration.github.GitHubController.webhook");
+            "com.prowise.integration.github.GitHubController.webhook",
+            "com.prowise.integration.github.GitHubAppController.webhook");
 
     /** Identity-level routes with no tenant object: the service itself checks membership where it matters. */
     static final Set<String> AUTHENTICATED_ONLY_ENDPOINTS = Set.of(

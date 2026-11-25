@@ -61,7 +61,6 @@ import com.prowise.superadmin.organizations.SuperAdminOrgDTOs;
 import com.prowise.superadmin.organizations.SuperAdminOrgService;
 import com.prowise.superadmin.plans.PlanDTOs;
 import com.prowise.superadmin.plans.PlanEntity;
-import com.prowise.superadmin.plans.PlanFeatureRepository;
 import com.prowise.superadmin.plans.PlanRepository;
 import com.prowise.superadmin.plans.PlanService;
 import com.prowise.superadmin.policies.PlatformBrandingEntity;
@@ -101,8 +100,7 @@ public class SuperAdminServiceTest {
     @DisplayName("Plans: List plans and update plan limits")
     void testPlansModule() {
         PlanRepository planRepo = mock(PlanRepository.class);
-        PlanFeatureRepository featureRepo = mock(PlanFeatureRepository.class);
-        PlanService planService = new PlanService(planRepo, featureRepo, auditService);
+        PlanService planService = new PlanService(planRepo, auditService);
 
         PlanEntity plan = new PlanEntity();
         plan.setId("plan-pro");

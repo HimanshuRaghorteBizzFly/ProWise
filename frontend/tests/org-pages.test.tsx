@@ -83,7 +83,16 @@ describe("Dashboard additions", () => {
 
 describe("Batch 4b routes, redirects and sidebar coverage", () => {
   // Modules without a backend API render a "not available yet" notice (never sample data) and link back home.
-  it.each(["integrations", "reports", "audit-logs"])("admin/%s shows the not-available notice", (route) => {
+  // Integrations has a real API now (task 4.1, GitHub App): both families render the GitHub view, never sample data.
+  it.each(["owner", "admin"])("%s/integrations renders the real GitHub integration", (family) => {
+    const source = read(`${family}/integrations/page.tsx`);
+    expect(source).toContain("<OrgIntegrationsView");
+    expect(source).toContain(`family="${family}"`);
+    expect(source).not.toContain("<ModuleUnavailable");
+    expect(source).not.toMatch(/store|mocks|fixture/i);
+  });
+
+  it.each(["reports", "audit-logs"])("admin/%s shows the not-available notice", (route) => {
     const source = read(`admin/${route}/page.tsx`);
     expect(source).not.toMatch(/export \{ default \} from/);
     expect(source).toContain("<ModuleUnavailable");
@@ -91,7 +100,7 @@ describe("Batch 4b routes, redirects and sidebar coverage", () => {
     expect(source).not.toMatch(/store|mocks|fixture/i);
   });
 
-  it.each(["health", "integrations", "reports", "notifications", "audit-logs", "privacy", "organization", "billing", "subscriptions", "workspaces"])(
+  it.each(["health", "reports", "notifications", "audit-logs", "privacy", "organization", "billing", "subscriptions", "workspaces"])(
     "owner/%s shows the not-available notice",
     (route) => {
       const source = read(`owner/${route}/page.tsx`);

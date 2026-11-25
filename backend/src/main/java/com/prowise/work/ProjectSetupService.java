@@ -195,9 +195,9 @@ public class ProjectSetupService {
 
     /* ================================================================== plan */
 
-    private record Plan(List<PhaseInput> phases, List<TaskInput> tasks, BigDecimal total) {}
+    record Plan(List<PhaseInput> phases, List<TaskInput> tasks, BigDecimal total) {}
 
-    private static Plan plan(List<PhaseInput> phases, List<TaskInput> tasks, List<UUID> developers) {
+    static Plan plan(List<PhaseInput> phases, List<TaskInput> tasks, List<UUID> developers) {
         if (phases.size() > MAX_PHASES) throw validation("phases", "at most " + MAX_PHASES + " phases");
         if (tasks.size() > MAX_TASKS) throw validation("tasks", "at most " + MAX_TASKS + " tasks");
         Set<String> phaseRefs = new HashSet<>();
@@ -352,7 +352,7 @@ public class ProjectSetupService {
 
     /* ================================================================== helpers */
 
-    private static boolean team(String mode) {
+    static boolean team(String mode) {
         String value = mode == null ? "" : mode.trim().toUpperCase(Locale.ROOT);
         return switch (value) {
             case "TEAM", "STRUCTURED" -> true;

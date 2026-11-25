@@ -84,6 +84,8 @@ export interface AuthLoginResponse {
   must_change_password: boolean;
   target_dashboard_url: string;
   user: AuthUserSummary;
+  /** True only on the sign-in that created the account from an invitation's emailed temporary password. */
+  signed_in_with_temporary_password?: boolean;
   /** True when the person belongs to several organizations and must choose one (see organizations). */
   requires_organization_selection?: boolean;
   organizations?: OrganizationChoice[];
@@ -322,24 +324,14 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
   return {
     health,
-    signup: (body: {
-      email: string;
-      password: string;
-      name: string;
-      organization?: {
-        name: string;
-        slug: string;
-        timezone: string;
-        calendar: { workDays: number[]; dailyHours: number; holidays: string[] };
-      };
-    }) =>
-      // The server decides role and organization (the new user is the Owner) and binds the session to it.
-      json<{ access_token: string; organization_id?: string; role?: string; target_dashboard_url?: string }>(
-        "/v1/auth/signup", { method: "POST", body },
-      ).then((tokens) => {
-        accessToken = tokens.access_token;
-        return tokens;
-      }),
+    /**
+     * Registers an account. With `organization_name` + `timezone` (IANA) it is an organization signup: confirming the
+     * emailed link also creates that organization with this account as its Organization Owner.
+     */
+    signup: (body: { email: string; password: string; name?: string; organization_name?: string; timezone?: string }) =>
+      json<{ message: string }>("/v1/auth/signup", { method: "POST", body }),
+    getAccessToken: () => accessToken,
+    setAccessToken,
     signin: (body: { email: string; password: string }) =>
       json<{ access_token: string }>("/v1/auth/signin", { method: "POST", body }).then((tokens) => {
         setAccessToken(tokens.access_token);
@@ -368,7 +360,6 @@ export function createApiClient(options: ApiClientOptions = {}) {
         return tokens;
       }),
     refresh: refreshAccessToken,
-    setAccessToken,
     /** Log out on every device: revokes all sessions of this user and clears the refresh cookie. */
     signoutEverywhere: async () => {
       await request("/v1/auth/logout-all", { method: "POST" });
@@ -625,6 +616,26 @@ export function createApiClient(options: ApiClientOptions = {}) {
       reviewQueue: () => json<F.QueueItemDto[]>("/v1/me/review-queue"),
       activity: (workItemId: string) =>
         json<F.ActivityEntryDto[]>(`/v1/work-items/${encodeURIComponent(workItemId)}/activity`),
+      /** Multi-step Create Project: a draft only its creator sees, activated into a project in one transaction. */
+      drafts: {
+        create: (orgId: string, body: F.DraftBasicsDto) =>
+          json<F.DraftViewDto>(`/v1/organizations/${encodeURIComponent(orgId)}/project-drafts`, { method: "POST", body }),
+        mine: (orgId: string) => json<F.DraftSummaryDto[]>(`/v1/organizations/${encodeURIComponent(orgId)}/project-drafts`),
+        get: (draftId: string) => json<F.DraftViewDto>(`/v1/project-drafts/${encodeURIComponent(draftId)}`),
+        save: (draftId: string, step: "basics" | "documents" | "plan" | "people" | "approvers" | "repository",
+          body: Record<string, unknown> & { expected_version: number }) =>
+          json<F.DraftViewDto>(`/v1/project-drafts/${encodeURIComponent(draftId)}/${step}`, { method: "PUT", body }),
+        discard: (draftId: string, expectedVersion: number) =>
+          request(`/v1/project-drafts/${encodeURIComponent(draftId)}`, {
+            method: "DELETE",
+            body: { expected_version: expectedVersion },
+          }).then(() => undefined),
+        activate: (draftId: string, expectedVersion: number) =>
+          json<F.SetupResultDto>(`/v1/project-drafts/${encodeURIComponent(draftId)}/activate`, {
+            method: "POST",
+            body: { expected_version: expectedVersion },
+          }),
+      },
       /** One page of per-project progress (search, mode, status, sort; cursor paging). */
       progressProjects: (orgId: string, params: { q?: string; mode?: string; status?: string; sort?: F.ProgressSort;
         cursor?: string | null; limit?: number } = {}) => {
@@ -656,6 +667,12 @@ export function createApiClient(options: ApiClientOptions = {}) {
       github: (projectId: string) => json<F.GitHubConnectionDto>(`/v1/projects/${encodeURIComponent(projectId)}/github`),
       connectGitHub: (projectId: string, body: { repository: string; token: string }) =>
         json<F.GitHubConnectionDto>(`/v1/projects/${encodeURIComponent(projectId)}/github`, { method: "PUT", body }),
+      /** Replace the stored token (verified against GitHub; never returned). */
+      replaceGitHubToken: (projectId: string, token: string, expectedVersion: number) =>
+        json<F.GitHubConnectionDto>(`/v1/projects/${encodeURIComponent(projectId)}/github/token`, {
+          method: "PUT",
+          body: { token, expected_version: expectedVersion },
+        }),
       rotateWebhookSecret: (projectId: string, expectedVersion: number) =>
         json<F.GitHubConnectionDto>(`/v1/projects/${encodeURIComponent(projectId)}/github/webhook-secret`, {
           method: "POST",
@@ -674,6 +691,40 @@ export function createApiClient(options: ApiClientOptions = {}) {
         json<F.GitHubActivityDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/commits`),
       refreshProjectCommits: (projectId: string) =>
         json<F.SyncResultDto>(`/v1/projects/${encodeURIComponent(projectId)}/commits/refresh`, { method: "POST" }),
+      /** GitHub App: connect GitHub once per organization (Owner/Admin), then a repository + branch per project. */
+      githubApp: {
+        status: (orgId: string) => json<F.GitHubAppStatusDto>(`/v1/organizations/${encodeURIComponent(orgId)}/github/app`),
+        startInstall: (orgId: string, returnTo?: string) =>
+          json<{ install_url: string }>(`/v1/organizations/${encodeURIComponent(orgId)}/github/app/install`, {
+            method: "POST",
+            body: returnTo ? { return_to: returnTo } : {},
+          }),
+        complete: (body: { state: string; installation_id: number; code: string; setup_action?: string }) =>
+          json<F.GitHubCallbackResultDto>("/v1/integrations/github/app/callback", { method: "POST", body }),
+        remove: (orgId: string, installationId: string, expectedVersion: number) =>
+          request(`/v1/organizations/${encodeURIComponent(orgId)}/github/app/installations/${encodeURIComponent(installationId)}`, {
+            method: "DELETE",
+            body: { expected_version: expectedVersion },
+          }).then(() => undefined),
+        /** Repository choice for a project (repo.connect on it) or for the caller's own Create Project draft. */
+        repositories: (target: F.GitHubTarget, installationId: string) =>
+          json<F.GitHubRepoChoiceDto[]>(`${githubBase(target)}/repositories?installation_id=${encodeURIComponent(installationId)}`),
+        branches: (target: F.GitHubTarget, installationId: string, repository: string) =>
+          json<string[]>(`${githubBase(target)}/branches?installation_id=${encodeURIComponent(installationId)}`
+            + `&repository=${encodeURIComponent(repository)}`),
+        validate: (target: F.GitHubTarget, body: F.GitHubChoiceDto) =>
+          json<F.GitHubValidationDto>(`${githubBase(target)}/validate`, { method: "POST", body }),
+        connect: (projectId: string, body: F.GitHubChoiceDto) =>
+          json<F.GitHubConnectResultDto>(`/v1/projects/${encodeURIComponent(projectId)}/github/app`, { method: "PUT", body }),
+        sync: (projectId: string) =>
+          json<F.SyncResultDto>(`/v1/projects/${encodeURIComponent(projectId)}/github/sync`, { method: "POST" }),
+        activity: (projectId: string, query: F.GitHubFeedQuery = {}) => {
+          const params = new URLSearchParams();
+          Object.entries(query).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") params.set(k, String(v)); });
+          const qs = params.toString();
+          return json<F.GitHubFeedPageDto>(`/v1/projects/${encodeURIComponent(projectId)}/github/activity${qs ? `?${qs}` : ""}`);
+        },
+      },
     },
     /** Selects the active workspace; the old token is revoked server-side and replaced here. */
     switchOrganization: (orgId: string) =>
@@ -1005,6 +1056,13 @@ export interface OperatorEmailDeliveryLog {
 
 function orgPath(orgId: string): string {
   return `/v1/organizations/${encodeURIComponent(orgId)}`;
+}
+
+/** Repository choice through the GitHub App: on a project, or on the caller's own Create Project draft. */
+function githubBase(target: F.GitHubTarget): string {
+  return "projectId" in target
+    ? `/v1/projects/${encodeURIComponent(target.projectId)}/github/app`
+    : `/v1/project-drafts/${encodeURIComponent(target.draftId)}/github`;
 }
 
 async function toApiError(response: Response, sentRequestId = ""): Promise<ApiError> {

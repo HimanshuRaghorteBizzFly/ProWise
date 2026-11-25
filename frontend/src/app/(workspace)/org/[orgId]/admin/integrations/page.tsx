@@ -1,6 +1,13 @@
-import { ModuleUnavailable } from "@/components/feedback/ModuleUnavailable";
+"use client";
 
-/** No backend API serves this module yet, so the route shows a notice instead. */
-export default function Page({ params }: { params: { orgId: string } }) {
-  return <ModuleUnavailable module="Integrations" homeHref={`/org/${encodeURIComponent(params.orgId)}/admin/dashboard`} homeLabel="Back to dashboard" />;
+import React from "react";
+import { useParams } from "next/navigation";
+import { OrgGate } from "@/components/org-console/OrgUI";
+import { OrgIntegrationsView } from "@/components/flow/GitHubIntegration";
+
+/** Integrations: connect GitHub once for the organization (the Prowise GitHub App); projects then pick a repository. */
+export default function Page() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  return <OrgGate family="admin"><OrgIntegrationsView orgId={orgId} family="admin" /></OrgGate>;
 }

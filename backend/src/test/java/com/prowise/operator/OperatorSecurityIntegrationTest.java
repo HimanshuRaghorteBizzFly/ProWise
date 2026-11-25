@@ -131,7 +131,85 @@ class OperatorSecurityIntegrationTest {
         assertThat(row).containsEntry("status", "INVITED").containsEntry("password_setup_completed", false)
                 .containsEntry("department_id", "trust-compliance");
         assertThat(passwordEncoder.matches("Operator2026!", (String) row.get("password_hash"))).isFalse();
-        assertThat(CapturedMail.sentHtml(mailSender).get(0)).contains("operator/login?invite=");
+        String html = CapturedMail.sentHtml(mailSender).get(0);
+        assertThat(html).contains("/operator/login").contains(email).doesNotContain("invite=");
+        assertThat(temporaryPasswordIn(html)).hasSizeGreaterThanOrEqualTo(16);
+    }
+
+    @Test
+    void anEmailedTemporaryPasswordMustBeReplacedBeforeTheFirstSessionAndWorksOnlyOnce() throws Exception {
+        String email = "temp-" + suffix + "@ops.test";
+        asAdmin(post("/v1/operators"), Map.of("name", "Temp Op", "email", email, "access_level", "DEPARTMENT_OPERATOR",
+                        "department", "trust-compliance"))
+                .andExpect(status().isCreated());
+        String temporaryPassword = temporaryPasswordIn(CapturedMail.sentHtml(mailSender).get(0));
+        String operatorId = jdbc.queryForObject("SELECT id FROM platform_operators WHERE lower(email) = ?", String.class, email);
+        int sessionsBefore = jdbc.queryForObject("SELECT count(*) FROM operator_sessions WHERE operator_id = ?", Integer.class, operatorId);
+
+        // The temporary password proves who they are, but opens no session: a new password comes first.
+        operatorPost("/v1/auth/operator/login", Map.of("email", email, "password", temporaryPassword))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PASSWORD_CHANGE_REQUIRED"))
+                .andExpect(jsonPath("$.access_token").doesNotExist());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM operator_sessions WHERE operator_id = ?", Integer.class, operatorId))
+                .isEqualTo(sessionsBefore);
+
+        // The password policy applies to the replacement and a weak attempt does not burn the temporary password.
+        operatorPost("/v1/auth/operator/accept-invitation", Map.of("token", temporaryPassword, "new_password", "alllowercaseletters"))
+                .andExpect(status().isBadRequest());
+        operatorPost("/v1/auth/operator/accept-invitation", Map.of("token", temporaryPassword, "new_password", "Chosen-Operator-Pass-7!"))
+                .andExpect(status().isCreated());
+        assertThat(jdbc.queryForObject("SELECT status FROM platform_operators WHERE id = ?", String.class, operatorId)).isEqualTo("ACTIVE");
+
+        operatorLogin(email, "Chosen-Operator-Pass-7!");
+        // Replay: the temporary password neither signs in nor resets the account again.
+        operatorPost("/v1/auth/operator/login", Map.of("email", email, "password", temporaryPassword))
+                .andExpect(status().isUnauthorized());
+        operatorPost("/v1/auth/operator/accept-invitation", Map.of("token", temporaryPassword, "new_password", "Hijack-Operator-Pass-8!"))
+                .andExpect(status().isBadRequest());
+        operatorLogin(email, "Chosen-Operator-Pass-7!");
+    }
+
+    @Test
+    void resendingReplacesTheTemporaryPasswordAndTheOldOneStopsWorking() throws Exception {
+        String email = "resend-" + suffix + "@ops.test";
+        asAdmin(post("/v1/operators"), Map.of("name", "Resend Op", "email", email, "access_level", "DEPARTMENT_OPERATOR",
+                        "department", "trust-compliance"))
+                .andExpect(status().isCreated());
+        String first = temporaryPasswordIn(CapturedMail.sentHtml(mailSender).get(0));
+        String operatorId = jdbc.queryForObject("SELECT id FROM platform_operators WHERE lower(email) = ?", String.class, email);
+
+        asAdmin(post("/v1/operators/" + operatorId + "/resend-invite"), Map.of()).andExpect(status().is2xxSuccessful());
+        List<String> mails = CapturedMail.sentHtml(mailSender);
+        String second = temporaryPasswordIn(mails.get(mails.size() - 1));
+        assertThat(second).isNotEqualTo(first);
+
+        operatorPost("/v1/auth/operator/login", Map.of("email", email, "password", first))
+                .andExpect(status().isUnauthorized());
+        operatorPost("/v1/auth/operator/login", Map.of("email", email, "password", second))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PASSWORD_CHANGE_REQUIRED"));
+    }
+
+    @Test
+    void aSuspendedOperatorCannotReactivateItselfWithAnOpenTemporaryPassword() throws Exception {
+        String email = "susp-" + suffix + "@ops.test";
+        asAdmin(post("/v1/operators"), Map.of("name", "Susp Op", "email", email, "access_level", "DEPARTMENT_OPERATOR",
+                        "department", "trust-compliance"))
+                .andExpect(status().isCreated());
+        String temporaryPassword = temporaryPasswordIn(CapturedMail.sentHtml(mailSender).get(0));
+        String operatorId = jdbc.queryForObject("SELECT id FROM platform_operators WHERE lower(email) = ?", String.class, email);
+        jdbc.update("UPDATE platform_operators SET status = 'SUSPENDED' WHERE id = ?", operatorId);
+
+        operatorPost("/v1/auth/operator/accept-invitation", Map.of("token", temporaryPassword, "new_password", "Chosen-Operator-Pass-7!"))
+                .andExpect(status().isBadRequest());
+        assertThat(jdbc.queryForObject("SELECT status FROM platform_operators WHERE id = ?", String.class, operatorId)).isEqualTo("SUSPENDED");
+    }
+
+    private static String temporaryPasswordIn(String html) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("Temporary password: ([A-Za-z0-9]+)").matcher(html);
+        assertThat(m.find()).as("temporary password in the email").isTrue();
+        return m.group(1);
     }
 
     @Test
@@ -339,6 +417,72 @@ class OperatorSecurityIntegrationTest {
         // The weak attempt did not burn the single-use link.
         operatorPost("/v1/auth/operator/reset-password", Map.of("token", raw, "new_password", "Strong-Reset-Pass-5!"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void aSignedInOperatorChangesItsPasswordAndEveryOtherSessionEnds() throws Exception {
+        String otherDevice = operatorLogin(deptEmail, OPERATOR_PASSWORD).path("access_token").asText();
+        String token = operatorLogin(deptEmail, OPERATOR_PASSWORD).path("access_token").asText();
+        String newPassword = "Rotated-Operator-Pass-7!";
+
+        MvcResult changed = changePassword(token, OPERATOR_PASSWORD, newPassword).andExpect(status().isOk()).andReturn();
+        String freshToken = changed.getResponse().getCookie("prowise_operator_access_token").getValue();
+        assertThat(changed.getResponse().getContentAsString()).doesNotContain(newPassword);
+
+        // The caller keeps working on its fresh session; every earlier session (other device and this one) ended.
+        mockMvc.perform(get("/v1/operator/me").header("Authorization", "Bearer " + freshToken)).andExpect(status().isOk());
+        mockMvc.perform(get("/v1/operator/me").header("Authorization", "Bearer " + otherDevice)).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/v1/operator/me").header("Authorization", "Bearer " + token)).andExpect(status().isUnauthorized());
+
+        operatorPost("/v1/auth/operator/login", Map.of("email", deptEmail, "password", OPERATOR_PASSWORD))
+                .andExpect(status().isUnauthorized());
+        operatorLogin(deptEmail, newPassword);
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM operator_activity_logs WHERE operator_id = ? "
+                + "AND action = 'OPERATOR_PASSWORD_CHANGED'", Integer.class, deptId)).isEqualTo(1);
+        // admin_audit_logs is not cleared between tests: count this operator's row only.
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM admin_audit_logs WHERE action = 'OPERATOR_PASSWORD_CHANGED' "
+                + "AND actor_email = ?", Integer.class, deptEmail)).isEqualTo(1);
+    }
+
+    @Test
+    void changingThePasswordNeedsTheRightCurrentPasswordAFreshPasswordAndASignedInOperator() throws Exception {
+        String token = operatorLogin(deptEmail, OPERATOR_PASSWORD).path("access_token").asText();
+        String hashBefore = jdbc.queryForObject("SELECT password_hash FROM platform_operators WHERE id = ?", String.class, deptId);
+
+        changePassword(token, "Wrong-Current-Pass-1!", "Rotated-Operator-Pass-7!").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_CURRENT_PASSWORD"));
+        changePassword(token, OPERATOR_PASSWORD, "alllowercaseletters").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.field_errors[0].field").value("new_password"));
+        changePassword(token, OPERATOR_PASSWORD, OPERATOR_PASSWORD).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PASSWORD_REUSE"));
+        changePassword(null, OPERATOR_PASSWORD, "Rotated-Operator-Pass-7!").andExpect(status().isUnauthorized());
+
+        // Nothing changed and the session is still valid after the refusals.
+        assertThat(jdbc.queryForObject("SELECT password_hash FROM platform_operators WHERE id = ?", String.class, deptId))
+                .isEqualTo(hashBefore);
+        mockMvc.perform(get("/v1/operator/me").header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM operator_activity_logs WHERE operator_id = ? "
+                + "AND action = 'OPERATOR_PASSWORD_CHANGED'", Integer.class, deptId)).isZero();
+    }
+
+    @Test
+    void aReplayedChangePasswordWithTheOldSessionIsRefused() throws Exception {
+        String token = operatorLogin(deptEmail, OPERATOR_PASSWORD).path("access_token").asText();
+        changePassword(token, OPERATOR_PASSWORD, "Rotated-Operator-Pass-7!").andExpect(status().isOk());
+        // The same request again: the old session was revoked, so it cannot change the password a second time.
+        changePassword(token, OPERATOR_PASSWORD, "Second-Operator-Pass-8!").andExpect(status().isUnauthorized());
+        operatorLogin(deptEmail, "Rotated-Operator-Pass-7!");
+    }
+
+    private ResultActions changePassword(String accessToken, String current, String next) throws Exception {
+        MockHttpServletRequestBuilder request = post("/v1/auth/operator/change-password")
+                .with(com.prowise.testsupport.TestAccounts.randomClient())
+                .contentType("application/json")
+                .content(objectMapper.writeValueAsString(Map.of("current_password", current, "new_password", next)));
+        if (accessToken != null) request.header("Authorization", "Bearer " + accessToken);
+        return mockMvc.perform(request);
     }
 
     private List<MockHttpServletRequestBuilder> managementRequests(String target) throws Exception {

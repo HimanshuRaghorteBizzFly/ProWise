@@ -132,17 +132,6 @@ export function buildRolePreviewDefinitions(orgId: string = "org-acme"): Record<
           ],
         },
         {
-          id: "integrations",
-          title: "Integrations & API",
-          items: [
-            { title: "Integration Overview", href: "/super-admin/integrations", icon: Plug },
-            { title: "GitHub Integration", href: "/super-admin/github-integrations", icon: GitBranch },
-            { title: "Webhooks & Events", href: "/super-admin/webhooks", icon: Webhook },
-            { title: "API Monitoring", href: "/super-admin/api-monitoring", icon: Activity },
-            { title: "Integration Settings", href: "/super-admin/integration-settings", icon: Wrench },
-          ],
-        },
-        {
           id: "security",
           title: "Security & Governance",
           items: [
@@ -209,18 +198,6 @@ export function buildRolePreviewDefinitions(orgId: string = "org-acme"): Record<
             { title: "Incident Management", href: "/platform-operator/incidents", icon: Flame },
             { title: "Support Tickets", href: "/platform-operator/support-tickets", matchPaths: ["/platform-operator/support-tickets", "/platform-operator/tickets"], icon: LifeBuoy },
             { title: "Support Access Requests", href: "/platform-operator/access-requests", icon: KeyRound },
-          ],
-        },
-        {
-          id: "op-integrations",
-          title: "Integration Operations",
-          items: [
-            { title: "Integration Health", href: "/platform-operator/integration-health", icon: Plug },
-            { title: "GitHub App Monitoring", href: "/platform-operator/github-monitoring", icon: GitBranch },
-            { title: "Webhook Delivery Logs", href: "/platform-operator/webhook-logs", matchPaths: ["/platform-operator/webhook-logs", "/platform-operator/webhooks"], icon: Webhook },
-            { title: "Failed Events & Retries", href: "/platform-operator/failed-events", icon: AlertTriangle },
-            { title: "Sync Jobs & Queues", href: "/platform-operator/sync-jobs", icon: Cpu },
-            { title: "API Error Monitoring", href: "/platform-operator/api-errors", icon: Radio },
           ],
         },
         {

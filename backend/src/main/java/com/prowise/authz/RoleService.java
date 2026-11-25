@@ -76,12 +76,12 @@ public class RoleService {
                        (SELECT count(*) FROM grants g
                          WHERE g.org_id = ? AND COALESCE(g.template_role_id, g.org_role_id) = r.id) AS grant_count
                 FROM roles r
-                WHERE (r.is_template AND r.is_active AND r.id <> ? AND r.id <> ?) OR r.org_id = ?
+                WHERE (r.is_template AND r.is_active AND r.id <> ? AND r.id <> ? AND r.id <> ?) OR r.org_id = ?
                 ORDER BY r.is_template DESC, r.name
                 """, (rs, rowNum) -> toResponse(
                         rs.getObject("id", UUID.class), rs.getString("name"), rs.getBoolean("is_template"),
                         rs.getLong("version"), rs.getLong("grant_count")),
-                organizationId, PLATFORM_OPERATOR_TEMPLATE_ID, PROJECT_APPROVER_TEMPLATE_ID, organizationId);
+                organizationId, PLATFORM_OPERATOR_TEMPLATE_ID, PROJECT_APPROVER_TEMPLATE_ID, ProjectRepoManagers.TEMPLATE_ID, organizationId);
     }
 
     public RoleResponse get(UUID organizationId, UUID roleId, Authentication authentication) {
@@ -380,7 +380,7 @@ public class RoleService {
                 "SELECT count(*) FROM role_templates t JOIN roles r ON r.id = t.role_id WHERE t.role_id = ? AND r.is_active",
                 Integer.class, templateRoleId);
         if (count == null || count != 1 || PLATFORM_OPERATOR_TEMPLATE_ID.equals(templateRoleId)
-                || PROJECT_APPROVER_TEMPLATE_ID.equals(templateRoleId)) {
+                || PROJECT_APPROVER_TEMPLATE_ID.equals(templateRoleId) || ProjectRepoManagers.TEMPLATE_ID.equals(templateRoleId)) {
             // Project approvers are chosen on the project itself (ProjectApprovers), never through role management.
             throw PermissionService.notFound();
         }
@@ -432,10 +432,10 @@ public class RoleService {
                        (SELECT count(*) FROM grants g
                          WHERE g.org_id = ? AND COALESCE(g.template_role_id, g.org_role_id) = r.id) AS grant_count
                 FROM roles r
-                WHERE r.id = ? AND ((r.is_template AND r.is_active AND r.id <> ? AND r.id <> ?) OR r.org_id = ?)
+                WHERE r.id = ? AND ((r.is_template AND r.is_active AND r.id <> ? AND r.id <> ? AND r.id <> ?) OR r.org_id = ?)
                 """, (rs, rowNum) -> toResponse(rs.getObject("id", UUID.class), rs.getString("name"),
                         rs.getBoolean("is_template"), rs.getLong("version"), rs.getLong("grant_count")),
-                organizationId, roleId, PLATFORM_OPERATOR_TEMPLATE_ID, PROJECT_APPROVER_TEMPLATE_ID, organizationId);
+                organizationId, roleId, PLATFORM_OPERATOR_TEMPLATE_ID, PROJECT_APPROVER_TEMPLATE_ID, ProjectRepoManagers.TEMPLATE_ID, organizationId);
         if (rows.isEmpty()) throw PermissionService.notFound();
         return rows.get(0);
     }

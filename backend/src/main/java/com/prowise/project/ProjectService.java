@@ -76,9 +76,11 @@ public class ProjectService {
     private final PermissionService permissions;
     private final SecurityEvidenceService evidence;
     private final ChangeRecorder changes;
+    private final com.prowise.authz.ProjectRepoManagers repoManagers;
 
     public ProjectService(JdbcTemplate jdbc, PermissionService permissions, SecurityEvidenceService evidence,
-            ChangeRecorder changes) {
+            ChangeRecorder changes, com.prowise.authz.ProjectRepoManagers repoManagers) {
+        this.repoManagers = repoManagers;
         this.jdbc = jdbc;
         this.permissions = permissions;
         this.evidence = evidence;
@@ -108,6 +110,7 @@ public class ProjectService {
         String lifecycle = oneOf("status", request.status(), CREATE_STATES, "PLANNED");
         String priority = oneOf("priority", request.priority(), PRIORITIES, "MEDIUM");
         String timezone = timezone(request.timezone(), organizationTimezone(organizationId));
+        startNotPast(request.startOn(), timezone);
         dateRange(request.startOn(), request.targetOn());
         String description = description(request.description());
 
@@ -140,6 +143,9 @@ public class ProjectService {
             throw duplicateKey();
         }
         for (Member member : members) addMember(organizationId, id, member.id(), actor.userId());
+        // The creator and the Project Manager may connect this project's repository (project-scoped grant).
+        repoManagers.grant(organizationId, id, actor.userId(), java.util.Arrays.asList(
+                repoManagers.membershipOf(organizationId, actor.userId()), pm == null ? null : pm.id()));
 
         ProjectResponse created = find(organizationId, id, authentication);
         changes.record(
@@ -328,6 +334,8 @@ public class ProjectService {
         String timezone = request.timezone() == null ? before.timezone() : timezone(request.timezone(), null);
         LocalDate startOn = request.startOn() == null ? before.startOn() : request.startOn();
         LocalDate targetOn = request.targetOn() == null ? before.targetOn() : request.targetOn();
+        // An already-past start date may stay; only a changed start date must be today or later.
+        if (request.startOn() != null && !request.startOn().equals(before.startOn())) startNotPast(startOn, timezone);
         dateRange(startOn, targetOn);
         boolean targetChanged = request.targetOn() != null && !request.targetOn().equals(before.targetOn());
         String targetReason = null;
@@ -389,6 +397,7 @@ public class ProjectService {
                 legacyMemberIds(members), teamId, projectId, organizationId, request.expectedVersion()));
         jdbc.update("DELETE FROM project_members WHERE project_id = ? AND org_id = ?", projectId, organizationId);
         for (Member member : members) addMember(organizationId, projectId, member.id(), actor.userId());
+        if (pmId != null) repoManagers.grant(organizationId, projectId, actor.userId(), List.of(pmId));
         if (targetChanged) {
             jdbc.update("""
                     INSERT INTO project_date_history (id, org_id, project_id, previous_target_on, new_target_on, reason, actor_id)
@@ -661,6 +670,14 @@ public class ProjectService {
             throw validation("timezone", "must be an IANA time zone such as Europe/London");
         }
         return zone;
+    }
+
+    /** A start date may not be in the past: today or later, in the project's time zone (date-only, rule 8). */
+    static void startNotPast(LocalDate start, String timezone) {
+        if (start != null && start.isBefore(LocalDate.now(ZoneId.of(timezone)))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "The request has invalid fields.",
+                    List.of(new ApiError.FieldError("start_on", "cannot be in the past; choose today or a later date")));
+        }
     }
 
     private static void dateRange(LocalDate start, LocalDate target) {

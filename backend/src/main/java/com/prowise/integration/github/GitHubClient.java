@@ -26,6 +26,19 @@ public interface GitHubClient {
 
     List<Commit> pullRequestCommits(Credential credential, String owner, String repo, int number, int max);
 
+    /** True when the branch exists (GitHub 404 = false). */
+    boolean branchExists(Credential credential, String owner, String repo, String branch);
+
+    /** Files changed and lines added / removed by one commit (the diff itself stays on GitHub). */
+    ChangeStats commitStats(Credential credential, String owner, String repo, String sha);
+
+    /** Files changed and lines added / removed by one pull request, with its base branch and merged flag. */
+    PullRequestStats pullRequestStats(Credential credential, String owner, String repo, int number);
+
+    record ChangeStats(int additions, int deletions, int filesChanged) {}
+
+    record PullRequestStats(int additions, int deletions, int filesChanged, boolean merged, String baseBranch) {}
+
     /** The credential is held in memory only for the call. {@link #toString()} never reveals it. */
     record Credential(String token) {
         @Override

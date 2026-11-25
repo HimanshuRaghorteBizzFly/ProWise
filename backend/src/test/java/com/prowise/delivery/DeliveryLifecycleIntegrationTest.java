@@ -133,14 +133,17 @@ class DeliveryLifecycleIntegrationTest {
                             "status": "ACTIVE",
                             "priority": "HIGH",
                             "accountable_membership_id": "%s",
-                            "timezone": "Europe/London",
-                            "start_on": "2026-06-01",
-                            "target_on": "2026-06-30"
+                            "timezone": "Europe/London"
                         }
                         """.formatted(key, name, jdbc.queryForObject(
                                 "SELECT id FROM memberships WHERE org_id = ? AND user_id = ?", UUID.class, ws.id(), devId))))
                 .andExpect(status().isCreated()).andReturn();
-        return json(res).path("id").asText();
+        String id = json(res).path("id").asText();
+        // Fixed historical dates (a project created earlier): the API refuses a past start date on create.
+        jdbc.update("UPDATE projects SET start_on = DATE '2026-06-01', target_on = DATE '2026-06-30', "
+                + "start_date = TIMESTAMPTZ '2026-06-01 00:00 Europe/London', target_date = TIMESTAMPTZ '2026-06-30 00:00 Europe/London' "
+                + "WHERE id = ?", id);
+        return id;
     }
 
     // =========================================================================

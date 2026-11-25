@@ -2,7 +2,8 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Menu, Sun, Moon, ChevronDown, ChevronRight, LogOut, Shield, Check, Settings, GitBranch } from "lucide-react";
+import { toast } from "sonner";
+import { Search, Menu, Sun, Moon, ChevronDown, ChevronRight, LogOut, Shield, Check, Settings, GitBranch, KeyRound } from "lucide-react";
 import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
 import { useThemeStore } from "@/store/theme-store";
 import { SystemRole } from "@/types";
@@ -50,6 +51,18 @@ export function TopNav({
   navigationButtonRef,
 }: TopNavProps) {
   const router = useRouter();
+
+  // Once, right after the first sign-in with an invitation's temporary password (flag set by the login page).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (sessionStorage.getItem("prowise_temporary_password_reminder") !== "1") return;
+    sessionStorage.removeItem("prowise_temporary_password_reminder");
+    toast.info("You signed in with a temporary password.", {
+      description: "Choose your own password now, or later from the account menu → Change password.",
+      duration: 12000,
+      action: { label: "Change now", onClick: () => router.push("/change-password") },
+    });
+  }, [router]);
   const { currentUser, currentRole, currentOrg, logout, organizations, isAuthenticated } = useAuthStore();
   // Only the signed-in person's own memberships (from /v1/me) can be switched to.
   const switchableOrgs = isAuthenticated ? organizations : [];
@@ -211,6 +224,19 @@ export function TopNav({
                   >
                     <Settings className="h-3.5 w-3.5 text-app-text-muted" aria-hidden="true" />
                     <span>Settings &amp; Preferences</span>
+                  </button>
+
+                  {/* Every role: change the password (e.g. the temporary one from an invitation email). */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenu(null);
+                      router.push("/change-password");
+                    }}
+                    className={cn(MENU_ITEM, MENU_ITEM_IDLE, "justify-start gap-2")}
+                  >
+                    <KeyRound className="h-3.5 w-3.5 text-app-text-muted" aria-hidden="true" />
+                    <span>Change password</span>
                   </button>
 
                   {currentRole === "DEVELOPER" && (

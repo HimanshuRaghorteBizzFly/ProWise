@@ -1,10 +1,12 @@
 "use client";
 
 import React from "react";
+import { useParams } from "next/navigation";
 
-import { ProjectCreateView } from "@/components/projects/ApiProjectViews";
+import { CreateProjectStart } from "@/components/flow/DraftWizard";
 
-/** Create project (task 2.1, real API: POST /v1/organizations/{orgId}/projects; options come from the server). */
+/** Create Project, step 1 (Basics). Saves a private draft; the project exists only after the last step. */
 export default function Page() {
-  return <ProjectCreateView base="manager" />;
+  const params = useParams();
+  return <CreateProjectStart orgId={(params?.orgId as string) || ""} base="manager" />;
 }

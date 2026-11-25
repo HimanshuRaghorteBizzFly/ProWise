@@ -49,6 +49,18 @@ export const useProjectFiles = (projectId: string) =>
 export const useItemFiles = (id: string) => useFlowQuery(flowKeys.itemFiles(id), () => apiClient.flow.workItemFiles(id), !!id);
 export const useGitHubConnection = (projectId: string) =>
   useFlowQuery(flowKeys.github(projectId), () => apiClient.flow.github(projectId), !!projectId);
+/* ---- GitHub App: organization installation, repository / branch choice, activity feed */
+export const useGitHubApp = (orgId: string) =>
+  useFlowQuery(["flow", "github-app", orgId], () => apiClient.flow.githubApp.status(orgId), !!orgId);
+const targetKey = (target: F.GitHubTarget) => ("projectId" in target ? `p:${target.projectId}` : `d:${target.draftId}`);
+export const useGitHubRepositories = (target: F.GitHubTarget, installationId: string) =>
+  useFlowQuery(["flow", "github-repos", targetKey(target), installationId],
+    () => apiClient.flow.githubApp.repositories(target, installationId), !!installationId);
+export const useGitHubBranches = (target: F.GitHubTarget, installationId: string, repository: string) =>
+  useFlowQuery(["flow", "github-branches", targetKey(target), installationId, repository],
+    () => apiClient.flow.githubApp.branches(target, installationId, repository), !!installationId && !!repository);
+export const useGitHubFeed = (projectId: string, query: F.GitHubFeedQuery) =>
+  useFlowQuery(["flow", "github-feed", projectId, query], () => apiClient.flow.githubApp.activity(projectId, query), !!projectId);
 export const useTaskCommits = (id: string) =>
   useFlowQuery(flowKeys.taskCommits(id), () => apiClient.flow.taskCommits(id), !!id);
 export const useProjectCommits = (projectId: string) =>

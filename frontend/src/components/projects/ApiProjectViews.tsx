@@ -53,6 +53,7 @@ import {
 import { AccessDeniedState, AccessLostState, SessionExpiredState } from "@/components/org-console/AccessStates";
 import { StaleVersionBanner } from "@/components/org-console/StaleVersionBanner";
 import { formatDay } from "@/components/projects/formatDay";
+import { endAfterStartChange, endDateError, isIsoDate, localToday, startDateError } from "@/components/projects/projectDates";
 import { ProgressSummaryContent } from "@/components/progress/CheckInViews";
 import { useProgressSummary } from "@/components/progress/useCheckInApi";
 import { apiErrorMessage, type LoadState } from "@/components/org-console/useRoleApi";
@@ -65,7 +66,7 @@ import {
   usePortfolio,
   useReloadProjects,
 } from "./useProjectApi";
-import { ApproversPanel, DocumentsPanel, GitHubPanel, ProjectTasksPanel, StructuredProgressPanel } from "@/components/flow/ProjectFlowPanels";
+import { ApproversPanel, DocumentsPanel, GitHubPanel, ProjectGitHubActivity, ProjectTasksPanel, StructuredProgressPanel } from "@/components/flow/ProjectFlowPanels";
 
 /**
  * Task 2.1 project screens on the real API for the Owner, Admin and Project Manager route families.
@@ -399,6 +400,8 @@ function CreateForm({ options, saving, error, onSubmit, onInvalid }: {
   });
   const set = <K extends keyof FormState>(field: K, value: FormState[K]) => setForm((current) => ({ ...current, [field]: value }));
   const zones = useMemo(() => timeZones(form.timezone), [form.timezone]);
+  // The user's local calendar day (not UTC).
+  const today = useMemo(() => localToday(), []);
 
   return (
     <form
@@ -408,7 +411,10 @@ function CreateForm({ options, saving, error, onSubmit, onInvalid }: {
         if (!form.name.trim()) return onInvalid("Enter a project name.");
         if (!/^[A-Z][A-Z0-9]{1,9}$/.test(form.key)) return onInvalid("The key needs 2 to 10 capital letters or digits and must start with a letter.");
         if (form.mode === "INDIVIDUAL" && !form.accountable) return onInvalid("Choose the accountable developer for an Individual project.");
-        if (form.startOn && form.targetOn && form.targetOn < form.startOn) return onInvalid("The target date must be on or after the start date.");
+        const startProblem = startDateError(form.startOn, today);
+        if (startProblem) return onInvalid(startProblem);
+        const endProblem = endDateError(form.targetOn, form.startOn);
+        if (endProblem) return onInvalid(endProblem);
         onSubmit({
           name: form.name.trim(),
           key: form.key,
@@ -469,8 +475,19 @@ function CreateForm({ options, saving, error, onSubmit, onInvalid }: {
       <div className="space-y-4">
         <Panel title="Schedule" icon={CalendarDays} description="Dates are calendar days in the project time zone.">
           <div className="space-y-3">
-            <AdminInput label="Start date" type="date" value={form.startOn} onChange={(e) => set("startOn", e.target.value)} />
-            <AdminInput label="Target date" type="date" value={form.targetOn} min={form.startOn || undefined} onChange={(e) => set("targetOn", e.target.value)} />
+            <AdminInput label="Start date" type="date" value={form.startOn} min={today}
+              error={startDateError(form.startOn, today) ?? undefined}
+              onChange={(e) => {
+                const startOn = e.target.value;
+                // A start after the current end date clears the end date.
+                setForm((current) => ({ ...current, startOn, targetOn: endAfterStartChange(current.targetOn, startOn) }));
+              }} />
+            <AdminInput label="Target date" type="date" value={form.targetOn}
+              min={form.startOn && isIsoDate(form.startOn) ? form.startOn : today}
+              disabled={!form.startOn || !isIsoDate(form.startOn)}
+              helperText={!form.startOn ? "Pick a start date first." : undefined}
+              error={endDateError(form.targetOn, form.startOn) ?? undefined}
+              onChange={(e) => set("targetOn", e.target.value)} />
             <AdminSelect label="Time zone" value={form.timezone} onChange={(e) => set("timezone", e.target.value)}>
               {zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
             </AdminSelect>
@@ -554,7 +571,7 @@ function PeopleFields(props: {
  * Project workspace shell
  * ==================================================================== */
 
-type WorkspaceTab = "overview" | "updates" | "tasks" | "progress" | "repositories" | "documents" | "approvers" | "activity" | "settings";
+type WorkspaceTab = "overview" | "updates" | "tasks" | "progress" | "repositories" | "github" | "documents" | "approvers" | "activity" | "settings";
 
 export function ProjectWorkspaceView({ base, projectId }: { base: ProjectBase; projectId: string }) {
   const { orgId, href } = useBaseHref(base);
@@ -577,6 +594,7 @@ export function ProjectWorkspaceView({ base, projectId }: { base: ProjectBase; p
               { value: "overview", label: "Overview" },
               { value: "updates", label: "Updates" },
               { value: "repositories", label: "Repository" },
+              { value: "github", label: "GitHub Activity" },
               { value: "documents", label: "Documents" },
               { value: "approvers", label: "Approvers" },
               { value: "activity", label: "Activity" },
@@ -587,6 +605,7 @@ export function ProjectWorkspaceView({ base, projectId }: { base: ProjectBase; p
               { value: "tasks", label: "Tasks" },
               { value: "progress", label: "Progress" },
               { value: "repositories", label: "Repository" },
+              { value: "github", label: "GitHub Activity" },
               { value: "documents", label: "Documents" },
               { value: "approvers", label: "Approvers" },
               { value: "activity", label: "Activity" },
@@ -606,7 +625,8 @@ export function ProjectWorkspaceView({ base, projectId }: { base: ProjectBase; p
               {tab === "updates" && <UpdatesTab projectId={row.id} />}
               {tab === "tasks" && <ProjectTasksPanel projectId={row.id} />}
               {tab === "progress" && <StructuredProgressPanel projectId={row.id} />}
-              {tab === "repositories" && <GitHubPanel projectId={row.id} />}
+              {tab === "repositories" && <GitHubPanel projectId={row.id} onViewActivity={() => setTab("github")} />}
+              {tab === "github" && <ProjectGitHubActivity projectId={row.id} onConnect={() => setTab("repositories")} />}
               {tab === "documents" && <DocumentsPanel projectId={row.id} canEdit={row.can_edit} />}
               {tab === "approvers" && <ApproversPanel projectId={row.id} />}
               {tab === "activity" && <ActivityTab orgId={orgId} project={row} />}
@@ -781,6 +801,7 @@ function EditForm({ base, orgId, project, options }: { base: ProjectBase; orgId:
   const [lifecycle, setLifecycle] = useState<ProjectLifecycleDto>(project.lifecycle);
   const [lifecycleReason, setLifecycleReason] = useState("");
   const zones = useMemo(() => timeZones(timezone), [timezone]);
+  const today = useMemo(() => localToday(), []);
   const targetChanged = (targetOn || null) !== project.target_on && Boolean(targetOn);
   const lifecycleChanged = lifecycle !== project.lifecycle;
 
@@ -801,7 +822,10 @@ function EditForm({ base, orgId, project, options }: { base: ProjectBase; orgId:
 
   const submit = () => {
     if (!name.trim()) return setError("Enter a project name.");
-    if (startOn && targetOn && targetOn < startOn) return setError("The target date must be on or after the start date.");
+    const startProblem = startDateError(startOn, today, project.start_on);
+    if (startProblem) return setError(startProblem);
+    const endProblem = endDateError(targetOn, startOn);
+    if (endProblem) return setError(endProblem);
     if (targetChanged && !targetReason.trim()) return setError("Say why the target date changes.");
     if (lifecycleChanged && !lifecycleReason.trim()) return setError("Say why the status changes.");
     setError("");
@@ -868,8 +892,14 @@ function EditForm({ base, orgId, project, options }: { base: ProjectBase; orgId:
       <div className="space-y-4">
         <Panel title="Schedule" icon={CalendarDays}>
           <div className="space-y-3">
-            <AdminInput label="Start date" type="date" value={startOn} onChange={(e) => setStartOn(e.target.value)} />
-            <AdminInput label={`Target date (now ${formatDay(project.target_on)})`} type="date" value={targetOn} min={startOn || undefined}
+            {/* An already-past start date may stay; a changed start date must be today or later. */}
+            <AdminInput label="Start date" type="date" value={startOn}
+              min={project.start_on && project.start_on < today ? project.start_on : today}
+              error={startDateError(startOn, today, project.start_on) ?? undefined}
+              onChange={(e) => setStartOn(e.target.value)} />
+            <AdminInput label={`Target date (now ${formatDay(project.target_on)})`} type="date" value={targetOn}
+              min={startOn && isIsoDate(startOn) ? startOn : undefined}
+              error={endDateError(targetOn, startOn) ?? undefined}
               onChange={(e) => setTargetOn(e.target.value)} />
             {targetChanged && (
               <AdminTextarea label="Why does the target date change? (kept in history)" value={targetReason} maxLength={500}

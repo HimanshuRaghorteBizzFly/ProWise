@@ -80,6 +80,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
                 // file. The GitHub webhook dedupes on its signed delivery id instead.
                 || (contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/"))
                 || path.startsWith("/v1/integrations/github/webhooks/")
+                || path.equals("/v1/integrations/github/app/webhook")
                 // Connecting a repository or rotating its webhook secret answers with the secret once; the stored
                 // replay body would keep it in plain text. A repeated connect is refused anyway (409 already connected).
                 || GITHUB_SECRET_ROUTES.matcher(path).matches();

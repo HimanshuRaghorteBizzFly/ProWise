@@ -180,7 +180,8 @@ class ProjectFlowIntegrationTest {
         start(qaToken, login).andExpect(status().isForbidden());
         start(devToken, login).andExpect(status().isOk()).andExpect(jsonPath("$.state").value("IN_PROGRESS"));
 
-        // GitHub: only repo.connect (Admin / Owner) connects; the PM is told to ask an admin. The token never comes back.
+        // GitHub: repo.connect connects (Owner/Admin org-wide; the project's creator and PM for this project only). A QA
+        // member who can read the project cannot. The token never comes back.
         when(github.repository(any(), eq("acme"), eq("web"))).thenReturn(new GitHubClient.Repository("acme/web", "main", true));
         when(github.commits(any(), eq("acme"), eq("web"), isNull(), any(), anyInt())).thenReturn(List.of(
                 new GitHubClient.Commit("abc1234def5678", "PRW-1 add login form", "Dev", "dev-gh", Instant.now(),
@@ -188,11 +189,12 @@ class ProjectFlowIntegrationTest {
                 new GitHubClient.Commit("fff0000", "PRW-12 unrelated", "Dev", "dev-gh", Instant.now(), "https://x")));
         when(github.branches(any(), eq("acme"), eq("web"), anyInt())).thenReturn(List.of("main"));
         when(github.pullRequests(any(), eq("acme"), eq("web"), anyInt())).thenReturn(List.of());
-        mockMvc.perform(auth(put("/v1/projects/{p}/github", projectId), pmToken).contentType("application/json")
+        mockMvc.perform(auth(put("/v1/projects/{p}/github", projectId), qaToken).contentType("application/json")
                         .content(json(Map.of("repository", "acme/web", "token", "github_pat_test_only"))))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("REPO_CONNECT_REQUIRED"));
-        mockMvc.perform(auth(get("/v1/projects/{p}/github", projectId), pmToken))
+        mockMvc.perform(auth(get("/v1/projects/{p}/github", projectId), qaToken))
                 .andExpect(jsonPath("$.can_manage").value(false)).andExpect(jsonPath("$.connected").value(false));
+        mockMvc.perform(auth(get("/v1/projects/{p}/github", projectId), pmToken)).andExpect(jsonPath("$.can_manage").value(true));
         String connectBody = mockMvc.perform(auth(put("/v1/projects/{p}/github", projectId), adminToken).contentType("application/json")
                         .header("Idempotency-Key", "connect-" + UUID.randomUUID())
                         .content(json(Map.of("repository", "https://github.com/acme/web", "token", "github_pat_test_only"))))
@@ -440,6 +442,206 @@ class ProjectFlowIntegrationTest {
         // A QA member who is on no project sees none; a foreign organization is 404.
         mockMvc.perform(auth(get(base, orgId), qaOtherToken)).andExpect(jsonPath("$.items.length()").value(0));
         mockMvc.perform(auth(get(base, UUID.randomUUID()), pmToken)).andExpect(status().isNotFound());
+    }
+
+    /* ================================================================== multi-step Create Project (drafts) */
+
+    @Test
+    void aDraftIsPrivateHiddenFromListsAndBecomesAProjectOnlyWhenActivated() throws Exception {
+        String today = LocalDate.now(ZoneOffset.UTC).toString();
+        // Step 1: basics are checked by the server.
+        draft(pmToken, Map.of("name", "Past", "key", "PAST", "mode", "TEAM", "start_on", LocalDate.now(ZoneOffset.UTC).minusDays(1).toString(),
+                "target_on", today)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.field_errors[0].field").value("start_on"));
+        JsonNode d = tree(draft(pmToken, Map.of("name", "Orbit web", "key", "ORB", "mode", "TEAM", "start_on", today,
+                "target_on", LocalDate.now(ZoneOffset.UTC).plusDays(30).toString()))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("DRAFT"))
+                .andReturn().getResponse().getContentAsString());
+        String id = d.path("id").asText();
+
+        // Hidden: no project exists, other people cannot see the draft, only the creator's draft list shows it.
+        assertThat(count("SELECT count(*) FROM projects WHERE org_id = ?", orgId)).isZero();
+        mockMvc.perform(auth(get("/v1/organizations/{o}/project-drafts", orgId), pmToken)).andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(auth(get("/v1/project-drafts/{id}", id), adminToken)).andExpect(status().isNotFound());
+        mockMvc.perform(auth(get("/v1/organizations/{o}/progress/projects", orgId), pmToken)).andExpect(jsonPath("$.items.length()").value(0));
+
+        // Step 2: a staged document.
+        String doc = upload(pmToken, "PROJECT_DOCUMENT", null, null, "brief.pdf", PDF).path("id").asText();
+        long v = step(id, "documents", Map.of("document_file_ids", List.of(doc)), 0).path("version").asLong();
+
+        // Step 3: points above 100 are refused; a stale version is refused.
+        Map<String, Object> over = new LinkedHashMap<>(planBody(101));
+        over.put("expected_version", v);
+        mockMvc.perform(auth(put("/v1/project-drafts/{id}/plan", id), pmToken).contentType("application/json").content(json(over)))
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("POINTS_OVER_LIMIT"));
+        Map<String, Object> stale = new LinkedHashMap<>(planBody(80));
+        stale.put("expected_version", v - 1);
+        mockMvc.perform(auth(put("/v1/project-drafts/{id}/plan", id), pmToken).contentType("application/json").content(json(stale)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("STALE_VERSION"));
+        v = step(id, "plan", planBody(80), v).path("version").asLong();
+
+        // Steps 5 and 6: people (never Owner/Admin) and approvers.
+        mockMvc.perform(auth(put("/v1/project-drafts/{id}/people", id), pmToken).contentType("application/json")
+                        .content(json(Map.of("developer_membership_ids", List.of(adminMembership.toString()), "expected_version", v))))
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("ROLE_NOT_ASSIGNABLE"));
+        v = step(id, "people", Map.of("team_lead_membership_id", leadMembership.toString(),
+                "developer_membership_ids", List.of(devMembership.toString()), "qa_membership_ids", List.of(qaMembership.toString())), v)
+                .path("version").asLong();
+        v = step(id, "approvers", Map.of("approver_membership_ids", List.of(qaMembership.toString())), v).path("version").asLong();
+        assertThat(count("SELECT count(*) FROM projects WHERE org_id = ?", orgId)).isZero();
+
+        // Step 7: activation creates everything in one go.
+        String projectId = tree(mockMvc.perform(auth(post("/v1/project-drafts/{id}/activate", id), pmToken).contentType("application/json")
+                        .content(json(Map.of("expected_version", v))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total_points").value(80))
+                .andReturn().getResponse().getContentAsString()).path("project").path("id").asText();
+        assertThat(count("SELECT count(*) FROM work_items WHERE project_id = ? AND type = 'TASK'", projectId)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT project_id FROM file_metadata WHERE id = ?", String.class, doc)).isEqualTo(projectId);
+        assertThat(jdbc.queryForObject("SELECT status FROM project_drafts WHERE id = ?::uuid", String.class, id)).isEqualTo("ACTIVATED");
+        assertThat(count("SELECT count(*) FROM outbox_event WHERE event_type IN ('ProjectSetUp', 'ProjectDraftActivated')")).isEqualTo(2);
+        mockMvc.perform(auth(get("/v1/organizations/{o}/progress/projects", orgId), pmToken)).andExpect(jsonPath("$.items.length()").value(1));
+        mockMvc.perform(auth(get("/v1/me/work-items"), devToken)).andExpect(jsonPath("$.length()").value(3));
+        mockMvc.perform(auth(get("/v1/organizations/{o}/project-drafts", orgId), pmToken)).andExpect(jsonPath("$.length()").value(0));
+        // Activating twice changes nothing.
+        mockMvc.perform(auth(post("/v1/project-drafts/{id}/activate", id), pmToken).contentType("application/json")
+                .content(json(Map.of("expected_version", v + 1)))).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DRAFT_CLOSED"));
+    }
+
+    @Test
+    void theRepositoryStepVerifiesAccessStoresTheTokenEncryptedAndDiscardRemovesTheDraft() throws Exception {
+        String today = LocalDate.now(ZoneOffset.UTC).toString();
+        Map<String, Object> solo = Map.of("name", "Solo site", "key", "SOLO", "mode", "SOLO", "start_on", today, "target_on", today);
+        // The creator of a draft may connect its repository (owner decision 2026-11-25).
+        String pmDraft = tree(draft(pmToken, solo).andReturn().getResponse().getContentAsString()).path("id").asText();
+        mockMvc.perform(auth(get("/v1/project-drafts/{id}", pmDraft), pmToken)).andExpect(jsonPath("$.can_connect_repository").value(true));
+        // Discard: closed, gone from the list.
+        mockMvc.perform(auth(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/v1/project-drafts/{id}", pmDraft), pmToken)
+                .contentType("application/json").content(json(Map.of("expected_version", 0)))).andExpect(status().isNoContent());
+        mockMvc.perform(auth(get("/v1/organizations/{o}/project-drafts", orgId), pmToken)).andExpect(jsonPath("$.length()").value(0));
+
+        // An admin (repo.connect) verifies the repository before saving; the token never comes back.
+        when(github.repository(any(), eq("acme"), eq("web"))).thenReturn(new GitHubClient.Repository("acme/web", "main", true));
+        Map<String, Object> adminSolo = Map.of("name", "Admin site", "key", "ADM", "mode", "SOLO", "start_on", today, "target_on", today);
+        String id = tree(draft(adminToken, adminSolo).andReturn().getResponse().getContentAsString()).path("id").asText();
+        String body = mockMvc.perform(auth(put("/v1/project-drafts/{id}/repository", id), adminToken).contentType("application/json")
+                        .content(json(Map.of("repository", "acme/web", "token", "github_pat_test_only", "expected_version", 0))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.repository.connected").value(true))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(body).doesNotContain("github_pat_test_only");
+        assertThat(jdbc.queryForObject("SELECT repo_token_ciphertext FROM project_drafts WHERE id = ?::uuid", String.class, id))
+                .startsWith("v1:");
+        String projectId = tree(mockMvc.perform(auth(post("/v1/project-drafts/{id}/activate", id), adminToken).contentType("application/json")
+                        .content(json(Map.of("expected_version", 1)))).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString()).path("project").path("id").asText();
+        assertThat(jdbc.queryForObject("SELECT repo_name FROM project_repository_links WHERE project_id = ?", String.class, projectId))
+                .isEqualTo("acme/web");
+        assertThat(jdbc.queryForObject("SELECT repo_token_ciphertext FROM project_drafts WHERE id = ?::uuid", String.class, id)).isNull();
+    }
+
+    @Test
+    @org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
+    void aProjectManagerConnectsTheRepositoryOfTheirOwnProjectButNotOthers(
+            org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+        String token = "github_pat_PMSECRETabcd1234";
+        String newToken = "github_pat_NEWSECRETzz9876";
+        when(github.repository(org.mockito.ArgumentMatchers.argThat((GitHubClient.Credential c) -> c != null
+                && (token.equals(c.token()) || newToken.equals(c.token()))), eq("acme"), eq("web")))
+                .thenReturn(new GitHubClient.Repository("acme/web", "main", true));
+        when(github.repository(org.mockito.ArgumentMatchers.argThat((GitHubClient.Credential c) -> c != null && "bad-token".equals(c.token())),
+                eq("acme"), eq("web"))).thenThrow(new GitHubClient.GitHubException(401, "GitHub refused the token: it is wrong, expired or revoked."));
+        when(github.repository(org.mockito.ArgumentMatchers.argThat((GitHubClient.Credential c) -> c != null && "slow-token".equals(c.token())),
+                eq("acme"), eq("web"))).thenThrow(new GitHubClient.GitHubException(429, "GitHub's rate limit was reached."));
+        String today = LocalDate.now(ZoneOffset.UTC).toString();
+
+        // The PM connects the repository of the project they are creating.
+        String id = tree(draft(pmToken, Map.of("name", "Repo site", "key", "REPO", "mode", "SOLO", "start_on", today, "target_on", today))
+                .andReturn().getResponse().getContentAsString()).path("id").asText();
+        String path = "/v1/project-drafts/{id}/repository";
+        mockMvc.perform(auth(put(path, id), pmToken).contentType("application/json")
+                        .content(json(Map.of("repository", "acme/web", "token", "bad-token", "expected_version", 0))))
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("GITHUB_TOKEN_INVALID"))
+                .andExpect(jsonPath("$.field_errors[0].field").value("token"));
+        mockMvc.perform(auth(put(path, id), pmToken).contentType("application/json")
+                        .content(json(Map.of("repository", "acme/web", "token", "slow-token", "expected_version", 0))))
+                .andExpect(status().isTooManyRequests()).andExpect(jsonPath("$.code").value("GITHUB_RATE_LIMITED"));
+        String body = mockMvc.perform(auth(put(path, id), pmToken).contentType("application/json")
+                        .content(json(Map.of("repository", "acme/web", "token", token, "expected_version", 0))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.repository.connected").value(true))
+                .andExpect(jsonPath("$.repository.token_last4").value("1234"))
+                .andExpect(jsonPath("$.repository.url").value("https://github.com/acme/web"))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(body).doesNotContain(token);
+        // Someone else's draft is invisible.
+        mockMvc.perform(auth(put(path, id), adminToken).contentType("application/json")
+                .content(json(Map.of("repository", "acme/web", "token", token, "expected_version", 1)))).andExpect(status().isNotFound());
+
+        // Activation keeps the connection; the PM manages it on THIS project: view, replace the token, disconnect.
+        String projectId = tree(mockMvc.perform(auth(post("/v1/project-drafts/{id}/activate", id), pmToken).contentType("application/json")
+                        .content(json(Map.of("expected_version", 1)))).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString()).path("project").path("id").asText();
+        JsonNode view = tree(mockMvc.perform(auth(get("/v1/projects/{p}/github", projectId), pmToken))
+                .andExpect(jsonPath("$.can_manage").value(true)).andExpect(jsonPath("$.token_last4").value("1234"))
+                .andExpect(jsonPath("$.repository").value("acme/web")).andReturn().getResponse().getContentAsString());
+        assertThat(view.toString()).doesNotContain(token);
+        String replaced = mockMvc.perform(auth(put("/v1/projects/{p}/github/token", projectId), pmToken).contentType("application/json")
+                        .content(json(Map.of("token", newToken, "expected_version", view.path("version").asLong()))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.token_last4").value("9876"))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(replaced).doesNotContain(newToken);
+        mockMvc.perform(auth(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/v1/projects/{p}/github", projectId), pmToken)
+                .contentType("application/json").content(json(Map.of("expected_version", view.path("version").asLong() + 1))))
+                .andExpect(status().isNoContent());
+        for (String action : List.of("project_draft.repository_connected", "repository.connected", "repository.token_replaced",
+                "repository.disconnected")) {
+            assertThat(count("SELECT count(*) FROM audit_log WHERE action = ?", action)).as(action).isEqualTo(1);
+        }
+        // Org-wide repo.connect was not given to the PM role: a project the PM neither created nor manages is refused.
+        Map<String, Object> adminProject = teamRequest(80);
+        adminProject.put("key", "ADMN");
+        String adminProjectId = tree(setup(adminToken, adminProject).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString()).path("project").path("id").asText();
+        mockMvc.perform(auth(put("/v1/projects/{p}/github", adminProjectId), pmToken).contentType("application/json")
+                        .content(json(Map.of("repository", "acme/web", "token", token))))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("REPO_CONNECT_REQUIRED"));
+        assertThat(count("SELECT count(*) FROM grants g JOIN role_permissions rp ON rp.role_id = g.template_role_id"
+                + " WHERE g.org_id = ? AND g.scope = 'ORG' AND rp.permission_key = 'repo.connect'"
+                + " AND g.membership_id = (SELECT id FROM memberships WHERE org_id = ? AND role_template = 'PROJECT_MANAGER')",
+                orgId, orgId)).isZero();
+
+        // Another organization's project is a 404 for this PM.
+        Person stranger = person("stranger");
+        String slug = "other-" + UUID.randomUUID().toString().substring(0, 6);
+        UUID otherOrg = UUID.fromString(tree(mockMvc.perform(auth(post("/v1/organizations"), stranger.token()).contentType("application/json")
+                        .content("{\"name\":\"" + slug + "\",\"slug\":\"" + slug + "\",\"timezone\":\"UTC\","
+                                + "\"calendar\":{\"workdays\":[1,2,3,4,5],\"holidays\":[]}}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText());
+        String strangerToken = switchTo(stranger.token(), otherOrg);
+        String foreign = tree(mockMvc.perform(auth(post("/v1/organizations/{o}/projects", otherOrg), strangerToken).contentType("application/json")
+                        .content(json(Map.of("name", "Foreign", "key", "FRGN", "mode", "STRUCTURED"))))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
+        mockMvc.perform(auth(put("/v1/projects/{p}/github", foreign), pmToken).contentType("application/json")
+                .content(json(Map.of("repository", "acme/web", "token", token)))).andExpect(status().isNotFound());
+        mockMvc.perform(auth(get("/v1/projects/{p}/github", foreign), pmToken)).andExpect(status().isNotFound());
+
+        // The token is never logged.
+        assertThat(output.getAll()).doesNotContain(token).doesNotContain(newToken);
+    }
+
+    private ResultActions draft(String token, Map<String, Object> basics) throws Exception {
+        return mockMvc.perform(auth(post("/v1/organizations/{o}/project-drafts", orgId), token).contentType("application/json")
+                .content(json(basics)));
+    }
+
+    private JsonNode step(String draftId, String step, Map<String, Object> body, long version) throws Exception {
+        Map<String, Object> withVersion = new LinkedHashMap<>(body);
+        withVersion.put("expected_version", version);
+        return tree(mockMvc.perform(auth(put("/v1/project-drafts/{id}/" + step, draftId), pmToken).contentType("application/json")
+                .content(json(withVersion))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+    }
+
+    private Map<String, Object> planBody(int total) {
+        Map<String, Object> request = teamRequest(total);
+        return Map.of("phases", request.get("phases"), "tasks", request.get("tasks"));
     }
 
     private String taskByTitleIn(String projectId, String title) {

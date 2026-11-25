@@ -32,8 +32,8 @@ import { useFlowMutation, useUploadFile } from "./useFlowApi";
 type Mode = "TEAM" | "SOLO";
 type StepId = "basics" | "documents" | "plan" | "people" | "approvers" | "review";
 
-interface PhaseRow { ref: string; name: string }
-interface TaskRow { ref: string; title: string; description: string; phaseRef: string; points: string; dependsOnRef: string; assignee: string }
+export interface PhaseRow { ref: string; name: string }
+export interface TaskRow { ref: string; title: string; description: string; phaseRef: string; points: string; dependsOnRef: string; assignee: string }
 
 const STEP_LABEL: Record<StepId, string> = {
   basics: "Basics",
@@ -446,7 +446,7 @@ export function PeoplePicker({ label, people, selected, onChange, single = false
   );
 }
 
-function PlanStep({ phases, setPhases, tasks, setTasks, total, developers }: {
+export function PlanStep({ phases, setPhases, tasks, setTasks, total, developers }: {
   phases: PhaseRow[];
   setPhases: React.Dispatch<React.SetStateAction<PhaseRow[]>>;
   tasks: TaskRow[];

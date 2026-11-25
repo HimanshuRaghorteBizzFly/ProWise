@@ -121,6 +121,34 @@ class SuperAdminConcurrencyIntegrationTest {
     }
 
     @Test
+    void aPlanIsCreatedWithItsFeaturesAndAnUpdateReplacesThem() throws Exception {
+        JsonNode plan = ok(post("/v1/admin/plans"), Map.of("name", "Featured " + suffix, "code", "F" + suffix,
+                "features", List.of("Up to 500 seats", "Dedicated keys", "SSO")), 201);
+        String id = plan.path("id").asText();
+        assertThat(objectMapper.convertValue(plan.path("features"), List.class))
+                .containsExactly("Up to 500 seats", "Dedicated keys", "SSO");
+        assertThat(jdbc.queryForList("SELECT feature_text FROM plan_features WHERE plan_id = ? ORDER BY sort_order",
+                String.class, id)).containsExactly("Up to 500 seats", "Dedicated keys", "SSO");
+
+        JsonNode updated = ok(patch("/v1/admin/plans/" + id),
+                Map.of("features", List.of("SSO", "Audit export"), "expected_version", 0), 200);
+        assertThat(updated.path("version").asLong()).isEqualTo(1);
+        assertThat(objectMapper.convertValue(updated.path("features"), List.class)).containsExactly("SSO", "Audit export");
+        assertThat(jdbc.queryForList("SELECT feature_text FROM plan_features WHERE plan_id = ? ORDER BY sort_order",
+                String.class, id)).containsExactly("SSO", "Audit export");
+
+        // The listed plan (what the Plans page renders as a card) carries the stored features.
+        String list = mockMvc.perform(auth(get("/v1/admin/plans"))).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        JsonNode listed = null;
+        for (JsonNode p : objectMapper.readTree(list)) {
+            if (id.equals(p.path("id").asText())) listed = p;
+        }
+        assertThat(listed).isNotNull();
+        assertThat(objectMapper.convertValue(listed.path("features"), List.class)).containsExactly("SSO", "Audit export");
+    }
+
+    @Test
     void anIdempotencyKeyReplaysTheFirstResultInsteadOfFailingAsStale() throws Exception {
         String id = ok(post("/v1/admin/plans"), Map.of("name", "Idem " + suffix, "code", "I" + suffix), 201).path("id").asText();
         String body = objectMapper.writeValueAsString(Map.of("name", "Idem renamed", "expected_version", 0));

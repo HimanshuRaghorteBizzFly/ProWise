@@ -120,6 +120,49 @@ class ProjectRecordsIntegrationTest {
     }
 
     @Test
+    void startDateCannotBeInThePastAndEndDateCannotBeBeforeTheStart() throws Exception {
+        Org org = organization("start");
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of(
+                jdbc.queryForObject("SELECT timezone FROM organizations WHERE id = ?", String.class, org.id())));
+        String url = "/v1/organizations/{org}/projects";
+        // Past start: 400 with a field error on start_on, nothing created.
+        mockMvc.perform(auth(post(url, org.id()), org.token()).contentType("application/json")
+                        .content(body("Past", "PAST", "STRUCTURED", null, today.minusDays(1).toString(), today.plusDays(5).toString())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.field_errors[0].field").value("start_on"));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM projects WHERE org_id = ?", Integer.class, org.id())).isZero();
+        // Today is allowed.
+        mockMvc.perform(auth(post(url, org.id()), org.token()).contentType("application/json")
+                        .content(body("Today", "TODAY", "STRUCTURED", null, today.toString(), today.plusDays(5).toString())))
+                .andExpect(status().isCreated());
+        // End before start: 400 on target_on; end equal to start: allowed.
+        mockMvc.perform(auth(post(url, org.id()), org.token()).contentType("application/json")
+                        .content(body("Backwards", "BACKW", "STRUCTURED", null, today.plusDays(3).toString(), today.plusDays(2).toString())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.field_errors[0].field").value("target_on"));
+        String sameDay = json(mockMvc.perform(auth(post(url, org.id()), org.token()).contentType("application/json")
+                        .content(body("Same day", "SAME", "STRUCTURED", null, today.plusDays(2).toString(), today.plusDays(2).toString())))
+                .andExpect(status().isCreated()).andReturn()).path("id").asText();
+
+        // Editing: an already-past start date may stay; changing it to another past day is refused; the end date
+        // must still be on or after the start date.
+        jdbc.update("UPDATE projects SET start_on = ?, target_on = ? WHERE id = ?",
+                java.sql.Date.valueOf(today.minusDays(10)), java.sql.Date.valueOf(today.plusDays(2)), sameDay);
+        mockMvc.perform(auth(patch(url + "/{p}", org.id(), sameDay), org.token()).contentType("application/json")
+                        .content("{\"name\":\"Renamed\",\"expected_version\":0}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(auth(patch(url + "/{p}", org.id(), sameDay), org.token()).contentType("application/json")
+                        .content("{\"start_on\":\"" + today.minusDays(5) + "\",\"expected_version\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.field_errors[0].field").value("start_on"));
+        mockMvc.perform(auth(patch(url + "/{p}", org.id(), sameDay), org.token()).contentType("application/json")
+                        .content("{\"start_on\":\"" + today.plusDays(4) + "\",\"expected_version\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.field_errors[0].field").value("target_on"));
+    }
+
+    @Test
     void invalidDatesTimezoneAndRequiredFieldsAreRejected() throws Exception {
         Org org = organization("dates");
         mockMvc.perform(auth(post("/v1/organizations/{org}/projects", org.id()), org.token()).contentType("application/json")

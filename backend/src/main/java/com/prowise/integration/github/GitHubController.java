@@ -48,6 +48,14 @@ public class GitHubController {
         return github.connect(authentication, projectId, request);
     }
 
+    @PutMapping("/v1/projects/{projectId}/github/token")
+    @PreAuthorize(MEMBER)
+    @Operation(summary = "Replace the stored token (repo.connect on this project); verified against GitHub, never returned")
+    public GitHubService.ConnectionView replaceToken(@PathVariable String projectId,
+            @RequestBody GitHubService.TokenRequest request, Authentication authentication) {
+        return github.replaceToken(authentication, projectId, request);
+    }
+
     @PostMapping("/v1/projects/{projectId}/github/webhook-secret")
     @PreAuthorize(MEMBER)
     @Operation(summary = "Rotate the webhook secret (repo.connect); returns the new secret once")

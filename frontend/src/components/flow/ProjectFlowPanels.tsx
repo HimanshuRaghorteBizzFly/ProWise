@@ -8,8 +8,10 @@ import { AdminButton, AdminInput, EmptyStateView, Panel, StatusBadge } from "@/c
 import { SectionGate, changeError, dateTimeText } from "@/components/developer/DevUI";
 import { useOrgId } from "@/components/org-console/useRoleApi";
 import { apiClient } from "@/lib/api";
-import type { GitHubConnectionDto } from "@/types/flow";
+import type { GitHubConnectionDto, SyncResultDto } from "@/types/flow";
+import { usePathname } from "next/navigation";
 import { BOARD_COLUMNS, FileRow, ProgressFigure, RoleBadge, formatBytes } from "./FlowUI";
+import { AppConnectionView, GitHubActivityPanel, GitHubRepoPicker } from "./GitHubIntegration";
 import { PeoplePicker } from "./ProjectSetupWizard";
 import {
   useApprovers,
@@ -110,17 +112,57 @@ export function StructuredProgressPanel({ projectId }: { projectId: string }) {
   );
 }
 
-/** One GitHub repository per project. Only repo.connect (Owner / Admin) connects; the token is never shown again. */
-export function GitHubPanel({ projectId }: { projectId: string }) {
+/**
+ * One GitHub repository per project, picked through the organization's GitHub App (repo.connect on the project: its
+ * creator, its PM, Owner/Admin). A fine-grained token stays available as a fallback. Credentials are never shown.
+ */
+export function GitHubPanel({ projectId, onViewActivity }: { projectId: string; onViewActivity?: () => void }) {
   const connection = useGitHubConnection(projectId);
+  const orgId = useOrgId();
+  const pathname = usePathname();
+  const [imported, setImported] = useState<SyncResultDto | null>(null);
+  const [useToken, setUseToken] = useState(false);
   return (
     <Panel title="GitHub repository" icon={GitBranch} iconTone="violet"
       description="Commits are linked to tasks by key (e.g. KEY-12) in the message, branch or pull request title. Evidence only.">
       <SectionGate state={connection} what="the repository connection">
-        {(c) => <GitHubConnection projectId={projectId} connection={c} />}
+        {(c) => {
+          if (c.connected && c.provider === "GITHUB_APP") {
+            return <AppConnectionView orgId={orgId} projectId={projectId} connection={c} onViewActivity={onViewActivity}
+              returnTo={pathname} justImported={imported} />;
+          }
+          if (!c.connected && c.can_manage && !useToken) {
+            return (
+              <div className="space-y-3">
+                <GitHubRepoPicker orgId={orgId} target={{ projectId }} returnTo={pathname}
+                  onDone={({ imported: result }) => { setImported(result ?? null); toast.success("Repository connected."); }} />
+                <button type="button" className="text-xs text-[var(--color-text-muted)] hover:underline" onClick={() => setUseToken(true)}>
+                  Use a fine-grained personal access token instead
+                </button>
+              </div>
+            );
+          }
+          return (
+            <div className="space-y-3">
+              <GitHubConnection projectId={projectId} connection={c} />
+              {!c.connected && c.can_manage && (
+                <button type="button" className="text-xs text-[var(--color-text-muted)] hover:underline" onClick={() => setUseToken(false)}>
+                  Pick from the organization&apos;s GitHub instead
+                </button>
+              )}
+            </div>
+          );
+        }}
       </SectionGate>
     </Panel>
   );
+}
+
+/** The GitHub Activity tab; Sync now only for those who manage the repository. */
+export function ProjectGitHubActivity({ projectId, onConnect }: { projectId: string; onConnect?: () => void }) {
+  const connection = useGitHubConnection(projectId);
+  const canSync = connection.kind === "ready" && connection.data.can_manage;
+  return <GitHubActivityPanel projectId={projectId} canSync={canSync} onConnect={onConnect} />;
 }
 
 function GitHubConnection({ projectId, connection }: { projectId: string; connection: GitHubConnectionDto }) {
@@ -136,7 +178,7 @@ function GitHubConnection({ projectId, connection }: { projectId: string; connec
     if (!connection.can_manage) {
       return (
         <p className="text-xs text-[var(--color-text-muted)]" data-testid="ask-admin">
-          No repository is connected. Ask an organization admin to connect one (it needs the repo.connect permission).
+          No repository is connected. The project creator, its project manager or an admin can connect one.
         </p>
       );
     }
@@ -169,7 +211,8 @@ function GitHubConnection({ projectId, connection }: { projectId: string; connec
   return (
     <div className="space-y-3 text-xs">
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div><dt className="text-[var(--color-text-muted)]">Repository</dt><dd className="font-medium">{connection.repository}</dd></div>
+        <div><dt className="text-[var(--color-text-muted)]">Repository</dt><dd className="font-medium"><a href={connection.repository_url ?? "#"} target="_blank" rel="noreferrer noopener" className="text-blue-600 dark:text-blue-400 hover:underline">{connection.repository}</a></dd></div>
+        <div><dt className="text-[var(--color-text-muted)]">Token</dt><dd className="font-mono">{connection.token_last4 ? `…${connection.token_last4}` : "Not stored"}</dd></div>
         <div><dt className="text-[var(--color-text-muted)]">Status</dt><dd><StatusBadge label={connection.last_error ? "Needs attention" : "Connected"} tone={connection.last_error ? "warning" : "success"} /></dd></div>
         <div><dt className="text-[var(--color-text-muted)]">Last sync</dt><dd>{connection.last_synced_at ? dateTimeText(connection.last_synced_at) : "Not yet"}</dd></div>
         <div><dt className="text-[var(--color-text-muted)]">Connected by</dt><dd>{connection.connected_by ?? "—"}</dd></div>
@@ -210,7 +253,35 @@ function GitHubConnection({ projectId, connection }: { projectId: string; connec
           </AdminButton>
         </div>
       )}
+      {connection.can_manage && <ReplaceToken projectId={projectId} version={connection.version} />}
     </div>
+  );
+}
+
+/** Replace the stored token: checked with GitHub first, then stored encrypted; only its last 4 characters are shown. */
+function ReplaceToken({ projectId, version }: { projectId: string; version: number }) {
+  const [open, setOpen] = useState(false);
+  const [token, setToken] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const replace = useFlowMutation(() => apiClient.flow.replaceGitHubToken(projectId, token.trim(), version));
+  if (!open) return <AdminButton size="xs" variant="outline" onClick={() => setOpen(true)}>Replace token</AdminButton>;
+  return (
+    <form className="space-y-2 border-t border-[var(--color-border)] pt-3" noValidate onSubmit={(e) => {
+      e.preventDefault();
+      if (!token.trim()) return setError("Paste the new fine-grained read-only token.");
+      setError(null);
+      replace.mutate(undefined, {
+        onSuccess: (saved) => { toast.success(`Token replaced (ends in ${saved.token_last4}).`); setToken(""); setOpen(false); },
+        onError: (err) => setError(changeError(err)),
+      });
+    }}>
+      <AdminInput label="New fine-grained read-only token" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} />
+      {error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+      <div className="flex gap-2">
+        <AdminButton size="xs" type="submit" isLoading={replace.isPending}>Verify & replace</AdminButton>
+        <AdminButton size="xs" type="button" variant="ghost" onClick={() => { setOpen(false); setToken(""); setError(null); }}>Cancel</AdminButton>
+      </div>
+    </form>
   );
 }
 

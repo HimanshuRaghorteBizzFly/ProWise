@@ -138,6 +138,133 @@ export interface GitHubConnectionDto {
   can_manage: boolean;
   /** Present only in the response that created or rotated it. */
   webhook_secret: string | null;
+  /** Last 4 characters of the stored token; the token itself is never returned. */
+  token_last4: string | null;
+  repository_url: string | null;
+  /** GITHUB_APP: through the organization's GitHub App installation (no token, no per-repo webhook). */
+  provider?: "GITHUB_APP" | "GITHUB_TOKEN" | string | null;
+  branch?: string | null;
+  installation_id?: string | null;
+  installation_account?: string | null;
+  private_repository?: boolean | null;
+  /** Imported commits and pull requests in the project's activity feed. */
+  activity_count?: number;
+}
+
+/* ---- GitHub App: connect GitHub once per organization, then one repository per project ---- */
+
+export interface GitHubInstallationDto {
+  id: string;
+  github_installation_id: number;
+  account: string;
+  account_type: "User" | "Organization" | "Enterprise" | string;
+  repository_selection: "all" | "selected" | string | null;
+  status: "ACTIVE" | "SUSPENDED" | string;
+  version: number;
+  connected_at: string;
+  connected_by: string | null;
+  project_count: number;
+  /** Where the GitHub account owner changes which repositories the App can see. */
+  manage_url: string;
+}
+
+export interface GitHubAppStatusDto {
+  configured: boolean;
+  app_slug: string | null;
+  can_manage: boolean;
+  installations: GitHubInstallationDto[];
+}
+
+export interface GitHubCallbackResultDto {
+  installation_id: string;
+  account: string;
+  status: string;
+  return_to: string | null;
+}
+
+export interface GitHubRepoChoiceDto {
+  full_name: string;
+  default_branch: string;
+  private_repository: boolean;
+  description: string | null;
+  /** Another project of this organization already connected to it. */
+  used_by_project: string | null;
+}
+
+export interface GitHubChoiceDto {
+  installation_id: string;
+  repository: string;
+  branch: string;
+  expected_version?: number;
+}
+
+export interface GitHubCheckDto {
+  key: "repository_access" | "branch" | "commits" | "pull_requests" | "webhook" | "not_in_use" | string;
+  label: string;
+  ok: boolean;
+  detail: string;
+  required: boolean;
+}
+
+export interface GitHubValidationDto {
+  ok: boolean;
+  repository: string;
+  repository_url: string;
+  private_repository: boolean;
+  default_branch: string;
+  branch: string;
+  account: string;
+  installation_id: string;
+  checks: GitHubCheckDto[];
+}
+
+export interface GitHubConnectResultDto {
+  connection: GitHubConnectionDto;
+  imported: SyncResultDto;
+}
+
+export interface GitHubFeedItemDto {
+  id: string;
+  type: "COMMIT" | "PULL_REQUEST" | string;
+  sha: string | null;
+  pr_number: number | null;
+  title: string;
+  message: string | null;
+  author: string;
+  branch: string | null;
+  base_branch: string | null;
+  state: string | null;
+  url: string | null;
+  occurred_at: string;
+  additions: number | null;
+  deletions: number | null;
+  files_changed: number | null;
+  task_keys: string[];
+  source: string | null;
+}
+
+export interface GitHubFeedPageDto {
+  connected: boolean;
+  repository: string | null;
+  repository_url: string | null;
+  branch: string | null;
+  last_synced_at: string | null;
+  last_error: string | null;
+  items: GitHubFeedItemDto[];
+  total: number;
+  page: number;
+  size: number;
+  branches: string[];
+  authors: string[];
+}
+
+export interface GitHubFeedQuery {
+  type?: "COMMIT" | "PULL_REQUEST" | "";
+  branch?: string;
+  author?: string;
+  q?: string;
+  page?: number;
+  size?: number;
 }
 
 export interface GitHubActivityDto {
@@ -195,3 +322,51 @@ export interface ProgressPageDto {
 }
 
 export type ProgressSort = "name" | "progress" | "target" | "updated";
+
+/** Multi-step Create Project: the caller's own draft (never listed as a project until activated). */
+export interface DraftViewDto {
+  id: string;
+  status: "DRAFT" | "ACTIVATED" | "DISCARDED";
+  version: number;
+  name: string;
+  key: string;
+  description: string | null;
+  mode: DeliveryModeChoice;
+  start_on: string;
+  target_on: string;
+  documents: FileViewDto[];
+  phases: SetupPhaseDto[];
+  tasks: SetupTaskDto[];
+  team_lead_membership_id: string | null;
+  developer_membership_ids: string[];
+  qa_membership_ids: string[];
+  approver_membership_ids: string[];
+  repository: {
+    connected: boolean; repository: string | null; token_last4: string | null; url: string | null;
+    provider?: "GITHUB_APP" | "GITHUB_TOKEN" | string | null; branch?: string | null;
+    installation_id?: string | null; account?: string | null;
+  };
+  can_connect_repository: boolean;
+  project_id: string | null;
+}
+
+export interface DraftSummaryDto {
+  id: string;
+  name: string;
+  key: string;
+  mode: DeliveryModeChoice;
+  updated_at: string;
+  version: number;
+}
+
+export interface DraftBasicsDto {
+  name: string;
+  key: string;
+  description?: string | null;
+  mode: DeliveryModeChoice;
+  start_on: string;
+  target_on: string;
+}
+
+/** Where a repository is being chosen: an existing project, or the caller's own Create Project draft. */
+export type GitHubTarget = { projectId: string } | { draftId: string };

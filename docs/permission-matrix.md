@@ -15,6 +15,7 @@ resource state.
 | Viewer / Stakeholder | DENY | DENY | DENY | DENY | DENY | DENY | CONDITIONAL (permitted summaries) | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
 | Platform Operator | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
 | Project Approver (project-scoped) | DENY | DENY | DENY | DENY | DENY | DENY | CONDITIONAL (only the project it was granted on) | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | CONDITIONAL (only the project it was granted on, never own work) | DENY | DENY | DENY | DENY |
+| Project Repository Manager (project-scoped) | DENY | DENY | DENY | DENY | DENY | DENY | CONDITIONAL (only the project it was granted on) | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | CONDITIONAL (only the project it was granted on) | CONDITIONAL (only the project it was granted on) | DENY | DENY |
 
 `project.progress.verify` (task 2.2, owner decision) lets the lead of a project's team approve or reject
 Individual check-ins; it never applies to their own entries and grants nothing on other teams' projects.
@@ -31,3 +32,11 @@ never listed or assignable in role management. Approving a Team task or a Solo s
 grant: an organization-wide `task.review` (for example the QA / Reviewer template) does not make anyone an approver
 of a project they were not chosen for. Nobody approves their own work (assignee or submitter), and the approver must
 be an active member of the organization. The existing role templates were not widened.
+
+**Project Repository Manager (owner decision 2026-11-25).** Whoever creates a project, and the project's Project
+Manager, may connect that project's GitHub repository. This is a PROJECT-scoped grant of the narrow
+`PROJECT_REPO_MANAGER` template (`project.read`, `repo.connect`, `repo.read`) on that project only, given when the
+project is created (and to a newly named Project Manager); existing projects were backfilled by migration V42. The
+Project Manager template does NOT receive organization-wide `repo.connect`; Owner and Organization Admin keep theirs.
+While a project is still a draft, only its creator can see it and may verify and attach a repository to it. The
+database refuses an ORG-scope grant of the template, and role management never lists or assigns it.

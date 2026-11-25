@@ -62,7 +62,7 @@ export function operatorActions(op: AdminOperator): OperatorAction[] {
 export const OPERATOR_ACTION_LABELS: Record<OperatorAction, string> = {
   activate: "Activate",
   suspend: "Suspend",
-  "resend-invite": "Resend invitation",
+  "resend-invite": "Resend temporary password",
   "revoke-sessions": "Sign out all sessions",
 };
 
@@ -123,7 +123,7 @@ export function OperatorsView(props: OperatorsViewProps) {
     <div className="space-y-5">
       <PageHeader
         title="Platform Operators"
-        description="Operator accounts, their department access and sessions. New operators get an emailed invitation and stay Invited until they accept it."
+        description="Operator accounts, their department access and sessions. New operators get an email with a temporary password and stay Invited until they sign in and choose their own password."
         badge={ready ? `${rows.length} shown` : undefined}
         actions={
           <>
@@ -143,7 +143,7 @@ export function OperatorsView(props: OperatorsViewProps) {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
         <KpiCard label="Active" value={count((o) => o.status === "ACTIVE")} sublabel="In the loaded list" icon={UserCheck} tone="emerald" />
-        <KpiCard label="Invited" value={count((o) => o.status === "INVITED")} sublabel="Invitation not accepted" icon={Mail} tone="amber" />
+        <KpiCard label="Invited" value={count((o) => o.status === "INVITED")} sublabel="Not signed in yet" icon={Mail} tone="amber" />
         <KpiCard label="Suspended / inactive" value={count((o) => o.status === "SUSPENDED" || o.status === "INACTIVE")} icon={UserX} tone="rose" />
         <KpiCard label="On call" value={count((o) => o.on_call)} icon={PhoneCall} tone="blue" />
       </div>
@@ -453,7 +453,7 @@ export function OperatorFormModal({
       title={isCreate ? "Invite Operator" : `Edit ${operator.name}`}
       description={
         isCreate
-          ? "The operator is created as Invited and receives an email to set their password."
+          ? "The operator is created as Invited and receives an email with their sign-in email, a single-use temporary password (valid 72 hours) and the sign-in link. They choose their own password at first sign-in."
           : "Changing the department or access level signs the operator out of every session."
       }
       maxWidth="lg"

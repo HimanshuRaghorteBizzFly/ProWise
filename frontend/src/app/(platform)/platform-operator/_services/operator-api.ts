@@ -262,7 +262,17 @@ export function createOperatorConsoleApi(transport: OperationsTransport) {
     session: {
       /** Revokes every session of the signed-in operator, this one included. */
       logoutAll: () => call<OperatorMessage>("/v1/auth/operator/logout-all", { method: "POST" }),
-      /** Sends a password reset link to the operator's own address (the only password change path today). */
+      /**
+       * Changes the signed-in operator's password. Every earlier session ends (this one included); the response
+       * carries the fresh access token, which the caller must adopt. The refresh token arrives only as a cookie.
+       * 400: INVALID_CURRENT_PASSWORD, PASSWORD_REUSE, CURRENT_PASSWORD_REQUIRED, VALIDATION_FAILED (new_password).
+       */
+      changePassword: (currentPassword: string, newPassword: string) =>
+        call<{ access_token: string }>("/v1/auth/operator/change-password", {
+          method: "POST",
+          body: { current_password: currentPassword, new_password: newPassword },
+        }),
+      /** Sends a password reset link to the operator's own address. */
       requestPasswordReset: (email: string) =>
         call<OperatorMessage>("/v1/auth/operator/forgot-password", { method: "POST", body: { email } }),
     },

@@ -271,44 +271,144 @@ class RoleBasedLoginIntegrationTest {
     /* ================================================================== invitation activation */
 
     @Test
-    @DisplayName("An Owner adds a new person: the emailed single-use link creates the account with their own password")
-    void invitationCreatesTheAccount() throws Exception {
+    @DisplayName("An Owner adds a new person in any role: the email carries a temporary password and the first sign-in "
+            + "creates the account, joins the organization and opens that role's dashboard")
+    void temporaryPasswordInvitationSignsEachRoleIntoItsDashboard() throws Exception {
         UUID org = organization("acme");
         member(org, user("owner@acme.test", "VIEWER", "ACTIVE"), "ORGANIZATION_OWNER");
         String owner = login("owner@acme.test", PASSWORD).andReturn().body().path("access_token").asText();
 
+        int mailIndex = 0;
+        // TEAM_LEAD is not in this list: only that template holds project.progress.verify (V20, task 2.2), so no Owner
+        // can invite into it (least privilege). Its temporary-password sign-in is covered just below.
+        for (String role : List.of("ORGANIZATION_ADMIN", "PROJECT_MANAGER", "DEVELOPER", "QA_REVIEWER", "VIEWER")) {
+            String email = role.toLowerCase(java.util.Locale.ROOT).replace('_', '.') + "@acme.test";
+            mockMvc.perform(auth(post("/v1/organizations/{org}/invitations", org), owner).contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("email", email, "template_role_id", TEMPLATE.get(role)))))
+                    .andExpect(status().isCreated());
+            String html = CapturedMail.sentHtml(mailSender).get(mailIndex++);
+            assertThat(html).contains("acme").contains(email).contains("/login").doesNotContain("invitations/accept#token=");
+            String temporaryPassword = temporaryPasswordIn(html);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM users WHERE lower(email) = ?", Integer.class, email)).isZero();
+
+            login(email, temporaryPassword).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.target_dashboard_url").value("/org/" + org + "/" + SEGMENT.get(role) + "/dashboard"))
+                    .andExpect(jsonPath("$.must_change_password").value(false))
+                    .andExpect(jsonPath("$.signed_in_with_temporary_password").value(true))
+                    .andExpect(jsonPath("$.user.role").value(role));
+
+            assertThat(jdbc.queryForObject("SELECT status FROM users WHERE lower(email) = ?", String.class, email)).isEqualTo("ACTIVE");
+            assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE lower(email) = ?", String.class, email)).isEqualTo("ACCEPTED");
+            assertThat(jdbc.queryForObject("SELECT m.role_template FROM memberships m JOIN users u ON u.id = m.user_id "
+                    + "WHERE m.org_id = ? AND lower(u.email) = ?", String.class, org, email)).isEqualTo(role);
+            // From now on the temporary password is simply their password (until they change it in Settings).
+            login(email, temporaryPassword).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.signed_in_with_temporary_password").value(false));
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'invitation.accepted'", Integer.class)).isEqualTo(5);
+
+        // Team Lead: an open invitation whose secret is a temporary password signs in to the lead dashboard too.
+        UUID ownerId = jdbc.queryForObject("SELECT id FROM users WHERE email = 'owner@acme.test'", UUID.class);
+        String leadPassword = TemporaryPasswords.generate();
+        jdbc.update("INSERT INTO invitations (id, org_id, email, template_role_id, token_hash, expires_at, invited_by) "
+                        + "VALUES (?, ?, 'team.lead@acme.test', ?, ?, now() + interval '1 day', ?)",
+                UUID.randomUUID(), org, TEMPLATE.get("TEAM_LEAD"), HexFormat.of().formatHex(
+                        MessageDigest.getInstance("SHA-256").digest(leadPassword.getBytes(StandardCharsets.UTF_8))), ownerId);
+        login("team.lead@acme.test", leadPassword).andExpect(status().isOk())
+                .andExpect(jsonPath("$.target_dashboard_url").value("/org/" + org + "/lead/dashboard"))
+                .andExpect(jsonPath("$.user.role").value("TEAM_LEAD"));
+    }
+
+    @Test
+    @DisplayName("Temporary-password sign-in refuses wrong, expired, revoked and superseded passwords and creates nothing")
+    void temporaryPasswordInvitationRefusals() throws Exception {
+        UUID org = organization("acme");
+        member(org, user("owner@acme.test", "VIEWER", "ACTIVE"), "ORGANIZATION_OWNER");
+        String owner = login("owner@acme.test", PASSWORD).andReturn().body().path("access_token").asText();
+
+        JsonNode invite = json(mockMvc.perform(auth(post("/v1/organizations/{org}/invitations", org), owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("email", "late@acme.test", "template_role_id", TEMPLATE.get("DEVELOPER")))))
+                .andExpect(status().isCreated()).andReturn());
+        String first = temporaryPasswordIn(CapturedMail.sentHtml(mailSender).get(0));
+
+        login("late@acme.test", first + "x").andExpect(status().isUnauthorized());
+        login("other@acme.test", first).andExpect(status().isUnauthorized());
+
+        // Resend: the earlier temporary password stops working.
+        JsonNode resent = json(mockMvc.perform(auth(post("/v1/organizations/{org}/invitations/{id}/resend", org, invite.path("id").asText()), owner)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"expected_version\":" + invite.path("version").asLong() + "}"))
+                .andExpect(status().isOk()).andReturn());
+        String second = temporaryPasswordIn(CapturedMail.sentHtml(mailSender).get(1));
+        assertThat(second).isNotEqualTo(first);
+        login("late@acme.test", first).andExpect(status().isUnauthorized());
+
+        // Expired.
+        jdbc.update("UPDATE invitations SET expires_at = now() - interval '1 minute' WHERE email = 'late@acme.test'");
+        login("late@acme.test", second).andExpect(status().isUnauthorized());
+        jdbc.update("UPDATE invitations SET expires_at = now() + interval '1 day' WHERE email = 'late@acme.test'");
+
+        // Revoked.
+        mockMvc.perform(auth(post("/v1/organizations/{org}/invitations/{id}/revoke", org, invite.path("id").asText()), owner)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"expected_version\":" + resent.path("version").asLong() + "}"))
+                .andExpect(status().isOk());
+        login("late@acme.test", second).andExpect(status().isUnauthorized());
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM users WHERE lower(email) = 'late@acme.test'", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM memberships WHERE org_id = ?", Integer.class, org)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Two simultaneous first sign-ins with one temporary password create exactly one account and membership")
+    void concurrentTemporaryPasswordSignInsCreateOneAccount() throws Exception {
+        UUID org = organization("acme");
+        member(org, user("owner@acme.test", "VIEWER", "ACTIVE"), "ORGANIZATION_OWNER");
+        String owner = login("owner@acme.test", PASSWORD).andReturn().body().path("access_token").asText();
         mockMvc.perform(auth(post("/v1/organizations/{org}/invitations", org), owner).contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("email", "new.dev@acme.test", "template_role_id", TEMPLATE.get("DEVELOPER")))))
+                        .content(objectMapper.writeValueAsString(Map.of("email", "race@acme.test", "template_role_id", TEMPLATE.get("DEVELOPER")))))
+                .andExpect(status().isCreated());
+        String temporaryPassword = temporaryPasswordIn(CapturedMail.sentHtml(mailSender).get(0));
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(4);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<Integer>> results = new java.util.ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            results.add(pool.submit(() -> {
+                start.await();
+                return login("race@acme.test", temporaryPassword).actions().andReturn().getResponse().getStatus();
+            }));
+        }
+        start.countDown();
+        for (java.util.concurrent.Future<Integer> result : results) {
+            assertThat(result.get(30, java.util.concurrent.TimeUnit.SECONDS)).isIn(200, 401, 409);
+        }
+        pool.shutdown();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM users WHERE lower(email) = 'race@acme.test'", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM memberships m JOIN users u ON u.id = m.user_id "
+                + "WHERE lower(u.email) = 'race@acme.test'", Integer.class)).isEqualTo(1);
+        login("race@acme.test", temporaryPassword).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Someone who already has an account gets a sign-in-and-accept link, never a temporary password")
+    void existingAccountKeepsTheAcceptLink() throws Exception {
+        UUID org = organization("acme");
+        member(org, user("owner@acme.test", "VIEWER", "ACTIVE"), "ORGANIZATION_OWNER");
+        user("existing@acme.test", "VIEWER", "ACTIVE");
+        String owner = login("owner@acme.test", PASSWORD).andReturn().body().path("access_token").asText();
+        mockMvc.perform(auth(post("/v1/organizations/{org}/invitations", org), owner).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("email", "existing@acme.test", "template_role_id", TEMPLATE.get("DEVELOPER")))))
                 .andExpect(status().isCreated());
         String html = CapturedMail.sentHtml(mailSender).get(0);
-        assertThat(html).contains("acme").doesNotContain(PASSWORD).doesNotContainIgnoringCase("password:");
-        String token = CapturedMail.token(html, "invitations/accept#token=");
+        assertThat(html).contains("invitations/accept#token=").doesNotContain("Temporary password");
+        // Their own password is untouched.
+        login("existing@acme.test", PASSWORD).andExpect(status().isOk());
+    }
 
-        mockMvc.perform(post("/v1/invitations/public-preview").contentType(MediaType.APPLICATION_JSON).content(tokenBody(token)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.email").value("new.dev@acme.test"))
-                .andExpect(jsonPath("$.role_name").value("DEVELOPER"))
-                .andExpect(jsonPath("$.account_exists").value(false));
-
-        // A weak password is refused without using up the link.
-        mockMvc.perform(post("/v1/invitations/activate").contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("token", token, "password", "short", "name", "New Dev"))))
-                .andExpect(status().isBadRequest());
-        mockMvc.perform(post("/v1/invitations/activate").contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("token", token, "password", PASSWORD, "name", "New Dev"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.role_template").value("DEVELOPER"));
-        assertThat(jdbc.queryForObject("SELECT status FROM users WHERE email = 'new.dev@acme.test'", String.class)).isEqualTo("ACTIVE");
-        assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE email = 'new.dev@acme.test'", String.class)).isEqualTo("ACCEPTED");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'invitation.accepted'", Integer.class)).isEqualTo(1);
-
-        login("new.dev@acme.test", PASSWORD).andExpect(status().isOk())
-                .andExpect(jsonPath("$.target_dashboard_url").value("/org/" + org + "/developer/dashboard"));
-        // Single use.
-        mockMvc.perform(post("/v1/invitations/activate").contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("token", token, "password", PASSWORD))))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("INVITATION_INVALID"));
+    private static String temporaryPasswordIn(String html) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("Temporary password: ([A-Za-z0-9]+)").matcher(html);
+        assertThat(m.find()).as("temporary password in the email").isTrue();
+        return m.group(1);
     }
 
     @Test

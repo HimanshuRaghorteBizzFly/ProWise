@@ -96,6 +96,12 @@ export interface OperatorDashboardResponse {
 /** Older builds kept the operator access token here; it is removed on load and never written again. */
 const LEGACY_TOKEN_STORAGE_KEY = "prowise_operator_access_token";
 
+/**
+ * sessionStorage key used when the main /login page accepts an operator's emailed temporary password and hands the
+ * operator to /operator/login to choose a new one. The operator page removes it as soon as it reads it.
+ */
+export const OPERATOR_FIRST_LOGIN_KEY = "prowise_operator_first_login";
+
 /** Thrown for a non-2xx answer; keeps the HTTP status so a 401 can be told apart. */
 export class OperatorApiError extends Error {
   readonly status: number;

@@ -3,6 +3,7 @@ import {
   FolderGit2,
   LayoutDashboard,
   Mail,
+  Plug,
   ShieldCheck,
   Users,
   UsersRound,
@@ -34,7 +35,7 @@ const MEMBER_KEYS: readonly PermissionKey[] = ["member.invite", "member.disable"
 
 export function buildOrgNav(family: OrgNavFamily, orgId: string): OrgNavGroup[] {
   const base = `/org/${orgId}/${family}`;
-  // Health, reports, integrations, notifications, audit, privacy and organization settings have no API yet: hidden.
+  // Health, reports, notifications, audit, privacy and organization settings have no API yet: hidden.
   return [
     {
       title: "Overview",
@@ -56,6 +57,10 @@ export function buildOrgNav(family: OrgNavFamily, orgId: string): OrgNavGroup[] 
         { label: "Projects portfolio", href: `${base}/projects`, icon: FolderGit2, requiredAny: ["project.read"] },
         { label: "Progress", href: `${base}/progress`, icon: Activity, requiredAny: ["project.read"] },
       ],
+    },
+    {
+      title: "Settings",
+      items: [{ label: "Integrations", href: `${base}/integrations`, icon: Plug, requiredAny: ["repo.connect"] }],
     },
   ];
 }

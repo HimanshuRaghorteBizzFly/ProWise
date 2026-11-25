@@ -2,7 +2,6 @@ package com.prowise.superadmin.plans;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -19,12 +18,10 @@ import com.prowise.superadmin.audit.AuditService;
 public class PlanService {
 
     private final PlanRepository planRepository;
-    private final PlanFeatureRepository featureRepository;
     private final AuditService auditService;
 
-    public PlanService(PlanRepository planRepository, PlanFeatureRepository featureRepository, AuditService auditService) {
+    public PlanService(PlanRepository planRepository, AuditService auditService) {
         this.planRepository = planRepository;
-        this.featureRepository = featureRepository;
         this.auditService = auditService;
     }
 
@@ -68,18 +65,13 @@ public class PlanService {
         if (request.limits() != null) {
             applyLimits(plan, request.limits());
         }
-
-        PlanEntity saved = planRepository.save(plan);
-
-        if (request.features() != null && !request.features().isEmpty()) {
-            List<PlanFeatureEntity> features = new ArrayList<>();
-            int order = 1;
-            for (String feat : request.features()) {
-                features.add(new PlanFeatureEntity(saved, feat, order++));
-            }
-            featureRepository.saveAll(features);
-            saved.setFeatures(features);
+        if (request.features() != null) {
+            replaceFeatures(plan, request.features());
         }
+
+        // Features are persisted through the plan's cascade; saving them separately would merge copies of the
+        // same ids into the session and fail with NonUniqueObjectException.
+        PlanEntity saved = planRepository.save(plan);
         planRepository.flush();
 
         audit("CREATE_PLAN", "Created plan " + saved.getName() + " (" + saved.getCode() + ")", actorEmail, saved, "INFO");
@@ -106,14 +98,8 @@ public class PlanService {
         }
 
         if (request.features() != null) {
-            featureRepository.deleteByPlanId(id);
-            List<PlanFeatureEntity> features = new ArrayList<>();
-            int order = 1;
-            for (String feat : request.features()) {
-                features.add(new PlanFeatureEntity(plan, feat, order++));
-            }
-            featureRepository.saveAll(features);
-            plan.setFeatures(features);
+            // orphanRemoval deletes the old rows; cascade inserts the new ones.
+            replaceFeatures(plan, request.features());
         }
 
         // updated_at always changes, so the plan row (and its @Version) is written even for feature-only edits.
@@ -150,6 +136,16 @@ public class PlanService {
 
     private PlanEntity find(String id) {
         return planRepository.findById(id).orElseThrow(ApiException::notFound);
+    }
+
+    /** Replaces the plan's features in place, keeping the managed collection Hibernate tracks. */
+    private static void replaceFeatures(PlanEntity plan, List<String> texts) {
+        plan.getFeatures().clear();
+        int order = 1;
+        for (String text : texts) {
+            if (text == null || text.isBlank()) continue;
+            plan.getFeatures().add(new PlanFeatureEntity(plan, text.trim(), order++));
+        }
     }
 
     private static void applyLimits(PlanEntity plan, PlanDTOs.PlanLimitsDTO limits) {

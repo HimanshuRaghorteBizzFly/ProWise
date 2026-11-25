@@ -196,9 +196,9 @@ export const EMAIL_TEMPLATE_PRESETS: EmailTemplatePreset[] = [
     headline: "Join the {{platformName}} operations team",
     paragraphs: [
       "Hi {{operatorName}}, you have been invited to join {{platformName}} as a platform operator.",
-      "Accept the invitation to set your password and sign in. The invitation link expires after a limited time.",
+      "Sign in with your email and the temporary password in this email; you will choose your own password at first sign-in. The temporary password works once and expires after 72 hours.",
     ],
-    ctaLabel: "Accept invitation",
+    ctaLabel: "Sign in to ProWise",
     ctaUrl: "{{invitationLink}}",
   }),
   preset({

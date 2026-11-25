@@ -111,6 +111,33 @@ public class TokenGitHubClient implements GitHubClient {
         return result;
     }
 
+    @Override
+    public boolean branchExists(Credential credential, String owner, String repo, String branch) {
+        try {
+            get(credential, repoPath(owner, repo) + "/branches/" + ref(branch));
+            return true;
+        } catch (GitHubException e) {
+            if (e.status() == 404) return false;
+            throw e;
+        }
+    }
+
+    @Override
+    public ChangeStats commitStats(Credential credential, String owner, String repo, String sha) {
+        if (sha == null || !sha.matches("^[0-9a-fA-F]{7,64}$")) throw new GitHubException(400, "Invalid commit id.");
+        JsonNode node = get(credential, repoPath(owner, repo) + "/commits/" + sha);
+        return new ChangeStats(node.path("stats").path("additions").asInt(0), node.path("stats").path("deletions").asInt(0),
+                node.path("files").size());
+    }
+
+    @Override
+    public PullRequestStats pullRequestStats(Credential credential, String owner, String repo, int number) {
+        JsonNode node = get(credential, repoPath(owner, repo) + "/pulls/" + number);
+        return new PullRequestStats(node.path("additions").asInt(0), node.path("deletions").asInt(0),
+                node.path("changed_files").asInt(0), node.path("merged").asBoolean(false),
+                node.path("base").path("ref").asText(null));
+    }
+
     /* ------------------------------------------------------------------ helpers */
 
     private Commit commit(JsonNode node) {
@@ -141,8 +168,11 @@ public class TokenGitHubClient implements GitHubClient {
             throw new GitHubException(503, "The GitHub request was interrupted.");
         }
         int status = response.statusCode();
-        if (status == 401) throw new GitHubException(401, "GitHub refused the token (expired or revoked).");
-        if (status == 403) throw new GitHubException(403, "The token has no read access to this repository, or the rate limit was hit.");
+        boolean rateLimited = status == 429 || (status == 403
+                && "0".equals(response.headers().firstValue("X-RateLimit-Remaining").orElse(null)));
+        if (rateLimited) throw new GitHubException(429, "GitHub's rate limit was reached. Try again in a few minutes.");
+        if (status == 401) throw new GitHubException(401, "GitHub refused the token: it is wrong, expired or revoked.");
+        if (status == 403) throw new GitHubException(403, "The token has no read access to this repository.");
         if (status == 404) throw new GitHubException(404, "The repository was not found or the token cannot see it.");
         if (status >= 400) throw new GitHubException(502, "GitHub answered with status " + status + ".");
         try {

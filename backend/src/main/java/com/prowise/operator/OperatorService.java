@@ -146,14 +146,14 @@ public class OperatorService {
         entity.setRoleId(roleId);
         entity.setAccessLevel(accessLevel);
         entity.setDepartmentId(deptId);
-        // Always INVITED: an operator becomes ACTIVE only by accepting the emailed invitation.
+        // Always INVITED: an operator becomes ACTIVE only by replacing the emailed temporary password.
         entity.setStatus("INVITED");
         entity.setMfaEnabled(req.mfaEnabled() != null ? req.mfaEnabled() : true);
         entity.setOnCall(req.onCall() != null ? req.onCall() : false);
         entity.setShiftName(req.shiftName() != null ? req.shiftName() : "Americas Primary (08:00 - 17:00)");
         if (passwordEncoder != null) {
-            // No shared default password: the hash protects a random value nobody knows. The operator
-            // chooses a password by accepting the emailed invitation.
+            // No shared default password: the hash protects a random value nobody knows. The operator signs in
+            // with the emailed single-use temporary password and must choose their own password first.
             entity.setPasswordHash(passwordEncoder.encode(OperatorAuthService.randomToken()));
             entity.setPasswordSetupCompleted(false);
         }
@@ -575,8 +575,9 @@ public class OperatorService {
     }
 
     /**
-     * Expires every open invitation of the operator, stores the hash of a new 72-hour token and emails the link.
-     * The raw token exists only in that email. Returns the delivery status for the audit trail.
+     * Expires every open invitation of the operator, stores the hash of a new single-use 72-hour temporary password
+     * and emails it with the sign-in link. The temporary password exists only in that email (never logged or
+     * audited); signing in with it asks for a new password before any session. Returns the delivery status.
      */
     private String issueInvitation(PlatformOperatorEntity op) {
         if (invitationRepository == null) {
@@ -589,13 +590,13 @@ public class OperatorService {
                 invitationRepository.save(open);
             }
         }
-        String rawInviteToken = OperatorAuthService.randomToken();
+        String temporaryPassword = OperatorAuthService.temporaryPassword();
         invitationRepository.save(new OperatorInvitationEntity(
-                op.getId(), op.getEmail(), OperatorAuthService.hash(rawInviteToken), now.plus(INVITATION_LIFETIME)));
+                op.getId(), op.getEmail(), OperatorAuthService.hash(temporaryPassword), now.plus(INVITATION_LIFETIME)));
         if (emailCredentialService == null) {
             return "NOT_SENT";
         }
-        return emailCredentialService.sendOperatorInvitationEmail(op.getEmail(), op.getName(), rawInviteToken).status();
+        return emailCredentialService.sendOperatorWelcomeEmail(op.getEmail(), op.getName(), temporaryPassword).status();
     }
 
     public OperatorDTOs.OperatorResponse updateOperatorStatus(String id, String targetStatus, Long expectedVersion, String actor) {

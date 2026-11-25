@@ -148,14 +148,21 @@ class CalendarCadenceIntegrationTest {
                             "status": "ACTIVE",
                             "priority": "HIGH",
                             "accountable_membership_id": "%s",
-                            "timezone": "%s",
-                            "start_on": "%s",
-                            "target_on": "%s"
+                            "timezone": "%s"
                         }
-                        """.formatted(key, name, membershipOf(ws, devId), timezone != null ? timezone : "Europe/London",
-                                localDate(startDate), localDate(targetDate))))
+                        """.formatted(key, name, membershipOf(ws, devId), timezone != null ? timezone : "Europe/London")))
                 .andExpect(status().isCreated()).andReturn();
-        return json(res).path("id").asText();
+        String id = json(res).path("id").asText();
+        // The calendar fixtures use fixed historical dates (a project created earlier). The API refuses a start date in
+        // the past on create, so the dates are placed on the existing project directly.
+        String zone = timezone != null ? timezone : "Europe/London";
+        java.time.LocalDate start = startDate == null ? null : java.time.LocalDate.parse(localDate(startDate));
+        java.time.LocalDate target = targetDate == null ? null : java.time.LocalDate.parse(localDate(targetDate));
+        jdbc.update("UPDATE projects SET start_on = ?, target_on = ?, start_date = ?, target_date = ? WHERE id = ?",
+                start == null ? null : java.sql.Date.valueOf(start), target == null ? null : java.sql.Date.valueOf(target),
+                start == null ? null : java.sql.Timestamp.from(start.atStartOfDay(java.time.ZoneId.of(zone)).toInstant()),
+                target == null ? null : java.sql.Timestamp.from(target.atStartOfDay(java.time.ZoneId.of(zone)).toInstant()), id);
+        return id;
     }
 
     // =========================================================================

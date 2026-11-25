@@ -2,15 +2,17 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ApiError, apiClient } from "@/lib/api";
-import { establishSession } from "@/lib/session";
 import { mocksAllowed, previewEnabled, readPermissionEnv } from "@/lib/permissions";
 import { useAuthStore } from "@/store/auth-store";
-import { useSuperAdminStore } from "@/app/(platform)/super-admin/_store/useSuperAdminStore";
 import { usePlatformOperatorStore } from "@/app/(platform)/platform-operator/_store/usePlatformOperatorStore";
-import { operatorAuthService } from "@/app/(platform)/platform-operator/_services/operator-auth-service";
+import {
+  OPERATOR_FIRST_LOGIN_KEY,
+  OperatorApiError,
+  operatorAuthService,
+} from "@/app/(platform)/platform-operator/_services/operator-auth-service";
 import { applyLoginResponse } from "@/lib/auth-session";
+import { attemptLogin, loginErrorMessage } from "@/lib/login-flow";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -148,7 +150,6 @@ function loginFailureMessage(error: unknown): string {
 }
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -188,29 +189,55 @@ export default function LoginPage() {
 
     setIsLoading(true);
     try {
-      // The server decides where this account lands: platform dashboards only for real platform accounts,
-      // otherwise from the ACTIVE memberships (one workspace, the workspace picker, or "no workspace yet").
-      const response = await apiClient.login({ email: cleanEmail, password: targetPass });
-      if (response.must_change_password) {
-        router.replace("/change-password");
+      const attempt = await attemptLogin(apiClient.login, cleanEmail, targetPass);
+
+      if (!attempt.ok) {
+        const backendError = attempt.error;
+
+        // A platform operator signs in through the operator endpoint with the same form.
+        if (backendError.status === 401 && backendError.code === "INVALID_CREDENTIALS") {
+          const operatorResult = await tryOperatorLogin(cleanEmail, targetPass);
+          if (operatorResult.destination) {
+            window.location.assign(operatorResult.destination);
+            return;
+          }
+          if (operatorResult.message) {
+            // The account is an operator and the password was right, but sign-in cannot finish (locked, inactive...).
+            setLoginError(operatorResult.message);
+            toast.error(operatorResult.message);
+            setIsLoading(false);
+            return;
+          }
+        }
+
+        const message = loginErrorMessage(backendError);
+        setLoginError(message);
+        toast.error(message);
+        setIsLoading(false);
         return;
       }
-      const session = await establishSession();
-      const destination = session.target || response.target_dashboard_url;
 
-      if (session.platform && session.role === "SUPER_ADMIN") {
-        try {
-          useSuperAdminStore.getState().setActiveRolePreview("role-sa");
-        } catch {}
-      } else if (session.platform && session.role === "PLATFORM_OPERATOR") {
-        try {
-          usePlatformOperatorStore.getState().updateAccountSettings({
-            name: session.user.name,
-            email: cleanEmail,
-          });
-        } catch {}
+      const response = attempt.response;
+      if (response.must_change_password) {
+        applyLoginResponse(response);
+        toast.info("Temporary password detected. Please set your new password.");
+        window.location.assign("/change-password");
+        return;
       }
-      router.replace(destination);
+
+      // The role and destination come only from the server's answer.
+      const destination = applyLoginResponse(response);
+      const roleText = (response.user.role ?? "member").replace(/_/g, " ").toLowerCase();
+      toast.success(
+        response.requires_organization_selection
+          ? "Signed in. Choose the organization to open."
+          : `Signed in as ${roleText}.`,
+      );
+      if (response.signed_in_with_temporary_password) {
+        // Survives the page change below: the dashboard shows it once (see TemporaryPasswordReminder).
+        sessionStorage.setItem("prowise_temporary_password_reminder", "1");
+      }
+      window.location.assign(destination);
     } catch (err) {
       setLoginError(loginFailureMessage(err));
     } finally {
@@ -218,8 +245,14 @@ export default function LoginPage() {
     }
   };
 
-  /** Platform Operator sign-in on the common page. Returns the dashboard, or null when the credentials are not an operator's. */
-  const tryOperatorLogin = async (operatorEmail: string, operatorPassword: string): Promise<string | null> => {
+  /**
+   * Platform Operator sign-in through the real operator endpoint. Returns where to go, an operator-specific message
+   * (locked, inactive...), or neither when the account is simply not an operator / the password is wrong.
+   */
+  const tryOperatorLogin = async (
+    operatorEmail: string,
+    operatorPassword: string,
+  ): Promise<{ destination?: string; message?: string }> => {
     try {
       const res = await operatorAuthService.login(operatorEmail, operatorPassword, false);
       usePlatformOperatorStore.getState().updateAccountSettings({
@@ -233,13 +266,23 @@ export default function LoginPage() {
       useAuthStore.getState().setCurrentRole("PLATFORM_OPERATOR");
       useAuthStore.getState().login(res.operator.email, "PLATFORM_OPERATOR");
       toast.success(`Welcome back, ${res.operator.name}.`);
-      return "/platform-operator/dashboard";
-    } catch (operatorError) {
-      // A real operator refusal (suspended, setup unfinished, locked) is shown as-is; anything else means the
-      // address is not an operator, and the member login's "invalid credentials" answer stands.
-      const message = operatorError instanceof Error ? operatorError.message : "";
-      if (/suspend|disabled|locked|setup|invitation/i.test(message)) throw operatorError;
-      return null;
+      return { destination: "/platform-operator/dashboard" };
+    } catch (err) {
+      const code = err instanceof OperatorApiError ? err.code : undefined;
+      if (code === "PASSWORD_CHANGE_REQUIRED") {
+        // The emailed temporary password was right; the operator page asks for a new one. Handed over in this
+        // tab's sessionStorage (never in the URL) and removed as soon as that page reads it.
+        sessionStorage.setItem(
+          OPERATOR_FIRST_LOGIN_KEY,
+          JSON.stringify({ email: operatorEmail, temporaryPassword: operatorPassword }),
+        );
+        toast.info("Choose your own password to finish signing in.");
+        return { destination: "/operator/login?first-login=1" };
+      }
+      if (err instanceof OperatorApiError && code && code !== "INVALID_CREDENTIALS" && !code.startsWith("HTTP_")) {
+        return { message: err.message };
+      }
+      return {};
     }
   };
 

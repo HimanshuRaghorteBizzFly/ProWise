@@ -42,13 +42,56 @@ public class GitHubWebhookService {
     private final GitHubService github;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactions;
+    private final GitHubAppApi app;
+    private final GitHubAppService installations;
 
     public GitHubWebhookService(JdbcTemplate jdbc, GitHubService github, ObjectMapper objectMapper,
-            TransactionTemplate transactions) {
+            TransactionTemplate transactions, GitHubAppApi app, GitHubAppService installations) {
         this.jdbc = jdbc;
         this.github = github;
         this.objectMapper = objectMapper;
         this.transactions = transactions;
+        this.app = app;
+        this.installations = installations;
+    }
+
+    /**
+     * The Prowise GitHub App's webhook ({@code POST /v1/integrations/github/app/webhook}): signed with the App's webhook
+     * secret. installation / installation_repositories update the organization's installation and its links; push and
+     * pull_request go to the project linked to that repository through that installation (none = ignored).
+     */
+    public Result receiveApp(String event, String deliveryId, String signature, byte[] body) {
+        String secret = app.webhookSecret();
+        if (secret == null || secret.isBlank()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "The requested resource was not found.");
+        }
+        if (!validSignature(secret, signature, body)) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_SIGNATURE", "The webhook signature does not match.");
+        }
+        if (deliveryId == null || deliveryId.isBlank() || deliveryId.length() > 100) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "X-GitHub-Delivery is required.");
+        }
+        String type = event == null ? "" : event.trim();
+        JsonNode payload = json(body);
+        if ("ping".equals(type)) return new Result("pong", 0);
+        if ("installation".equals(type) || "installation_repositories".equals(type)) {
+            transactions.executeWithoutResult(status -> installations.installationEvent(type, payload));
+            return new Result("processed", 0);
+        }
+        long installationId = payload.path("installation").path("id").asLong(0);
+        String repository = payload.path("repository").path("full_name").asText("");
+        GitHubService.Connection connection = installationId <= 0 || repository.isEmpty() ? null
+                : github.byInstallationRepository(installationId, repository);
+        if (connection == null) return new Result("ignored", 0);
+        return process(connection, type, deliveryId.trim(), payload);
+    }
+
+    private JsonNode json(byte[] body) {
+        try {
+            return objectMapper.readTree(body);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "The webhook body is not JSON.");
+        }
     }
 
     public Result receive(String connectionId, String event, String deliveryId, String signature, byte[] body) {
@@ -61,25 +104,23 @@ public class GitHubWebhookService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "X-GitHub-Delivery is required.");
         }
         String type = event == null ? "" : event.trim();
-        JsonNode payload;
-        try {
-            payload = objectMapper.readTree(body);
-        } catch (Exception e) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "The webhook body is not JSON.");
-        }
+        JsonNode payload = json(body);
         String repository = payload.path("repository").path("full_name").asText("");
         if (!"ping".equals(type) && !repository.equalsIgnoreCase(connection.repository())) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "REPOSITORY_MISMATCH",
                     "This webhook is for a different repository than the connected one.");
         }
+        return process(connection, type, deliveryId.trim(), payload);
+    }
 
+    private Result process(GitHubService.Connection connection, String type, String deliveryId, JsonNode payload) {
         // The delivery row and everything it links commit together: a failure stores nothing, so GitHub's retry of
         // the same delivery is processed again; a successful delivery replayed later is ignored.
         return transactions.execute(status -> {
             int firstTime = jdbc.update("""
                     INSERT INTO github_webhook_deliveries (connection_id, delivery_id, org_id, event) VALUES (?, ?, ?, ?)
                     ON CONFLICT DO NOTHING
-                    """, connection.id(), deliveryId.trim(), connection.orgId(), type.isEmpty() ? "unknown" : type);
+                    """, connection.id(), deliveryId, connection.orgId(), type.isEmpty() ? "unknown" : type);
             if (firstTime == 0) return new Result("duplicate", 0);
             if (!"push".equals(type) && !"pull_request".equals(type)) return new Result("ignored", 0);
 
@@ -92,7 +133,7 @@ public class GitHubWebhookService {
                     ? push(connection, payload, matcher, projectKey, solo)
                     : pullRequest(connection, payload, matcher, projectKey, solo);
             jdbc.update("UPDATE github_webhook_deliveries SET matched = ? WHERE connection_id = ? AND delivery_id = ?",
-                    linked, connection.id(), deliveryId.trim());
+                    linked, connection.id(), deliveryId);
             return new Result("processed", linked);
         });
     }
@@ -102,11 +143,14 @@ public class GitHubWebhookService {
         String ref = payload.path("ref").asText("");
         String branch = ref.startsWith("refs/heads/") ? ref.substring("refs/heads/".length()) : null;
         int linked = 0;
+        List<GitHubService.FeedItem> feed = new ArrayList<>();
         for (JsonNode node : payload.path("commits")) {
             String message = node.path("message").asText("");
             GitHubClient.Commit commit = new GitHubClient.Commit(node.path("id").asText(), message,
                     node.path("author").path("name").asText(null), node.path("author").path("username").asText(null),
                     instant(node.path("timestamp").asText(null)), node.path("url").asText(null));
+            // Every pushed commit joins the project's activity feed (stats are filled by the next Sync).
+            if (!commit.sha().isBlank()) feed.add(GitHubService.FeedItem.commit(commit, branch, null));
             if (solo) {
                 if (matcher.mentionsProject(message) || (branch != null && matcher.mentionsProject(branch))) {
                     linked += store(connection, null, projectKey, List.of(GitHubService.Linked.commit(commit, branch, "MESSAGE")));
@@ -126,6 +170,7 @@ public class GitHubWebhookService {
                 }
             }
         }
+        github.storeFeed(connection, feed, "WEBHOOK", null);
         return linked;
     }
 
@@ -136,6 +181,11 @@ public class GitHubWebhookService {
                 pr.path("head").path("ref").asText(null), pr.path("user").path("login").asText(null),
                 instant(pr.path("updated_at").asText(null)), pr.path("html_url").asText(null),
                 pr.path("merged").asBoolean(false) ? "merged" : pr.path("state").asText(null));
+        // The pull_request payload carries its code-change stats.
+        github.storeFeed(connection, List.of(GitHubService.FeedItem.pullRequest(pull, pr.has("additions")
+                ? new GitHubClient.PullRequestStats(pr.path("additions").asInt(0), pr.path("deletions").asInt(0),
+                        pr.path("changed_files").asInt(0), pr.path("merged").asBoolean(false), pr.path("base").path("ref").asText(null))
+                : null)), "WEBHOOK", null);
         if (solo) {
             boolean mentioned = matcher.mentionsProject(pull.title()) || (pull.branch() != null && matcher.mentionsProject(pull.branch()));
             return mentioned ? store(connection, null, projectKey, List.of(GitHubService.Linked.pullRequest(pull))) : 0;

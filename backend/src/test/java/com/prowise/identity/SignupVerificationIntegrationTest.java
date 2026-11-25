@@ -265,6 +265,84 @@ class SignupVerificationIntegrationTest {
         assertThat(output.getAll()).doesNotContain(PASSWORD).doesNotContain(token);
     }
 
+    // ---------------------------------------------------------------- organization signup
+
+    @Test
+    void anOrganizationSignupCreatesTheWorkspaceOnConfirmationAndSignsInAsItsOwner() throws Exception {
+        signupWorkspace(email, "Acme Health Technologies", "Asia/Kolkata").andExpect(status().isAccepted());
+        UUID userId = jdbc.queryForObject("SELECT id FROM users WHERE lower(email) = ?", UUID.class, email);
+
+        // Nothing is created before the address is confirmed.
+        assertThat(count("SELECT count(*) FROM memberships WHERE user_id = ?", userId)).isZero();
+        assertThat(count("SELECT count(*) FROM organizations WHERE name = 'Acme Health Technologies'")).isZero();
+
+        String token = CapturedMail.token(CapturedMail.sentHtml(mailSender).get(0), VERIFY_LINK);
+        verifyEmail(token).andExpect(status().isNoContent());
+
+        Map<String, Object> org = jdbc.queryForMap(
+                "SELECT o.id, o.slug, o.timezone FROM organizations o JOIN memberships m ON m.org_id = o.id WHERE m.user_id = ?", userId);
+        assertThat(org).containsEntry("slug", "acme-health-technologies").containsEntry("timezone", "Asia/Kolkata");
+        assertThat(jdbc.queryForObject("SELECT role_template FROM memberships WHERE user_id = ?", String.class, userId))
+                .isEqualTo("ORGANIZATION_OWNER");
+        // Rule 4: the organization's audit row and OrganizationCreated event were written with it.
+        assertThat(count("SELECT count(*) FROM audit_log WHERE org_id = ? AND action = 'organization.created'", org.get("id"))).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM outbox_event WHERE org_id = ? AND event_type = 'OrganizationCreated'", org.get("id"))).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM pending_signup_workspaces WHERE user_id = ?", userId)).isZero();
+
+        // First sign-in lands directly on the owner dashboard of the new workspace.
+        login(email, PASSWORD).andExpect(status().isOk())
+                .andExpect(jsonPath("$.target_dashboard_url").value("/org/" + org.get("id") + "/owner/dashboard"));
+
+        // A replayed link creates nothing more.
+        verifyEmail(token).andExpect(status().isBadRequest());
+        assertThat(count("SELECT count(*) FROM memberships WHERE user_id = ?", userId)).isEqualTo(1);
+    }
+
+    @Test
+    void twoWorkspacesWithTheSameNameGetDistinctAddresses() throws Exception {
+        String second = "self2." + UUID.randomUUID().toString().substring(0, 8) + "@test.prowise";
+        signupWorkspace(email, "Same Name Studio", "UTC").andExpect(status().isAccepted());
+        signupWorkspace(second, "Same Name Studio", "UTC").andExpect(status().isAccepted());
+        for (String html : CapturedMail.sentHtml(mailSender)) {
+            verifyEmail(CapturedMail.token(html, VERIFY_LINK)).andExpect(status().isNoContent());
+        }
+        List<String> slugs = jdbc.queryForList("SELECT slug FROM organizations WHERE name = 'Same Name Studio'", String.class);
+        assertThat(slugs).hasSize(2).doesNotHaveDuplicates().allMatch(s -> s.startsWith("same-name-studio"));
+    }
+
+    @Test
+    void invalidWorkspaceDetailsAreRejectedAndNothingIsStored() throws Exception {
+        signupWorkspace(email, "Acme", "Mars/Olympus").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.field_errors[0].field").value("timezone"));
+        signupWorkspace(email, "A", "UTC").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.field_errors[0].field").value("organization_name"));
+        signupWorkspace(email, "!!! ###", "UTC").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.field_errors[0].field").value("organization_name"));
+        signupWorkspace(email, "Acme Health", null).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.field_errors[0].field").value("timezone"));
+        assertThat(count("SELECT count(*) FROM users WHERE lower(email) = ?", email)).isZero();
+    }
+
+    @Test
+    void aRepeatedSignupWhilePendingDoesNotChangeTheRequestedWorkspace() throws Exception {
+        signupWorkspace(email, "Original Workspace", "UTC").andExpect(status().isAccepted());
+        signupWorkspace(email, "Hijacked Workspace", "UTC").andExpect(status().isAccepted());
+        List<String> html = CapturedMail.sentHtml(mailSender);
+        verifyEmail(CapturedMail.token(html.get(html.size() - 1), VERIFY_LINK)).andExpect(status().isNoContent());
+        assertThat(jdbc.queryForList("SELECT o.name FROM organizations o JOIN memberships m ON m.org_id = o.id "
+                + "JOIN users u ON u.id = m.user_id WHERE lower(u.email) = ?", String.class, email))
+                .containsExactly("Original Workspace");
+    }
+
+    private ResultActions signupWorkspace(String address, String organizationName, String timezone) throws Exception {
+        Map<String, Object> body = new java.util.HashMap<>(Map.of("email", address, "password", PASSWORD, "name", "Org Founder",
+                "organization_name", organizationName));
+        if (timezone != null) body.put("timezone", timezone);
+        String client = TestAccounts.randomClientAddress();
+        return mockMvc.perform(post("/v1/auth/signup").with(request -> { request.setRemoteAddr(client); return request; })
+                .contentType("application/json").content(objectMapper.writeValueAsString(body)));
+    }
+
     private ResultActions signup(String address, String password) throws Exception {
         return signupFrom(TestAccounts.randomClientAddress(), address, password);
     }

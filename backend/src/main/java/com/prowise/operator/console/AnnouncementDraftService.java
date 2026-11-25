@@ -46,6 +46,12 @@ public class AnnouncementDraftService {
     static final String CHANGES_REQUESTED = "CHANGES_REQUESTED";
     private static final Set<String> EDITABLE = Set.of("DRAFT", CHANGES_REQUESTED);
     private static final Pattern CODE = Pattern.compile("[A-Z][A-Z0-9_]{0,39}");
+    /** Content rules shared with the operator form (announcement-drafts page). */
+    static final int TITLE_MIN = 5;
+    static final int MESSAGE_MIN = 20;
+    static final int MESSAGE_MIN_WORDS = 3;
+    /** A proposed publish time may lag "now" by this much (client clock, time to submit) before it counts as past. */
+    private static final java.time.Duration SCHEDULE_CLOCK_SKEW = java.time.Duration.ofMinutes(1);
 
     private final JdbcTemplate jdbc;
     private final NamedParameterJdbcTemplate named;
@@ -200,16 +206,31 @@ public class AnnouncementDraftService {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, "The request has invalid fields.",
                     List.of(new ApiError.FieldError("title", "is required"), new ApiError.FieldError("message", "is required")));
         }
-        String title = req.title() == null ? "" : req.title().trim();
+        String title = req.title() == null ? "" : req.title().trim().replaceAll("\\s+", " ");
         String message = req.message() == null ? "" : req.message().trim();
         if (title.isEmpty()) errors.add(new ApiError.FieldError("title", "is required"));
+        else if (title.length() < TITLE_MIN) errors.add(new ApiError.FieldError("title", "must be at least " + TITLE_MIN + " characters"));
         else if (title.length() > 255) errors.add(new ApiError.FieldError("title", "must be at most 255 characters"));
+        else if (letters(title) < 3) errors.add(new ApiError.FieldError("title", "must contain words, not only numbers or symbols"));
         if (message.isEmpty()) errors.add(new ApiError.FieldError("message", "is required"));
+        else if (message.length() < MESSAGE_MIN) errors.add(new ApiError.FieldError("message", "must be at least " + MESSAGE_MIN + " characters"));
         else if (message.length() > 20_000) errors.add(new ApiError.FieldError("message", "must be at most 20000 characters"));
+        else if (message.split("\\s+").length < MESSAGE_MIN_WORDS) {
+            errors.add(new ApiError.FieldError("message", "must be at least " + MESSAGE_MIN_WORDS + " words"));
+        }
         String type = req.type() == null || req.type().isBlank() ? "INFO" : upper(req.type());
         if (!CODE.matcher(type).matches()) errors.add(new ApiError.FieldError("type", "must be letters, digits and underscores"));
         String audience = req.targetAudience() == null || req.targetAudience().isBlank() ? "ALL_ORGS" : upper(req.targetAudience());
         if (!CODE.matcher(audience).matches()) errors.add(new ApiError.FieldError("target_audience", "must be letters, digits and underscores"));
+        if ("BY_PLAN".equals(audience) && clean(req.targetPlans()).isEmpty()) {
+            errors.add(new ApiError.FieldError("target_plans", "must list at least one plan for this audience"));
+        }
+        if ("SPECIFIC_ORGS".equals(audience) && clean(req.targetOrgIds()).isEmpty()) {
+            errors.add(new ApiError.FieldError("target_org_ids", "must list at least one organization for this audience"));
+        }
+        if (req.scheduledFor() != null && req.scheduledFor().isBefore(Instant.now().minus(SCHEDULE_CLOCK_SKEW))) {
+            errors.add(new ApiError.FieldError("scheduled_for", "must be in the future"));
+        }
         if (req.scheduledFor() != null && req.expiresAt() != null && req.expiresAt().isBefore(req.scheduledFor())) {
             errors.add(new ApiError.FieldError("expires_at", "must not be before scheduled_for"));
         }
@@ -218,6 +239,10 @@ public class AnnouncementDraftService {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, "The request has invalid fields.", errors);
         }
         return new Fields(title, message, type, audience, clean(req.targetPlans()), clean(req.targetOrgIds()), clean(channels));
+    }
+
+    private static long letters(String value) {
+        return value.codePoints().filter(Character::isLetter).count();
     }
 
     private static List<String> clean(List<String> values) {

@@ -88,6 +88,8 @@ prowise:
     # AES-256-GCM key for SMTP passwords saved from the admin panel (32+ characters). Server-side only.
     credential-encryption-key: ${SMTP_CREDENTIAL_ENCRYPTION_KEY:}
     frontend-url: ${FRONTEND_URL:http://localhost:3000}
+    # Optional local copy: every email link is also shown on this address ("Testing locally?"). Empty in production.
+    local-sign-in-url: ${LOCAL_SIGNIN_URL:}
   worker:
     outbox-delay-ms: ${OUTBOX_POLL_DELAY_MS:5000}
   bootstrap:
@@ -126,3 +128,16 @@ prowise:
     # <base>/v1/integrations/github/webhooks/<connection id>. Empty: the URL is shown relative.
     webhook-base-url: ${GITHUB_WEBHOOK_BASE_URL:}
     request-timeout-ms: ${GITHUB_REQUEST_TIMEOUT_MS:8000}
+    # github.com (or a GitHub Enterprise host): install pages and the OAuth code exchange.
+    web-base-url: ${GITHUB_WEB_BASE_URL:https://github.com}
+    # The Prowise GitHub App (connect GitHub once per organization). All server-side only; never returned or logged.
+    # Callback URL in the App settings: <web>/integrations/github/callback, with "Request user authorization (OAuth)
+    # during installation" on. Webhook URL: <api>/v1/integrations/github/app/webhook. Slug and client id fall back to
+    # the super admin integration settings.
+    app:
+      id: ${GITHUB_APP_ID:}
+      slug: ${GITHUB_APP_SLUG:}
+      client-id: ${GITHUB_APP_CLIENT_ID:}
+      client-secret: ${GITHUB_APP_CLIENT_SECRET:}
+      private-key: ${GITHUB_APP_PRIVATE_KEY:}
+      webhook-secret: ${GITHUB_APP_WEBHOOK_SECRET:}
