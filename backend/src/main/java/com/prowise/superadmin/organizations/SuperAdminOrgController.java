@@ -17,13 +17,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prowise.identity.AuthPrincipal;
+import com.prowise.superadmin.common.AdminRequests;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping({"/v1/admin/organizations", "/api/v1/admin/organizations"})
-@Tag(name = "Super Admin Organizations", description = "Multi-tenant organization lifecycle management")
+@Tag(name = "Super Admin Organizations", description = "Multi-tenant organization lifecycle. Mutations need expected_version (409 STALE_VERSION when stale) and accept Idempotency-Key.")
 public class SuperAdminOrgController {
 
     private final SuperAdminOrgService orgService;
@@ -64,71 +64,67 @@ public class SuperAdminOrgController {
             HttpServletRequest request,
             @Valid @RequestBody SuperAdminOrgDTOs.CreateOrgRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(orgService.createOrganization(body, actor));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('orgs.edit')")
-    @Operation(summary = "Update an existing tenant organization")
+    @Operation(summary = "Update an existing tenant organization (expected_version required)")
     public ResponseEntity<SuperAdminOrgDTOs.OrgDetailResponse> updateOrganization(
             HttpServletRequest request,
             @PathVariable UUID id,
             @Valid @RequestBody SuperAdminOrgDTOs.UpdateOrgRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.ok(orgService.updateOrganization(id, body, actor));
     }
 
     @PostMapping("/{id}/suspend")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('orgs.suspend')")
-    @Operation(summary = "Suspend a tenant organization")
+    @Operation(summary = "Suspend a tenant organization (body: reason, expected_version)")
     public ResponseEntity<SuperAdminOrgDTOs.OrgDetailResponse> suspendOrganization(
             HttpServletRequest request,
             @PathVariable UUID id,
             @Valid @RequestBody SuperAdminOrgDTOs.SuspendOrgRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.ok(orgService.suspendOrganization(id, body, actor));
     }
 
     @PostMapping("/{id}/reactivate")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('orgs.suspend')")
-    @Operation(summary = "Reactivate a suspended organization")
+    @Operation(summary = "Reactivate a suspended organization (body: expected_version)")
     public ResponseEntity<SuperAdminOrgDTOs.OrgDetailResponse> reactivateOrganization(
             HttpServletRequest request,
-            @PathVariable UUID id
+            @PathVariable UUID id,
+            @RequestBody(required = false) AdminRequests.VersionRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        return ResponseEntity.ok(orgService.reactivateOrganization(id, actor));
+        String actor = AdminRequests.actor(request);
+        return ResponseEntity.ok(orgService.reactivateOrganization(id, com.prowise.superadmin.common.AdminRequests.expected(body), actor));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('orgs.delete')")
-    @Operation(summary = "Delete an organization")
+    @Operation(summary = "Delete an organization (?expectedVersion= required)")
     public ResponseEntity<Void> deleteOrganization(
             HttpServletRequest request,
-            @PathVariable UUID id
+            @PathVariable UUID id,
+            @RequestParam(required = false) Long expectedVersion
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        orgService.deleteOrganization(id, actor);
+        String actor = AdminRequests.actor(request);
+        orgService.deleteOrganization(id, expectedVersion, actor);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/bulk-suspend")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('orgs.suspend')")
-    @Operation(summary = "Bulk suspend multiple organizations")
+    @Operation(summary = "Bulk suspend multiple organizations (items: [{id, expected_version}]; all-or-nothing)")
     public ResponseEntity<Void> bulkSuspend(
             HttpServletRequest request,
             @Valid @RequestBody SuperAdminOrgDTOs.BulkSuspendRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         orgService.bulkSuspend(body, actor);
         return ResponseEntity.noContent().build();
     }

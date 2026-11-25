@@ -7,8 +7,8 @@ import { InvitationsView } from "../src/components/owner/InvitationsView";
 import { ProjectsPortfolioView } from "../src/components/owner/ProjectsPortfolioView";
 import { TeamsView } from "../src/components/owner/TeamsView";
 import { calendarDaysUntil, deadlineStatus } from "../src/components/owner/project-format";
-import { FIXTURE_INVITATIONS, FIXTURE_PORTFOLIO, FIXTURE_TEAMS } from "../src/lib/fixtures/org-admin";
-import { FIXTURE_GRANTS } from "../src/lib/fixtures/permissions";
+import { FIXTURE_INVITATIONS, FIXTURE_PORTFOLIO, FIXTURE_TEAMS } from "./fixtures/org-admin";
+import { FIXTURE_GRANTS } from "./fixtures/permissions";
 import { canWithGrants } from "../src/lib/permissions";
 import type { PermissionKey } from "../src/types/permission";
 import type { ProjectDto } from "../src/types/api";
@@ -40,7 +40,7 @@ describe("deadline helpers (date-only, no 24h arithmetic)", () => {
 describe("InvitationsView", () => {
   const render = (props: Partial<React.ComponentProps<typeof InvitationsView>> = {}) =>
     renderToStaticMarkup(
-      <InvitationsView invitations={FIXTURE_INVITATIONS(ORG)} source="fixture" can={canFor("ORGANIZATION_ADMIN")} now={NOW} {...props} />,
+      <InvitationsView invitations={FIXTURE_INVITATIONS(ORG)} can={canFor("ORGANIZATION_ADMIN")} now={NOW} {...props} />,
     );
 
   it("lists invitations without ever rendering the token", () => {
@@ -75,7 +75,7 @@ describe("InvitationsView", () => {
 
 describe("TeamsView", () => {
   const render = (props: Partial<React.ComponentProps<typeof TeamsView>> = {}) =>
-    renderToStaticMarkup(<TeamsView teams={FIXTURE_TEAMS(ORG)} source="fixture" can={canFor("ORGANIZATION_ADMIN")} {...props} />);
+    renderToStaticMarkup(<TeamsView teams={FIXTURE_TEAMS(ORG)} can={canFor("ORGANIZATION_ADMIN")} {...props} />);
 
   it("lists teams with lead and member count", () => {
     const markup = render();
@@ -142,7 +142,7 @@ describe("ProjectsPortfolioView", () => {
   });
   const render = (props: Partial<React.ComponentProps<typeof ProjectsPortfolioView>> = {}) =>
     renderToStaticMarkup(
-      <ProjectsPortfolioView {...portfolio} projects={projectDtos} source="fixture" can={canFor("ORGANIZATION_OWNER")} now={NOW} {...props} />,
+      <ProjectsPortfolioView {...portfolio} projects={projectDtos} actionsAvailable={false} can={canFor("ORGANIZATION_OWNER")} now={NOW} {...props} />,
     );
 
   it("lists projects with separate progress methods and no portfolio average", () => {
@@ -191,7 +191,7 @@ describe("HealthRisksView", () => {
   const portfolio = FIXTURE_PORTFOLIO(ORG);
   const render = (props: Partial<React.ComponentProps<typeof HealthRisksView>> = {}) =>
     renderToStaticMarkup(
-      <HealthRisksView projects={portfolio.projects} users={portfolio.users} source="fixture" can={canFor("ORGANIZATION_OWNER")} now={NOW} {...props} />,
+      <HealthRisksView projects={portfolio.projects} users={portfolio.users} can={canFor("ORGANIZATION_OWNER")} now={NOW} {...props} />,
     );
 
   it("lists need-attention projects with reasons and who can resolve", () => {

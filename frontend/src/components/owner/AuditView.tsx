@@ -10,12 +10,11 @@ import { OwnerPanel } from "@/components/owner/OwnerPanel";
 import { OwnerTable } from "@/components/owner/OwnerTable";
 import { FilterBar, PageHeader } from "@/components/owner/primitives";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { AuditRecord } from "@/lib/fixtures/org-admin";
+import type { AuditRecord } from "@/types/org-admin";
 import type { PermissionKey } from "@/types/permission";
 
 export interface AuditViewProps {
   records: AuditRecord[];
-  source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
   basePath?: string;
 }
@@ -34,7 +33,7 @@ function formatUtc(timestamp: string): string {
   }).format(new Date(timestamp))} UTC`;
 }
 
-export function AuditView({ records, source, can, basePath }: AuditViewProps) {
+export function AuditView({ records, can, basePath }: AuditViewProps) {
   const [search, setSearch] = useState("");
   const [action, setAction] = useState("ALL");
   const actions = useMemo(() => Array.from(new Set(records.map((record) => record.action))).sort(), [records]);
@@ -50,7 +49,6 @@ export function AuditView({ records, source, can, basePath }: AuditViewProps) {
     <PageHeader
       title="Audit & security"
       description="Restricted records of material decisions: who did what, to which object, and when (UTC). Secrets, tokens and private code are never recorded here."
-      simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={<OwnerLaterBadge task="1.4" />}
     />
   );

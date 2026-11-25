@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
 import {
   Activity,
   CheckCircle2,
@@ -14,8 +13,9 @@ import {
   Plug,
   RefreshCw,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
-import { OperatorIntegrationItem } from "../_types";
+import type { OpsIntegration } from "@/types/operator-console";
+import { useOperatorPermissions } from "../_services/operator-access";
+import { operatorApi } from "../_services/operator-api";
 import { formatDateTime } from "../_services/operator-service";
 import {
   BulkSelectionBar,
@@ -34,13 +34,56 @@ import {
   getStatusTone,
   useTableSelection,
 } from "../_components/OperatorPrimitives";
+import {
+  NotAvailableButton,
+  NotAvailableText,
+  OperatorResourceStatus,
+  humanizeCode,
+  readyValue,
+  rowsOf,
+  useOperatorResource,
+} from "../_components/OperatorLive";
 
 type IntegSortField = "name" | "category" | "status" | "errorRatePct" | "avgLatencyMs" | "failureCount24h";
 
+const DIAGNOSTIC_REASON = "there is no diagnostic endpoint for integrations";
+const PAUSE_REASON = "there is no pause or resume endpoint for integrations";
+
+/**
+ * One installation as the page shows it (GET /v1/operator/integrations). `config_json` is returned by the server but
+ * never read here: it can carry provider configuration. Error rate and latency are not measured by the server.
+ */
+interface IntegrationRow {
+  id: string;
+  name: string;
+  category: string;
+  status: string;
+  connection: string;
+  errorCount: number;
+  lastDiagnosticSummary: string;
+  lastCheckAt: string;
+}
+
+function toRow(i: OpsIntegration): IntegrationRow {
+  return {
+    id: i.id,
+    name: i.name,
+    category: humanizeCode(i.type),
+    status: humanizeCode(i.health),
+    connection: humanizeCode(i.status),
+    errorCount: i.error_count,
+    lastDiagnosticSummary: `Connection: ${humanizeCode(i.status)} · Health: ${humanizeCode(i.health)}`,
+    lastCheckAt: i.last_synced_at ?? "",
+  };
+}
+
 export default function OperatorIntegrationHealthPage() {
-  const integrations = usePlatformOperatorStore((s) => s.integrations);
-  const runIntegrationDiagnostic = usePlatformOperatorStore((s) => s.runIntegrationDiagnostic);
-  const toggleIntegrationPause = usePlatformOperatorStore((s) => s.toggleIntegrationPause);
+  const { state, reload } = useOperatorResource(() => operatorApi.integrations(), "integrations");
+  const integrations = useMemo(() => rowsOf(state).map(toRow), [state]);
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(integrations.map((i) => i.category))).sort(),
+    [integrations]
+  );
   const { can } = useOperatorPermissions();
   const canManage = can("integrations.manage");
 
@@ -51,23 +94,17 @@ export default function OperatorIntegrationHealthPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
-  const [testingId, setTestingId] = useState<string | null>(null);
-  const [pauseTarget, setPauseTarget] = useState<OperatorIntegrationItem | null>(null);
+  // Pause / Resume has no endpoint: the confirmation stays in place but nothing opens it yet.
+  const [pauseTarget, setPauseTarget] = useState<IntegrationRow | null>(null);
 
   const healthyCount = useMemo(
     () => integrations.filter((i) => i.status === "Healthy").length,
     [integrations]
   );
-  const failures24h = useMemo(
-    () => integrations.reduce((sum, i) => sum + i.failureCount24h, 0),
+  const totalErrors = useMemo(
+    () => integrations.reduce((sum, i) => sum + i.errorCount, 0),
     [integrations]
   );
-  const avgLatency = useMemo(() => {
-    if (integrations.length === 0) return 0;
-    return Math.round(
-      integrations.reduce((sum, i) => sum + i.avgLatencyMs, 0) / integrations.length
-    );
-  }, [integrations]);
 
   const handleSort = (field: IntegSortField) => {
     if (sortField === field) {
@@ -95,9 +132,8 @@ export default function OperatorIntegrationHealthPage() {
       if (sortField === "name") cmp = a.name.localeCompare(b.name);
       else if (sortField === "category") cmp = a.category.localeCompare(b.category);
       else if (sortField === "status") cmp = a.status.localeCompare(b.status);
-      else if (sortField === "errorRatePct") cmp = a.errorRatePct - b.errorRatePct;
-      else if (sortField === "avgLatencyMs") cmp = a.avgLatencyMs - b.avgLatencyMs;
-      else cmp = a.failureCount24h - b.failureCount24h;
+      else if (sortField === "errorRatePct" || sortField === "avgLatencyMs") cmp = 0;
+      else cmp = a.errorCount - b.errorCount;
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [integrations, categoryFilter, search, sortField, sortDir]);
@@ -123,24 +159,19 @@ export default function OperatorIntegrationHealthPage() {
     paginated.map((i) => i.id)
   );
 
-  const handleDiagnostic = (item: OperatorIntegrationItem) => {
-    setTestingId(item.id);
-    setTimeout(() => {
-      runIntegrationDiagnostic(item.id);
-      setTestingId(null);
-      toast.success(`Diagnostic check passed for ${item.name} (simulated).`);
-    }, 300);
-  };
-
   return (
     <div className="space-y-6">
       <PageHeader
         title="Integration Health"
-        badge={`${healthyCount}/${integrations.length} Healthy`}
-        demoLabel="Demo Diagnostics"
+        badge={state.status === "ready" ? `${healthyCount}/${integrations.length} Healthy` : "- Healthy"}
+        liveData
         description="Check connected external services, run guided connection diagnostics, and pause non-critical background sync when needed."
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <OpButton variant="outline" size="sm" onClick={() => void reload()}>
+              <RefreshCw className="w-3.5 h-3.5" />
+              Refresh
+            </OpButton>
             <Link href="/platform-operator/github-monitoring">
               <OpButton variant="outline" size="sm">
                 <GitBranch className="w-3.5 h-3.5" />
@@ -164,22 +195,22 @@ export default function OperatorIntegrationHealthPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiCard
           label="Healthy Connectors"
-          value={`${healthyCount} / ${integrations.length}`}
+          value={readyValue(state, () => `${healthyCount} / ${integrations.length}`)}
           sublabel="Connected platform services"
           icon={CheckCircle2}
           tone={healthyCount === integrations.length ? "emerald" : "amber"}
         />
         <KpiCard
-          label="24h Connector Failures"
-          value={failures24h}
-          sublabel="Errors reported across relays"
+          label="Connector Errors"
+          value={readyValue(state, () => totalErrors)}
+          sublabel="Error count reported by the server"
           icon={Activity}
-          tone={failures24h > 0 ? "amber" : "emerald"}
+          tone={totalErrors > 0 ? "amber" : "emerald"}
         />
         <KpiCard
           label="Average Response Speed"
-          value={`${avgLatency} ms`}
-          sublabel="Round-trip handshake time"
+          value="—"
+          sublabel="Not available yet"
           icon={Plug}
           tone="teal"
         />
@@ -203,10 +234,7 @@ export default function OperatorIntegrationHealthPage() {
                 aria-label="Filter category"
                 options={[
                   { label: "All Categories", value: "ALL" },
-                  { label: "Source Control", value: "Source Control" },
-                  { label: "Billing & Payments", value: "Billing & Payments" },
-                  { label: "Email Relay", value: "Email Relay" },
-                  { label: "Identity SSO", value: "Identity SSO" },
+                  ...categoryOptions.map((c) => ({ label: c, value: c })),
                 ]}
               />
             </div>
@@ -241,7 +269,16 @@ export default function OperatorIntegrationHealthPage() {
           }
         />
 
-        {paginated.length === 0 ? (
+        {state.status !== "ready" || state.data.length === 0 ? (
+          <OperatorResourceStatus
+            state={state}
+            isEmpty={(d) => d.length === 0}
+            onRetry={() => void reload()}
+            emptyIcon={Plug}
+            emptyTitle="No integrations installed"
+            emptyDescription="The server has no external service integrations to show."
+          />
+        ) : paginated.length === 0 ? (
           <EmptyState
             icon={Plug}
             title="No integrations match your filter"
@@ -271,19 +308,10 @@ export default function OperatorIntegrationHealthPage() {
                 onSelectAllMatching={() => setSelectedIds(filtered.map((i) => i.id))}
                 onClear={() => setSelectedIds([])}
                 actions={
-                  <OpButton
-                    variant="primary"
-                    size="xs"
-                    disabled={!canManage}
-                    onClick={() => {
-                      selectedIds.forEach((id) => runIntegrationDiagnostic(id));
-                      toast.success(`Ran diagnostics on ${selectedIds.length} integration(s).`);
-                      setSelectedIds([]);
-                    }}
-                  >
+                  <NotAvailableButton variant="primary" size="xs" reason={DIAGNOSTIC_REASON} hideLabel>
                     <RefreshCw className="w-3.5 h-3.5" />
                     Run Diagnostics ({selectedIds.length})
-                  </OpButton>
+                  </NotAvailableButton>
                 }
               />
             </div>
@@ -329,40 +357,29 @@ export default function OperatorIntegrationHealthPage() {
                       <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[var(--color-border)] text-xs">
                         <div>
                           <span className="text-[11px] text-[var(--color-text-muted)] block">Error Rate</span>
-                          <strong className="text-[var(--color-text-primary)]">{item.errorRatePct}%</strong>
+                          <NotAvailableText reason="the server does not measure an error rate" />
                         </div>
                         <div>
                           <span className="text-[11px] text-[var(--color-text-muted)] block">Latency</span>
-                          <strong className="text-[var(--color-text-primary)]">{item.avgLatencyMs} ms</strong>
+                          <NotAvailableText reason="the server does not measure latency" />
                         </div>
                         <div>
-                          <span className="text-[11px] text-[var(--color-text-muted)] block">24h Errors</span>
-                          <strong className="text-[var(--color-text-primary)]">{item.failureCount24h}</strong>
+                          <span className="text-[11px] text-[var(--color-text-muted)] block">Errors</span>
+                          <strong className="text-[var(--color-text-primary)]">{item.errorCount}</strong>
                         </div>
                       </div>
                     </div>
 
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[var(--color-border)]">
                       <span className="text-[11px] text-[var(--color-text-muted)]">
-                        Checked {formatDateTime(item.lastCheckAt)}
+                        Last synced {formatDateTime(item.lastCheckAt)}
                       </span>
                       <div className="flex items-center gap-1.5">
-                        <OpButton
-                          variant="outline"
-                          size="xs"
-                          disabled={!canManage}
-                          isLoading={testingId === item.id}
-                          onClick={() => handleDiagnostic(item)}
-                        >
+                        <NotAvailableButton variant="outline" size="xs" reason={DIAGNOSTIC_REASON}>
                           <RefreshCw className="w-3.5 h-3.5" />
                           Run Diagnostic
-                        </OpButton>
-                        <OpButton
-                          variant="subtle"
-                          size="xs"
-                          disabled={!canManage}
-                          onClick={() => setPauseTarget(item)}
-                        >
+                        </NotAvailableButton>
+                        <NotAvailableButton variant="subtle" size="xs" reason={PAUSE_REASON}>
                           {item.status === "Paused" ? (
                             <>
                               <PlayCircle className="w-3.5 h-3.5" />
@@ -374,7 +391,7 @@ export default function OperatorIntegrationHealthPage() {
                               Pause Sync
                             </>
                           )}
-                        </OpButton>
+                        </NotAvailableButton>
                       </div>
                     </div>
                   </div>
@@ -390,19 +407,10 @@ export default function OperatorIntegrationHealthPage() {
               onSelectAllMatching={() => setSelectedIds(filtered.map((i) => i.id))}
               onClear={() => setSelectedIds([])}
               actions={
-                <OpButton
-                  variant="primary"
-                  size="xs"
-                  disabled={!canManage}
-                  onClick={() => {
-                    selectedIds.forEach((id) => runIntegrationDiagnostic(id));
-                    toast.success(`Ran diagnostics on ${selectedIds.length} integration(s).`);
-                    setSelectedIds([]);
-                  }}
-                >
+                <NotAvailableButton variant="primary" size="xs" reason={DIAGNOSTIC_REASON} hideLabel>
                   <RefreshCw className="w-3.5 h-3.5" />
                   Run Diagnostics ({selectedIds.length})
-                </OpButton>
+                </NotAvailableButton>
               }
             />
             <div className="overflow-x-auto">
@@ -463,27 +471,20 @@ export default function OperatorIntegrationHealthPage() {
                         <td className="py-3 px-3.5">
                           <StatusBadge label={item.status} tone={getStatusTone(item.status)} dot />
                         </td>
-                        <td className="py-3 px-3.5 tabular-nums">{item.errorRatePct}%</td>
-                        <td className="py-3 px-3.5 tabular-nums">{item.avgLatencyMs} ms</td>
+                        <td className="py-3 px-3.5 tabular-nums">
+                          <NotAvailableText reason="the server does not measure an error rate" />
+                        </td>
+                        <td className="py-3 px-3.5 tabular-nums">
+                          <NotAvailableText reason="the server does not measure latency" />
+                        </td>
                         <td className="py-3 px-3.5 text-right whitespace-nowrap">
                           <div className="inline-flex items-center gap-1.5">
-                            <OpButton
-                              variant="outline"
-                              size="xs"
-                              disabled={!canManage}
-                              isLoading={testingId === item.id}
-                              onClick={() => handleDiagnostic(item)}
-                            >
+                            <NotAvailableButton variant="outline" size="xs" reason={DIAGNOSTIC_REASON} hideLabel>
                               Diagnostic
-                            </OpButton>
-                            <OpButton
-                              variant="subtle"
-                              size="xs"
-                              disabled={!canManage}
-                              onClick={() => setPauseTarget(item)}
-                            >
+                            </NotAvailableButton>
+                            <NotAvailableButton variant="subtle" size="xs" reason={PAUSE_REASON} hideLabel>
                               {item.status === "Paused" ? "Resume" : "Pause"}
-                            </OpButton>
+                            </NotAvailableButton>
                           </div>
                         </td>
                       </tr>
@@ -505,6 +506,7 @@ export default function OperatorIntegrationHealthPage() {
             setPage(1);
           }}
         />
+        {!canManage && <span className="sr-only">Your role cannot manage integrations.</span>}
       </SurfaceCard>
 
       <ConfirmModal
@@ -523,12 +525,8 @@ export default function OperatorIntegrationHealthPage() {
         confirmLabel={pauseTarget?.status === "Paused" ? "Resume Sync" : "Pause Sync"}
         variant={pauseTarget?.status === "Paused" ? "primary" : "danger"}
         onConfirm={() => {
-          if (pauseTarget) {
-            toggleIntegrationPause(pauseTarget.id);
-            toast.success(
-              `${pauseTarget.name} ${pauseTarget.status === "Paused" ? "resumed" : "paused"}.`
-            );
-          }
+          // No pause/resume endpoint exists; nothing is changed locally either.
+          setPauseTarget(null);
         }}
       />
     </div>

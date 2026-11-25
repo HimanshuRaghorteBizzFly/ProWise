@@ -56,7 +56,7 @@ class IdentityOrganizationIntegrationTest {
             String email = uniqueEmail();
             String slug = "registration-" + UUID.randomUUID().toString().replace("-", "");
             mockMvc.perform(post("/v1/auth/signup")
-                            .header("X-Forwarded-For", TestAccounts.randomClientAddress())
+                            .with(com.prowise.testsupport.TestAccounts.randomClient())
                             .contentType("application/json")
                             .content(registrationBody(email, slug, requestedRole)))
                     .andExpect(status().isAccepted())
@@ -185,15 +185,14 @@ class IdentityOrganizationIntegrationTest {
         String rotatedRefreshToken = rotated.getResponse().getCookie("prowise_refresh_token").getValue();
         assertThat(rotatedRefreshToken).isNotEqualTo(oldRefreshToken);
 
-        // Outside the two-tabs grace window, presenting the old token again is reuse.
-        String oldHash = AuthService.hash(oldRefreshToken);
-        UUID session = jdbc.queryForObject("SELECT session_id FROM session_refresh_history WHERE token_hash = ?", UUID.class, oldHash);
-        jdbc.update("DELETE FROM session_refresh_history WHERE token_hash = ?", oldHash);
-        jdbc.update("INSERT INTO session_refresh_history (token_hash, session_id, rotated_at) VALUES (?, ?, now() - interval '5 minutes')", oldHash, session);
-        mockMvc.perform(post("/v1/auth/refresh").cookie(new jakarta.servlet.http.Cookie("prowise_refresh_token", oldRefreshToken)))
+        mockMvc.perform(post("/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content("{\"refresh_token\":\"" + oldRefreshToken + "\"}"))
                 .andExpect(status().isUnauthorized());
 
-        mockMvc.perform(post("/v1/auth/refresh").cookie(new jakarta.servlet.http.Cookie("prowise_refresh_token", rotatedRefreshToken)))
+        mockMvc.perform(post("/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content("{\"refresh_token\":\"" + rotatedRefreshToken + "\"}"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -276,7 +275,9 @@ class IdentityOrganizationIntegrationTest {
     }
 
     private MvcResult refreshResult(String refreshToken) throws Exception {
-        return mockMvc.perform(post("/v1/auth/refresh").cookie(new jakarta.servlet.http.Cookie("prowise_refresh_token", refreshToken)))
+        return mockMvc.perform(post("/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content("{\"refresh_token\":\"" + refreshToken + "\"}"))
                 .andExpect(status().isOk())
                 .andReturn();
     }

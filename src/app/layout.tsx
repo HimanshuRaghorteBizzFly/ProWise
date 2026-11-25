@@ -1,9 +1,16 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "@/styles/globals.css";
 import "@/styles/themes.css";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
+
+const platformFont = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-platform",
+});
 
 export const metadata: Metadata = {
   title: "ProWise — Project Delivery Management SaaS",
@@ -16,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={platformFont.variable} suppressHydrationWarning>
       <body className="min-h-screen bg-app-bg text-app-text-primary antialiased">
         <QueryProvider>
           <AuthProvider>

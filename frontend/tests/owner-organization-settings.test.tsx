@@ -8,7 +8,7 @@ import {
   getOwnerOrganizationSettingsStateForOrg,
   validateOrganizationSettings,
 } from "../src/hooks/useOwnerOrganizationSettings";
-import { SEEDED_ORGS } from "../src/lib/mock-data";
+import { SEEDED_ORGS } from "./fixtures/mock-data";
 
 const organization = SEEDED_ORGS[0];
 const validDraft = {

@@ -10,12 +10,11 @@ import { OwnerPanel } from "@/components/owner/OwnerPanel";
 import { OwnerTable } from "@/components/owner/OwnerTable";
 import { FilterBar, PageHeader, StatusBadge, type StatusTone } from "@/components/owner/primitives";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { InvitationRow } from "@/lib/fixtures/org-admin";
+import type { InvitationRow } from "@/types/org-admin";
 import type { PermissionKey } from "@/types/permission";
 
 export interface InvitationsViewProps {
   invitations: InvitationRow[];
-  source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
   basePath?: string;
   /** Injected for tests; defaults to the current time. */
@@ -46,7 +45,7 @@ function expiryText(invitation: InvitationRow, status: EffectiveStatus, nowMs: n
   return days <= 1 ? `Expires within a day (${date} UTC)` : `Expires in ${days} days`;
 }
 
-export function InvitationsView({ invitations, source, can, basePath, now }: InvitationsViewProps) {
+export function InvitationsView({ invitations, can, basePath, now }: InvitationsViewProps) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"ALL" | EffectiveStatus>("ALL");
   const nowMs = Date.parse(now ?? new Date().toISOString());
@@ -66,7 +65,6 @@ export function InvitationsView({ invitations, source, can, basePath, now }: Inv
     <PageHeader
       title="Invitations"
       description="Single-use invitations by email. Resending rotates the invitation link and revoking takes effect immediately once available."
-      simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={
         canInvite ? (
           basePath ? (

@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Runs {@link SuperAdminBootstrapService} once per startup when deployment configuration sets
- * {@code PROWISE_BOOTSTRAP_SUPER_ADMIN_EMAIL}. A failure is logged by class name only (never a link or token) and
+ * {@code PROWISE_BOOTSTRAP_SUPER_ADMIN_EMAIL} (and optionally {@code PROWISE_BOOTSTRAP_SUPER_ADMIN_PASSWORD}). A failure is logged by class name only (never a link or token) and
  * does not stop the application: bootstrap is fail-closed and simply retries on the next start.
  */
 @Component
@@ -19,11 +19,14 @@ public class SuperAdminBootstrapRunner implements ApplicationRunner {
 
     private final SuperAdminBootstrapService bootstrapService;
     private final String configuredEmail;
+    private final String initialPassword;
 
     public SuperAdminBootstrapRunner(SuperAdminBootstrapService bootstrapService,
-            @Value("${prowise.bootstrap.super-admin-email:}") String configuredEmail) {
+            @Value("${prowise.bootstrap.super-admin-email:}") String configuredEmail,
+            @Value("${prowise.bootstrap.super-admin-password:}") String initialPassword) {
         this.bootstrapService = bootstrapService;
         this.configuredEmail = configuredEmail;
+        this.initialPassword = initialPassword;
     }
 
     @Override
@@ -32,7 +35,7 @@ public class SuperAdminBootstrapRunner implements ApplicationRunner {
             return;
         }
         try {
-            SuperAdminBootstrapService.Result result = bootstrapService.bootstrap(configuredEmail);
+            SuperAdminBootstrapService.Result result = bootstrapService.bootstrap(configuredEmail, initialPassword);
             log.info("Super Admin bootstrap finished: {}", result.outcome());
         } catch (RuntimeException ex) {
             log.error("Super Admin bootstrap failed: {}", ex.getClass().getSimpleName());

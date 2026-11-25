@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { buildOrgNav, filterOrgNav } from "../src/components/owner/org-nav";
-import { FIXTURE_GRANTS } from "../src/lib/fixtures/permissions";
+import { FIXTURE_GRANTS } from "./fixtures/permissions";
 import { canAnyWithGrants } from "../src/lib/permissions";
 
 const ORG = "org-acme";
@@ -64,7 +64,7 @@ describe("filterOrgNav", () => {
 
   it("shows only the ungated links and drops empty groups when nothing is granted", () => {
     const groups = filterOrgNav(buildOrgNav("admin", ORG), () => false);
-    expect(flat(groups).map((item) => item.label)).toEqual(["Dashboard", "Notifications"]);
+    expect(flat(groups).map((item) => item.label)).toEqual(["Dashboard"]);
     expect(groups.every((group) => group.items.length > 0)).toBe(true);
   });
 });

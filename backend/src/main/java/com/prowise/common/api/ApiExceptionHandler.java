@@ -151,6 +151,8 @@ public class ApiExceptionHandler {
     static ResponseEntity<ApiError> respond(HttpStatusCode status, String code, String message,
             List<ApiError.FieldError> fieldErrors, HttpServletRequest request) {
         String requestId = RequestIdFilter.currentRequestId(request);
+        // Read by ApiErrorRecordingFilter for the API error log; the response itself is unchanged.
+        request.setAttribute(ApiErrorRecordingFilter.ERROR_CODE_ATTRIBUTE, code);
         return ResponseEntity.status(status)
                 .header(RequestIdFilter.REQUEST_ID_HEADER, requestId)
                 .contentType(MediaType.APPLICATION_JSON)

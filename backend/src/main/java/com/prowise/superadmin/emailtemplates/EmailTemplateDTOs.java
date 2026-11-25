@@ -32,7 +32,8 @@ public final class EmailTemplateDTOs {
             List<String> variables,
             String status,
             Instant updatedAt,
-            String updatedBy
+            String updatedBy,
+            long version
     ) {
         public static EmailTemplateResponse fromEntity(EmailTemplateEntity e, List<String> parsedVars) {
             return new EmailTemplateResponse(
@@ -57,7 +58,8 @@ public final class EmailTemplateDTOs {
                     parsedVars,
                     e.getStatus(),
                     e.getUpdatedAt(),
-                    e.getUpdatedBy()
+                    e.getUpdatedBy(),
+                    e.getVersion() == null ? 0L : e.getVersion()
             );
         }
     }
@@ -97,14 +99,11 @@ public final class EmailTemplateDTOs {
             String ctaLabel,
             String ctaUrl,
             List<String> variables,
-            String status
+            String status,
+            Long expectedVersion
     ) {}
 
     public record SendTestEmailRequest(
             @NotBlank String recipientEmail
-    ) {}
-
-    public record BulkDeleteRequest(
-            @NotNull List<String> ids
     ) {}
 }

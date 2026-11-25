@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prowise.identity.AuthPrincipal;
+import com.prowise.superadmin.common.AdminRequests;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
@@ -34,13 +34,12 @@ public class PolicyController {
 
     @PutMapping("/policies")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('config.manage')")
-    @Operation(summary = "Update platform governance policies and settings")
+    @Operation(summary = "Update platform governance policies and settings (expected_version required; 0 before the first save)")
     public ResponseEntity<PolicyDTOs.PlatformPolicyResponse> updatePolicies(
             HttpServletRequest request,
             @Valid @RequestBody PolicyDTOs.UpdatePolicySettingsRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.ok(policyService.updatePolicySettings(body, actor));
     }
 
@@ -53,13 +52,12 @@ public class PolicyController {
 
     @PutMapping("/branding")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('config.manage')")
-    @Operation(summary = "Update global branding preferences")
+    @Operation(summary = "Update global branding preferences (expected_version required; 0 before the first save)")
     public ResponseEntity<PolicyDTOs.PlatformBrandingResponse> updateBranding(
             HttpServletRequest request,
             @Valid @RequestBody PolicyDTOs.UpdateBrandingRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.ok(policyService.updateBrandingPreferences(body, actor));
     }
 }

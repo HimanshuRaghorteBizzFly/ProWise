@@ -15,6 +15,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done (all "Pass when" te
 - [x ] 1.1 Organizations, identity, sessions (3)
 - [x ] 1.2 Invitations, teams, ownership (3)
 - [x] 1.3 Permissions on every access path (4)
+<<<<<<< HEAD
 - [ x] 1.4 Transactions, history, outbox (4)
 
 ## Phase 2: Projects and Individual Ownership (14 pts) -> docs/tasks/phase-2.md
@@ -22,11 +23,24 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done (all "Pass when" te
 - [ x] 2.2 Individual progress and corrections (4)
 - [ x] 2.3 Working calendar and cadence (3)
 - [ x] 2.4 Deliver, close, archive, restore (3)
+=======
+- [ ] 1.4 Transactions, history, outbox (4)
+
+## Phase 2: Projects and Individual Ownership (14 pts) -> docs/tasks/phase-2.md
+- [ ] 2.1 Project records (4)
+- [ ] 2.2 Individual progress and corrections (4)
+- [ ] 2.3 Working calendar and cadence (3)
+- [ ] 2.4 Deliver, close, archive, restore (3)
+>>>>>>> 75c825d3d30e42a4fe2f14ce327660a2dcb16575
 
 **MVP checkpoint: after 2.4 (about 36 pts). Demo and commit a tag `v0.1-individual`.**
 
 ## Phase 3: Structured delivery (21 pts) -> docs/tasks/phase-3.md
+<<<<<<< HEAD
 - [ x] 3.1 Breakdown and assignment (3)
+=======
+- [ ] 3.1 Breakdown and assignment (3)
+>>>>>>> 75c825d3d30e42a4fe2f14ce327660a2dcb16575
 - [ ] 3.2 Scope approval and versions (3)
 - [ ] 3.3 Review and rework (4)
 - [ ] 3.4 Dependencies and blockers (3)

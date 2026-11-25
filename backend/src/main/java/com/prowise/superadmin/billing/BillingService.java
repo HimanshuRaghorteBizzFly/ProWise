@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.prowise.common.api.ApiException;
+import com.prowise.common.persistence.ExpectedVersion;
+import com.prowise.superadmin.common.AdminRequests;
 import com.prowise.superadmin.audit.AuditService;
 
 @Service
@@ -42,7 +44,7 @@ public class BillingService {
     @Transactional(readOnly = true)
     public BillingDTOs.PaymentResponse getPayment(String id) {
         PaymentEntity entity = paymentRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "Payment record not found: " + id));
+                .orElseThrow(ApiException::notFound);
         return BillingDTOs.PaymentResponse.fromEntity(entity);
     }
 
@@ -68,13 +70,14 @@ public class BillingService {
         entity.setUpdatedAt(Instant.now());
 
         PaymentEntity saved = paymentRepository.save(entity);
+        paymentRepository.flush();
 
         auditService.logActivity(
                 "PAYMENT",
                 "RECORD_PAYMENT",
                 "Recorded payment " + txnRef + " of $" + req.amount(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 txnRef,
                 "INFO"
         );
@@ -84,7 +87,8 @@ public class BillingService {
 
     public BillingDTOs.PaymentResponse updatePayment(String id, BillingDTOs.UpdatePaymentRequest req, String actorEmail) {
         PaymentEntity entity = paymentRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "Payment record not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), req.expectedVersion());
 
         if (req.orgId() != null) entity.setOrgId(req.orgId());
         if (req.amount() != null) entity.setAmount(req.amount());
@@ -97,13 +101,14 @@ public class BillingService {
         entity.setUpdatedAt(Instant.now());
 
         PaymentEntity updated = paymentRepository.save(entity);
+        paymentRepository.flush();
 
         auditService.logActivity(
                 "PAYMENT",
                 "UPDATE_PAYMENT",
                 "Updated payment transaction " + updated.getTransactionRef(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getTransactionRef(),
                 "INFO"
         );
@@ -111,21 +116,23 @@ public class BillingService {
         return BillingDTOs.PaymentResponse.fromEntity(updated);
     }
 
-    public BillingDTOs.PaymentResponse retryPayment(String id, String actorEmail) {
+    public BillingDTOs.PaymentResponse retryPayment(String id, Long expectedVersion, String actorEmail) {
         PaymentEntity entity = paymentRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "Payment record not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), expectedVersion);
 
         entity.setStatus("SUCCEEDED");
         entity.setFailureReason(null);
         entity.setUpdatedAt(Instant.now());
         PaymentEntity updated = paymentRepository.save(entity);
+        paymentRepository.flush();
 
         auditService.logActivity(
                 "PAYMENT",
                 "RETRY_PAYMENT",
                 "Retried and settled payment transaction " + updated.getTransactionRef(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getTransactionRef(),
                 "INFO"
         );
@@ -135,7 +142,8 @@ public class BillingService {
 
     public BillingDTOs.PaymentResponse refundPayment(String id, BillingDTOs.RefundPaymentRequest req, String actorEmail) {
         PaymentEntity entity = paymentRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "Payment record not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), req.expectedVersion());
 
         BigDecimal currentRefunded = entity.getRefundedAmount() != null ? entity.getRefundedAmount() : BigDecimal.ZERO;
         BigDecimal newRefunded = currentRefunded.add(req.amount());
@@ -154,13 +162,14 @@ public class BillingService {
         entity.setUpdatedAt(Instant.now());
 
         PaymentEntity updated = paymentRepository.save(entity);
+        paymentRepository.flush();
 
         auditService.logActivity(
                 "PAYMENT",
                 "REFUND_PAYMENT",
                 "Refunded $" + req.amount() + " for " + updated.getTransactionRef() + " (" + req.reason() + ")",
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getTransactionRef(),
                 "WARNING"
         );
@@ -168,33 +177,42 @@ public class BillingService {
         return BillingDTOs.PaymentResponse.fromEntity(updated);
     }
 
-    public void deletePayment(String id, String actorEmail) {
+    public void deletePayment(String id, Long expectedVersion, String actorEmail) {
         PaymentEntity entity = paymentRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "Payment record not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), expectedVersion);
 
         paymentRepository.delete(entity);
+        paymentRepository.flush();
 
         auditService.logActivity(
                 "PAYMENT",
                 "DELETE_PAYMENT",
                 "Deleted payment record " + entity.getTransactionRef(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 entity.getTransactionRef(),
                 "WARNING"
         );
     }
 
-    public void bulkDelete(List<String> ids, String actorEmail) {
-        List<PaymentEntity> entities = paymentRepository.findAllById(ids);
+    /** All-or-nothing: an unknown id is 404 and an outdated version 409 STALE_VERSION; nothing is deleted then. */
+    public void bulkDelete(List<AdminRequests.VersionedId> items, String actorEmail) {
+        List<PaymentEntity> entities = new java.util.ArrayList<>();
+        for (AdminRequests.VersionedId item : items) {
+            PaymentEntity entity = paymentRepository.findById(item.id()).orElseThrow(ApiException::notFound);
+            ExpectedVersion.checkRequired(entity.getVersion(), item.expectedVersion());
+            entities.add(entity);
+        }
         paymentRepository.deleteAll(entities);
+        paymentRepository.flush();
 
         auditService.logActivity(
                 "PAYMENT",
                 "BULK_DELETE_PAYMENTS",
                 "Bulk deleted " + entities.size() + " payment records",
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 entities.size() + " records",
                 "WARNING"
         );

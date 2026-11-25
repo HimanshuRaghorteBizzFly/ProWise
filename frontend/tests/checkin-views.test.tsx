@@ -83,7 +83,7 @@ function render(node: React.ReactElement, seed: (client: QueryClient) => void = 
 describe("check-in API client", () => {
   it("submits with the caller's Idempotency-Key, decides with expected_version, reads the queue", async () => {
     const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({})));
-    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock, isRolePreview: () => false });
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
 
     await client.submitCheckIn("p-1", { percent: 45, accomplished: "a", next_steps: "b" }, "key-1");
     await client.submitCheckIn("p-1", { percent: 45, accomplished: "a", next_steps: "b" }, "key-1");

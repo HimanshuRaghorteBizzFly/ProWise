@@ -11,14 +11,13 @@ import { OwnerTable } from "@/components/owner/OwnerTable";
 import { FilterBar, PageHeader, StatusBadge, type StatusTone } from "@/components/owner/primitives";
 import type { OrgNavFamily } from "@/components/owner/org-nav";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { OrgMember } from "@/lib/fixtures/org-admin";
+import type { OrgMember } from "@/types/org-admin";
 import type { PermissionKey } from "@/types/permission";
 
 export interface MembersViewProps {
   family: OrgNavFamily;
   orgId: string;
   members: OrgMember[];
-  source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
   isCurrentOwner: boolean;
 }
@@ -35,7 +34,7 @@ const STATUS_TONES: Record<string, StatusTone> = {
 const statusLabel = (status: string) => status.charAt(0) + status.slice(1).toLowerCase();
 
 
-export function MembersView({ family, orgId, members, source, can, isCurrentOwner }: MembersViewProps) {
+export function MembersView({ family, orgId, members, can, isCurrentOwner }: MembersViewProps) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("ALL");
 
@@ -58,7 +57,6 @@ export function MembersView({ family, orgId, members, source, can, isCurrentOwne
     <PageHeader
       title="Members"
       description="People with a membership in this organization. Changes are not available yet; the list is read-only."
-      simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={
         canInvite ? (
           family === "owner" ? (

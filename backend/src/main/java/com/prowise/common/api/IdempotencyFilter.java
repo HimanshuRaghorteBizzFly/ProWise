@@ -80,7 +80,8 @@ public class IdempotencyFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         JdbcTemplate jdbc = jdbcProvider.getIfAvailable();
         AuthPrincipal caller = AuthPrincipal.current(request);
-        if (jdbc == null || caller == null || caller.isOperator()) {
+        // Operators are included: their caller id is the stable per-operator UUID of AuthPrincipal.forOperator.
+        if (jdbc == null || caller == null) {
             chain.doFilter(request, response);
             return;
         }

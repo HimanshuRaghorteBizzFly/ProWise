@@ -17,13 +17,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prowise.identity.AuthPrincipal;
+import com.prowise.superadmin.common.AdminRequests;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping({"/v1/admin/payments", "/api/v1/admin/payments"})
-@Tag(name = "Super Admin Payments", description = "Payment transactions, reconciliation and refunds")
+@Tag(name = "Super Admin Payments", description = "Payment records. Mutations need expected_version (409 STALE_VERSION when stale) and accept Idempotency-Key.")
 public class BillingController {
 
     private final BillingService billingService;
@@ -64,72 +64,68 @@ public class BillingController {
             HttpServletRequest request,
             @Valid @RequestBody BillingDTOs.RecordPaymentRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(billingService.recordPayment(body, actor));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('payments.manage')")
-    @Operation(summary = "Update payment transaction details")
+    @Operation(summary = "Update payment transaction details (expected_version required)")
     public ResponseEntity<BillingDTOs.PaymentResponse> updatePayment(
             HttpServletRequest request,
             @PathVariable String id,
             @Valid @RequestBody BillingDTOs.UpdatePaymentRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.ok(billingService.updatePayment(id, body, actor));
     }
 
     @PostMapping("/{id}/retry")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('payments.manage')")
-    @Operation(summary = "Retry a failed payment transaction")
+    @Operation(summary = "Retry a failed payment transaction (body: expected_version)")
     public ResponseEntity<BillingDTOs.PaymentResponse> retryPayment(
             HttpServletRequest request,
-            @PathVariable String id
+            @PathVariable String id,
+            @RequestBody(required = false) AdminRequests.VersionRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        return ResponseEntity.ok(billingService.retryPayment(id, actor));
+        String actor = AdminRequests.actor(request);
+        return ResponseEntity.ok(billingService.retryPayment(id, com.prowise.superadmin.common.AdminRequests.expected(body), actor));
     }
 
     @PostMapping("/{id}/refund")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('payments.refund')")
-    @Operation(summary = "Issue a partial or full refund for a payment")
+    @Operation(summary = "Issue a partial or full refund for a payment (body: amount, reason, expected_version)")
     public ResponseEntity<BillingDTOs.PaymentResponse> refundPayment(
             HttpServletRequest request,
             @PathVariable String id,
             @Valid @RequestBody BillingDTOs.RefundPaymentRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.ok(billingService.refundPayment(id, body, actor));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('payments.manage')")
-    @Operation(summary = "Delete a payment record")
+    @Operation(summary = "Delete a payment record (?expectedVersion= required)")
     public ResponseEntity<Void> deletePayment(
             HttpServletRequest request,
-            @PathVariable String id
+            @PathVariable String id,
+            @RequestParam(required = false) Long expectedVersion
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        billingService.deletePayment(id, actor);
+        String actor = AdminRequests.actor(request);
+        billingService.deletePayment(id, expectedVersion, actor);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/bulk-delete")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('payments.manage')")
-    @Operation(summary = "Bulk delete payment records")
+    @Operation(summary = "Bulk delete payment records (items: [{id, expected_version}]; all-or-nothing)")
     public ResponseEntity<Void> bulkDelete(
             HttpServletRequest request,
-            @Valid @RequestBody BillingDTOs.BulkDeleteRequest body
+            @Valid @RequestBody AdminRequests.BulkVersionedRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        billingService.bulkDelete(body.ids(), actor);
+        String actor = AdminRequests.actor(request);
+        billingService.bulkDelete(body.items(), actor);
         return ResponseEntity.noContent().build();
     }
 }

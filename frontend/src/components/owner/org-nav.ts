@@ -1,13 +1,6 @@
 import {
-  Activity,
-  Bell,
-  Building2,
-  FileText,
   FolderGit2,
-  GitPullRequest,
-  HeartPulse,
   LayoutDashboard,
-  Lock,
   Mail,
   ShieldCheck,
   Users,
@@ -40,19 +33,7 @@ const MEMBER_KEYS: readonly PermissionKey[] = ["member.invite", "member.disable"
 
 export function buildOrgNav(family: OrgNavFamily, orgId: string): OrgNavGroup[] {
   const base = `/org/${orgId}/${family}`;
-  const workspace: OrgNavItem[] = [
-    { label: "Integrations (GitHub)", href: `${base}/integrations`, icon: GitPullRequest, requiredAny: ["repo.read"] },
-    // Notifications need only an active membership.
-    { label: "Notifications", href: `${base}/notifications`, icon: Bell },
-    { label: "Audit & security", href: `${base}/audit-logs`, icon: Activity, requiredAny: ["audit.read"] },
-  ];
-  if (family === "owner") {
-    workspace.push(
-      { label: "Data & privacy", href: `${base}/privacy`, icon: Lock, requiredAny: ["org.manage"] },
-      { label: "Organization settings", href: `${base}/organization`, icon: Building2, requiredAny: ["org.manage"] },
-    );
-  }
-
+  // Health, reports, integrations, notifications, audit, privacy and organization settings have no API yet: hidden.
   return [
     {
       title: "Overview",
@@ -72,11 +53,8 @@ export function buildOrgNav(family: OrgNavFamily, orgId: string): OrgNavGroup[] 
       title: "Delivery",
       items: [
         { label: "Projects portfolio", href: `${base}/projects`, icon: FolderGit2, requiredAny: ["project.read"] },
-        { label: "Health & risks", href: `${base}/health`, icon: HeartPulse, requiredAny: ["project.read"] },
-        { label: "Reports & exports", href: `${base}/reports`, icon: FileText, requiredAny: ["project.read"] },
       ],
     },
-    { title: "Workspace", items: workspace },
   ];
 }
 

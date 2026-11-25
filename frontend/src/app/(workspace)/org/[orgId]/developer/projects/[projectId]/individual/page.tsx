@@ -1,7 +1,5 @@
 "use client";
 
-import { PREVIEW_PROJECTS } from "@/lib/fixtures/preview-data";
-import { classifyFailure, readPermissionEnv } from "@/lib/permissions";
 
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
@@ -47,7 +45,7 @@ import { toast } from "sonner";
 
 export default function IndividualModeWorkspace() {
   const params = useParams();
-  const orgId = (params?.orgId as string) || "org-acme";
+  const orgId = (params?.orgId as string) || "";
   const projectId = (params?.projectId as string) || "proj-individual-solo";
 
   const { currentUser } = useAuthStore();
@@ -94,11 +92,6 @@ export default function IndividualModeWorkspace() {
       const p = await apiClient.project(orgId, projectId);
       setProject(p);
     } catch (error) {
-      // Role preview / unreachable dev API: show the labelled sample project instead of an error (never in production).
-      if (classifyFailure(error, readPermissionEnv()) === "fixture") {
-        setProject(PREVIEW_PROJECTS.find((p) => p.id === projectId) ?? PREVIEW_PROJECTS[0]);
-        return;
-      }
       const message = error instanceof Error ? error.message : "Failed to load project.";
       setProjectError(message);
       toast.error("Project could not be loaded", { description: message });

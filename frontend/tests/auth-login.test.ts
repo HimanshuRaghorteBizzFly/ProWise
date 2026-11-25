@@ -23,7 +23,7 @@ const OTHER = "22222222-2222-4222-8222-222222222222";
 
 function response(extra: Partial<AuthLoginResponse> = {}): AuthLoginResponse {
   return {
-    access_token: "a", refresh_token: "r", expires_in: 900, must_change_password: false,
+    access_token: "a", expires_in: 900, must_change_password: false,
     target_dashboard_url: `/org/${ORG}/developer/dashboard`,
     user: { id: "u-1", email: "dev@acme.test", name: "Dev", role: "DEVELOPER", organization_id: ORG, organization_name: "Acme", must_change_password: false },
     requires_organization_selection: false,
@@ -45,7 +45,6 @@ describe("applying a real sign-in", () => {
     expect(state.currentOrg.id).not.toBe("org-acme");
     expect(state.currentUser.id).toBe("u-1");
     expect(state.isAuthenticated).toBe(true);
-    expect(state.isRolePreview).toBe(false);
   });
 
   it("sends a member of several organizations to the chooser and remembers the role each one gives", () => {
@@ -108,7 +107,7 @@ describe("invitation activation", () => {
 describe("auth client calls", () => {
   function client(body: unknown, status = 200) {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
-    return { fetchMock, api: createApiClient({ baseUrl: "http://api.test", fetch: fetchMock, isRolePreview: () => false }) };
+    return { fetchMock, api: createApiClient({ baseUrl: "http://api.test", fetch: fetchMock }) };
   }
 
   it("signs straight into a chosen organization", async () => {
@@ -134,7 +133,7 @@ describe("auth client calls", () => {
     await api.mySessions();
     expect(fetchMock.mock.calls[0][0]).toBe("http://api.test/v1/me/sessions");
     const revokeFetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
-    await createApiClient({ baseUrl: "http://api.test", fetch: revokeFetch, isRolePreview: () => false }).revokeSession("s-1");
+    await createApiClient({ baseUrl: "http://api.test", fetch: revokeFetch }).revokeSession("s-1");
     expect(revokeFetch.mock.calls[0][0]).toBe("http://api.test/v1/me/sessions/s-1");
     expect(revokeFetch.mock.calls[0][1].method).toBe("DELETE");
   });

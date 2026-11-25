@@ -1083,9 +1083,12 @@ export const SEED_OPERATOR_LOGS: OperatorActivityLog[] = [
 ];
 
 export const SEED_OPERATOR_ACCOUNT: OperatorAccountSettings = {
-  name: "Alex Rivera",
-  roleTitle: "Senior Platform Operator",
-  email: "alex.rivera@prowise.io",
+  name: "Jordan Mercer",
+  roleTitle: "Site Reliability Operator",
+  email: "operator@prowise.io",
+  department: "Site Reliability",
+  shiftName: "Americas Primary (08:00 - 17:00 UTC)",
+  activeOperatorId: "op-2",
   timezone: "America/New_York",
   autoRefreshSeconds: 30,
   mfaEnabled: true,

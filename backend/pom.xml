@@ -154,6 +154,10 @@
                         <SMTP_CREDENTIAL_ENCRYPTION_KEY>test-only-smtp-credential-encryption-key-0123456789</SMTP_CREDENTIAL_ENCRYPTION_KEY>
                         <!-- Tests never read backend/.env: no real SMTP, no bootstrap email, no local secrets. -->
                         <PROWISE_ENV_FILE>target/tests-do-not-load-dotenv.properties</PROWISE_ENV_FILE>
+                        <!-- Shared test contexts sign in many times from 127.0.0.1; AuthHardeningIntegrationTest sets its own low limit. -->
+                        <prowise.auth.ip-rate-limit-per-minute>100000</prowise.auth.ip-rate-limit-per-minute>
+                        <!-- Each cached test context keeps its own pool; small pools keep the suite under PostgreSQL max_connections. -->
+                        <spring.datasource.hikari.maximum-pool-size>4</spring.datasource.hikari.maximum-pool-size>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

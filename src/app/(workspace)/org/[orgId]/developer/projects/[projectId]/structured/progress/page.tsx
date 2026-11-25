@@ -1,15 +1,6 @@
-"use client";
-import React from "react";
-import { useParams } from "next/navigation";
-import { PanelLayout } from "@/components/layouts/panel-layout";
-import { Card } from "@/components/ui/card";
+import { redirect } from "next/navigation";
 
-export default function StructuredBaselineProgressPage() {
-  return (
-    <PanelLayout title="Baseline Leaf Progress" breadcrumb={[{ label: "Developer", href: "#" }, { label: "Progress" }]}>
-      <Card className="p-5 border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <p className="text-xs text-[var(--color-text-secondary)]">Sum(Done Leaf Weights) / Total Approved Baseline Weights formula progress.</p>
-      </Card>
-    </PanelLayout>
-  );
+/** Folded into the Developer workspace: this old URL now opens the page that holds the same real data. */
+export default function Page({ params }: { params: { orgId: string; projectId: string; taskId?: string } }) {
+  redirect(`/org/${params.orgId}/developer/projects/${params.projectId}/structured`);
 }

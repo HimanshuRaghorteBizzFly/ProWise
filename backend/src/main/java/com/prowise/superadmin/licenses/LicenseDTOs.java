@@ -22,7 +22,8 @@ public final class LicenseDTOs {
             Instant revokedAt,
             String revokedReason,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            long version
     ) {
         public static LicenseResponse fromEntity(LicenseEntity e) {
             return new LicenseResponse(
@@ -37,7 +38,8 @@ public final class LicenseDTOs {
                     e.getRevokedAt(),
                     e.getRevokedReason(),
                     e.getCreatedAt(),
-                    e.getUpdatedAt()
+                    e.getUpdatedAt(),
+                    e.getVersion() == null ? 0L : e.getVersion()
             );
         }
     }
@@ -60,6 +62,7 @@ public final class LicenseDTOs {
     ) {}
 
     public record RevokeLicenseRequest(
-            @NotBlank String reason
+            @NotBlank String reason,
+            Long expectedVersion
     ) {}
 }

@@ -11,7 +11,6 @@ import { LeadSidebar } from "./LeadSidebar";
 import { DeveloperSidebar } from "./DeveloperSidebar";
 import { ReviewerSidebar } from "./ReviewerSidebar";
 import { ViewerSidebar } from "./ViewerSidebar";
-import { RoleTestBanner } from "@/components/navigation/role-test-banner";
 import { useAuth } from "@/hooks/useAuth";
 import { SystemRole } from "@/types";
 import { Toaster } from "sonner";
@@ -24,7 +23,7 @@ export interface AppShellProps {
   title?: string;
 }
 
-export function AppShell({ children, role: overrideRole, orgId = "org-1", title }: AppShellProps) {
+export function AppShell({ children, role: overrideRole, orgId = "", title }: AppShellProps) {
   const { role: authRole } = useAuth();
   const { isDark } = useTheme();
   const currentRole = overrideRole || authRole;
@@ -55,7 +54,6 @@ export function AppShell({ children, role: overrideRole, orgId = "org-1", title 
 
   return (
     <div className="flex flex-col min-h-screen bg-[var(--color-app-bg)] text-[var(--color-text-primary)] antialiased">
-      <RoleTestBanner />
       <div className="flex flex-1 overflow-hidden">
         {renderSidebar()}
         <div className="flex flex-1 flex-col overflow-y-auto">
@@ -65,7 +63,7 @@ export function AppShell({ children, role: overrideRole, orgId = "org-1", title 
           </main>
         </div>
       </div>
-      <Toaster position="top-right" theme={isDark ? "dark" : "light"} richColors />
+      <Toaster position="bottom-right" theme={isDark ? "dark" : "light"} richColors closeButton />
     </div>
   );
 }

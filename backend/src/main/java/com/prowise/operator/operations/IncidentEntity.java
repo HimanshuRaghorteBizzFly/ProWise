@@ -5,10 +5,16 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "incidents")
 public class IncidentEntity {
+
+    /** Optimistic lock (V34): exposed as "version", checked against the client's expected_version. */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
 
     @Id
     @Column(name = "id", length = 64)
@@ -84,4 +90,7 @@ public class IncidentEntity {
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
 }

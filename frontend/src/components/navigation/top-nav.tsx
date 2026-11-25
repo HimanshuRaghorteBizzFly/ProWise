@@ -2,19 +2,12 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Menu, Bell, Sun, Moon, ChevronDown, ChevronRight, LogOut, Shield, Check, CheckCheck, Settings, GitBranch } from "lucide-react";
+import { Search, Menu, Sun, Moon, ChevronDown, ChevronRight, LogOut, Shield, Check, Settings, GitBranch } from "lucide-react";
 import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
 import { useThemeStore } from "@/store/theme-store";
-import { useProjectStore } from "@/store/project-store";
-import { Organization, SystemRole } from "@/types";
+import { SystemRole } from "@/types";
 import { Avatar } from "@/components/ui/avatar";
 import { GlobalSearchModal } from "./global-search-modal";
-import { SampleDataBadge } from "./sample-data-badge";
-import { SEEDED_ORGS } from "@/lib/mock-data";
-import { apiClient } from "@/lib/api";
-import { previewEnabled } from "@/lib/permissions";
-import { establishSession } from "@/lib/session";
-import { clearWorkspaceCaches, switchWorkspace } from "@/lib/workspace-switch";
 import { cn } from "@/lib/utils";
 
 interface TopNavProps {
@@ -25,7 +18,7 @@ interface TopNavProps {
   navigationButtonRef?: React.RefObject<HTMLButtonElement>;
 }
 
-type OpenMenu = "notifications" | "profile" | null;
+type OpenMenu = "profile" | null;
 
 const ICON_BUTTON =
   "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-app-text-secondary transition-colors hover:bg-app-hover hover:text-app-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent motion-reduce:transition-none";
@@ -93,20 +86,17 @@ export function TopNav({
     router.replace("/login");
   };
   const { setTheme, resolvedTheme } = useThemeStore();
-  const { notifications, markNotificationRead, markAllNotificationsRead } = useProjectStore();
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
-  const notificationsRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
-  const unreadNotifications = notifications.filter((n) => !n.read);
   const toggleMenu = (menu: Exclude<OpenMenu, null>) => setOpenMenu((current) => (current === menu ? null : menu));
 
   // Escape and outside clicks close the open menu.
   useEffect(() => {
     if (!openMenu) return;
-    const activeRef = openMenu === "notifications" ? notificationsRef : profileRef;
+    const activeRef = profileRef;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpenMenu(null);
@@ -189,8 +179,6 @@ export function TopNav({
 
         {/* Right: actions */}
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-          <SampleDataBadge />
-
           <button type="button" onClick={() => setIsSearchOpen(true)} aria-label="Search" className={cn(ICON_BUTTON, "lg:hidden")}>
             <Search className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -207,79 +195,6 @@ export function TopNav({
               <Moon className="h-4 w-4" aria-hidden="true" />
             )}
           </button>
-
-          {/* Notifications */}
-          <div ref={notificationsRef} className="relative">
-            <button
-              type="button"
-              onClick={() => toggleMenu("notifications")}
-              aria-label={`Notifications, ${unreadNotifications.length} unread`}
-              aria-haspopup="true"
-              aria-expanded={openMenu === "notifications"}
-              className={cn(ICON_BUTTON, "relative")}
-            >
-              <Bell className="h-4 w-4" aria-hidden="true" />
-              {unreadNotifications.length > 0 && (
-                <span className="absolute right-1.5 top-1.5 flex h-2 w-2" aria-hidden="true">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75 motion-reduce:animate-none" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-600" />
-                </span>
-              )}
-            </button>
-
-            {openMenu === "notifications" && (
-              <div className="absolute right-0 z-50 mt-2 w-80 max-w-[92vw] rounded-xl border border-app-border bg-app-surface p-3 shadow-2xl">
-                <div className="flex items-center justify-between border-b border-app-border pb-2">
-                  <span className="text-xs font-bold text-app-text-primary">
-                    Notifications ({unreadNotifications.length})
-                  </span>
-                  {unreadNotifications.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => markAllNotificationsRead()}
-                      className="flex items-center gap-1 rounded text-[11px] text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent dark:text-blue-400"
-                    >
-                      <CheckCheck className="h-3 w-3" aria-hidden="true" /> Mark all read
-                    </button>
-                  )}
-                </div>
-                <ul className="mt-1 max-h-64 divide-y divide-app-border overflow-y-auto">
-                  {notifications.map((n) => (
-                    <li key={n.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          markNotificationRead(n.id);
-                          setOpenMenu(null);
-                          router.push(n.targetUrl);
-                        }}
-                        className={cn(
-                          "w-full rounded-lg p-2.5 text-left text-xs transition-colors hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-app-accent motion-reduce:transition-none",
-                          !n.read && "bg-blue-500/5",
-                        )}
-                      >
-                        <span className="flex items-center justify-between">
-                          <span className="truncate font-semibold text-app-text-primary">{n.title}</span>
-                          {!n.read && (
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-600">
-                              <span className="sr-only">Unread</span>
-                            </span>
-                          )}
-                        </span>
-                        <span className="mt-0.5 line-clamp-2 block text-app-text-secondary">{n.message}</span>
-                        <span className="mt-1 block text-[10px] text-app-text-muted">
-                          {new Date(n.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                  {notifications.length === 0 && (
-                    <li className="py-6 text-center text-xs text-app-text-muted">No notifications yet</li>
-                  )}
-                </ul>
-              </div>
-            )}
-          </div>
 
           {/* Active panel indicator */}
           <span className="hidden h-8 items-center gap-1.5 rounded-lg border border-app-border bg-app-bg px-2.5 text-xs font-medium text-app-text-primary sm:inline-flex">
@@ -357,6 +272,7 @@ export function TopNav({
                       ))}
                     </div>
                   </div>
+                </div>
                 )}
 
                 <div className="pt-1">
@@ -370,17 +286,6 @@ export function TopNav({
                   >
                     <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>Sign out</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenu(null);
-                      void signOut(true);
-                    }}
-                    className={cn(MENU_ITEM, "justify-start text-rose-600 hover:bg-rose-500/10 dark:text-rose-400")}
-                  >
-                    <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-                    <span>Sign out on all devices</span>
                   </button>
                 </div>
               </div>

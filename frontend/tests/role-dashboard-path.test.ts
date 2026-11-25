@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { getRoleDashboardPath, useAuthStore } from "../src/store/auth-store";
 
@@ -19,20 +19,12 @@ describe("role dashboard paths", () => {
     expect(getRoleDashboardPath("PLATFORM_OPERATOR")).toBe("/platform-operator/dashboard");
   });
 
-  it("switches role dashboards in development preview without requiring another login", () => {
-    const initialState = useAuthStore.getState();
-    useAuthStore.setState({
-      currentOrg: { ...initialState.currentOrg, id: "org-acme" },
-      isRolePreview: false,
-    });
-    const navigate = vi.fn();
 
-    useAuthStore.getState().switchRoleAndNavigate("ORGANIZATION_OWNER", navigate);
-
-    expect(useAuthStore.getState().currentRole).toBe("ORGANIZATION_OWNER");
-    expect(useAuthStore.getState().isRolePreview).toBe(true);
-    expect(navigate).toHaveBeenCalledWith("/org/org-acme/owner/dashboard");
-
-    useAuthStore.setState(initialState);
+  it("starts signed out with no invented person or organization", () => {
+    const state = useAuthStore.getState();
+    expect(state.isAuthenticated).toBe(false);
+    expect(state.currentUser.email).toBe("");
+    expect(state.currentOrg.id).toBe("");
+    expect(state.organizations).toEqual([]);
   });
 });

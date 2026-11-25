@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.prowise.common.api.ApiException;
+import com.prowise.common.persistence.ExpectedVersion;
 import com.prowise.superadmin.audit.AuditService;
 
 @Service
@@ -30,7 +31,7 @@ public class FeatureFlagService {
     @Transactional(readOnly = true)
     public FeatureFlagDTOs.FeatureFlagResponse getFeatureFlag(String id) {
         FeatureFlagEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "FLAG_NOT_FOUND", "Feature flag not found: " + id));
+                .orElseThrow(ApiException::notFound);
         return FeatureFlagDTOs.FeatureFlagResponse.fromEntity(entity);
     }
 
@@ -52,13 +53,14 @@ public class FeatureFlagService {
         entity.setUpdatedAt(Instant.now());
 
         FeatureFlagEntity saved = repository.save(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "PLATFORM",
                 "CREATE_FEATURE_FLAG",
                 "Created feature flag: " + saved.getLabel() + " (" + saved.getFlagKey() + ")",
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 saved.getLabel(),
                 "INFO"
         );
@@ -68,7 +70,8 @@ public class FeatureFlagService {
 
     public FeatureFlagDTOs.FeatureFlagResponse updateFeatureFlag(String id, FeatureFlagDTOs.UpdateFeatureFlagRequest req, String actorEmail) {
         FeatureFlagEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "FLAG_NOT_FOUND", "Feature flag not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), req.expectedVersion());
 
         if (req.label() != null) entity.setLabel(req.label().trim());
         if (req.description() != null) entity.setDescription(req.description());
@@ -77,13 +80,14 @@ public class FeatureFlagService {
         entity.setUpdatedAt(Instant.now());
 
         FeatureFlagEntity updated = repository.save(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "PLATFORM",
                 "UPDATE_FEATURE_FLAG",
                 "Updated feature flag: " + updated.getLabel(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getLabel(),
                 "INFO"
         );
@@ -91,20 +95,22 @@ public class FeatureFlagService {
         return FeatureFlagDTOs.FeatureFlagResponse.fromEntity(updated);
     }
 
-    public FeatureFlagDTOs.FeatureFlagResponse toggleFeatureFlag(String id, boolean enabled, String actorEmail) {
+    public FeatureFlagDTOs.FeatureFlagResponse toggleFeatureFlag(String id, boolean enabled, Long expectedVersion, String actorEmail) {
         FeatureFlagEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "FLAG_NOT_FOUND", "Feature flag not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), expectedVersion);
 
         entity.setEnabled(enabled);
         entity.setUpdatedAt(Instant.now());
         FeatureFlagEntity updated = repository.save(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "PLATFORM",
                 "TOGGLE_FEATURE_FLAG",
                 (enabled ? "Enabled" : "Disabled") + " feature flag: " + updated.getLabel(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getLabel(),
                 "WARNING"
         );
@@ -112,18 +118,20 @@ public class FeatureFlagService {
         return FeatureFlagDTOs.FeatureFlagResponse.fromEntity(updated);
     }
 
-    public void deleteFeatureFlag(String id, String actorEmail) {
+    public void deleteFeatureFlag(String id, Long expectedVersion, String actorEmail) {
         FeatureFlagEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "FLAG_NOT_FOUND", "Feature flag not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), expectedVersion);
 
         repository.delete(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "PLATFORM",
                 "DELETE_FEATURE_FLAG",
                 "Deleted feature flag: " + entity.getLabel(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 entity.getLabel(),
                 "WARNING"
         );

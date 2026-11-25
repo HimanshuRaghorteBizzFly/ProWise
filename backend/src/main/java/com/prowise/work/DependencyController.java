@@ -3,36 +3,26 @@ package com.prowise.work;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prowise.work.BlockerService.Blocker;
-import com.prowise.work.BlockerService.BlockerRequest;
-import com.prowise.work.BlockerService.Raised;
-import com.prowise.work.BlockerService.ResolveRequest;
-import com.prowise.work.DependencyService.Board;
-import com.prowise.work.DependencyService.Change;
-import com.prowise.work.DependencyService.ItemRef;
-import com.prowise.work.DependencyService.LinkRequest;
-import com.prowise.work.DependencyService.ReleaseRequest;
-import com.prowise.work.DependencyService.VersionRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
-/**
- * Task 3.4 routes. The membership is checked here; project.edit (links), task.update (raising blockers) and the
- * owner / opener / project.edit rule (resolving) are checked in the services against the project and the task.
- */
+/** Task 3.4: dependencies and blockers. */
 @RestController
-@RequestMapping("/v1/organizations/{orgId}/projects/{projectId}")
+@Tag(name = "Dependencies and blockers", description = "Finish-to-Start links and blockers (a separate flag, not a state)")
 public class DependencyController {
 
-    private static final String MEMBER = "@permissionService.member(authentication, #orgId)";
+    private static final String MEMBER = "@permissionService.tokenOrgMember(authentication)";
 
     private final DependencyService dependencies;
     private final BlockerService blockers;
@@ -42,57 +32,56 @@ public class DependencyController {
         this.blockers = blockers;
     }
 
-    @GetMapping("/dependencies")
+    @PostMapping("/v1/work-items/{workItemId}/dependencies")
     @PreAuthorize(MEMBER)
-    Board board(@PathVariable UUID orgId, @PathVariable String projectId, Authentication authentication) {
-        return dependencies.board(orgId, projectId, authentication, blockers);
+    @Operation(summary = "Make this work wait for a prerequisite in the same project (planners); returns affected work")
+    public ResponseEntity<DependencyService.LinkResult> link(@PathVariable String workItemId,
+            @RequestBody DependencyService.LinkRequest request, Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(dependencies.link(authentication, workItemId, request));
     }
 
-    @PostMapping("/work-items/{itemId}/dependencies")
+    @GetMapping("/v1/work-items/{workItemId}/dependencies")
     @PreAuthorize(MEMBER)
-    ResponseEntity<Change> link(@PathVariable UUID orgId, @PathVariable String projectId, @PathVariable String itemId,
-            Authentication authentication, @RequestBody LinkRequest request) {
-        return ResponseEntity.status(201).body(dependencies.link(orgId, projectId, itemId, authentication, request));
+    @Operation(summary = "Blocked by, blocks, and all downstream work affected by this item")
+    public DependencyService.DependencyView view(@PathVariable String workItemId, Authentication authentication) {
+        return dependencies.view(authentication, workItemId);
     }
 
-    @PostMapping("/work-items/{itemId}/dependencies/{linkId}/remove")
+    @DeleteMapping("/v1/dependencies/{dependencyId}")
     @PreAuthorize(MEMBER)
-    Change unlink(@PathVariable UUID orgId, @PathVariable String projectId, @PathVariable String itemId, @PathVariable UUID linkId,
-            Authentication authentication, @RequestBody VersionRequest request) {
-        return dependencies.unlink(orgId, projectId, itemId, linkId, authentication, request);
+    @Operation(summary = "Remove a dependency link (planners)")
+    public ResponseEntity<Void> unlink(@PathVariable UUID dependencyId, Authentication authentication) {
+        dependencies.unlink(authentication, dependencyId);
+        return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/work-items/{itemId}/dependencies/release")
+    @PostMapping("/v1/work-items/{workItemId}/blockers")
     @PreAuthorize(MEMBER)
-    Change release(@PathVariable UUID orgId, @PathVariable String projectId, @PathVariable String itemId, Authentication authentication,
-            @RequestBody ReleaseRequest request) {
-        return dependencies.release(orgId, projectId, itemId, authentication, request);
+    @Operation(summary = "Flag the work as blocked with a reason, owner and severity (assignee or planner)")
+    public ResponseEntity<BlockerService.BlockerView> raise(@PathVariable String workItemId,
+            @RequestBody BlockerService.RaiseRequest request, Authentication authentication) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(blockers.raise(authentication, workItemId, request));
     }
 
-    @PostMapping("/work-items/{itemId}/dependency-flag/clear")
+    @GetMapping("/v1/work-items/{workItemId}/blockers")
     @PreAuthorize(MEMBER)
-    ItemRef clearFlag(@PathVariable UUID orgId, @PathVariable String projectId, @PathVariable String itemId, Authentication authentication,
-            @RequestBody VersionRequest request) {
-        return dependencies.clearFlag(orgId, projectId, itemId, authentication, request);
+    @Operation(summary = "Open and cleared blockers of a work item")
+    public List<BlockerService.BlockerView> forWorkItem(@PathVariable String workItemId, Authentication authentication) {
+        return blockers.forWorkItem(authentication, workItemId);
     }
 
-    @GetMapping("/work-items/{itemId}/blockers")
+    @GetMapping("/v1/projects/{projectId}/work-item-blockers")
     @PreAuthorize(MEMBER)
-    List<Blocker> blockers(@PathVariable UUID orgId, @PathVariable String projectId, @PathVariable String itemId, Authentication authentication) {
-        return blockers.list(orgId, projectId, itemId, authentication);
+    @Operation(summary = "Open work-item blockers of a readable project, critical first, with age (project-level delivery blockers stay at /blockers)")
+    public List<BlockerService.BlockerView> openForProject(@PathVariable String projectId, Authentication authentication) {
+        return blockers.openForProject(authentication, projectId);
     }
 
-    @PostMapping("/work-items/{itemId}/blockers")
+    @PostMapping("/v1/blockers/{blockerId}/resolve")
     @PreAuthorize(MEMBER)
-    ResponseEntity<Raised> raise(@PathVariable UUID orgId, @PathVariable String projectId, @PathVariable String itemId,
-            Authentication authentication, @RequestBody BlockerRequest request) {
-        return ResponseEntity.status(201).body(blockers.raise(orgId, projectId, itemId, authentication, request));
-    }
-
-    @PostMapping("/work-items/{itemId}/blockers/{blockerId}/resolve")
-    @PreAuthorize(MEMBER)
-    Raised resolve(@PathVariable UUID orgId, @PathVariable String projectId, @PathVariable String itemId, @PathVariable String blockerId,
-            Authentication authentication, @RequestBody ResolveRequest request) {
-        return blockers.resolve(orgId, projectId, itemId, blockerId, authentication, request);
+    @Operation(summary = "Clear a blocker (owner, reporter, assignee or planner); the work keeps its state")
+    public BlockerService.BlockerView resolve(@PathVariable String blockerId,
+            @RequestBody(required = false) BlockerService.ResolveRequest request, Authentication authentication) {
+        return blockers.resolve(authentication, blockerId, request);
     }
 }

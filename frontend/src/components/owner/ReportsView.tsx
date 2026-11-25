@@ -12,7 +12,6 @@ import type { PermissionKey } from "@/types/permission";
 
 export interface ReportsViewProps {
   projects: Project[];
-  source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
   basePath?: string;
   now?: string;
@@ -32,13 +31,12 @@ export const OWNER_REPORTS: ReportDefinition[] = [
   { id: "acceptance", name: "Acceptance", description: "Delivery acceptance requests and decisions.", laterTask: "2.4" },
 ];
 
-export function ReportsView({ projects, source, can, basePath, now }: ReportsViewProps) {
+export function ReportsView({ projects, can, basePath, now }: ReportsViewProps) {
   const canExport = can("report.export");
   const header = (
     <PageHeader
       title="Reports & exports"
       description="Reports use the same permission-aware queries as the screens. Exporting needs report.export even where reading is allowed."
-      simulationLabel={source === "fixture" ? "Sample data" : undefined}
     />
   );
 

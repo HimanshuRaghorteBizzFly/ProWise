@@ -233,7 +233,7 @@ class SmtpAdminIntegrationTest {
                 VALUES (?, 'Main', ?, 'role-platform-operator', 'MAIN_PLATFORM_OPERATOR', NULL, 'ACTIVE', ?, true)
                 """, "op-smtp-" + suffix, operatorEmail, passwordEncoder.encode(OPERATOR_PASSWORD));
         String operatorToken = json(mockMvc.perform(post("/v1/auth/operator/login")
-                        .header("X-Forwarded-For", TestAccounts.randomClientAddress())
+                        .with(com.prowise.testsupport.TestAccounts.randomClient())
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(Map.of("email", operatorEmail, "password", OPERATOR_PASSWORD))))
                 .andExpect(status().isOk())).path("access_token").asText();

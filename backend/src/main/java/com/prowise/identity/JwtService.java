@@ -17,6 +17,8 @@ import io.jsonwebtoken.security.Keys;
 @Service
 public class JwtService {
 
+    /** Every access token names this API as its audience and "access" as its type; parsing requires both. */
+    public static final String AUDIENCE = "prowise-api";
     private final SecretKey key;
     private final Duration accessTokenLifetime;
     private final String issuer;
@@ -48,13 +50,11 @@ public class JwtService {
     }
 
     public String issueAccessToken(AuthPrincipal principal) {
-        return issueAccessToken(principal, Instant.now());
-    }
-
-    /** Issued at {@code now} (tests use a past instant to get an already expired token). */
-    String issueAccessToken(AuthPrincipal principal, Instant now) {
+        Instant now = Instant.now();
         var builder = Jwts.builder()
                 .issuer(issuer)
+                .audience().add(AUDIENCE).and()
+                .claim("typ", "access")
                 .subject(principal.userId().toString())
                 .claim("sid", principal.sessionId().toString())
                 .claim("email", principal.email())
@@ -82,7 +82,7 @@ public class JwtService {
     }
 
     public AuthPrincipal parse(String token) {
-        Claims claims = Jwts.parser().verifyWith(key).requireIssuer(issuer).build().parseSignedClaims(token).getPayload();
+        Claims claims = Jwts.parser().verifyWith(key).requireIssuer(issuer).requireAudience(AUDIENCE).require("typ", "access").build().parseSignedClaims(token).getPayload();
         String type = claims.get("type", String.class);
         if ("OPERATOR".equalsIgnoreCase(type)) {
             String opid = claims.get("opid", String.class);

@@ -1,0 +1,141 @@
+"use client";
+
+import { useParams } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { apiClient } from "@/lib/api";
+import { classifyFailure } from "@/lib/permissions";
+import type { GrantDto, GrantRequestDto, MemberDto, RoleDto, RoleHolderDto, RoleRequestDto } from "@/types/api";
+
+/**
+ * Roles & Permissions data (task 1.3). Everything comes from the real API; failures show loading, access or
+ * error states, never sample data.
+ */
+
+export type LoadState<T> =
+  | { kind: "loading" }
+  | { kind: "ready"; data: T }
+  | { kind: "forbidden" }
+  | { kind: "access-lost" }
+  | { kind: "unauthenticated" }
+  | { kind: "error"; retry: () => void };
+
+export function useOrgId(): string {
+  const params = useParams();
+  return (params?.orgId as string) || "";
+}
+
+export function toState<T>(query: {
+  isPending: boolean;
+  error: unknown;
+  data: T | undefined;
+  refetch: () => unknown;
+}): LoadState<T> {
+  if (query.isPending) return { kind: "loading" };
+  if (query.error) {
+    const kind = classifyFailure(query.error);
+    if (kind === "forbidden") return { kind: "forbidden" };
+    if (kind === "not-found") return { kind: "access-lost" };
+    if (kind === "unauthenticated") return { kind: "unauthenticated" };
+    return { kind: "error", retry: () => void query.refetch() };
+  }
+  return { kind: "ready", data: query.data as T };
+}
+
+const QUERY = { retry: false } as const;
+
+export function useRoles(orgId: string): LoadState<RoleDto[]> {
+  return toState(useQuery({ queryKey: ["roles", orgId], queryFn: () => apiClient.roles(orgId), ...QUERY }));
+}
+
+export function useRole(orgId: string, roleId: string): LoadState<RoleDto> {
+  return toState(
+    useQuery({
+      queryKey: ["role", orgId, roleId],
+      queryFn: () => apiClient.role(orgId, roleId),
+      ...QUERY,
+    }),
+  );
+}
+
+export function useRoleHolders(orgId: string, roleId: string): LoadState<RoleHolderDto[]> {
+  return toState(
+    useQuery({
+      queryKey: ["role-holders", orgId, roleId],
+      queryFn: () => apiClient.roleHolders(orgId, roleId),
+      ...QUERY,
+    }),
+  );
+}
+
+export function useMembers(orgId: string): LoadState<MemberDto[]> {
+  return toState(
+    useQuery({ queryKey: ["members", orgId], queryFn: () => apiClient.members(orgId), ...QUERY }),
+  );
+}
+
+export function useMemberGrants(orgId: string, membershipId: string): LoadState<GrantDto[]> {
+  return toState(
+    useQuery({
+      queryKey: ["member-grants", orgId, membershipId],
+      enabled: Boolean(membershipId),
+      queryFn: () => apiClient.memberGrants(orgId, membershipId),
+      ...QUERY,
+    }),
+  );
+}
+
+/** Mutations invalidate every role, member and permission query of the organization. */
+export function useRoleMutations(orgId: string) {
+  const invalidate = useReloadRoleData(orgId);
+  return {
+    createRole: useMutation({ mutationFn: (body: RoleRequestDto) => apiClient.createRole(orgId, body), onSuccess: invalidate }),
+    updateRole: useMutation({
+      mutationFn: (input: { roleId: string; body: RoleRequestDto }) => apiClient.updateRole(orgId, input.roleId, input.body),
+      onSuccess: invalidate,
+    }),
+    deleteRole: useMutation({
+      mutationFn: (input: { roleId: string; version: number }) => apiClient.deleteRole(orgId, input.roleId, input.version),
+      onSuccess: invalidate,
+    }),
+    grantRole: useMutation({ mutationFn: (body: GrantRequestDto) => apiClient.grantRole(orgId, body), onSuccess: invalidate }),
+    revokeGrant: useMutation({
+      mutationFn: (input: { grantId: string; version: number }) => apiClient.revokeGrant(orgId, input.grantId, input.version),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+/** Error code and message from an API error ({ code, message, request_id, field_errors }). */
+export function apiErrorMessage(error: unknown): string {
+  const message = baseErrorMessage(error);
+  const requestId =
+    typeof error === "object" && error && "requestId" in error ? String((error as { requestId: unknown }).requestId ?? "") : "";
+  return requestId ? `${message} (Reference: ${requestId})` : message;
+}
+
+/** Reloads every role, member and grant query of the organization (used after a STALE_VERSION conflict). */
+export function useReloadRoleData(orgId: string) {
+  const queryClient = useQueryClient();
+  return () =>
+    Promise.all(
+      ["roles", "role", "role-holders", "members", "member-grants"].map((key) =>
+        queryClient.invalidateQueries({ queryKey: [key, orgId] }),
+      ),
+    );
+}
+
+function baseErrorMessage(error: unknown): string {
+  if (typeof error === "object" && error && "code" in error) {
+    const code = String((error as { code: string }).code);
+    if (code === "SELF_ELEVATION_DENIED") return "You can't give yourself permissions you don't hold.";
+    if (code === "OWNER_TRANSFER_REQUIRED") return "The owner role only changes through ownership transfer.";
+    if (code === "STALE_VERSION") return "Someone else changed this. Reload and try again.";
+    if (code === "DUPLICATE_ROLE") return "A role with this name already exists.";
+    if (code === "ROLE_IN_USE") return "Revoke this role from every member before deleting it.";
+    if (code === "MEMBER_INACTIVE") return "Only active members can receive a role.";
+    if (code === "FORBIDDEN") return "You can't grant or change a permission you don't hold.";
+    if (code === "NOT_FOUND") return "That item doesn't exist or isn't in this workspace.";
+  }
+  return error instanceof Error ? error.message : "Something went wrong.";
+}

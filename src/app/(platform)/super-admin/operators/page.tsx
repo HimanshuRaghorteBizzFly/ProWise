@@ -8,18 +8,20 @@ import {
   Edit3,
   KeyRound,
   Lock,
+  Mail,
   Plus,
   Power,
   Radio,
   Search,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   Trash2,
   Users,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { AdminRole, OperatorStatus, PermissionCategory, PermissionKey, PlatformOperator } from "../_types";
+import { AdminRole, OperatorAccessLevel, OperatorStatus, PermissionCategory, PermissionKey, PlatformOperator } from "../_types";
 import { PERMISSION_CATALOG } from "../_data/seed";
 import { useAdminPermissions, useSuperAdminStore } from "../_store/useSuperAdminStore";
 import {
@@ -42,15 +44,17 @@ import {
   SurfaceCard,
   getStatusTone,
 } from "../_components/SuperAdminPrimitives";
+import { OperatorPermissionDrawer } from "./_components/OperatorPermissionDrawer";
 
 const DEPARTMENT_OPTIONS = [
-  "Platform Governance",
   "Platform Operations",
   "Site Reliability",
-  "Security & Compliance",
-  "Billing & Revenue",
-  "Customer Support",
-  "Infrastructure Engineering",
+  "Lifecycle Messaging",
+  "Customer Communications",
+  "Finance & Tax",
+  "Revenue Operations",
+  "Trust & Compliance",
+  "Platform Governance",
 ];
 
 const PERMISSION_CATEGORIES: PermissionCategory[] = [
@@ -103,22 +107,29 @@ function getOperatorRoleTheme(color?: AdminRole["color"]) {
 
 function getDepartmentBadgeClass(dept: string): string {
   const key = dept.toLowerCase();
-  if (key.includes("governance")) return "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300";
-  if (key.includes("security") || key.includes("compliance")) return "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300";
-  if (key.includes("billing") || key.includes("revenue")) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
-  if (key.includes("reliability") || key.includes("infrastructure")) return "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300";
   if (key.includes("operations")) return "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300";
+  if (key.includes("site") || key.includes("reliability")) return "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300";
+  if (key.includes("message") || key.includes("messaging") || key.includes("lifecycle")) return "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300";
+  if (key.includes("customer") || key.includes("support") || key.includes("communication")) return "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300";
+  if (key.includes("finance") || key.includes("tax")) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  if (key.includes("revenue") || key.includes("revops")) return "border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300";
+  if (key.includes("trust") || key.includes("compliance") || key.includes("security")) return "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300";
   return "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300";
 }
 
 export default function SuperAdminOperatorsPage() {
   const operators = useSuperAdminStore((s) => s.operators);
   const roles = useSuperAdminStore((s) => s.roles);
+  const operatorRoles = useMemo(() => roles.filter((r) => r.id !== "role-super-admin" && r.slug !== "super-admin"), [roles]);
   const activeOperatorId = useSuperAdminStore((s) => s.activeOperatorId);
   const createOperator = useSuperAdminStore((s) => s.createOperator);
   const updateOperator = useSuperAdminStore((s) => s.updateOperator);
   const toggleOperatorStatus = useSuperAdminStore((s) => s.toggleOperatorStatus);
   const deleteOperator = useSuperAdminStore((s) => s.deleteOperator);
+  const revokeOperatorSessions = useSuperAdminStore((s) => s.revokeOperatorSessions);
+  const updateOperatorPermissions = useSuperAdminStore((s) => s.updateOperatorPermissions);
+  const setOperatorStatus = useSuperAdminStore((s) => s.setOperatorStatus);
+  const resendOperatorInvite = useSuperAdminStore((s) => s.resendOperatorInvite);
 
   const { can } = useAdminPermissions();
 
@@ -132,7 +143,7 @@ export default function SuperAdminOperatorsPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingOp, setEditingOp] = useState<PlatformOperator | null>(null);
-  const [permModalOp, setPermModalOp] = useState<PlatformOperator | null>(null);
+  const [permDrawerOp, setPermDrawerOp] = useState<PlatformOperator | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PlatformOperator | null>(null);
 
   // Multi-select bulk actions state
@@ -140,19 +151,18 @@ export default function SuperAdminOperatorsPage() {
   const [bulkRoleId, setBulkRoleId] = useState(roles[1]?.id || roles[0]?.id || "");
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
-  // Friendly permissions search/filter inside modals
-  const [permSearch, setPermSearch] = useState("");
-  const [permInspectSearch, setPermInspectSearch] = useState("");
-  const [permInspectFilter, setPermInspectFilter] = useState<"ALL" | "ALLOWED" | "RESTRICTED">("ALL");
 
   // Form fields
+  const [permSearch, setPermSearch] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [roleId, setRoleId] = useState(roles[1]?.id || roles[0]?.id || "");
+  const [accessLevel, setAccessLevel] = useState<OperatorAccessLevel>("DEPARTMENT_OPERATOR");
   const [department, setDepartment] = useState("Site Reliability");
   const [status, setStatus] = useState<OperatorStatus>("ACTIVE");
   const [mfaEnabled, setMfaEnabled] = useState(true);
   const [onCall, setOnCall] = useState(false);
+  const [shiftName, setShiftName] = useState("Americas Primary (08:00 - 17:00 UTC)");
   const [customPerms, setCustomPerms] = useState<PermissionKey[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -160,7 +170,7 @@ export default function SuperAdminOperatorsPage() {
 
   const closeAllPanels = () => {
     setModalOpen(false);
-    setPermModalOp(null);
+    setPermDrawerOp(null);
     setDeleteTarget(null);
     setBulkDeleteOpen(false);
   };
@@ -171,10 +181,12 @@ export default function SuperAdminOperatorsPage() {
     setName("");
     setEmail("");
     setRoleId(roles.find((r) => r.slug === "ops-lead")?.id || roles[0]?.id || "");
+    setAccessLevel("DEPARTMENT_OPERATOR");
     setDepartment("Platform Operations");
     setStatus("ACTIVE");
     setMfaEnabled(true);
     setOnCall(false);
+    setShiftName("Americas Primary (08:00 - 17:00 UTC)");
     setCustomPerms([]);
     setPermSearch("");
     setErrors({});
@@ -187,10 +199,12 @@ export default function SuperAdminOperatorsPage() {
     setName(op.name);
     setEmail(op.email);
     setRoleId(op.roleId);
+    setAccessLevel(op.accessLevel || "DEPARTMENT_OPERATOR");
     setDepartment(op.department);
     setStatus(op.status);
     setMfaEnabled(op.mfaEnabled);
     setOnCall(op.onCall);
+    setShiftName(op.shiftName || "Americas Primary (08:00 - 17:00 UTC)");
     setCustomPerms(op.customPermissions || []);
     setPermSearch("");
     setErrors({});
@@ -199,9 +213,20 @@ export default function SuperAdminOperatorsPage() {
 
   const openPermissionsModal = (op: PlatformOperator) => {
     closeAllPanels();
-    setPermInspectSearch("");
-    setPermInspectFilter("ALL");
-    setPermModalOp(op);
+    setPermDrawerOp(op);
+  };
+
+  const handleRevokeSessions = (op: PlatformOperator) => {
+    if (!canManage) {
+      toast.error("Missing operators.manage permission");
+      return;
+    }
+    const res = revokeOperatorSessions(op.id);
+    if (!res.ok) {
+      toast.error(res.error || "Failed to revoke active sessions.");
+    } else {
+      toast.success(`Revoked ${res.count} active session(s) for ${op.name}`);
+    }
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -218,10 +243,12 @@ export default function SuperAdminOperatorsPage() {
         name: name.trim(),
         email: email.trim(),
         roleId,
+        accessLevel,
         department: department.trim(),
         status,
         mfaEnabled,
         onCall,
+        shiftName: shiftName.trim(),
         customPermissions: customPerms,
       });
       if (!res.ok) {
@@ -235,10 +262,13 @@ export default function SuperAdminOperatorsPage() {
         name: name.trim(),
         email: email.trim(),
         roleId,
+        accessLevel,
         department: department.trim(),
         status,
         mfaEnabled,
         onCall,
+        shiftName: shiftName.trim(),
+        activeSessionsCount: 0,
         customPermissions: customPerms,
       });
       if (!res.ok) {
@@ -254,6 +284,10 @@ export default function SuperAdminOperatorsPage() {
     const q = search.trim().toLowerCase();
     return operators
       .filter((op) => {
+        // Super Admin has full platform access and is excluded from the operators roster
+        if (op.roleId === "role-super-admin" || op.email.toLowerCase().includes("ajrockstar3888") || op.name.toLowerCase().includes("super admin")) {
+          return false;
+        }
         if (roleFilter !== "ALL" && op.roleId !== roleFilter) return false;
         if (statusFilter !== "ALL" && op.status !== statusFilter) return false;
         if (q) {
@@ -366,6 +400,26 @@ export default function SuperAdminOperatorsPage() {
     }
   };
 
+  const handleBulkRevokeSessions = () => {
+    if (!canManage) {
+      toast.error("Missing operators.manage permission");
+      return;
+    }
+    const targets = operators.filter((o) => selectedOpSet.has(o.id));
+    if (targets.length === 0) return;
+    let totalSessions = 0;
+    for (const op of targets) {
+      const res = revokeOperatorSessions(op.id);
+      if (res.ok) totalSessions += res.count;
+    }
+    toast.success(
+      `Revoked active sessions (${totalSessions} total) for ${targets.length} operator${
+        targets.length === 1 ? "" : "s"
+      }`
+    );
+    setSelectedOpIds([]);
+  };
+
   const handleBulkExport = () => {
     if (!can("system.export")) {
       toast.error("Missing system.export permission");
@@ -418,11 +472,24 @@ export default function SuperAdminOperatorsPage() {
     setPage(1);
   };
 
-  const activeCount = operators.filter((o) => o.status === "ACTIVE").length;
-  const onCallCount = operators.filter((o) => o.status === "ACTIVE" && o.onCall).length;
-  const mfaCount = operators.filter((o) => o.mfaEnabled).length;
+  const activeCount = filtered.filter((o) => o.status === "ACTIVE").length;
+  const onCallCount = filtered.filter((o) => o.status === "ACTIVE" && o.onCall).length;
+  const mfaCount = filtered.filter((o) => o.mfaEnabled).length;
 
-  return (
+  useEffect(() => {
+    const superAdminOps = operators.filter(
+      (o) => o.roleId === "role-super-admin" || o.email.toLowerCase().includes("ajrockstar3888") || o.name.toLowerCase().includes("super admin")
+    );
+    if (superAdminOps.length > 0) {
+      useSuperAdminStore.setState((s) => ({
+        operators: s.operators.filter(
+          (o) => o.roleId !== "role-super-admin" && !o.email.toLowerCase().includes("ajrockstar3888") && !o.name.toLowerCase().includes("super admin")
+        ),
+      }));
+    }
+  }, [operators]);
+
+return (
     <div className="space-y-5">
       <PageHeader
         title="Platform Operators"
@@ -466,16 +533,28 @@ export default function SuperAdminOperatorsPage() {
               }
               exportRowsToCsv(
                 "prowise-operators.csv",
-                ["Sr. No.", "Name", "Email", "Role", "Department", "Status", "MFA", "On-Call", "Last Active"],
+                [
+                  "Sr. No.",
+                  "Operator Name",
+                  "Email",
+                  "Role",
+                  "Department",
+                  "Shift Name",
+                  "MFA Enforced",
+                  "Active Sessions",
+                  "Status",
+                  "Last Active",
+                ],
                 filtered.map((o, idx) => [
                   idx + 1,
                   o.name,
                   o.email,
                   roles.find((r) => r.id === o.roleId)?.name || o.roleId,
                   o.department,
-                  o.status,
+                  o.shiftName || "Standard Shift",
                   o.mfaEnabled ? "Yes" : "No",
-                  o.onCall ? "Yes" : "No",
+                  o.activeSessionsCount ?? (o.status === "ACTIVE" ? 1 : 0),
+                  o.status,
                   o.lastActiveAt,
                 ])
               );
@@ -508,6 +587,7 @@ export default function SuperAdminOperatorsPage() {
                   <option value="ACTIVE">Active</option>
                   <option value="INACTIVE">Inactive</option>
                   <option value="INVITED">Invited</option>
+                  <option value="SUSPENDED">Suspended</option>
                 </select>
               </div>
             }
@@ -556,6 +636,16 @@ export default function SuperAdminOperatorsPage() {
               >
                 <Power className="w-3.5 h-3.5" />
                 Deactivate
+              </AdminButton>
+              <AdminButton
+                variant="outline"
+                size="xs"
+                permissionLocked={!canManage}
+                onClick={handleBulkRevokeSessions}
+                className="text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+              >
+                <ShieldAlert className="w-3.5 h-3.5" />
+                Revoke Sessions
               </AdminButton>
               <div className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] p-0.5">
                 <select
@@ -747,21 +837,43 @@ export default function SuperAdminOperatorsPage() {
                         </p>
                       </td>
                       <td className="px-4 py-3 hidden md:table-cell">
-                        <span
-                          className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${getDepartmentBadgeClass(
-                            op.department
-                          )}`}
-                        >
-                          {op.department}
-                        </span>
+                        <div className="space-y-1">
+                          {op.accessLevel === "MAIN_PLATFORM_OPERATOR" ? (
+                            <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400 whitespace-nowrap">
+                              <ShieldCheck className="w-3 h-3 text-amber-500" />
+                              Main Operator
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-md border border-slate-500/30 bg-slate-500/10 px-2 py-0.5 text-[10px] text-[var(--color-text-muted)] font-medium">
+                              Dept Operator
+                            </span>
+                          )}
+                          <div>
+                            <span
+                              className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${getDepartmentBadgeClass(
+                                op.department
+                              )}`}
+                            >
+                              {op.accessLevel === "MAIN_PLATFORM_OPERATOR" && !op.department ? "All Operational Departments" : op.department}
+                            </span>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-3 hidden lg:table-cell">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <StatusBadge
-                            label={op.mfaEnabled ? "MFA On" : "No MFA"}
-                            tone={op.mfaEnabled ? "success" : "warning"}
-                          />
-                          {op.onCall && <StatusBadge label="On-Call" tone="violet" dot />}
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <StatusBadge
+                              label={op.mfaEnabled ? "MFA Active" : "No MFA"}
+                              tone={op.mfaEnabled ? "success" : "warning"}
+                            />
+                            {op.onCall && <StatusBadge label="On-Call" tone="violet" dot />}
+                          </div>
+                          <div className="text-[10px] text-[var(--color-text-muted)] truncate max-w-[170px]" title={op.shiftName}>
+                            {op.shiftName || "Americas Primary (08:00 - 17:00)"}
+                          </div>
+                          <div className="text-[10px] text-[var(--color-text-secondary)] font-medium">
+                            {op.activeSessionsCount ?? (op.status === "ACTIVE" ? 1 : 0)} active session(s)
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -773,10 +885,10 @@ export default function SuperAdminOperatorsPage() {
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center justify-end gap-1">
                           <AdminButton
-                            variant="ghost"
+                            variant="subtle"
                             size="xs"
                             onClick={() => openPermissionsModal(op)}
-                            title="View operator permissions"
+                            title="Open permission management drawer"
                           >
                             <KeyRound className="w-3.5 h-3.5" />
                             <span className="hidden xl:inline">Permissions</span>
@@ -786,7 +898,7 @@ export default function SuperAdminOperatorsPage() {
                             size="xs"
                             permissionLocked={!canManage}
                             onClick={() => openEdit(op)}
-                            title="Edit operator"
+                            title="Edit operator details & department"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </AdminButton>
@@ -794,15 +906,40 @@ export default function SuperAdminOperatorsPage() {
                             variant="ghost"
                             size="xs"
                             permissionLocked={!canManage}
-                            onClick={() => {
-                              const res = toggleOperatorStatus(op.id);
-                              if (!res.ok) toast.error(res.error);
-                              else toast.success(`Updated status for ${op.name}`);
-                            }}
-                            title={op.status === "ACTIVE" ? "Deactivate operator" : "Activate operator"}
+                            onClick={() => handleRevokeSessions(op)}
+                            title="Revoke active sessions"
+                            className="text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
                           >
-                            <Power className="w-3.5 h-3.5" />
+                            <ShieldAlert className="w-3.5 h-3.5" />
                           </AdminButton>
+                          {op.status === "INVITED" ? (
+                            <AdminButton
+                              variant="ghost"
+                              size="xs"
+                              permissionLocked={!canManage}
+                              onClick={() => {
+                                resendOperatorInvite(op.id);
+                                toast.success(`Resent invitation to ${op.email}`);
+                              }}
+                              title="Resend invitation email"
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                            </AdminButton>
+                          ) : (
+                            <AdminButton
+                              variant="ghost"
+                              size="xs"
+                              permissionLocked={!canManage}
+                              onClick={() => {
+                                const res = toggleOperatorStatus(op.id);
+                                if (!res.ok) toast.error(res.error);
+                                else toast.success(`Updated status for ${op.name}`);
+                              }}
+                              title={op.status === "ACTIVE" ? "Deactivate operator" : "Activate operator"}
+                            >
+                              <Power className="w-3.5 h-3.5" />
+                            </AdminButton>
+                          )}
                           <AdminButton
                             variant="ghost"
                             size="xs"
@@ -866,10 +1003,19 @@ export default function SuperAdminOperatorsPage() {
                 label="Assigned Role"
                 value={roleId}
                 onChange={(e) => setRoleId(e.target.value)}
-                options={roles.map((r) => ({
+                options={operatorRoles.map((r) => ({
                   label: `${r.name} (${r.permissions.length} included)`,
                   value: r.id,
                 }))}
+              />
+              <AdminSelect
+                label="Access Level Hierarchy"
+                value={accessLevel}
+                onChange={(e) => setAccessLevel(e.target.value as OperatorAccessLevel)}
+                options={[
+                  { label: "Department Operator (Scoped to Assigned Dept)", value: "DEPARTMENT_OPERATOR" },
+                  { label: "Main Platform Operator (Global Operational Scope across all 7 Depts)", value: "MAIN_PLATFORM_OPERATOR" },
+                ]}
               />
               <AdminSelect
                 label="Department"
@@ -879,6 +1025,12 @@ export default function SuperAdminOperatorsPage() {
                   new Set([department, ...DEPARTMENT_OPTIONS].filter(Boolean))
                 ).map((d) => ({ label: d, value: d }))}
               />
+              <AdminInput
+                label="On-Call Shift Assignment"
+                value={shiftName}
+                onChange={(e) => setShiftName(e.target.value)}
+                placeholder="e.g. Americas Primary (08:00 - 17:00 UTC)"
+              />
               <AdminSelect
                 label="Account Status"
                 value={status}
@@ -887,6 +1039,7 @@ export default function SuperAdminOperatorsPage() {
                   { label: "Active", value: "ACTIVE" },
                   { label: "Inactive", value: "INACTIVE" },
                   { label: "Invited", value: "INVITED" },
+                  { label: "Suspended", value: "SUSPENDED" },
                 ]}
               />
               <div className="grid grid-cols-2 gap-2.5 pt-1 sm:pt-5">
@@ -1042,164 +1195,21 @@ export default function SuperAdminOperatorsPage() {
         </form>
       </AdminModal>
 
-      {/* Effective Permissions Inspector (Grouped, Searchable & Non-Technical Friendly) */}
-      <AdminModal
-        isOpen={Boolean(permModalOp)}
-        onClose={() => setPermModalOp(null)}
-        title={`Permissions Overview — ${permModalOp?.name || ""}`}
-        description={permModalOp ? `${permModalOp.email} • ${permModalOp.department}` : undefined}
-        maxWidth="2xl"
-      >
-        {permModalOp && (() => {
-          const role = roles.find((r) => r.id === permModalOp.roleId);
-          const rolePerms = role?.permissions || [];
-          const customList = permModalOp.customPermissions || [];
-          const merged = Array.from(new Set([...rolePerms, ...customList]));
-          const restrictedCount = PERMISSION_CATALOG.length - merged.length;
-          const q = permInspectSearch.trim().toLowerCase();
-
-          return (
-            <div className="space-y-4">
-              {/* Role & Access Summary Strip */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5 text-xs">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <Shield className="w-4 h-4 text-blue-500 shrink-0" />
-                  <span>
-                    Role: <strong className="text-[var(--color-text-primary)]">{role?.name}</strong>
-                  </span>
-                  <StatusBadge label={`${merged.length} Allowed`} tone="success" />
-                  <StatusBadge label={`${restrictedCount} Not Allowed`} tone="neutral" />
-                </div>
-
-                {canManage && (
-                  <AdminButton
-                    variant="outline"
-                    size="xs"
-                    onClick={() => openEdit(permModalOp)}
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    Edit Role &amp; Access
-                  </AdminButton>
-                )}
-              </div>
-
-              {/* Search & Filter Bar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                <div className="relative flex-1">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
-                  <input
-                    type="text"
-                    value={permInspectSearch}
-                    onChange={(e) => setPermInspectSearch(e.target.value)}
-                    placeholder="Search what this operator can or cannot access..."
-                    className="h-9 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] pl-8 pr-3 text-xs text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] p-0.5 text-xs shrink-0">
-                  {[
-                    { label: `All (${PERMISSION_CATALOG.length})`, value: "ALL" as const },
-                    { label: `Allowed (${merged.length})`, value: "ALLOWED" as const },
-                    { label: `Restricted (${restrictedCount})`, value: "RESTRICTED" as const },
-                  ].map((tab) => (
-                    <button
-                      key={tab.value}
-                      type="button"
-                      onClick={() => setPermInspectFilter(tab.value)}
-                      className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
-                        permInspectFilter === tab.value
-                          ? "bg-blue-500/15 text-blue-600 dark:text-blue-300"
-                          : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Grouped Permissions Categories */}
-              <div className="space-y-4 max-h-[52vh] overflow-y-auto pr-1">
-                {PERMISSION_CATEGORIES.map((category) => {
-                  const allCat = PERMISSION_CATALOG.filter((p) => p.category === category);
-                  const allowedInCat = allCat.filter((p) => merged.includes(p.key)).length;
-                  const visibleCat = allCat.filter((p) => {
-                    const has = merged.includes(p.key);
-                    if (permInspectFilter === "ALLOWED" && !has) return false;
-                    if (permInspectFilter === "RESTRICTED" && has) return false;
-                    if (
-                      q &&
-                      !p.label.toLowerCase().includes(q) &&
-                      !p.description.toLowerCase().includes(q) &&
-                      !category.toLowerCase().includes(q)
-                    ) {
-                      return false;
-                    }
-                    return true;
-                  });
-                  if (visibleCat.length === 0) return null;
-
-                  return (
-                    <div key={category} className="space-y-2">
-                      <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-1 text-xs">
-                        <span className="font-semibold text-[var(--color-text-primary)]">
-                          {category}
-                        </span>
-                        <span className="text-[11px] text-[var(--color-text-muted)]">
-                          {allowedInCat} / {allCat.length} allowed
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        {visibleCat.map((p) => {
-                          const fromRole = rolePerms.includes(p.key);
-                          const isExtra = !fromRole && customList.includes(p.key);
-                          const has = fromRole || isExtra;
-                          return (
-                            <div
-                              key={p.key}
-                              className={`rounded-xl border p-3 text-xs space-y-1 ${
-                                has
-                                  ? "border-emerald-500/30 bg-emerald-500/8 text-[var(--color-text-primary)]"
-                                  : "border-[var(--color-border)] bg-[var(--color-app-bg)] text-[var(--color-text-secondary)] opacity-75"
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <span className="font-semibold leading-snug text-[var(--color-text-primary)]">
-                                  {p.label}
-                                </span>
-                                {has ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 shrink-0">
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    {isExtra ? "Extra Grant" : "Allowed"}
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-elevated)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)] shrink-0">
-                                    <Lock className="w-3 h-3" />
-                                    Not Allowed
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[11px] text-[var(--color-text-secondary)] leading-relaxed">
-                                {p.description}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
-                <AdminButton variant="outline" size="sm" onClick={() => setPermModalOp(null)}>
-                  Close
-                </AdminButton>
-              </div>
-            </div>
-          );
-        })()}
-      </AdminModal>
+      {/* Polished Permission Management Drawer */}
+      <OperatorPermissionDrawer
+        isOpen={Boolean(permDrawerOp)}
+        onClose={() => setPermDrawerOp(null)}
+        operator={permDrawerOp}
+        role={roles.find((r) => r.id === permDrawerOp?.roleId)}
+        onSaveOverrides={(opId, overrides) => {
+          const res = updateOperatorPermissions(opId, overrides);
+          if (!res.ok) {
+            toast.error(res.error || "Failed to update permissions");
+          } else {
+            toast.success(`Updated permission overrides for ${permDrawerOp?.name}`);
+          }
+        }}
+      />
 
       <ConfirmActionModal
         isOpen={Boolean(deleteTarget)}

@@ -48,7 +48,6 @@ const ALWAYS_DENIED: Partial<Record<PermissionKey, string>> = {
 export interface AccessMapViewProps {
   family: OrgNavFamily;
   grants: readonly PermissionGrant[];
-  source: "api" | "fixture" | null;
   scopeReported: boolean;
   isCurrentOwner: boolean;
 }
@@ -90,7 +89,7 @@ function AccessRow({ title, code, allowed, detail, extra }: {
   );
 }
 
-export function AccessMapView({ family, grants, source, scopeReported, isCurrentOwner }: AccessMapViewProps) {
+export function AccessMapView({ family, grants, scopeReported, isCurrentOwner }: AccessMapViewProps) {
   const held = (key: PermissionKey) => grants.some((grant) => grant.key === key);
   const allowedCount = PERMISSION_KEYS.filter(held).length;
   const canTransfer = family === "owner" && isCurrentOwner && canWithGrants(grants, "org.manage");
@@ -100,7 +99,6 @@ export function AccessMapView({ family, grants, source, scopeReported, isCurrent
       <PageHeader
         title="What can I do?"
         description="Every documented permission for your active membership in this organization, with its scope and the reason for anything denied. The server checks every request again."
-        simulationLabel={source === "fixture" ? "Sample data" : undefined}
       />
 
       <div className="flex flex-wrap items-center gap-2" aria-label="Access summary">

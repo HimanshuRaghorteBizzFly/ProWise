@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Lock, CheckCircle2, ShieldCheck, KeyRound, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { apiClient } from "@/lib/api";
+import { PASSWORD_RULES, passwordChangeError } from "@/lib/password-policy";
 import { useAuthStore } from "@/store/auth-store";
 
 export default function ChangePasswordPage() {
@@ -21,25 +22,13 @@ export default function ChangePasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const passwordChecks = useMemo(() => {
-    return {
-      minLength: newPassword.length >= 8,
-      hasUpper: /[A-Z]/.test(newPassword),
-      hasLower: /[a-z]/.test(newPassword),
-      hasNumber: /[0-9]/.test(newPassword),
-      hasSpecial: /[^A-Za-z0-9]/.test(newPassword),
-    };
-  }, [newPassword]);
+  // Mirrors the backend PasswordPolicy (shared helper); the server re-validates every password.
+  const ruleResults = useMemo(
+    () => PASSWORD_RULES.map((rule) => ({ id: rule.id, label: rule.label, met: rule.test(newPassword) })),
+    [newPassword],
+  );
 
-  const passwordStrengthScore = useMemo(() => {
-    let score = 0;
-    if (passwordChecks.minLength) score += 1;
-    if (passwordChecks.hasUpper) score += 1;
-    if (passwordChecks.hasLower) score += 1;
-    if (passwordChecks.hasNumber) score += 1;
-    if (passwordChecks.hasSpecial) score += 1;
-    return score;
-  }, [passwordChecks]);
+  const passwordStrengthScore = useMemo(() => ruleResults.filter((rule) => rule.met).length, [ruleResults]);
 
   const strengthLabel = useMemo(() => {
     if (!newPassword) return "";
@@ -58,21 +47,18 @@ export default function ChangePasswordPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!passwordChecks.minLength) {
-      toast.error("New password must be at least 8 characters long.");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      toast.error("New password and confirmation do not match.");
+    // Passwords are sent exactly as typed: never trimmed.
+    const problem = passwordChangeError(newPassword, confirmPassword);
+    if (problem) {
+      toast.error(problem);
       return;
     }
 
     setIsLoading(true);
     try {
       await apiClient.changePassword({
-        currentPassword: currentPassword.trim() || undefined,
-        newPassword: newPassword.trim(),
+        currentPassword: currentPassword === "" ? undefined : currentPassword,
+        newPassword,
       });
 
       setIsSuccess(true);
@@ -175,7 +161,7 @@ export default function ChangePasswordPage() {
                     type={showNew ? "text" : "password"}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Minimum 8 characters"
+                    placeholder="12 to 200 characters"
                     className="pl-9 pr-9"
                     required
                   />
@@ -203,18 +189,11 @@ export default function ChangePasswordPage() {
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-1 text-[10px] text-[var(--color-text-muted)] pt-1">
-                      <span className={passwordChecks.minLength ? "text-emerald-500" : ""}>
-                        • 8+ characters
-                      </span>
-                      <span className={passwordChecks.hasUpper ? "text-emerald-500" : ""}>
-                        • Uppercase letter
-                      </span>
-                      <span className={passwordChecks.hasLower ? "text-emerald-500" : ""}>
-                        • Lowercase letter
-                      </span>
-                      <span className={passwordChecks.hasNumber ? "text-emerald-500" : ""}>
-                        • Number or symbol
-                      </span>
+                      {ruleResults.map((rule) => (
+                        <span key={rule.id} className={rule.met ? "text-emerald-500" : ""}>
+                          • {rule.label}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )}

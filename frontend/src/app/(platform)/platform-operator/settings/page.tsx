@@ -1,18 +1,19 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import React, { useMemo, useState } from "react";
 import {
   Bell,
   KeyRound,
   Lock,
+  Mail,
   Save,
   ShieldCheck,
   UserCog,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
-import { OperatorAccountSettings } from "../_types";
-import { formatDateTime, isValidEmail } from "../_services/operator-service";
+import type { OperatorProfile } from "@/types/operator-console";
+import { useOperatorPermissions } from "../_services/operator-access";
+import { operatorApi } from "../_services/operator-api";
+import { formatDateTime } from "../_services/operator-service";
 import {
   ConfirmModal,
   DemoDataBanner,
@@ -23,6 +24,16 @@ import {
   StatusBadge,
   SurfaceCard,
 } from "../_components/OperatorPrimitives";
+import {
+  MutationNotice,
+  NOT_AVAILABLE,
+  NotAvailableButton,
+  NotAvailableText,
+  OperatorResourceStatus,
+  humanizeCode,
+  useOperatorMutation,
+  useOperatorResource,
+} from "../_components/OperatorLive";
 
 function getPasswordStrength(password: string): {
   label: string;
@@ -42,109 +53,55 @@ function getPasswordStrength(password: string): {
   return { label: "Strong", score: 4, barClass: "bg-emerald-500" };
 }
 
+const PROFILE_REASON = "operators cannot edit their own profile or preferences on the server yet";
+const PASSWORD_REASON = "there is no change-password endpoint; use the reset link instead";
+const MFA_REASON = "two-factor setup for operators is not built yet";
+const NOTIFY_REASON = "notification preferences are not stored on the server yet";
+
+function titleOf(me: OperatorProfile | null): string {
+  if (!me) return "";
+  const level = me.access_level ? humanizeCode(me.access_level) : "";
+  const dept = me.department ? humanizeCode(me.department.replace(/-/g, "_")) : "";
+  return [level, dept].filter(Boolean).join(" · ");
+}
+
+/**
+ * The signed-in operator's own settings. The profile is read from GET /v1/operator/me; every change on this page
+ * except "Email me a reset link" (POST /v1/auth/operator/forgot-password to the operator's own address) has no
+ * server endpoint yet, so those controls stay visible and disabled.
+ */
 export default function OperatorSettingsPage() {
-  const accountSettings = usePlatformOperatorStore((s) => s.accountSettings);
-  const updateAccountSettings = usePlatformOperatorStore((s) => s.updateAccountSettings);
-  const changeOperatorPassword = usePlatformOperatorStore((s) => s.changeOperatorPassword);
-  const toggleOperatorMfa = usePlatformOperatorStore((s) => s.toggleOperatorMfa);
+  const { state, reload } = useOperatorResource(() => operatorApi.me(), "me");
+  const me = state.status === "ready" ? state.data : null;
+  const { busy, notice, clearNotice, run } = useOperatorMutation(() => undefined);
   const { can } = useOperatorPermissions();
   const canManage = can("settings.manage");
 
-  const [name, setName] = useState(accountSettings.name);
-  const [roleTitle, setRoleTitle] = useState(accountSettings.roleTitle);
-  const [email, setEmail] = useState(accountSettings.email);
-  const [timezone, setTimezone] = useState(accountSettings.timezone);
-  const [autoRefreshSeconds, setAutoRefreshSeconds] = useState<
-    OperatorAccountSettings["autoRefreshSeconds"]
-  >(accountSettings.autoRefreshSeconds);
-  const [compactTables, setCompactTables] = useState(accountSettings.compactTables);
-
-  // Password form
+  // Password form (kept for when a change-password endpoint exists; inputs are disabled today)
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [confirmPasswordModal, setConfirmPasswordModal] = useState(false);
-
-  // MFA
-  const [mfaMethod, setMfaMethod] = useState<OperatorAccountSettings["mfaMethod"]>(
-    accountSettings.mfaMethod
-  );
   const [confirmMfaModal, setConfirmMfaModal] = useState(false);
 
-  useEffect(() => {
-    setName(accountSettings.name);
-    setRoleTitle(accountSettings.roleTitle);
-    setEmail(accountSettings.email);
-    setTimezone(accountSettings.timezone);
-    setAutoRefreshSeconds(accountSettings.autoRefreshSeconds);
-    setCompactTables(accountSettings.compactTables);
-    setMfaMethod(accountSettings.mfaMethod);
-  }, [accountSettings]);
-
   const strength = useMemo(() => getPasswordStrength(newPassword), [newPassword]);
+  const mfaEnabled = me?.mfa_enabled ?? false;
 
-  const handleSaveProfileAndPrefs = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (name.trim().length < 2 || roleTitle.trim().length < 2) {
-      toast.error("Please enter a valid name and operational title.");
-      return;
-    }
-    if (!isValidEmail(email)) {
-      toast.error("Please enter a valid work email address.");
-      return;
-    }
-    updateAccountSettings({
-      name: name.trim(),
-      roleTitle: roleTitle.trim(),
-      email: email.trim(),
-      timezone,
-      autoRefreshSeconds,
-      compactTables,
-    });
-    toast.success("Operator profile and workspace preferences saved.");
-  };
-
-  const handleValidatePassword = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordError(null);
-    if (!currentPassword.trim()) {
-      setPasswordError("Please enter your current password.");
-      return;
-    }
-    if (newPassword.length < 10 || strength.score < 3) {
-      setPasswordError(
-        "Use at least 10 characters with mixed case, numbers, or symbols (Good/Strong)."
-      );
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordError("New password and confirmation do not match.");
-      return;
-    }
-    setConfirmMfaModal(false);
-    setConfirmPasswordModal(true);
-  };
-
-  const handleToggleNotification = (
-    key: keyof OperatorAccountSettings["notifications"],
-    nextValue: boolean
-  ) => {
-    updateAccountSettings({
-      notifications: {
-        ...accountSettings.notifications,
-        [key]: nextValue,
-      },
-    });
-    toast.success("Operator notification preference saved.");
+  const sendResetLink = () => {
+    if (!me?.email) return;
+    void run(
+      "reset-link",
+      () => operatorApi.session.requestPasswordReset(me.email),
+      `If the account is active, a password reset link was sent to ${me.email}.`
+    );
   };
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Operator Settings"
-        badge={accountSettings.mfaEnabled ? "2FA Active" : "2FA Off"}
-        demoLabel="Simulated Account Security"
+        badge={me ? (mfaEnabled ? "2FA Active" : "2FA Off") : undefined}
+        liveData
         description="Manage your operator profile, live dashboard refresh cadence, password security, two-factor authentication, and alert routing."
       />
 
@@ -153,9 +110,27 @@ export default function OperatorSettingsPage() {
         description="Passwords and 2FA secrets are never stored or displayed in plain text. Security updates persist in local operator state until integrated with backend auth."
       />
 
+      <OperatorResourceStatus
+        state={state}
+        isEmpty={() => false}
+        onRetry={() => void reload()}
+        emptyTitle="Profile not found"
+        emptyDescription="The server returned no operator profile."
+        rows={2}
+      />
+
+      <MutationNotice
+        notice={notice}
+        onReload={() => {
+          clearNotice();
+          void reload();
+        }}
+        onDismiss={clearNotice}
+      />
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
         <SurfaceCard className="p-4 sm:p-6">
-          <form onSubmit={handleSaveProfileAndPrefs} className="space-y-4">
+          <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
             <div className="flex items-center gap-2 pb-3 border-b border-[var(--color-border)]">
               <UserCog className="w-4 h-4 text-teal-500" />
               <div>
@@ -169,26 +144,15 @@ export default function OperatorSettingsPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <OpInput
-                label="Full Name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <OpInput
-                label="Operational Title"
-                value={roleTitle}
-                onChange={(e) => setRoleTitle(e.target.value)}
-              />
-              <OpInput
-                label="Work Email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+              <OpInput label="Full Name" value={me?.name ?? ""} readOnly disabled title={NOT_AVAILABLE} />
+              <OpInput label="Operational Title" value={titleOf(me)} readOnly disabled title={NOT_AVAILABLE} />
+              <OpInput label="Work Email" type="email" value={me?.email ?? ""} readOnly disabled title={NOT_AVAILABLE} />
               <OpSelect
                 label="Timezone"
-                value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
+                value="UTC"
+                disabled
+                title={NOT_AVAILABLE}
+                onChange={() => undefined}
                 options={[
                   { label: "America/New_York (ET)", value: "America/New_York" },
                   { label: "America/Los_Angeles (PT)", value: "America/Los_Angeles" },
@@ -199,14 +163,22 @@ export default function OperatorSettingsPage() {
               />
             </div>
 
+            {me && (
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-secondary)]">
+                <StatusBadge label={humanizeCode(me.status)} tone={me.status === "ACTIVE" ? "success" : "warning"} dot />
+                {me.on_call && <StatusBadge label="On Call" tone="info" />}
+                {me.shift_name && <span>Shift: {me.shift_name}</span>}
+                <span>Active sessions: {me.active_sessions_count}</span>
+                <span>Last active {formatDateTime(me.last_active_at ?? "")}</span>
+              </div>
+            )}
+
             <OpSelect
               label="Dashboard Telemetry Auto-Refresh Interval"
-              value={autoRefreshSeconds}
-              onChange={(e) =>
-                setAutoRefreshSeconds(
-                  Number(e.target.value) as OperatorAccountSettings["autoRefreshSeconds"]
-                )
-              }
+              value={0}
+              disabled
+              title={NOT_AVAILABLE}
+              onChange={() => undefined}
               options={[
                 { label: "Every 10 seconds (Fast triage)", value: 10 },
                 { label: "Every 30 seconds (Balanced)", value: 30 },
@@ -215,29 +187,28 @@ export default function OperatorSettingsPage() {
               ]}
             />
 
-            <label className="flex items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3 text-xs cursor-pointer">
-              <input
-                type="checkbox"
-                checked={compactTables}
-                onChange={(e) => setCompactTables(e.target.checked)}
-                className="rounded border-[var(--color-border)]"
-              />
+            <label
+              title={NOT_AVAILABLE}
+              className="flex items-center gap-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3 text-xs cursor-not-allowed"
+            >
+              <input type="checkbox" checked={false} disabled readOnly className="rounded border-[var(--color-border)]" />
               <span className="font-medium text-[var(--color-text-primary)]">
                 Use compact spacing in operational tables
               </span>
+              <NotAvailableText reason={PROFILE_REASON} />
             </label>
 
             <div className="flex justify-end pt-2 border-t border-[var(--color-border)]">
-              <OpButton type="submit" variant="primary" size="sm" disabled={!canManage}>
+              <NotAvailableButton variant="primary" size="sm" reason={PROFILE_REASON} wrapperClassName="items-end">
                 <Save className="w-3.5 h-3.5" />
                 Save Profile & Preferences
-              </OpButton>
+              </NotAvailableButton>
             </div>
           </form>
         </SurfaceCard>
 
         <SurfaceCard className="p-4 sm:p-6">
-          <form onSubmit={handleValidatePassword} className="space-y-4">
+          <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
             <div className="flex items-center gap-2 pb-3 border-b border-[var(--color-border)]">
               <Lock className="w-4 h-4 text-amber-500" />
               <div>
@@ -245,16 +216,10 @@ export default function OperatorSettingsPage() {
                   Change Password
                 </h3>
                 <p className="text-xs text-[var(--color-text-secondary)]">
-                  Last rotated {formatDateTime(accountSettings.passwordUpdatedAt)}
+                  Last rotated <NotAvailableText reason="the server does not report when the password was changed" />
                 </p>
               </div>
             </div>
-
-            {passwordError && (
-              <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
-                {passwordError}
-              </div>
-            )}
 
             <OpInput
               label="Current Password"
@@ -263,6 +228,8 @@ export default function OperatorSettingsPage() {
               onChange={(e) => setCurrentPassword(e.target.value)}
               placeholder="Enter current password"
               autoComplete="current-password"
+              disabled
+              title={NOT_AVAILABLE}
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -273,6 +240,8 @@ export default function OperatorSettingsPage() {
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Minimum 10 characters"
                 autoComplete="new-password"
+                disabled
+                title={NOT_AVAILABLE}
               />
               <OpInput
                 label="Confirm New Password"
@@ -281,6 +250,8 @@ export default function OperatorSettingsPage() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Re-enter new password"
                 autoComplete="new-password"
+                disabled
+                title={NOT_AVAILABLE}
               />
             </div>
 
@@ -303,11 +274,22 @@ export default function OperatorSettingsPage() {
               </div>
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-[var(--color-border)]">
-              <OpButton type="submit" variant="primary" size="sm" disabled={!canManage}>
+            <div className="flex flex-wrap items-start justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
+              <OpButton
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!canManage || !me || busy !== null}
+                isLoading={busy === "reset-link"}
+                onClick={sendResetLink}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Email me a reset link
+              </OpButton>
+              <NotAvailableButton variant="primary" size="sm" reason={PASSWORD_REASON} wrapperClassName="items-end">
                 <KeyRound className="w-3.5 h-3.5" />
                 Update Password
-              </OpButton>
+              </NotAvailableButton>
             </div>
           </form>
         </SurfaceCard>
@@ -327,19 +309,19 @@ export default function OperatorSettingsPage() {
                 </p>
               </div>
             </div>
-            <StatusBadge
-              label={accountSettings.mfaEnabled ? "Enabled" : "Disabled"}
-              tone={accountSettings.mfaEnabled ? "success" : "danger"}
-              dot
-            />
+            {me ? (
+              <StatusBadge label={mfaEnabled ? "Enabled" : "Disabled"} tone={mfaEnabled ? "success" : "danger"} dot />
+            ) : (
+              <span className="text-xs text-[var(--color-text-muted)]">-</span>
+            )}
           </div>
 
           <OpSelect
             label="Verification Method"
-            value={mfaMethod}
-            onChange={(e) =>
-              setMfaMethod(e.target.value as OperatorAccountSettings["mfaMethod"])
-            }
+            value="Authenticator App"
+            disabled
+            title={NOT_AVAILABLE}
+            onChange={() => undefined}
             options={[
               { label: "Authenticator App", value: "Authenticator App" },
               { label: "Security Key", value: "Security Key" },
@@ -348,25 +330,17 @@ export default function OperatorSettingsPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5 text-xs">
             <p className="text-[var(--color-text-secondary)] max-w-sm">
-              {accountSettings.mfaEnabled
-                ? `Active method: ${accountSettings.mfaMethod}.`
-                : "2FA is currently disabled."}
+              {mfaEnabled ? "Two-factor authentication is enabled on your account." : "2FA is currently disabled."}
+              {mfaEnabled && (
+                <>
+                  {" "}
+                  Active method: <NotAvailableText reason="the server does not report the MFA method" />.
+                </>
+              )}
             </p>
-            <OpButton
-              variant={accountSettings.mfaEnabled ? "outline" : "primary"}
-              size="xs"
-              disabled={!canManage}
-              onClick={() => {
-                setConfirmPasswordModal(false);
-                setConfirmMfaModal(true);
-              }}
-            >
-              {accountSettings.mfaEnabled
-                ? mfaMethod !== accountSettings.mfaMethod
-                  ? "Switch 2FA Method"
-                  : "Disable 2FA"
-                : "Enable 2FA"}
-            </OpButton>
+            <NotAvailableButton variant={mfaEnabled ? "outline" : "primary"} size="xs" reason={MFA_REASON}>
+              {mfaEnabled ? "Disable 2FA" : "Enable 2FA"}
+            </NotAvailableButton>
           </div>
         </SurfaceCard>
 
@@ -380,7 +354,7 @@ export default function OperatorSettingsPage() {
               <p className="text-xs text-[var(--color-text-secondary)]">
                 Choose which operational events send alerts to{" "}
                 <strong className="text-[var(--color-text-primary)]">
-                  {accountSettings.email}
+                  {me?.email ?? "-"}
                 </strong>
                 .
               </p>
@@ -417,7 +391,8 @@ export default function OperatorSettingsPage() {
             ].map((item) => (
               <label
                 key={item.key}
-                className="flex items-start justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5 cursor-pointer hover:border-teal-500/40"
+                title={NOT_AVAILABLE}
+                className="flex items-start justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5 cursor-not-allowed"
               >
                 <div className="min-w-0 space-y-0.5">
                   <span className="text-xs sm:text-sm font-semibold text-[var(--color-text-primary)] block">
@@ -426,11 +401,14 @@ export default function OperatorSettingsPage() {
                   <span className="text-xs text-[var(--color-text-secondary)] block leading-relaxed">
                     {item.desc}
                   </span>
+                  <NotAvailableText reason={NOTIFY_REASON} />
                 </div>
                 <input
                   type="checkbox"
-                  checked={accountSettings.notifications[item.key]}
-                  onChange={(e) => handleToggleNotification(item.key, e.target.checked)}
+                  checked={false}
+                  disabled
+                  readOnly
+                  aria-label={`${item.title} (${NOT_AVAILABLE})`}
                   className="mt-1 h-4 w-4 rounded border-[var(--color-border)]"
                 />
               </label>
@@ -439,58 +417,29 @@ export default function OperatorSettingsPage() {
         </SurfaceCard>
       </div>
 
+      {/* Kept for when the endpoints exist; nothing opens these confirmations today. */}
       <ConfirmModal
         isOpen={confirmPasswordModal}
         onClose={() => setConfirmPasswordModal(false)}
         title="Confirm Password Rotation?"
-        description="Your Platform Operator password will be updated in simulated local state and logged."
+        description="Your Platform Operator password will be updated and the change logged."
         confirmLabel="Update Password"
         variant="primary"
-        onConfirm={() => {
-          changeOperatorPassword();
-          setCurrentPassword("");
-          setNewPassword("");
-          setConfirmPassword("");
-          toast.success("Operator password rotated (simulated).");
-        }}
+        onConfirm={() => setConfirmPasswordModal(false)}
       />
 
       <ConfirmModal
         isOpen={confirmMfaModal}
         onClose={() => setConfirmMfaModal(false)}
-        title={
-          accountSettings.mfaEnabled && mfaMethod === accountSettings.mfaMethod
-            ? "Disable Two-Factor Authentication?"
-            : "Update Two-Factor Authentication?"
-        }
+        title={mfaEnabled ? "Disable Two-Factor Authentication?" : "Update Two-Factor Authentication?"}
         description={
-          accountSettings.mfaEnabled && mfaMethod === accountSettings.mfaMethod
+          mfaEnabled
             ? "Disabling 2FA may restrict access to sensitive operator queues under organization security policies."
-            : `Set "${mfaMethod}" as your two-factor authentication method.`
+            : "Set your two-factor authentication method."
         }
-        confirmLabel={
-          accountSettings.mfaEnabled && mfaMethod === accountSettings.mfaMethod
-            ? "Disable 2FA"
-            : "Confirm 2FA"
-        }
-        variant={
-          accountSettings.mfaEnabled && mfaMethod === accountSettings.mfaMethod
-            ? "danger"
-            : "primary"
-        }
-        onConfirm={() => {
-          if (accountSettings.mfaEnabled && mfaMethod !== accountSettings.mfaMethod) {
-            toggleOperatorMfa(mfaMethod);
-            toggleOperatorMfa(mfaMethod);
-            toast.success(`Switched 2FA method to ${mfaMethod}.`);
-          } else {
-            const nextState = !accountSettings.mfaEnabled;
-            toggleOperatorMfa(mfaMethod);
-            toast.success(
-              nextState ? `Enabled 2FA (${mfaMethod}).` : "Two-factor authentication disabled."
-            );
-          }
-        }}
+        confirmLabel={mfaEnabled ? "Disable 2FA" : "Confirm 2FA"}
+        variant={mfaEnabled ? "danger" : "primary"}
+        onConfirm={() => setConfirmMfaModal(false)}
       />
     </div>
   );

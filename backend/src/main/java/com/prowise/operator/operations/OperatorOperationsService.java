@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.prowise.common.api.ApiException;
 import com.prowise.common.api.ErrorCodes;
+import com.prowise.common.persistence.ExpectedVersion;
 import com.prowise.identity.AuthPrincipal;
 import com.prowise.operator.OperatorDTOs;
 import com.prowise.operator.OperatorDepartment;
@@ -114,7 +115,7 @@ public class OperatorOperationsService {
     @Transactional(readOnly = true)
     public OperatorDTOs.IncidentResponse getIncident(String id, AuthPrincipal principal) {
         IncidentEntity inc = incidentRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Incident not found: " + id));
+                .orElseThrow(ApiException::notFound);
         enforceDepartmentAccess(inc.getDepartmentId(), principal, "incident");
         return toIncidentResponse(inc);
     }
@@ -130,6 +131,7 @@ public class OperatorOperationsService {
         IncidentEntity inc = new IncidentEntity(id, req.title(), req.severity(), "INVESTIGATING", dept, req.description());
         inc.setAssignedOperatorId(req.assignedOperatorId());
         IncidentEntity saved = incidentRepository.save(inc);
+        flushVersioned(incidentRepository);
 
         logActivity(principal, "INCIDENT_CREATED", "incidents", saved.getId(), "Created incident: " + saved.getTitle(), ip);
         return toIncidentResponse(saved);
@@ -137,8 +139,9 @@ public class OperatorOperationsService {
 
     public OperatorDTOs.IncidentResponse updateIncident(String id, OperatorDTOs.UpdateIncidentRequest req, AuthPrincipal principal, String ip) {
         IncidentEntity inc = incidentRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Incident not found: " + id));
+                .orElseThrow(ApiException::notFound);
         enforceDepartmentAccess(inc.getDepartmentId(), principal, "incident");
+        ExpectedVersion.checkRequired(inc.getVersion(), req.expectedVersion());
 
         if (req.title() != null) inc.setTitle(req.title());
         if (req.severity() != null) inc.setSeverity(req.severity());
@@ -151,18 +154,20 @@ public class OperatorOperationsService {
         inc.setUpdatedAt(Instant.now());
 
         IncidentEntity saved = incidentRepository.save(inc);
+        flushVersioned(incidentRepository);
         logActivity(principal, "INCIDENT_UPDATED", "incidents", saved.getId(), "Updated incident: " + saved.getTitle(), ip);
         return toIncidentResponse(saved);
     }
 
     public OperatorDTOs.IncidentResponse assignIncident(String id, OperatorDTOs.AssignIncidentRequest req, AuthPrincipal principal, String ip) {
         IncidentEntity inc = incidentRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Incident not found: " + id));
+                .orElseThrow(ApiException::notFound);
 
         // Coordination: Main Platform Operator can assign any incident to any department operator
         if (!principal.isMainPlatformOperator() && !"role-super-admin".equalsIgnoreCase(principal.role()) && !"SUPER_ADMIN".equalsIgnoreCase(principal.role())) {
             enforceDepartmentAccess(inc.getDepartmentId(), principal, "incident");
         }
+        ExpectedVersion.checkRequired(inc.getVersion(), req.expectedVersion());
 
         PlatformOperatorEntity targetOp = operatorRepository.findById(req.assignedToOperatorId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Target operator not found: " + req.assignedToOperatorId()));
@@ -170,6 +175,7 @@ public class OperatorOperationsService {
         inc.setAssignedOperatorId(targetOp.getId());
         inc.setUpdatedAt(Instant.now());
         IncidentEntity saved = incidentRepository.save(inc);
+        flushVersioned(incidentRepository);
 
         String actorId = principal.operatorId() != null ? principal.operatorId() : principal.email();
         assignmentRepository.save(new IncidentAssignmentEntity(id, actorId, targetOp.getId(), req.notes()));
@@ -180,8 +186,9 @@ public class OperatorOperationsService {
 
     public OperatorDTOs.IncidentResponse resolveIncident(String id, OperatorDTOs.ResolveIncidentRequest req, AuthPrincipal principal, String ip) {
         IncidentEntity inc = incidentRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Incident not found: " + id));
+                .orElseThrow(ApiException::notFound);
         enforceDepartmentAccess(inc.getDepartmentId(), principal, "incident");
+        ExpectedVersion.checkRequired(inc.getVersion(), req.expectedVersion());
 
         inc.setStatus("RESOLVED");
         if (req.rootCause() != null) inc.setRootCause(req.rootCause());
@@ -189,6 +196,7 @@ public class OperatorOperationsService {
         inc.setResolvedAt(Instant.now());
         inc.setUpdatedAt(Instant.now());
         IncidentEntity saved = incidentRepository.save(inc);
+        flushVersioned(incidentRepository);
 
         logActivity(principal, "INCIDENT_RESOLVED", "incidents", id, "Resolved incident " + saved.getTitle(), ip);
         return toIncidentResponse(saved);
@@ -197,7 +205,7 @@ public class OperatorOperationsService {
     @Transactional(readOnly = true)
     public List<OperatorDTOs.IncidentAssignmentResponse> listIncidentAssignments(String incidentId, AuthPrincipal principal) {
         IncidentEntity inc = incidentRepository.findById(incidentId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Incident not found: " + incidentId));
+                .orElseThrow(ApiException::notFound);
         enforceDepartmentAccess(inc.getDepartmentId(), principal, "incident");
 
         List<IncidentAssignmentEntity> list = assignmentRepository.findByIncidentIdOrderByCreatedAtDesc(incidentId);
@@ -229,23 +237,25 @@ public class OperatorOperationsService {
     @Transactional(readOnly = true)
     public OperatorDTOs.SupportTicketResponse getSupportTicket(String id, AuthPrincipal principal) {
         SupportTicketEntity tkt = ticketRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Support ticket not found: " + id));
+                .orElseThrow(ApiException::notFound);
         enforceDepartmentAccess(tkt.getDepartmentId(), principal, "support ticket");
         return toTicketResponse(tkt);
     }
 
     public OperatorDTOs.SupportTicketResponse assignSupportTicket(String id, OperatorDTOs.AssignSupportTicketRequest req, AuthPrincipal principal, String ip) {
         SupportTicketEntity tkt = ticketRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Support ticket not found: " + id));
+                .orElseThrow(ApiException::notFound);
 
         if (!principal.isMainPlatformOperator() && !"role-super-admin".equalsIgnoreCase(principal.role()) && !"SUPER_ADMIN".equalsIgnoreCase(principal.role())) {
             enforceDepartmentAccess(tkt.getDepartmentId(), principal, "support ticket");
         }
+        ExpectedVersion.checkRequired(tkt.getVersion(), req.expectedVersion());
 
         tkt.setAssignedOperatorId(req.assignedOperatorId());
         tkt.setStatus("IN_PROGRESS");
         tkt.setUpdatedAt(Instant.now());
         SupportTicketEntity saved = ticketRepository.save(tkt);
+        flushVersioned(ticketRepository);
 
         logActivity(principal, "TICKET_ASSIGNED", "support_tickets", id, "Assigned ticket to " + req.assignedOperatorId(), ip);
         return toTicketResponse(saved);
@@ -253,8 +263,9 @@ public class OperatorOperationsService {
 
     public OperatorDTOs.SupportTicketResponse updateSupportTicket(String id, OperatorDTOs.UpdateSupportTicketRequest req, AuthPrincipal principal, String ip) {
         SupportTicketEntity tkt = ticketRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Support ticket not found: " + id));
+                .orElseThrow(ApiException::notFound);
         enforceDepartmentAccess(tkt.getDepartmentId(), principal, "support ticket");
+        ExpectedVersion.checkRequired(tkt.getVersion(), req.expectedVersion());
 
         if (req.priority() != null) tkt.setPriority(req.priority());
         if (req.status() != null) tkt.setStatus(req.status());
@@ -262,6 +273,7 @@ public class OperatorOperationsService {
         tkt.setUpdatedAt(Instant.now());
 
         SupportTicketEntity saved = ticketRepository.save(tkt);
+        flushVersioned(ticketRepository);
         logActivity(principal, "TICKET_UPDATED", "support_tickets", id, "Updated ticket status: " + saved.getStatus(), ip);
         return toTicketResponse(saved);
     }
@@ -274,27 +286,31 @@ public class OperatorOperationsService {
         return list.stream().map(this::toAccessRequestResponse).toList();
     }
 
-    public OperatorDTOs.SupportAccessRequestResponse approveSupportAccessRequest(String id, AuthPrincipal principal, String ip) {
+    public OperatorDTOs.SupportAccessRequestResponse approveSupportAccessRequest(String id, Long expectedVersion, AuthPrincipal principal, String ip) {
         SupportAccessRequestEntity req = accessRequestRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Access request not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(req.getVersion(), expectedVersion);
 
         req.setStatus("APPROVED");
         req.setApprovedBy(principal.operatorId() != null ? principal.operatorId() : principal.email());
         req.setApprovedAt(Instant.now());
         req.setExpiresAt(Instant.now().plus(4, java.time.temporal.ChronoUnit.HOURS));
         SupportAccessRequestEntity saved = accessRequestRepository.save(req);
+        flushVersioned(accessRequestRepository);
 
         logActivity(principal, "ACCESS_REQUEST_APPROVED", "support_access", id, "Approved tenant support access for " + req.getRequesterEmail(), ip);
         return toAccessRequestResponse(saved);
     }
 
-    public OperatorDTOs.SupportAccessRequestResponse rejectSupportAccessRequest(String id, AuthPrincipal principal, String ip) {
+    public OperatorDTOs.SupportAccessRequestResponse rejectSupportAccessRequest(String id, Long expectedVersion, AuthPrincipal principal, String ip) {
         SupportAccessRequestEntity req = accessRequestRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Access request not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(req.getVersion(), expectedVersion);
 
         req.setStatus("REJECTED");
         req.setApprovedBy(principal.operatorId() != null ? principal.operatorId() : principal.email());
         SupportAccessRequestEntity saved = accessRequestRepository.save(req);
+        flushVersioned(accessRequestRepository);
 
         logActivity(principal, "ACCESS_REQUEST_REJECTED", "support_access", id, "Rejected support access request", ip);
         return toAccessRequestResponse(saved);
@@ -330,7 +346,7 @@ public class OperatorOperationsService {
 
     public OperatorDTOs.WebhookReceiptResponse retryWebhook(String id, AuthPrincipal principal, String ip) {
         WebhookReceiptEntity wh = webhookRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Webhook record not found: " + id));
+                .orElseThrow(ApiException::notFound);
 
         wh.setAttempts(wh.getAttempts() + 1);
         wh.setStatus("PROCESSED");
@@ -359,7 +375,7 @@ public class OperatorOperationsService {
 
     public OperatorDTOs.BackgroundJobResponse retryJob(String id, AuthPrincipal principal, String ip) {
         BackgroundJobEntity job = jobRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Background job not found: " + id));
+                .orElseThrow(ApiException::notFound);
 
         job.setAttempts(job.getAttempts() + 1);
         job.setStatus("QUEUED");
@@ -401,6 +417,7 @@ public class OperatorOperationsService {
         m.setScheduledEnd(req.scheduledEnd() != null ? req.scheduledEnd() : Instant.now().plus(4, java.time.temporal.ChronoUnit.HOURS));
         m.setCreatedBy(principal.operatorId() != null ? principal.operatorId() : principal.email());
         MaintenanceWindowEntity saved = maintenanceRepository.save(m);
+        flushVersioned(maintenanceRepository);
 
         logActivity(principal, "MAINTENANCE_SCHEDULED", "maintenance", id, "Scheduled maintenance: " + req.title(), ip);
         return toMaintenanceResponse(saved);
@@ -408,8 +425,9 @@ public class OperatorOperationsService {
 
     public OperatorDTOs.MaintenanceWindowResponse updateMaintenanceWindow(String id, OperatorDTOs.UpdateMaintenanceWindowRequest req, AuthPrincipal principal, String ip) {
         MaintenanceWindowEntity m = maintenanceRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Maintenance window not found: " + id));
+                .orElseThrow(ApiException::notFound);
         enforceDepartmentAccess(m.getDepartmentId(), principal, "maintenance window");
+        ExpectedVersion.checkRequired(m.getVersion(), req.expectedVersion());
 
         if (req.title() != null) m.setTitle(req.title());
         if (req.description() != null) m.setDescription(req.description());
@@ -423,6 +441,7 @@ public class OperatorOperationsService {
         m.setUpdatedAt(Instant.now());
 
         MaintenanceWindowEntity saved = maintenanceRepository.save(m);
+        flushVersioned(maintenanceRepository);
         logActivity(principal, "MAINTENANCE_UPDATED", "maintenance", id, "Updated maintenance status to " + saved.getStatus(), ip);
         return toMaintenanceResponse(saved);
     }
@@ -461,7 +480,7 @@ public class OperatorOperationsService {
 
     public OperatorDTOs.OperationalAlertResponse acknowledgeAlert(String id, AuthPrincipal principal, String ip) {
         OperationalAlertEntity alert = alertRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Alert not found: " + id));
+                .orElseThrow(ApiException::notFound);
 
         alert.setAcknowledged(true);
         alert.setAcknowledgedBy(principal.operatorId() != null ? principal.operatorId() : principal.email());
@@ -497,28 +516,20 @@ public class OperatorOperationsService {
         return workload;
     }
 
-    // ==================== AGGREGATED STATS ====================
+    // ==================== RESPONSE MAPPERS ====================
 
-    @Transactional(readOnly = true)
-    public Map<String, Object> getDashboardStats(AuthPrincipal principal) {
-        long openIncidents = incidentRepository.countByStatusNot("RESOLVED");
-        long openTickets = ticketRepository.countByStatusIn(List.of("OPEN", "IN_PROGRESS"));
-        long pendingWebhooks = webhookRepository.countByStatus("RETRYING");
-        long failedJobs = jobRepository.countByStatus("FAILED");
-        long unackAlerts = alertRepository.countByAcknowledgedFalse();
-
-        return Map.of(
-                "openIncidents", openIncidents,
-                "openTickets", openTickets,
-                "pendingWebhooks", pendingWebhooks,
-                "failedJobs", failedJobs,
-                "unacknowledgedAlerts", unackAlerts,
-
-                "operationalStatus", openIncidents > 0 ? "DEGRADED" : "OPERATIONAL"
-        );
+    /**
+     * Writes every pending change of this persistence context now (not only incidents), so the response of a
+     * ticket, access-request, maintenance or incident write carries the committed @Version and a lost race
+     * fails here as 409 STALE_VERSION.
+     */
+    private static void flushVersioned(org.springframework.data.jpa.repository.JpaRepository<?, ?> repository) {
+        repository.flush();
     }
 
-    // ==================== RESPONSE MAPPERS ====================
+    private static long v(Long version) {
+        return version == null ? 0L : version;
+    }
 
     private OperatorDTOs.IncidentResponse toIncidentResponse(IncidentEntity i) {
         String deptName = i.getDepartmentId() != null ? OperatorDepartment.fromId(i.getDepartmentId()).getDisplayName() : "Global";
@@ -530,7 +541,7 @@ public class OperatorOperationsService {
                 i.getId(), i.getTitle(), i.getSeverity(), i.getStatus(),
                 i.getDepartmentId(), deptName, i.getAssignedOperatorId(), opName,
                 i.getDescription(), i.getRootCause(), i.getMitigationSteps(),
-                i.getResolvedAt(), i.getCreatedAt(), i.getUpdatedAt()
+                i.getResolvedAt(), i.getCreatedAt(), i.getUpdatedAt(), v(i.getVersion())
         );
     }
 
@@ -544,7 +555,7 @@ public class OperatorOperationsService {
                 t.getId(), t.getSubject(), t.getCustomerName(), t.getCustomerEmail(),
                 t.getDepartmentId(), deptName, t.getAssignedOperatorId(), opName,
                 t.getPriority(), t.getStatus(), t.getDescription(),
-                t.getCreatedAt(), t.getUpdatedAt()
+                t.getCreatedAt(), t.getUpdatedAt(), v(t.getVersion())
         );
     }
 
@@ -552,7 +563,7 @@ public class OperatorOperationsService {
         return new OperatorDTOs.SupportAccessRequestResponse(
                 r.getId(), r.getTicketId(), r.getRequesterEmail(), r.getOrgId(),
                 r.getReason(), r.getStatus(), r.getApprovedBy(),
-                r.getApprovedAt(), r.getExpiresAt(), r.getCreatedAt()
+                r.getApprovedAt(), r.getExpiresAt(), r.getCreatedAt(), v(r.getVersion())
         );
     }
 
@@ -592,7 +603,7 @@ public class OperatorOperationsService {
                 m.getId(), m.getTitle(), m.getDescription(), m.getDepartmentId(),
                 m.getStatus(), m.getScheduledStart(), m.getScheduledEnd(),
                 m.getActualStart(), m.getActualEnd(), m.getCreatedBy(),
-                m.getCreatedAt(), m.getUpdatedAt()
+                m.getCreatedAt(), m.getUpdatedAt(), v(m.getVersion())
         );
     }
 

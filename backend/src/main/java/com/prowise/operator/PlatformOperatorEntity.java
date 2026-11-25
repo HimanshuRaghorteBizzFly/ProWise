@@ -13,6 +13,13 @@ import jakarta.persistence.Table;
 @Table(name = "platform_operators")
 public class PlatformOperatorEntity {
 
+    /**
+     * Optimistic lock for Super Admin edits (V34). Read-only here: sign-in bookkeeping saves this entity and must
+     * never bump or fail on it; admin edits bump it with a version-guarded UPDATE (PlatformOperatorRepository#bumpVersion).
+     */
+    @Column(name = "version", insertable = false, updatable = false)
+    private Long version;
+
     @Id
     @Column(name = "id", length = 64)
     private String id;
@@ -203,4 +210,8 @@ public class PlatformOperatorEntity {
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
     }
+
+    public long getVersion() { return version == null ? 0L : version; }
+    /** In-memory only (the column is read-only): reflects the bump just written by bumpVersion. */
+    public void markVersion(long version) { this.version = version; }
 }

@@ -19,10 +19,10 @@ export function getProgressValue(project: Project): string {
 
 export function getOwnerName(project: Project, users: User[]): string {
   const owner = users.find((user) => user.id === project.accountableOwnerId);
-  return owner?.name ?? "Accountable owner unavailable in fixture";
+  return owner?.name ?? "Accountable owner unavailable";
 }
 
-export function getUserName(userId: string, users: User[], fallback = "Not in fixture"): string {
+export function getUserName(userId: string, users: User[], fallback = "Unknown person"): string {
   return users.find((user) => user.id === userId)?.name ?? fallback;
 }
 

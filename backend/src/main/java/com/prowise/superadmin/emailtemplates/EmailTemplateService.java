@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.prowise.common.api.ApiException;
+import com.prowise.common.persistence.ExpectedVersion;
+import com.prowise.superadmin.common.AdminRequests;
 import com.prowise.superadmin.audit.AuditService;
 
 @Service
@@ -51,7 +53,7 @@ public class EmailTemplateService {
     @Transactional(readOnly = true)
     public EmailTemplateDTOs.EmailTemplateResponse getTemplate(String id) {
         EmailTemplateEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TEMPLATE_NOT_FOUND", "Email template not found: " + id));
+                .orElseThrow(ApiException::notFound);
         return toResponse(entity);
     }
 
@@ -86,13 +88,14 @@ public class EmailTemplateService {
         entity.setUpdatedBy(actorEmail != null ? actorEmail : "Super Admin");
 
         EmailTemplateEntity saved = repository.save(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "COMMUNICATION",
                 "CREATE_EMAIL_TEMPLATE",
                 "Created email template: " + saved.getName() + " (" + saved.getTemplateKey() + ")",
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 saved.getName(),
                 "INFO"
         );
@@ -102,7 +105,8 @@ public class EmailTemplateService {
 
     public EmailTemplateDTOs.EmailTemplateResponse updateTemplate(String id, EmailTemplateDTOs.UpdateEmailTemplateRequest req, String actorEmail) {
         EmailTemplateEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TEMPLATE_NOT_FOUND", "Email template not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), req.expectedVersion());
 
         if (req.name() != null) entity.setName(req.name().trim());
         if (req.category() != null) entity.setCategory(req.category().toUpperCase());
@@ -123,13 +127,14 @@ public class EmailTemplateService {
         entity.setUpdatedBy(actorEmail != null ? actorEmail : "Super Admin");
 
         EmailTemplateEntity updated = repository.save(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "COMMUNICATION",
                 "UPDATE_EMAIL_TEMPLATE",
                 "Updated email template: " + updated.getName(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getName(),
                 "INFO"
         );
@@ -139,7 +144,7 @@ public class EmailTemplateService {
 
     public EmailTemplateDTOs.EmailTemplateResponse cloneTemplate(String id, String actorEmail) {
         EmailTemplateEntity source = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TEMPLATE_NOT_FOUND", "Email template not found: " + id));
+                .orElseThrow(ApiException::notFound);
 
         String cloneId = "tpl-" + UUID.randomUUID().toString().substring(0, 8);
         String cloneKey = source.getTemplateKey() + "_clone_" + System.currentTimeMillis() % 1000;
@@ -167,13 +172,14 @@ public class EmailTemplateService {
         clone.setUpdatedBy(actorEmail != null ? actorEmail : "Super Admin");
 
         EmailTemplateEntity saved = repository.save(clone);
+        repository.flush();
 
         auditService.logActivity(
                 "COMMUNICATION",
                 "CLONE_EMAIL_TEMPLATE",
                 "Cloned email template " + source.getName() + " to " + saved.getName(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 saved.getName(),
                 "INFO"
         );
@@ -181,33 +187,42 @@ public class EmailTemplateService {
         return toResponse(saved);
     }
 
-    public void deleteTemplate(String id, String actorEmail) {
+    public void deleteTemplate(String id, Long expectedVersion, String actorEmail) {
         EmailTemplateEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TEMPLATE_NOT_FOUND", "Email template not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), expectedVersion);
 
         repository.delete(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "COMMUNICATION",
                 "DELETE_EMAIL_TEMPLATE",
                 "Deleted email template: " + entity.getName(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 entity.getName(),
                 "WARNING"
         );
     }
 
-    public void bulkDelete(List<String> ids, String actorEmail) {
-        List<EmailTemplateEntity> list = repository.findAllById(ids);
+    /** All-or-nothing: an unknown id is 404 and an outdated version 409 STALE_VERSION; nothing is deleted then. */
+    public void bulkDelete(List<AdminRequests.VersionedId> items, String actorEmail) {
+        List<EmailTemplateEntity> list = new ArrayList<>();
+        for (AdminRequests.VersionedId item : items) {
+            EmailTemplateEntity entity = repository.findById(item.id()).orElseThrow(ApiException::notFound);
+            ExpectedVersion.checkRequired(entity.getVersion(), item.expectedVersion());
+            list.add(entity);
+        }
         repository.deleteAll(list);
+        repository.flush();
 
         auditService.logActivity(
                 "COMMUNICATION",
                 "BULK_DELETE_EMAIL_TEMPLATES",
                 "Bulk deleted " + list.size() + " email templates",
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 list.size() + " templates",
                 "WARNING"
         );
@@ -215,14 +230,14 @@ public class EmailTemplateService {
 
     public void sendTestEmail(String id, String recipientEmail, String actorEmail) {
         EmailTemplateEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TEMPLATE_NOT_FOUND", "Email template not found: " + id));
+                .orElseThrow(ApiException::notFound);
 
         auditService.logActivity(
                 "COMMUNICATION",
                 "SEND_TEST_EMAIL",
                 "Dispatched preview test email for '" + entity.getName() + "' to " + recipientEmail,
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 entity.getName(),
                 "INFO"
         );

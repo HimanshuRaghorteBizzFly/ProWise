@@ -49,7 +49,8 @@ public final class InvoiceDTOs {
             String notes,
             Instant paidAt,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            long version
     ) {
         public static InvoiceResponse fromEntity(InvoiceEntity entity) {
             List<LineItemDTO> lines = entity.getLineItems() != null ?
@@ -71,7 +72,8 @@ public final class InvoiceDTOs {
                     entity.getNotes(),
                     entity.getPaidAt(),
                     entity.getCreatedAt(),
-                    entity.getUpdatedAt()
+                    entity.getUpdatedAt(),
+                    entity.getVersion() == null ? 0L : entity.getVersion()
             );
         }
     }
@@ -92,7 +94,14 @@ public final class InvoiceDTOs {
             String status,
             BigDecimal taxRate,
             String notes,
-            List<LineItemDTO> lineItems
+            List<LineItemDTO> lineItems,
+            Long expectedVersion
+    ) {}
+
+    /** Mark paid: expected_version required; payment_id optional (the ?paymentId= query parameter is still accepted). */
+    public record MarkPaidRequest(
+            Long expectedVersion,
+            String paymentId
     ) {}
 
     public record InvoiceSummaryResponse(

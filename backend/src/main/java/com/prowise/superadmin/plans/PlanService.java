@@ -10,17 +10,22 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.prowise.common.api.ApiException;
 import com.prowise.common.api.ErrorCodes;
+import com.prowise.common.persistence.ExpectedVersion;
+import com.prowise.superadmin.audit.AuditService;
 
+/** Plan catalogue. Every change writes its admin audit row in the same transaction (rule 4). */
 @Service
 @Transactional
 public class PlanService {
 
     private final PlanRepository planRepository;
     private final PlanFeatureRepository featureRepository;
+    private final AuditService auditService;
 
-    public PlanService(PlanRepository planRepository, PlanFeatureRepository featureRepository) {
+    public PlanService(PlanRepository planRepository, PlanFeatureRepository featureRepository, AuditService auditService) {
         this.planRepository = planRepository;
         this.featureRepository = featureRepository;
+        this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
@@ -30,12 +35,10 @@ public class PlanService {
 
     @Transactional(readOnly = true)
     public PlanDTOs.PlanResponse getPlan(String id) {
-        PlanEntity plan = planRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Plan not found: " + id));
-        return toResponse(plan);
+        return toResponse(find(id));
     }
 
-    public PlanDTOs.PlanResponse createPlan(PlanDTOs.CreatePlanRequest request) {
+    public PlanDTOs.PlanResponse createPlan(PlanDTOs.CreatePlanRequest request, String actorEmail) {
         if (request.name() == null || request.name().trim().isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, "Plan name is required");
         }
@@ -63,11 +66,7 @@ public class PlanService {
         plan.setTrialDays(request.trialDays() != null ? request.trialDays() : 14);
 
         if (request.limits() != null) {
-            plan.setMaxSeats(request.limits().maxSeats());
-            plan.setMaxProjects(request.limits().maxProjects());
-            plan.setMaxWorkspaces(request.limits().maxWorkspaces());
-            plan.setStorageGb(request.limits().storageGb());
-            plan.setApiRateLimitPerMin(request.limits().apiRateLimitPerMin());
+            applyLimits(plan, request.limits());
         }
 
         PlanEntity saved = planRepository.save(plan);
@@ -81,13 +80,15 @@ public class PlanService {
             featureRepository.saveAll(features);
             saved.setFeatures(features);
         }
+        planRepository.flush();
 
+        audit("CREATE_PLAN", "Created plan " + saved.getName() + " (" + saved.getCode() + ")", actorEmail, saved, "INFO");
         return toResponse(saved);
     }
 
-    public PlanDTOs.PlanResponse updatePlan(String id, PlanDTOs.UpdatePlanRequest request) {
-        PlanEntity plan = planRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Plan not found: " + id));
+    public PlanDTOs.PlanResponse updatePlan(String id, PlanDTOs.UpdatePlanRequest request, String actorEmail) {
+        PlanEntity plan = find(id);
+        ExpectedVersion.checkRequired(plan.getVersion(), request.expectedVersion());
 
         if (request.name() != null && !request.name().trim().isEmpty()) plan.setName(request.name().trim());
         if (request.tagline() != null) plan.setTagline(request.tagline());
@@ -101,11 +102,7 @@ public class PlanService {
         if (request.trialDays() != null) plan.setTrialDays(request.trialDays());
 
         if (request.limits() != null) {
-            plan.setMaxSeats(request.limits().maxSeats());
-            plan.setMaxProjects(request.limits().maxProjects());
-            plan.setMaxWorkspaces(request.limits().maxWorkspaces());
-            plan.setStorageGb(request.limits().storageGb());
-            plan.setApiRateLimitPerMin(request.limits().apiRateLimitPerMin());
+            applyLimits(plan, request.limits());
         }
 
         if (request.features() != null) {
@@ -119,24 +116,52 @@ public class PlanService {
             plan.setFeatures(features);
         }
 
+        // updated_at always changes, so the plan row (and its @Version) is written even for feature-only edits.
         plan.setUpdatedAt(Instant.now());
         PlanEntity updated = planRepository.save(plan);
+        planRepository.flush();
+
+        audit("UPDATE_PLAN", "Updated plan " + updated.getName(), actorEmail, updated, "INFO");
         return toResponse(updated);
     }
 
-    public PlanDTOs.PlanResponse togglePlanArchive(String id) {
-        PlanEntity plan = planRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Plan not found: " + id));
+    public PlanDTOs.PlanResponse togglePlanArchive(String id, Long expectedVersion, String actorEmail) {
+        PlanEntity plan = find(id);
+        ExpectedVersion.checkRequired(plan.getVersion(), expectedVersion);
         String newStatus = "ACTIVE".equalsIgnoreCase(plan.getStatus()) ? "ARCHIVED" : "ACTIVE";
         plan.setStatus(newStatus);
         plan.setUpdatedAt(Instant.now());
-        return toResponse(planRepository.save(plan));
+        PlanEntity saved = planRepository.save(plan);
+        planRepository.flush();
+
+        audit("ARCHIVED".equals(newStatus) ? "ARCHIVE_PLAN" : "RESTORE_PLAN",
+                ("ARCHIVED".equals(newStatus) ? "Archived plan " : "Restored plan ") + saved.getName(),
+                actorEmail, saved, "WARNING");
+        return toResponse(saved);
     }
 
-    public void deletePlan(String id) {
-        PlanEntity plan = planRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Plan not found: " + id));
+    public void deletePlan(String id, Long expectedVersion, String actorEmail) {
+        PlanEntity plan = find(id);
+        ExpectedVersion.checkRequired(plan.getVersion(), expectedVersion);
         planRepository.delete(plan);
+        planRepository.flush();
+        audit("DELETE_PLAN", "Deleted plan " + plan.getName() + " (" + plan.getCode() + ")", actorEmail, plan, "CRITICAL");
+    }
+
+    private PlanEntity find(String id) {
+        return planRepository.findById(id).orElseThrow(ApiException::notFound);
+    }
+
+    private static void applyLimits(PlanEntity plan, PlanDTOs.PlanLimitsDTO limits) {
+        plan.setMaxSeats(limits.maxSeats());
+        plan.setMaxProjects(limits.maxProjects());
+        plan.setMaxWorkspaces(limits.maxWorkspaces());
+        plan.setStorageGb(limits.storageGb());
+        plan.setApiRateLimitPerMin(limits.apiRateLimitPerMin());
+    }
+
+    private void audit(String action, String summary, String actorEmail, PlanEntity plan, String severity) {
+        auditService.logActivity("BILLING", action, summary, "Super Admin", actorEmail, plan.getName(), severity);
     }
 
     private PlanDTOs.PlanResponse toResponse(PlanEntity p) {
@@ -169,7 +194,8 @@ public class PlanService {
                 limits,
                 featureTexts,
                 p.getCreatedAt(),
-                p.getUpdatedAt()
+                p.getUpdatedAt(),
+                p.getVersion() == null ? 0L : p.getVersion()
         );
     }
 }

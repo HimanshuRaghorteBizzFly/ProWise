@@ -3,21 +3,34 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
   CheckCircle2,
   DatabaseBackup,
+  Download,
   HardDrive,
   LayoutGrid,
   List,
   Plus,
   RotateCcw,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
-import { BackupSnapshot } from "../_types";
+import type { OperatorBackupList, OperatorBackupRun } from "@/types/operator-console";
+import { operatorApi } from "../_services/operator-api";
+import { useOperatorPermissions } from "../_services/operator-access";
 import { exportRowsToCsv, formatDateTime } from "../_services/operator-service";
+import {
+  MutationNotice,
+  NOT_AVAILABLE,
+  NotAvailableButton,
+  NotAvailableText,
+  OperatorResourceStatus,
+  formatBytes,
+  toServerPaging,
+  useOperatorMutation,
+  useOperatorResource,
+} from "../_components/OperatorLive";
 import {
   BulkSelectionBar,
   DemoDataBanner,
-  EmptyState,
   FilterBar,
   KpiCard,
   OpButton,
@@ -32,13 +45,28 @@ import {
   getStatusTone,
   useTableSelection,
 } from "../_components/OperatorPrimitives";
+import { BACKUP_CODE_MESSAGES, BACKUP_NOT_CONFIGURED_MESSAGE, BACKUP_POLL_MS } from "./backup-messages";
 
 type BackupSortField = "snapshotCode" | "scope" | "sizeGb" | "status" | "createdAt";
 
+function statusLabel(status: string): string {
+  if (status === "SUCCEEDED") return "Succeeded";
+  if (status === "NOT_CONFIGURED") return "Not configured";
+  return status.charAt(0) + status.slice(1).toLowerCase();
+}
+
+function durationOf(run: OperatorBackupRun): string | null {
+  if (!run.started_at || !run.finished_at) return null;
+  const sec = Math.max(0, Math.round((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000));
+  return `${sec}s`;
+}
+
+/**
+ * Real database backups (GET/POST /v1/operator/backups): runs pg_dump on the server into PROWISE_BACKUP_DIR. The list
+ * is re-read every 5 seconds while a run is in progress. There is no download or restore endpoint, so those controls
+ * stay visible but disabled ("Not available yet").
+ */
 export default function OperatorBackupsPage() {
-  const backups = usePlatformOperatorStore((s) => s.backups);
-  const triggerManualBackup = usePlatformOperatorStore((s) => s.triggerManualBackup);
-  const requestBackupRestore = usePlatformOperatorStore((s) => s.requestBackupRestore);
   const { can } = useOperatorPermissions();
   const canManage = can("system.manage");
 
@@ -48,34 +76,46 @@ export default function OperatorBackupsPage() {
   const [sortField, setSortField] = useState<BackupSortField>("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(6);
+  const [pageSize, setPageSize] = useState(10);
 
   // Run backup modal
   const [backupModalOpen, setBackupModalOpen] = useState(false);
-  const [backupScope, setBackupScope] = useState<BackupSnapshot["scope"]>("Primary Database");
+  const [backupScope, setBackupScope] = useState("Primary Database");
 
-  // Restore request modal
-  const [restoreTarget, setRestoreTarget] = useState<BackupSnapshot | null>(null);
+  // Restore request modal (kept for the restore flow; no restore endpoint exists, so it never opens)
+  const [restoreTarget, setRestoreTarget] = useState<OperatorBackupRun | null>(null);
   const [restoreReason, setRestoreReason] = useState("");
   const [restoreError, setRestoreError] = useState<string | null>(null);
 
-  const closeOverlays = () => {
-    setBackupModalOpen(false);
-    setRestoreTarget(null);
-  };
+  const paging = toServerPaging(page, pageSize);
+  const { state, reload } = useOperatorResource(
+    () => operatorApi.backups.list(paging),
+    `backups:${paging.page}:${paging.size}`,
+  );
 
-  const verifiedCount = useMemo(
-    () => backups.filter((b) => b.status === "Verified").length,
-    [backups]
-  );
-  const totalStorageGb = useMemo(
-    () => backups.reduce((sum, b) => sum + b.sizeGb, 0).toFixed(1),
-    [backups]
-  );
-  const pendingRestores = useMemo(
-    () => backups.filter((b) => b.restoreStatus === "Restore Requested").length,
-    [backups]
-  );
+  /** Keep the last answer on screen while a poll re-reads the list (no flicker to the skeleton). */
+  const [last, setLast] = useState<OperatorBackupList | null>(null);
+  useEffect(() => {
+    if (state.status === "ready") setLast(state.data);
+  }, [state]);
+  const data: OperatorBackupList | null = state.status === "ready" ? state.data : state.status === "loading" ? last : null;
+  const running = Boolean(data?.running);
+  const configured = data ? data.configured : true;
+
+  // Poll every 5s while a run is in progress; stops as soon as the server says nothing is running.
+  useEffect(() => {
+    if (state.status !== "ready" || !state.data.running) return;
+    const timer = setTimeout(() => void reload(), BACKUP_POLL_MS);
+    return () => clearTimeout(timer);
+  }, [state, reload]);
+
+  const runMutation = useOperatorMutation(reload, BACKUP_CODE_MESSAGES);
+
+  const items = useMemo(() => data?.items ?? [], [data]);
+  const total = data?.total ?? 0;
+
+  const verifiedCount = useMemo(() => items.filter((b) => b.status === "SUCCEEDED").length, [items]);
+  const totalBytes = useMemo(() => items.reduce((sum, b) => sum + (b.size_bytes ?? 0), 0), [items]);
 
   const handleSort = (field: BackupSortField) => {
     if (sortField === field) {
@@ -86,36 +126,31 @@ export default function OperatorBackupsPage() {
     }
   };
 
+  /** Search and sort apply to the runs the server returned for this page. */
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const list = backups.filter((b) => {
-      const matchesQ =
+    const list = items.filter(
+      (b) =>
         !q ||
-        b.snapshotCode.toLowerCase().includes(q) ||
-        b.scope.toLowerCase().includes(q) ||
-        b.region.toLowerCase().includes(q) ||
-        (b.note || "").toLowerCase().includes(q);
-      const matchesScope = scopeFilter === "ALL" || b.scope === scopeFilter;
-      return matchesQ && matchesScope;
-    });
+        (b.file_name ?? "").toLowerCase().includes(q) ||
+        (b.triggered_by ?? "").toLowerCase().includes(q) ||
+        b.status.toLowerCase().includes(q) ||
+        (b.error_message ?? "").toLowerCase().includes(q)
+    );
     return [...list].sort((a, b) => {
       let cmp = 0;
-      if (sortField === "snapshotCode") cmp = a.snapshotCode.localeCompare(b.snapshotCode);
-      else if (sortField === "scope") cmp = a.scope.localeCompare(b.scope);
-      else if (sortField === "sizeGb") cmp = a.sizeGb - b.sizeGb;
+      if (sortField === "snapshotCode") cmp = (a.file_name ?? a.id).localeCompare(b.file_name ?? b.id);
+      else if (sortField === "sizeGb") cmp = (a.size_bytes ?? 0) - (b.size_bytes ?? 0);
       else if (sortField === "status") cmp = a.status.localeCompare(b.status);
-      else cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      else if (sortField === "createdAt")
+        cmp = new Date(a.started_at ?? 0).getTime() - new Date(b.started_at ?? 0).getTime();
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [backups, search, scopeFilter, sortField, sortDir]);
+  }, [items, search, sortField, sortDir]);
 
   useEffect(() => {
     setPage(1);
-  }, [search, scopeFilter, pageSize]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  }, [pageSize]);
 
   const {
     selectedIds,
@@ -127,66 +162,80 @@ export default function OperatorBackupsPage() {
     toggleSelectOne,
   } = useTableSelection(
     filtered.map((b) => b.id),
-    paginated.map((b) => b.id)
+    filtered.map((b) => b.id)
   );
 
-  const handleRunBackup = (e: React.FormEvent) => {
+  const handleRunBackup = async (e: React.FormEvent) => {
     e.preventDefault();
-    triggerManualBackup(backupScope);
-    toast.success(`Verified ${backupScope} snapshot completed (simulated).`);
-    setBackupModalOpen(false);
+    const ok = await runMutation.run("run-backup", () => operatorApi.backups.run(), "Backup started. This list refreshes until it finishes.");
+    if (ok) setBackupModalOpen(false);
   };
 
   const handleSubmitRestore = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!restoreTarget) return;
-    if (restoreReason.trim().length < 10) {
-      setRestoreError("Please provide a clear recovery justification (at least 10 characters).");
-      return;
-    }
-    requestBackupRestore(restoreTarget.id, restoreReason.trim());
-    toast.success(`Restore request submitted for ${restoreTarget.snapshotCode}.`);
-    setRestoreTarget(null);
+    setRestoreError(`${NOT_AVAILABLE}: there is no restore endpoint.`);
   };
 
+  const toRows = (list: OperatorBackupRun[]) =>
+    list.map((b, i) => [
+      i + 1,
+      b.file_name ?? b.id,
+      b.size_bytes ?? "",
+      b.status,
+      b.triggered_by ?? "",
+      b.started_at ?? "",
+      b.finished_at ?? "",
+      b.error_message ?? "",
+    ]);
+  const CSV_HEADER = ["Sr No", "File", "Size (bytes)", "Status", "Triggered By", "Started At", "Finished At", "Error"];
+
   const handleExportCsv = () => {
-    exportRowsToCsv(
-      `prowise-backups-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Sr No", "Snapshot Code", "Scope", "Size (GB)", "Region", "Retention (Days)", "Status", "Restore Status", "Created At"],
-      filtered.map((b, i) => [
-        i + 1,
-        b.snapshotCode,
-        b.scope,
-        b.sizeGb,
-        b.region,
-        b.retentionDays,
-        b.status,
-        b.restoreStatus,
-        b.createdAt,
-      ])
-    );
-    toast.success(`Exported ${filtered.length} snapshot record(s).`);
+    exportRowsToCsv(`prowise-backups-${new Date().toISOString().slice(0, 10)}.csv`, CSV_HEADER, toRows(filtered));
+    toast.success(`Exported ${filtered.length} backup record(s).`);
   };
+
+  const runButtonDisabled = !canManage || running || runMutation.busy !== null;
+  const runButtonTitle = !canManage
+    ? "You do not have permission for this."
+    : running
+      ? "A backup is already running."
+      : undefined;
+
+  const restoreButton = (snap: OperatorBackupRun) => (
+    <span className="inline-flex items-center gap-1.5">
+      <NotAvailableButton variant="outline" size="xs" reason="no backup download endpoint" hideLabel>
+        <Download className="w-3.5 h-3.5" />
+        Download
+      </NotAvailableButton>
+      <NotAvailableButton variant="outline" size="xs" reason="no restore endpoint" wrapperClassName="items-end" aria-label={`Request restore of ${snap.file_name ?? snap.id}`}>
+        <RotateCcw className="w-3.5 h-3.5" />
+        Request Restore
+      </NotAvailableButton>
+    </span>
+  );
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Backup Monitoring"
-        badge={`${verifiedCount} Verified`}
-        demoLabel="Simulated Snapshots"
+        badge={data ? `${verifiedCount} Verified` : undefined}
+        liveData
         description="Monitor automated database and file backups, trigger on-demand safety snapshots, and submit guided restore requests."
         actions={
           <OpButton
             variant="primary"
             size="sm"
-            disabled={!canManage}
+            disabled={runButtonDisabled}
+            title={runButtonTitle}
+            isLoading={running}
             onClick={() => {
-              closeOverlays();
+              setRestoreTarget(null);
+              runMutation.clearNotice();
               setBackupModalOpen(true);
             }}
           >
             <Plus className="w-4 h-4" />
-            Run Snapshot Now
+            {running ? "Backup Running..." : "Run Snapshot Now"}
           </OpButton>
         }
       />
@@ -196,27 +245,46 @@ export default function OperatorBackupsPage() {
         description="On-demand snapshots run cleanly in simulated local state. Database restores require a documented reason and dual validation before production execution."
       />
 
+      {data && !configured && (
+        <div
+          role="status"
+          data-backup-not-configured="true"
+          className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-800 dark:text-amber-200"
+        >
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <p>{BACKUP_NOT_CONFIGURED_MESSAGE}</p>
+        </div>
+      )}
+
+      {running && (
+        <div role="status" className="rounded-xl border border-teal-500/30 bg-teal-500/10 p-3.5 text-xs text-teal-800 dark:text-teal-200">
+          A backup is running on the server. This list refreshes every 5 seconds until it finishes.
+        </div>
+      )}
+
+      <MutationNotice notice={runMutation.notice} onReload={() => void reload()} onDismiss={runMutation.clearNotice} />
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiCard
           label="Verified Snapshots"
-          value={verifiedCount}
-          sublabel="Passed checksum verification"
+          value={data ? verifiedCount : "-"}
+          sublabel="Succeeded runs in the list shown"
           icon={CheckCircle2}
           tone="emerald"
         />
         <KpiCard
           label="Total Snapshot Footprint"
-          value={`${totalStorageGb} GB`}
-          sublabel="Across multi-region encrypted storage"
+          value={data ? formatBytes(totalBytes) : "-"}
+          sublabel="Size of the backup files in the list shown"
           icon={HardDrive}
           tone="teal"
         />
         <KpiCard
           label="Active Restore Requests"
-          value={pendingRestores}
-          sublabel="Awaiting recovery validation"
+          value={NOT_AVAILABLE}
+          sublabel="Not available yet: there is no restore endpoint"
           icon={DatabaseBackup}
-          tone={pendingRestores > 0 ? "amber" : "slate"}
+          tone="slate"
         />
       </div>
 
@@ -233,11 +301,13 @@ export default function OperatorBackupsPage() {
           onExportCsv={handleExportCsv}
           exportDisabled={filtered.length === 0}
           filters={
-            <div className="w-48">
+            <div className="w-48" title={`${NOT_AVAILABLE}: every backup is a full database dump`}>
               <OpSelect
                 value={scopeFilter}
                 onChange={(e) => setScopeFilter(e.target.value)}
                 aria-label="Filter backup scope"
+                disabled
+                title={`${NOT_AVAILABLE}: every backup is a full database dump`}
                 options={[
                   { label: "All Scopes", value: "ALL" },
                   { label: "Primary Database", value: "Primary Database" },
@@ -245,6 +315,7 @@ export default function OperatorBackupsPage() {
                   { label: "Audit Archive", value: "Audit Archive" },
                 ]}
               />
+              <span className="text-[10px] text-[var(--color-text-muted)]">{NOT_AVAILABLE}</span>
             </div>
           }
           rightActions={
@@ -277,11 +348,18 @@ export default function OperatorBackupsPage() {
           }
         />
 
-        {paginated.length === 0 ? (
-          <EmptyState
-            icon={DatabaseBackup}
-            title="No backup snapshots found"
-            description="No snapshot records match your search or scope filter."
+        {!data || filtered.length === 0 ? (
+          <OperatorResourceStatus
+            state={data ? { status: "ready", data: filtered } : state.status === "error" ? state : { status: "loading" }}
+            isEmpty={(rows) => rows.length === 0}
+            onRetry={() => void reload()}
+            emptyIcon={DatabaseBackup}
+            emptyTitle="No backup snapshots found"
+            emptyDescription={
+              configured
+                ? "No backup has run yet, or nothing matches your search."
+                : "No backup has run yet. Configure backups on the server first."
+            }
           />
         ) : viewMode === "TABLE" ? (
           <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
@@ -295,13 +373,13 @@ export default function OperatorBackupsPage() {
                   variant="outline"
                   size="xs"
                   onClick={() => {
-                    const chosen = backups.filter((b) => selectedSet.has(b.id));
+                    const chosen = items.filter((b) => selectedSet.has(b.id));
                     exportRowsToCsv(
                       `prowise-selected-backups-${new Date().toISOString().slice(0, 10)}.csv`,
-                      ["Snapshot Code", "Scope", "Size GB", "Region", "Status", "Created At"],
-                      chosen.map((b) => [b.snapshotCode, b.scope, b.sizeGb, b.region, b.status, b.createdAt])
+                      CSV_HEADER,
+                      toRows(chosen)
                     );
-                    toast.success(`Exported ${chosen.length} snapshot record(s).`);
+                    toast.success(`Exported ${chosen.length} backup record(s).`);
                   }}
                 >
                   Export Selected ({selectedIds.length})
@@ -344,8 +422,8 @@ export default function OperatorBackupsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-border)] text-xs">
-                  {paginated.map((snap, idx) => {
-                    const srNo = (safePage - 1) * pageSize + idx + 1;
+                  {filtered.map((snap, idx) => {
+                    const srNo = (page - 1) * pageSize + idx + 1;
                     const isSelected = selectedSet.has(snap.id);
                     return (
                       <tr key={snap.id} className={isSelected ? "bg-teal-500/5" : "hover:bg-[var(--color-hover)]/50"}>
@@ -354,7 +432,7 @@ export default function OperatorBackupsPage() {
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggleSelectOne(snap.id)}
-                            aria-label={`Select ${snap.snapshotCode}`}
+                            aria-label={`Select ${snap.file_name ?? snap.id}`}
                             className="h-4 w-4 rounded border-[var(--color-border)] bg-[var(--color-app-bg)] accent-teal-600 cursor-pointer"
                           />
                         </td>
@@ -362,57 +440,34 @@ export default function OperatorBackupsPage() {
                           {srNo}
                         </td>
                         <td className="py-3 px-3.5">
-                          <span className="rounded border border-[var(--color-border)] bg-[var(--color-app-bg)] px-2 py-0.5 text-[11px] font-semibold">
-                            {snap.snapshotCode}
+                          <span className="rounded border border-[var(--color-border)] bg-[var(--color-app-bg)] px-2 py-0.5 text-[11px] font-semibold break-all">
+                            {snap.file_name ?? snap.id.slice(0, 8)}
                           </span>
-                          {snap.note && (
-                            <p className="text-[11px] text-[var(--color-text-muted)] mt-1 max-w-[200px] truncate">
-                              {snap.note}
+                          {snap.error_message && (
+                            <p className="text-[11px] text-rose-700 dark:text-rose-300 mt-1 max-w-[260px] break-words">
+                              {snap.error_message}
                             </p>
+                          )}
+                          {snap.triggered_by && (
+                            <p className="text-[11px] text-[var(--color-text-muted)] mt-1">by {snap.triggered_by}</p>
                           )}
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
-                          <StatusBadge label={snap.scope} tone="info" />
+                          <StatusBadge label="Primary Database" tone="info" />
                           <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
-                            {snap.region} · {snap.retentionDays}d retention
+                            <NotAvailableText reason="region and retention are not recorded" />
                           </p>
                         </td>
                         <td className="py-3 px-3.5 font-semibold tabular-nums whitespace-nowrap">
-                          {snap.sizeGb} GB
+                          {formatBytes(snap.size_bytes)}
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
-                          <StatusBadge label={snap.status} tone={getStatusTone(snap.status)} dot />
-                          {snap.restoreStatus === "Restore Requested" && (
-                            <div className="mt-1">
-                              <StatusBadge label="Restore Requested" tone="warning" />
-                            </div>
-                          )}
+                          <StatusBadge label={statusLabel(snap.status)} tone={getStatusTone(snap.status === "SUCCEEDED" ? "Completed" : snap.status)} dot />
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap text-[var(--color-text-secondary)]">
-                          {formatDateTime(snap.createdAt)}
+                          {snap.started_at ? formatDateTime(snap.started_at) : "-"}
                         </td>
-                        <td className="py-3 px-3.5 whitespace-nowrap text-right">
-                          {snap.restoreStatus === "None" ? (
-                            <OpButton
-                              variant="outline"
-                              size="xs"
-                              disabled={!canManage}
-                              onClick={() => {
-                                closeOverlays();
-                                setRestoreTarget(snap);
-                                setRestoreReason("");
-                                setRestoreError(null);
-                              }}
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              Request Restore
-                            </OpButton>
-                          ) : (
-                            <span className="text-[11px] text-amber-600 dark:text-amber-300 font-medium">
-                              Queued
-                            </span>
-                          )}
-                        </td>
+                        <td className="py-3 px-3.5 whitespace-nowrap text-right">{restoreButton(snap)}</td>
                       </tr>
                     );
                   })}
@@ -422,8 +477,9 @@ export default function OperatorBackupsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {paginated.map((snap, idx) => {
-              const srNo = (safePage - 1) * pageSize + idx + 1;
+            {filtered.map((snap, idx) => {
+              const srNo = (page - 1) * pageSize + idx + 1;
+              const duration = durationOf(snap);
               return (
                 <div
                   key={snap.id}
@@ -434,42 +490,25 @@ export default function OperatorBackupsPage() {
                       <span className="rounded bg-[var(--color-surface)] border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--color-text-muted)] tabular-nums">
                         #{srNo}
                       </span>
-                      <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-[11px] font-semibold">
-                        {snap.snapshotCode}
+                      <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-[11px] font-semibold break-all">
+                        {snap.file_name ?? snap.id.slice(0, 8)}
                       </span>
-                      <StatusBadge label={snap.status} tone={getStatusTone(snap.status)} dot />
-                      <StatusBadge label={snap.scope} tone="info" />
-                      {snap.restoreStatus === "Restore Requested" && (
-                        <StatusBadge label="Restore Requested" tone="warning" />
-                      )}
+                      <StatusBadge label={statusLabel(snap.status)} tone={getStatusTone(snap.status === "SUCCEEDED" ? "Completed" : snap.status)} dot />
+                      <StatusBadge label="Primary Database" tone="info" />
                     </div>
                     <p className="text-xs sm:text-sm font-medium text-[var(--color-text-primary)]">
-                      Size: {snap.sizeGb} GB · Region: {snap.region} · Retention: {snap.retentionDays} days
+                      Size: {formatBytes(snap.size_bytes)} · Region: <NotAvailableText /> · Retention:{" "}
+                      <NotAvailableText />
                     </p>
-                    {snap.note && <p className="text-xs text-[var(--color-text-secondary)]">{snap.note}</p>}
+                    {snap.error_message && <p className="text-xs text-rose-700 dark:text-rose-300">{snap.error_message}</p>}
                     <p className="text-[11px] text-[var(--color-text-muted)]">
-                      Completed in {snap.durationSec}s · {formatDateTime(snap.createdAt)}
+                      {duration ? `Completed in ${duration}` : snap.status === "RUNNING" ? "Running" : "Not finished"} ·{" "}
+                      {snap.started_at ? formatDateTime(snap.started_at) : "-"}
+                      {snap.triggered_by ? ` · by ${snap.triggered_by}` : ""}
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    {snap.restoreStatus === "None" && (
-                      <OpButton
-                        variant="outline"
-                        size="xs"
-                        disabled={!canManage}
-                        onClick={() => {
-                          closeOverlays();
-                          setRestoreTarget(snap);
-                          setRestoreReason("");
-                          setRestoreError(null);
-                        }}
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        Request Restore
-                      </OpButton>
-                    )}
-                  </div>
+                  <div className="flex items-center gap-2 shrink-0">{restoreButton(snap)}</div>
                 </div>
               );
             })}
@@ -477,8 +516,8 @@ export default function OperatorBackupsPage() {
         )}
 
         <PaginationBar
-          currentPage={safePage}
-          totalItems={filtered.length}
+          currentPage={page}
+          totalItems={total}
           pageSize={pageSize}
           onPageChange={setPage}
           onPageSizeChange={(n) => {
@@ -497,22 +536,36 @@ export default function OperatorBackupsPage() {
         maxWidth="sm"
       >
         <form onSubmit={handleRunBackup} className="space-y-4">
-          <OpSelect
-            label="Backup Scope"
-            value={backupScope}
-            onChange={(e) => setBackupScope(e.target.value as BackupSnapshot["scope"])}
-            options={[
-              { label: "Primary Database", value: "Primary Database" },
-              { label: "Workspace Attachments", value: "Workspace Attachments" },
-              { label: "Audit Archive", value: "Audit Archive" },
-            ]}
-          />
+          <div title={`${NOT_AVAILABLE}: the server always dumps the whole database`}>
+            <OpSelect
+              label="Backup Scope"
+              value={backupScope}
+              onChange={(e) => setBackupScope(e.target.value)}
+              disabled
+              options={[
+                { label: "Primary Database", value: "Primary Database" },
+                { label: "Workspace Attachments", value: "Workspace Attachments" },
+                { label: "Audit Archive", value: "Audit Archive" },
+              ]}
+            />
+            <span className="text-[10px] text-[var(--color-text-muted)]">
+              {NOT_AVAILABLE}: the server always dumps the whole database (pg_dump).
+            </span>
+          </div>
+          <MutationNotice notice={runMutation.notice} onReload={() => void reload()} onDismiss={runMutation.clearNotice} />
           <div className="flex justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
             <OpButton type="button" variant="outline" size="sm" onClick={() => setBackupModalOpen(false)}>
               Cancel
             </OpButton>
-            <OpButton type="submit" variant="primary" size="sm">
-              Start Backup (Sim)
+            <OpButton
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={runButtonDisabled}
+              title={runButtonTitle}
+              isLoading={runMutation.busy === "run-backup"}
+            >
+              Start Backup
             </OpButton>
           </div>
         </form>
@@ -522,7 +575,7 @@ export default function OperatorBackupsPage() {
       <OpModal
         isOpen={Boolean(restoreTarget)}
         onClose={() => setRestoreTarget(null)}
-        title={restoreTarget ? `Request Restore — ${restoreTarget.snapshotCode}` : "Request Restore"}
+        title={restoreTarget ? `Request Restore — ${restoreTarget.file_name ?? restoreTarget.id}` : "Request Restore"}
         description="Submit a documented recovery request for validation."
         maxWidth="md"
       >
@@ -543,9 +596,9 @@ export default function OperatorBackupsPage() {
             <OpButton type="button" variant="outline" size="sm" onClick={() => setRestoreTarget(null)}>
               Cancel
             </OpButton>
-            <OpButton type="submit" variant="danger" size="sm">
+            <NotAvailableButton variant="danger" size="sm" reason="no restore endpoint">
               Submit Restore Request
-            </OpButton>
+            </NotAvailableButton>
           </div>
         </form>
       </OpModal>

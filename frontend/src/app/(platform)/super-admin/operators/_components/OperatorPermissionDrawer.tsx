@@ -168,12 +168,18 @@ export function OperatorPermissionDrawer({
   if (!isOpen || !operator) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-sm flex justify-end transition-opacity">
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 md:p-6 transition-opacity animate-in fade-in duration-200"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Permission Management Dialog"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div
-        className="w-full max-w-3xl bg-[var(--color-surface)] border-l border-[var(--color-border)] shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-200"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Permission Management Drawer"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-4xl lg:max-w-5xl max-h-[92vh] sm:max-h-[88vh] rounded-2xl sm:rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
       >
         {/* Drawer Header with Operator Profile */}
         <div className="p-5 border-b border-[var(--color-border)] bg-[var(--color-sidebar)] flex items-start justify-between gap-4 shrink-0">

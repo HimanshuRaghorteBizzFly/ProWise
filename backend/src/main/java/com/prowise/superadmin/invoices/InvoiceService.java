@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.prowise.common.api.ApiException;
+import com.prowise.common.persistence.ExpectedVersion;
 import com.prowise.superadmin.audit.AuditService;
 
 @Service
@@ -42,7 +43,7 @@ public class InvoiceService {
     @Transactional(readOnly = true)
     public InvoiceDTOs.InvoiceResponse getInvoice(String id) {
         InvoiceEntity entity = invoiceRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVOICE_NOT_FOUND", "Invoice not found: " + id));
+                .orElseThrow(ApiException::notFound);
         return InvoiceDTOs.InvoiceResponse.fromEntity(entity);
     }
 
@@ -88,13 +89,14 @@ public class InvoiceService {
         invoice.setTotal(total);
 
         InvoiceEntity saved = invoiceRepository.save(invoice);
+        invoiceRepository.flush();
 
         auditService.logActivity(
                 "INVOICE",
                 "GENERATE_INVOICE",
                 "Generated invoice #" + invNumber + " totaling $" + total,
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 invNumber,
                 "INFO"
         );
@@ -104,7 +106,8 @@ public class InvoiceService {
 
     public InvoiceDTOs.InvoiceResponse updateInvoice(String id, InvoiceDTOs.UpdateInvoiceRequest req, String actorEmail) {
         InvoiceEntity invoice = invoiceRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVOICE_NOT_FOUND", "Invoice not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(invoice.getVersion(), req.expectedVersion());
 
         if (req.issueDate() != null) invoice.setIssueDate(req.issueDate());
         if (req.dueDate() != null) invoice.setDueDate(req.dueDate());
@@ -145,13 +148,14 @@ public class InvoiceService {
 
         invoice.setUpdatedAt(Instant.now());
         InvoiceEntity updated = invoiceRepository.save(invoice);
+        invoiceRepository.flush();
 
         auditService.logActivity(
                 "INVOICE",
                 "UPDATE_INVOICE",
                 "Updated invoice #" + updated.getInvoiceNumber(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getInvoiceNumber(),
                 "INFO"
         );
@@ -159,9 +163,10 @@ public class InvoiceService {
         return InvoiceDTOs.InvoiceResponse.fromEntity(updated);
     }
 
-    public InvoiceDTOs.InvoiceResponse markInvoicePaid(String id, String paymentId, String actorEmail) {
+    public InvoiceDTOs.InvoiceResponse markInvoicePaid(String id, String paymentId, Long expectedVersion, String actorEmail) {
         InvoiceEntity invoice = invoiceRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVOICE_NOT_FOUND", "Invoice not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(invoice.getVersion(), expectedVersion);
 
         invoice.setStatus("PAID");
         invoice.setPaidAt(Instant.now());
@@ -171,13 +176,14 @@ public class InvoiceService {
         invoice.setUpdatedAt(Instant.now());
 
         InvoiceEntity updated = invoiceRepository.save(invoice);
+        invoiceRepository.flush();
 
         auditService.logActivity(
                 "INVOICE",
                 "MARK_PAID",
                 "Marked invoice #" + updated.getInvoiceNumber() + " as PAID",
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getInvoiceNumber(),
                 "INFO"
         );
@@ -185,21 +191,23 @@ public class InvoiceService {
         return InvoiceDTOs.InvoiceResponse.fromEntity(updated);
     }
 
-    public InvoiceDTOs.InvoiceResponse voidInvoice(String id, String actorEmail) {
+    public InvoiceDTOs.InvoiceResponse voidInvoice(String id, Long expectedVersion, String actorEmail) {
         InvoiceEntity invoice = invoiceRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVOICE_NOT_FOUND", "Invoice not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(invoice.getVersion(), expectedVersion);
 
         invoice.setStatus("VOID");
         invoice.setUpdatedAt(Instant.now());
 
         InvoiceEntity updated = invoiceRepository.save(invoice);
+        invoiceRepository.flush();
 
         auditService.logActivity(
                 "INVOICE",
                 "VOID_INVOICE",
                 "Voided invoice #" + updated.getInvoiceNumber(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getInvoiceNumber(),
                 "WARNING"
         );
@@ -207,18 +215,20 @@ public class InvoiceService {
         return InvoiceDTOs.InvoiceResponse.fromEntity(updated);
     }
 
-    public void deleteInvoice(String id, String actorEmail) {
+    public void deleteInvoice(String id, Long expectedVersion, String actorEmail) {
         InvoiceEntity invoice = invoiceRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVOICE_NOT_FOUND", "Invoice not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(invoice.getVersion(), expectedVersion);
 
         invoiceRepository.delete(invoice);
+        invoiceRepository.flush();
 
         auditService.logActivity(
                 "INVOICE",
                 "DELETE_INVOICE",
                 "Deleted invoice #" + invoice.getInvoiceNumber(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 invoice.getInvoiceNumber(),
                 "WARNING"
         );
@@ -226,7 +236,7 @@ public class InvoiceService {
 
     public void sendInvoiceReminder(String id, InvoiceDTOs.SendReminderRequest req, String actorEmail) {
         InvoiceEntity invoice = invoiceRepository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVOICE_NOT_FOUND", "Invoice not found: " + id));
+                .orElseThrow(ApiException::notFound);
 
         auditService.logActivity(
                 "COMMUNICATION",
@@ -234,7 +244,7 @@ public class InvoiceService {
                 "Dispatched payment reminder for invoice #" + invoice.getInvoiceNumber() +
                         (req != null && req.recipientEmail() != null ? " to " + req.recipientEmail() : ""),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 invoice.getInvoiceNumber(),
                 "INFO"
         );

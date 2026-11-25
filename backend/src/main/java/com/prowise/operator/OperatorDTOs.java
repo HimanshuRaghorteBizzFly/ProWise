@@ -21,7 +21,8 @@ public class OperatorDTOs {
             int activeSessionsCount,
             int totalPermissionsCount,
             Instant lastActiveAt,
-            Instant createdAt
+            Instant createdAt,
+            long version
     ) {}
 
     public record CreateOperatorRequest(
@@ -45,15 +46,18 @@ public class OperatorDTOs {
             String status,
             Boolean mfaEnabled,
             Boolean onCall,
-            String shiftName
+            String shiftName,
+            Long expectedVersion
     ) {}
 
     public record UpdateAccessLevelRequest(
-            String accessLevel
+            String accessLevel,
+            Long expectedVersion
     ) {}
 
     public record UpdateDepartmentRequest(
-            String departmentId
+            String departmentId,
+            Long expectedVersion
     ) {}
 
     public record PermissionItem(
@@ -82,7 +86,8 @@ public class OperatorDTOs {
 
     public record UpdatePermissionsPayload(
             List<PermissionOverrideRequest> overrides,
-            boolean resetToDefaults
+            boolean resetToDefaults,
+            Long expectedVersion
     ) {}
 
     public record NavigationModuleItem(
@@ -127,7 +132,8 @@ public class OperatorDTOs {
     ) {}
 
     public record StatusUpdateRequest(
-            String status
+            String status,
+            Long expectedVersion
     ) {}
 
     public record RoleResponse(
@@ -160,7 +166,8 @@ public class OperatorDTOs {
             String mitigationSteps,
             Instant resolvedAt,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            long version
     ) {}
 
     public record CreateIncidentRequest(
@@ -179,17 +186,20 @@ public class OperatorDTOs {
             String assignedOperatorId,
             String description,
             String rootCause,
-            String mitigationSteps
+            String mitigationSteps,
+            Long expectedVersion
     ) {}
 
     public record AssignIncidentRequest(
             String assignedToOperatorId,
-            String notes
+            String notes,
+            Long expectedVersion
     ) {}
 
     public record ResolveIncidentRequest(
             String rootCause,
-            String mitigationSteps
+            String mitigationSteps,
+            Long expectedVersion
     ) {}
 
     public record IncidentAssignmentResponse(
@@ -215,7 +225,8 @@ public class OperatorDTOs {
             String status,
             String description,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            long version
     ) {}
 
     public record CreateSupportTicketRequest(
@@ -230,12 +241,14 @@ public class OperatorDTOs {
     public record UpdateSupportTicketRequest(
             String priority,
             String status,
-            String assignedOperatorId
+            String assignedOperatorId,
+            Long expectedVersion
     ) {}
 
     public record AssignSupportTicketRequest(
             String assignedOperatorId,
-            String notes
+            String notes,
+            Long expectedVersion
     ) {}
 
     public record SupportAccessRequestResponse(
@@ -248,7 +261,8 @@ public class OperatorDTOs {
             String approvedBy,
             Instant approvedAt,
             Instant expiresAt,
-            Instant createdAt
+            Instant createdAt,
+            long version
     ) {}
 
     public record CreateAccessRequestRequest(
@@ -321,7 +335,8 @@ public class OperatorDTOs {
             Instant actualEnd,
             String createdBy,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            long version
     ) {}
 
     public record CreateMaintenanceWindowRequest(
@@ -337,7 +352,8 @@ public class OperatorDTOs {
             String description,
             String status,
             Instant scheduledStart,
-            Instant scheduledEnd
+            Instant scheduledEnd,
+            Long expectedVersion
     ) {}
 
     public record EmailDeliveryLogResponse(

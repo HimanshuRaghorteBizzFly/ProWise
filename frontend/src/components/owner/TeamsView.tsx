@@ -7,19 +7,18 @@ import { UsersRound } from "lucide-react";
 import { LaterActionButton, OwnerLaterBadge } from "@/components/owner/OwnerLaterBadge";
 import { OwnerPageState } from "@/components/owner/OwnerPageState";
 import { PageHeader, StatusBadge, SurfaceCard } from "@/components/owner/primitives";
-import type { TeamRow } from "@/lib/fixtures/org-admin";
+import type { TeamRow } from "@/types/org-admin";
 import type { PermissionKey } from "@/types/permission";
 
 export interface TeamsViewProps {
   teams: TeamRow[];
-  source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
   basePath?: string;
 }
 
 const MAX_NAMES = 4;
 
-export function TeamsView({ teams, source, can, basePath }: TeamsViewProps) {
+export function TeamsView({ teams, can, basePath }: TeamsViewProps) {
   const [showArchived, setShowArchived] = useState(false);
   const canManage = can("team.manage");
   const visible = teams.filter((team) => showArchived || !team.archived);
@@ -29,7 +28,6 @@ export function TeamsView({ teams, source, can, basePath }: TeamsViewProps) {
     <PageHeader
       title="Teams"
       description="Teams group people for assignment and workload. A team lead manages only their own team's work."
-      simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={
         canManage ? (
           basePath ? (

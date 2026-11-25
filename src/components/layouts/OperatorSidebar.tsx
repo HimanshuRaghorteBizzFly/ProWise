@@ -96,7 +96,7 @@ export function OperatorSidebar() {
 
   return (
     <aside className="w-64 flex-shrink-0 border-r border-[var(--color-border)] bg-[var(--color-sidebar)] flex flex-col h-screen sticky top-0 overflow-hidden">
-      <div className="flex h-16 items-center gap-2.5 px-6 border-b border-[var(--color-border)]">
+      <div className="flex h-16 items-center gap-2.5 px-6 border-b border-[var(--color-border)] shrink-0">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0D9488] text-white font-bold">
           <Activity className="w-4 h-4" />
         </div>
@@ -109,8 +109,8 @@ export function OperatorSidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3 space-y-4">
-        {OPERATOR_SECTIONS.map((section, idx) => (
-          <div key={idx} className="space-y-1">
+        {OPERATOR_SECTIONS.map((section) => (
+          <div key={section.title} className="space-y-1">
             <p className="px-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
               {section.title}
             </p>

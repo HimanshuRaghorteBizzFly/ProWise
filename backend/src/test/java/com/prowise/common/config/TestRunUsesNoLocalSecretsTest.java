@@ -21,5 +21,6 @@ class TestRunUsesNoLocalSecretsTest {
         assertThat(environment.getProperty("spring.mail.username", "")).isBlank();
         assertThat(environment.getProperty("spring.mail.password", "")).isBlank();
         assertThat(environment.getProperty("prowise.bootstrap.super-admin-email", "")).isBlank();
+        assertThat(environment.getProperty("prowise.bootstrap.super-admin-password", "")).isBlank();
     }
 }

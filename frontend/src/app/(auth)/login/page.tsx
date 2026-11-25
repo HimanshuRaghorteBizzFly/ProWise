@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ApiError, apiClient } from "@/lib/api";
@@ -11,6 +11,7 @@ import { useSuperAdminStore } from "@/app/(platform)/super-admin/_store/useSuper
 import { usePlatformOperatorStore } from "@/app/(platform)/platform-operator/_store/usePlatformOperatorStore";
 import { operatorAuthService } from "@/app/(platform)/platform-operator/_services/operator-auth-service";
 import { applyLoginResponse } from "@/lib/auth-session";
+import { attemptLogin, loginErrorMessage } from "@/lib/login-flow";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -20,132 +21,7 @@ import {
   EyeOff,
   ShieldCheck,
   ArrowRight,
-  Sparkles,
-  CheckCircle2,
-  Cpu,
-  Layers,
-  Crown,
-  Building2,
-  FolderKanban,
-  Users,
-  CheckSquare,
-  Zap,
 } from "lucide-react";
-
-interface QuickCredential {
-  label: string;
-  role: string;
-  email: string;
-  target: string;
-  category: "Platform" | "Leadership" | "Delivery";
-  icon: React.ComponentType<{ className?: string }>;
-  color: string;
-}
-
-/** Sent only by the offline preview button; it is not the password of any account. */
-const OFFLINE_PREVIEW_PLACEHOLDER = "offline-preview-only";
-
-const QUICK_ACCOUNTS: QuickCredential[] = [
-  // Platform Section
-  {
-    label: "Super Admin",
-    role: "System Director",
-    email: "superadmin@prowise.com",
-    target: "/super-admin/dashboard",
-    category: "Platform",
-    icon: Crown,
-    color: "from-amber-500 to-rose-500",
-  },
-  {
-    label: "Platform Operator",
-    role: "SRE & Operations",
-    email: "operator@prowise.io",
-    target: "/platform-operator/dashboard",
-    category: "Platform",
-    icon: Layers,
-    color: "from-blue-500 to-cyan-500",
-  },
-
-  // Organization Leadership Section
-  {
-    label: "Org Owner",
-    role: "Executive Owner",
-    email: "dr.sarah.lin@acmehealth.com",
-    target: "/org/org-acme/owner/dashboard",
-    category: "Leadership",
-    icon: Building2,
-    color: "from-purple-500 to-indigo-600",
-  },
-  {
-    label: "Org Admin",
-    role: "Workspace Admin",
-    email: "david.kim@acmehealth.com",
-    target: "/org/org-acme/admin/dashboard",
-    category: "Leadership",
-    icon: ShieldCheck,
-    color: "from-slate-600 to-indigo-500",
-  },
-
-  // Project Delivery Section
-  {
-    label: "Project Manager",
-    role: "Portfolio Manager",
-    email: "priya.raman@acmehealth.com",
-    target: "/org/org-acme/manager/dashboard",
-    category: "Delivery",
-    icon: FolderKanban,
-    color: "from-blue-600 to-indigo-600",
-  },
-  {
-    label: "Team Lead",
-    role: "Engineering Lead",
-    email: "marcus.chen@acmehealth.com",
-    target: "/org/org-acme/lead/dashboard",
-    category: "Delivery",
-    icon: Users,
-    color: "from-violet-500 to-purple-600",
-  },
-  {
-    label: "Developer",
-    role: "Full-Stack Dev",
-    email: "alex.rivera@acmehealth.com",
-    target: "/org/org-acme/developer/dashboard",
-    category: "Delivery",
-    icon: Cpu,
-    color: "from-emerald-500 to-teal-500",
-  },
-  {
-    label: "QA / Reviewer",
-    role: "Quality & Review",
-    email: "elena.ruiz@acmehealth.com",
-    target: "/org/org-acme/reviewer/dashboard",
-    category: "Delivery",
-    icon: CheckSquare,
-    color: "from-pink-500 to-rose-500",
-  },
-  {
-    label: "Viewer",
-    role: "Read-Only Stakeholder",
-    email: "jordan.lee@acmehealth.com",
-    target: "/org/org-acme/viewer/dashboard",
-    category: "Delivery",
-    icon: Eye,
-    color: "from-amber-500 to-orange-500",
-  },
-];
-
-/** One clear message per failure; never a guessed role or a fallback dashboard. */
-function loginFailureMessage(error: unknown): string {
-  if (error instanceof ApiError) {
-    const reference = error.requestId ? ` (Reference: ${error.requestId})` : "";
-    if (error.status === 401) return "The email or password is incorrect.";
-    if (error.status === 403) return `${error.message}${reference}`;
-    if (error.status === 429) return "Too many attempts. Wait a minute and try again.";
-    if (error.status === 0 || error.status >= 502) return "The ProWise server cannot be reached. Try again shortly.";
-    return `Sign-in failed: ${error.message}${reference}`;
-  }
-  return "Sign-in failed. Try again.";
-}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -153,40 +29,30 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState<"ALL" | "Platform" | "Leadership" | "Delivery">("ALL");
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
-  // Demo logins are a dev-preview aid only (NEXT_PUBLIC_USE_MOCKS=true, never in production).
-  const showDemoLogins = previewEnabled();
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("expired") === "1") {
-      setSessionNotice("Your session ended. Please sign in again.");
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const urlEmail = params.get("email") || localStorage.getItem("prowise_reset_email");
+      if (urlEmail) setEmail(urlEmail);
+
+      if (params.get("password") === "changed") {
+        toast.success("Password reset successfully! Please sign in with your new password.");
+      }
     }
   }, []);
 
-  // Development builds only (mocks allowed). No password is embedded anywhere: seeded logins with published
-  // passwords were disabled (approved decision D4). A preset fills the email and selects the offline preview role.
-  const showDemoPanel = mocksAllowed(readPermissionEnv());
-
-  const fillCredentials = (account: QuickCredential) => {
-    setEmail(account.email);
-    setPassword("");
-    setSelectedPreset(account.label);
-    toast.info(`Selected ${account.label}. Enter the password, or use the offline preview when the API is down.`);
-  };
-
-  const executeLogin = async (targetEmail: string, targetPass: string, _presetLabel?: string) => {
+  const executeLogin = async (targetEmail: string, targetPass: string) => {
     const cleanEmail = targetEmail.trim();
-    setLoginError(null);
     if (!cleanEmail || !targetPass) {
-      setLoginError("Enter both your email and password.");
+      toast.error("Please enter both email and password.");
       return;
     }
 
     setIsLoading(true);
+    setLoginError(null);
     try {
       // The server decides where this account lands: platform dashboards only for real platform accounts,
       // otherwise from the ACTIVE memberships (one workspace, the workspace picker, or "no workspace yet").
@@ -198,67 +64,56 @@ export default function LoginPage() {
       const session = await establishSession();
       const destination = session.target || response.target_dashboard_url;
 
-      if (session.platform && session.role === "SUPER_ADMIN") {
-        try {
-          useSuperAdminStore.getState().setActiveRolePreview("role-sa");
-        } catch {}
-      } else if (session.platform && session.role === "PLATFORM_OPERATOR") {
-        try {
-          usePlatformOperatorStore.getState().updateAccountSettings({
-            name: session.user.name,
-            email: cleanEmail,
-          });
-        } catch {}
+        const message = loginErrorMessage(backendError);
+        setLoginError(message);
+        toast.error(message);
+        setIsLoading(false);
+        return;
       }
-      router.replace(destination);
+
+      const response = attempt.response;
+      if (response.must_change_password) {
+        applyLoginResponse(response);
+        toast.info("Temporary password detected. Please set your new password.");
+        window.location.assign("/change-password");
+        return;
+      }
+
+      // The role and destination come only from the server's answer.
+      const destination = applyLoginResponse(response);
+      const roleText = (response.user.role ?? "member").replace(/_/g, " ").toLowerCase();
+      toast.success(
+        response.requires_organization_selection
+          ? "Signed in. Choose the organization to open."
+          : `Signed in as ${roleText}.`,
+      );
+      window.location.assign(destination);
     } catch (err) {
-      setLoginError(loginFailureMessage(err));
-    } finally {
+      const message = err instanceof ApiError ? loginErrorMessage(err) : err instanceof Error ? err.message : "Unable to complete sign in.";
+      setLoginError(message);
+      toast.error(message);
       setIsLoading(false);
     }
   };
 
-  /** Platform Operator sign-in on the common page. Returns the dashboard, or null when the credentials are not an operator's. */
+  /** Platform Operator sign-in through the real operator endpoint; null when the account is not an operator. */
   const tryOperatorLogin = async (operatorEmail: string, operatorPassword: string): Promise<string | null> => {
     try {
       const res = await operatorAuthService.login(operatorEmail, operatorPassword, false);
-      usePlatformOperatorStore.getState().updateAccountSettings({
-        name: res.operator.name,
-        email: res.operator.email,
-        department: res.operator.departmentName as never,
-        shiftName: res.operator.shiftName,
-        mfaEnabled: res.operator.mfaEnabled,
-        activeOperatorId: res.operator.id,
-      });
+      usePlatformOperatorStore.getState().setOperatorProfile(res.operator);
       useAuthStore.getState().setCurrentRole("PLATFORM_OPERATOR");
       useAuthStore.getState().login(res.operator.email, "PLATFORM_OPERATOR");
       toast.success(`Welcome back, ${res.operator.name}.`);
       return "/platform-operator/dashboard";
-    } catch (operatorError) {
-      // A real operator refusal (suspended, setup unfinished, locked) is shown as-is; anything else means the
-      // address is not an operator, and the member login's "invalid credentials" answer stands.
-      const message = operatorError instanceof Error ? operatorError.message : "";
-      if (/suspend|disabled|locked|setup|invitation/i.test(message)) throw operatorError;
+    } catch {
       return null;
     }
   };
 
   const handleCustomLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    await executeLogin(email, password, selectedPreset || undefined);
+    await executeLogin(email, password);
   };
-
-  const handleInstantSignIn = async (account: QuickCredential) => {
-    fillCredentials(account);
-    // Not a password for any account: a reachable API rejects it, and only an unreachable API in a development
-    // build falls back to the local preview session for the selected role.
-    await executeLogin(account.email, OFFLINE_PREVIEW_PLACEHOLDER, account.label);
-  };
-
-  const visibleAccounts =
-    categoryFilter === "ALL"
-      ? QUICK_ACCOUNTS
-      : QUICK_ACCOUNTS.filter((a) => a.category === categoryFilter);
 
   return (
     <div className="relative min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-center items-center p-4 sm:p-6 overflow-hidden">
@@ -266,9 +121,9 @@ export default function LoginPage() {
       <div className="absolute top-[-10rem] left-1/2 -translate-x-1/2 w-[38rem] h-[38rem] bg-gradient-to-tr from-blue-500/20 via-indigo-500/20 to-purple-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-[-10rem] right-[-5rem] w-80 h-80 bg-blue-400/10 dark:bg-blue-600/10 rounded-full blur-2xl pointer-events-none" />
 
-      <div className="relative w-full max-w-md sm:max-w-lg transition-all">
+      <div className="relative w-full max-w-md transition-all">
         {/* Header Branding */}
-        <div className="text-center mb-5">
+        <div className="text-center mb-6">
           <div className="inline-flex h-14 w-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 items-center justify-center text-white font-bold text-2xl shadow-xl shadow-blue-500/25 mb-3 ring-4 ring-blue-500/10 transition-transform hover:scale-105">
             P
           </div>
@@ -388,19 +243,7 @@ export default function LoginPage() {
 
         {/* Main Login Card */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xl shadow-slate-200/40 dark:shadow-black/50 p-6 sm:p-7 backdrop-blur-md">
-          <form onSubmit={handleCustomLogin} className="space-y-4" noValidate>
-            {sessionNotice && !loginError && (
-              <p role="status" data-testid="session-expired"
-                className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-                {sessionNotice}
-              </p>
-            )}
-            {loginError && (
-              <p role="alert" data-testid="login-error"
-                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
-                {loginError}
-              </p>
-            )}
+          <form onSubmit={handleCustomLogin} className="space-y-4">
             {/* Work Email Field */}
             <div className="space-y-1.5">
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -413,12 +256,10 @@ export default function LoginPage() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    if (selectedPreset) setSelectedPreset(null);
-                  }}
-                  placeholder="e.g. superadmin@prowise.com"
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.com"
                   required
+                  autoFocus
                   className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800/80 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
                 />
               </div>
@@ -444,10 +285,7 @@ export default function LoginPage() {
                 <input
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (selectedPreset) setSelectedPreset(null);
-                  }}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   required
                   className="w-full pl-9 pr-10 py-2 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800/80 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
@@ -475,6 +313,15 @@ export default function LoginPage() {
                 Remember me on this browser
               </label>
             </div>
+
+            {loginError && (
+              <div
+                role="alert"
+                className="rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-700 dark:text-rose-300"
+              >
+                {loginError}
+              </div>
+            )}
 
             {/* Submit Button */}
             <Button

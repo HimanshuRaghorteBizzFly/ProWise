@@ -193,8 +193,10 @@ class MainAndDepartmentOperatorTest {
 
         when(operatorRepository.findById("op-dept-9")).thenReturn(Optional.of(op));
         when(operatorRepository.save(any(PlatformOperatorEntity.class))).thenAnswer(i -> i.getArgument(0));
+        // Version-guarded UPDATE (rule 5) succeeds: the operator is still at the version the caller read.
+        when(operatorRepository.bumpVersion(any(String.class), org.mockito.ArgumentMatchers.anyLong())).thenReturn(1);
 
-        OperatorDTOs.OperatorResponse updated = operatorService.updateAccessLevel("op-dept-9", "MAIN_PLATFORM_OPERATOR", "Super Admin");
+        OperatorDTOs.OperatorResponse updated = operatorService.updateAccessLevel("op-dept-9", "MAIN_PLATFORM_OPERATOR", 0L, "Super Admin");
 
         assertEquals("MAIN_PLATFORM_OPERATOR", updated.accessLevel());
         verify(sessionRepository).revokeAllByOperatorId(eq("op-dept-9"), any(String.class));
@@ -213,8 +215,10 @@ class MainAndDepartmentOperatorTest {
 
         when(operatorRepository.findById("op-dept-8")).thenReturn(Optional.of(op));
         when(operatorRepository.save(any(PlatformOperatorEntity.class))).thenAnswer(i -> i.getArgument(0));
+        // Version-guarded UPDATE (rule 5) succeeds: the operator is still at the version the caller read.
+        when(operatorRepository.bumpVersion(any(String.class), org.mockito.ArgumentMatchers.anyLong())).thenReturn(1);
 
-        OperatorDTOs.OperatorResponse updated = operatorService.updateDepartment("op-dept-8", "site-reliability", "Super Admin");
+        OperatorDTOs.OperatorResponse updated = operatorService.updateDepartment("op-dept-8", "site-reliability", 0L, "Super Admin");
 
         verify(sessionRepository).revokeAllByOperatorId(eq("op-dept-8"), any(String.class));
     }
@@ -238,7 +242,7 @@ class MainAndDepartmentOperatorTest {
 
         OperatorDTOs.IncidentResponse res = operationsService.assignIncident(
                 "inc-201",
-                new OperatorDTOs.AssignIncidentRequest("op-sre-lead", "Please investigate immediately"),
+                new OperatorDTOs.AssignIncidentRequest("op-sre-lead", "Please investigate immediately", 0L),
                 mainPrincipal,
                 "127.0.0.1"
         );
@@ -260,7 +264,7 @@ class MainAndDepartmentOperatorTest {
 
         assertThrows(ApiException.class, () -> operationsService.getIncident("inc-301", financePrincipal));
         assertThrows(ApiException.class, () -> operationsService.assignIncident(
-                "inc-301", new OperatorDTOs.AssignIncidentRequest("op-sre-lead", "Notes"), financePrincipal, "127.0.0.1"
+                "inc-301", new OperatorDTOs.AssignIncidentRequest("op-sre-lead", "Notes", 0L), financePrincipal, "127.0.0.1"
         ));
     }
 
@@ -273,8 +277,10 @@ class MainAndDepartmentOperatorTest {
         op.setStatus("ACTIVE");
         when(operatorRepository.findById("op-test-1")).thenReturn(Optional.of(op));
         when(operatorRepository.save(any(PlatformOperatorEntity.class))).thenAnswer(i -> i.getArgument(0));
+        // Version-guarded UPDATE (rule 5) succeeds: the operator is still at the version the caller read.
+        when(operatorRepository.bumpVersion(any(String.class), org.mockito.ArgumentMatchers.anyLong())).thenReturn(1);
 
-        operatorService.updateOperatorStatus("op-test-1", "INACTIVE", "Super Admin");
+        operatorService.updateOperatorStatus("op-test-1", "INACTIVE", 0L, "Super Admin");
 
         verify(sessionRepository).revokeAllByOperatorId(eq("op-test-1"), eq("Super Admin"));
     }

@@ -111,6 +111,8 @@ export function inferEmailBannerColor(
   if (tpl.category === "BILLING") return "violet";
   if (tpl.category === "DELIVERY") return "sky";
   if (tpl.category === "ALERTS") return "rose";
+  if (tpl.category === "RENEWAL") return "amber";
+  if (tpl.category === "SECURITY") return "emerald";
   return "slate";
 }
 
@@ -473,6 +475,8 @@ export function RichEmailEditor({
               { label: "Delivery", value: "DELIVERY" },
               { label: "Alerts", value: "ALERTS" },
               { label: "System Notice", value: "ANNOUNCEMENTS" },
+              { label: "Renewal", value: "RENEWAL" },
+              { label: "Security", value: "SECURITY" },
             ]}
           />
         </div>

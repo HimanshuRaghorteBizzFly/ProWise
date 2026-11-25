@@ -16,13 +16,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prowise.identity.AuthPrincipal;
+import com.prowise.superadmin.common.AdminRequests;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping({"/v1/admin/email-templates", "/api/v1/admin/email-templates"})
-@Tag(name = "Super Admin Email Templates", description = "Transactional notification templates, placeholders and previews")
+@Tag(name = "Super Admin Email Templates", description = "Transactional email templates. Mutations need expected_version (409 STALE_VERSION when stale) and accept Idempotency-Key.")
 public class EmailTemplateController {
 
     private final EmailTemplateService templateService;
@@ -56,21 +56,19 @@ public class EmailTemplateController {
             HttpServletRequest request,
             @Valid @RequestBody EmailTemplateDTOs.CreateEmailTemplateRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(templateService.createTemplate(body, actor));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('templates.manage')")
-    @Operation(summary = "Update an existing email template")
+    @Operation(summary = "Update an existing email template (expected_version required)")
     public ResponseEntity<EmailTemplateDTOs.EmailTemplateResponse> updateTemplate(
             HttpServletRequest request,
             @PathVariable String id,
             @Valid @RequestBody EmailTemplateDTOs.UpdateEmailTemplateRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.ok(templateService.updateTemplate(id, body, actor));
     }
 
@@ -81,21 +79,20 @@ public class EmailTemplateController {
             HttpServletRequest request,
             @PathVariable String id
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(templateService.cloneTemplate(id, actor));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('templates.manage')")
-    @Operation(summary = "Delete an email template")
+    @Operation(summary = "Delete an email template (?expectedVersion= required)")
     public ResponseEntity<Void> deleteTemplate(
             HttpServletRequest request,
-            @PathVariable String id
+            @PathVariable String id,
+            @RequestParam(required = false) Long expectedVersion
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        templateService.deleteTemplate(id, actor);
+        String actor = AdminRequests.actor(request);
+        templateService.deleteTemplate(id, expectedVersion, actor);
         return ResponseEntity.noContent().build();
     }
 
@@ -107,22 +104,20 @@ public class EmailTemplateController {
             @PathVariable String id,
             @Valid @RequestBody EmailTemplateDTOs.SendTestEmailRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         templateService.sendTestEmail(id, body.recipientEmail(), actor);
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("/bulk-delete")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('templates.manage')")
-    @Operation(summary = "Bulk delete email templates")
+    @Operation(summary = "Bulk delete email templates (items: [{id, expected_version}]; all-or-nothing)")
     public ResponseEntity<Void> bulkDelete(
             HttpServletRequest request,
-            @Valid @RequestBody EmailTemplateDTOs.BulkDeleteRequest body
+            @Valid @RequestBody AdminRequests.BulkVersionedRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        templateService.bulkDelete(body.ids(), actor);
+        String actor = AdminRequests.actor(request);
+        templateService.bulkDelete(body.items(), actor);
         return ResponseEntity.noContent().build();
     }
 }

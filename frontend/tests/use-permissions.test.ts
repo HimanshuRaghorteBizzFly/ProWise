@@ -6,9 +6,8 @@ import {
   canAnyWithGrants,
   canWithGrants,
   grantsFromApi,
-  mocksAllowed,
 } from "../src/lib/permissions";
-import { FIXTURE_GRANTS } from "../src/lib/fixtures/permissions";
+import { FIXTURE_GRANTS } from "./fixtures/permissions";
 import { createPermissionStore } from "../src/store/permission-store";
 import type { PermissionGrant } from "../src/types/permission";
 
@@ -103,24 +102,9 @@ describe("fixture grants follow the permission matrix", () => {
   });
 });
 
-describe("mocksAllowed", () => {
-  it("is never true in a production build", () => {
-    expect(mocksAllowed({ nodeEnv: "production", useMocks: "true" })).toBe(false);
-    expect(mocksAllowed({ nodeEnv: "production", useMocks: undefined })).toBe(false);
-  });
-
-  it("is allowed outside production only with NEXT_PUBLIC_USE_MOCKS=true", () => {
-    expect(mocksAllowed({ nodeEnv: "development", useMocks: "true" })).toBe(true);
-    expect(mocksAllowed({ nodeEnv: "test", useMocks: "true" })).toBe(true);
-    // Normal use (no flag) never shows sample data, also in development.
-    expect(mocksAllowed({ nodeEnv: "development", useMocks: undefined })).toBe(false);
-  });
-});
-
 describe("permission store", () => {
   const apiOk = (keys: string[]) => vi.fn().mockResolvedValue({ organizationId: ORG_A, permissions: keys });
   const apiFail = (error: unknown) => vi.fn().mockRejectedValue(error);
-  const devEnv = { nodeEnv: "development", useMocks: undefined } as const;
 
   let fetchPermissions: ReturnType<typeof vi.fn>;
 
@@ -129,7 +113,7 @@ describe("permission store", () => {
   });
 
   it("loads ORG grants from the API and reports that scope is not provided", async () => {
-    const store = createPermissionStore({ fetchPermissions, env: devEnv });
+    const store = createPermissionStore({ fetchPermissions });
     await store.getState().load(ORG_A, "ORGANIZATION_OWNER");
 
     const state = store.getState();
@@ -143,83 +127,9 @@ describe("permission store", () => {
     ]);
   });
 
-  it("uses the fixture without calling the API when NEXT_PUBLIC_USE_MOCKS=true", async () => {
-    const store = createPermissionStore({ fetchPermissions, env: { nodeEnv: "development", useMocks: "true" } });
-    await store.getState().load(ORG_A, "ORGANIZATION_ADMIN");
-
-    expect(fetchPermissions).not.toHaveBeenCalled();
-    expect(store.getState().source).toBe("fixture");
-    expect(store.getState().scopeReported).toBe(true);
-    expect(store.getState().grants).toEqual(FIXTURE_GRANTS.ORGANIZATION_ADMIN);
-  });
-
-  it("never lets a role preview replace the server's permissions without NEXT_PUBLIC_USE_MOCKS=true", async () => {
-    const store = createPermissionStore({ fetchPermissions, env: devEnv });
-    await store.getState().load(ORG_A, "ORGANIZATION_OWNER", { preview: true });
-
-    expect(fetchPermissions).toHaveBeenCalledWith(ORG_A);
-    expect(store.getState().source).toBe("api");
-  });
-
-  it("uses role fixtures without calling the API in role preview mode (dev preview flag)", async () => {
-    const store = createPermissionStore({ fetchPermissions, env: { nodeEnv: "development", useMocks: "true" } });
-    await store.getState().load(ORG_A, "ORGANIZATION_OWNER", { preview: true });
-
-    expect(fetchPermissions).not.toHaveBeenCalled();
-    expect(store.getState().source).toBe("fixture");
-    expect(store.getState().grants).toEqual(FIXTURE_GRANTS.ORGANIZATION_OWNER);
-  });
-
-  it("does not allow role preview fixtures in production", async () => {
+  it.each([0, 502, 503, 504])("reports an error with no grants when the API is unreachable (status %s), never sample grants", async (status) => {
     const store = createPermissionStore({
-      fetchPermissions,
-      env: { nodeEnv: "production", useMocks: undefined },
-    });
-    await store.getState().load(ORG_A, "ORGANIZATION_OWNER", { preview: true });
-
-    expect(fetchPermissions).toHaveBeenCalledWith(ORG_A);
-    expect(store.getState().source).toBe("api");
-  });
-
-  it("never falls back to the fixture without NEXT_PUBLIC_USE_MOCKS=true, even when the API is unreachable", async () => {
-    const store = createPermissionStore({
-      fetchPermissions: apiFail(new ApiError(0, "NETWORK_ERROR", "offline", "")),
-      env: devEnv,
-    });
-    await store.getState().load(ORG_A, "ORGANIZATION_OWNER");
-
-    expect(store.getState().status).toBe("error");
-    expect(store.getState().source).toBeNull();
-    expect(store.getState().grants).toEqual([]);
-  });
-
-  it("never uses the fixture in production, even when the API is unreachable", async () => {
-    const store = createPermissionStore({
-      fetchPermissions: apiFail(new ApiError(0, "NETWORK_ERROR", "offline", "")),
-      env: { nodeEnv: "production", useMocks: "true" },
-    });
-    await store.getState().load(ORG_A, "ORGANIZATION_OWNER");
-
-    expect(store.getState().status).toBe("error");
-    expect(store.getState().grants).toEqual([]);
-  });
-
-  it.each([502, 503, 504])("treats proxy %s as an error in development without the flag (no fixture)", async (status) => {
-    const store = createPermissionStore({
-      fetchPermissions: apiFail(new ApiError(status, `HTTP_${status}`, "bad gateway", "")),
-      env: devEnv,
-    });
-    await store.getState().load(ORG_A, "ORGANIZATION_ADMIN");
-
-    expect(store.getState().status).toBe("error");
-    expect(store.getState().source).toBeNull();
-    expect(store.getState().grants).toEqual([]);
-  });
-
-  it.each([502, 503, 504])("never uses the fixture for proxy %s in production", async (status) => {
-    const store = createPermissionStore({
-      fetchPermissions: apiFail(new ApiError(status, `HTTP_${status}`, "bad gateway", "")),
-      env: { nodeEnv: "production", useMocks: "true" },
+      fetchPermissions: apiFail(new ApiError(status, status === 0 ? "NETWORK_ERROR" : `HTTP_${status}`, "unreachable", "")),
     });
     await store.getState().load(ORG_A, "ORGANIZATION_OWNER");
 
@@ -233,20 +143,19 @@ describe("permission store", () => {
     [403, "access-lost"],
     [404, "access-lost"],
     [500, "error"],
-  ] as const)("maps HTTP %s to %s with no grants and no fixture", async (status, expected) => {
+  ] as const)("maps HTTP %s to %s with no grants", async (status, expected) => {
     const store = createPermissionStore({
       fetchPermissions: apiFail(new ApiError(status, "X", "denied", "req")),
-      env: devEnv,
     });
     await store.getState().load(ORG_A, "ORGANIZATION_OWNER");
 
     expect(store.getState().status).toBe(expected);
-    expect(store.getState().source).not.toBe("fixture");
+    expect(store.getState().source).toBeNull();
     expect(store.getState().grants).toEqual([]);
   });
 
   it("reports access-lost when no organization is active", async () => {
-    const store = createPermissionStore({ fetchPermissions, env: devEnv });
+    const store = createPermissionStore({ fetchPermissions });
     await store.getState().load("", "ORGANIZATION_OWNER");
 
     expect(fetchPermissions).not.toHaveBeenCalled();
@@ -254,7 +163,7 @@ describe("permission store", () => {
   });
 
   it("dedupes concurrent loads for the same organization", async () => {
-    const store = createPermissionStore({ fetchPermissions, env: devEnv });
+    const store = createPermissionStore({ fetchPermissions });
     await Promise.all([
       store.getState().load(ORG_A, "ORGANIZATION_OWNER"),
       store.getState().load(ORG_A, "ORGANIZATION_OWNER"),
@@ -263,11 +172,16 @@ describe("permission store", () => {
   });
 
   it("reloads when the role template changes in the same organization", async () => {
-    const store = createPermissionStore({ fetchPermissions, env: { nodeEnv: "development", useMocks: "true" } });
+    const byRole = vi
+      .fn()
+      .mockResolvedValueOnce({ organizationId: ORG_A, permissions: ["org.manage"] })
+      .mockResolvedValueOnce({ organizationId: ORG_A, permissions: ["member.invite"] });
+    const store = createPermissionStore({ fetchPermissions: byRole });
     await store.getState().load(ORG_A, "ORGANIZATION_OWNER");
     await store.getState().load(ORG_A, "ORGANIZATION_ADMIN");
 
-    expect(store.getState().grants).toEqual(FIXTURE_GRANTS.ORGANIZATION_ADMIN);
+    expect(byRole).toHaveBeenCalledTimes(2);
+    expect(store.getState().grants).toEqual([{ key: "member.invite", scope: "ORG" }]);
   });
 
   it("drops grants from the previous organization when switching and ignores stale responses", async () => {
@@ -276,7 +190,7 @@ describe("permission store", () => {
       .fn()
       .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
       .mockResolvedValueOnce({ organizationId: "org-b", permissions: ["project.read"] });
-    const store = createPermissionStore({ fetchPermissions: slow, env: devEnv });
+    const store = createPermissionStore({ fetchPermissions: slow });
 
     const first = store.getState().load(ORG_A, "ORGANIZATION_OWNER");
     expect(store.getState().grants).toEqual([]);

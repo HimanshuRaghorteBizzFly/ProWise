@@ -72,7 +72,7 @@ export function Hero3DPreview() {
                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/80" />
               </div>
               <span className="ml-2 text-xs font-semibold text-[var(--color-text-secondary)] hidden sm:inline">
-                ProWise Workspace · Acme Health Technologies
+                ProWise Workspace
               </span>
             </div>
 

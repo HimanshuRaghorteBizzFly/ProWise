@@ -1,8 +1,8 @@
 import type { ApiErrorResponse, HealthResponse } from "@/types/api";
 import type * as Dto from "@/types/api";
 import type * as W from "@/types/work";
-import { mocksAllowed, readPermissionEnv } from "@/lib/permissions";
-import { useAuthStore } from "@/store/auth-store";
+import type * as Admin from "@/types/admin";
+import { clearAuthSession } from "@/lib/auth-session";
 
 export const REQUEST_ID_HEADER = "X-Request-Id";
 export const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
@@ -10,6 +10,12 @@ export const EXPECTED_VERSION_FIELD = "expectedVersion";
 export const STALE_VERSION_CODE = "STALE_VERSION";
 
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/**
+ * A 401 from these is the real answer (wrong password, refused refresh cookie, already signed out), never a reason
+ * to refresh: refreshing here would wait on itself forever.
+ */
+const NO_REFRESH_PATHS = new Set(["/v1/auth/refresh", "/v1/auth/login", "/v1/auth/signin", "/v1/auth/signout"]);
 
 type FetchLike = typeof globalThis.fetch;
 
@@ -20,9 +26,6 @@ interface RequestOptions {
   retryOnUnauthorized?: boolean;
   /** Reuse a key to make a user-level retry of the same change safe; otherwise one is generated per call. */
   idempotencyKey?: string;
-  /** Raw bytes (file upload): sent as-is with this content type, without an Idempotency-Key (the server
-   *  replay cache holds 1 MB at most; uploads are drafts that only count once the project is created). */
-  raw?: { data: Blob | ArrayBuffer; contentType: string };
 }
 
 /** Random id for X-Request-Id and Idempotency-Key (UUID when available, safe characters only). */
@@ -71,9 +74,9 @@ export interface AuthUserSummary {
   must_change_password: boolean;
 }
 
-/** The refresh token never appears here: it only travels in the httpOnly refresh cookie. */
 export interface AuthLoginResponse {
   access_token: string;
+  /* No refresh_token: it travels only in the HttpOnly cookie and the client never reads one from a body. */
   expires_in: number;
   must_change_password: boolean;
   target_dashboard_url: string;
@@ -190,27 +193,39 @@ export function resolveApiBaseUrl(configuredUrl = process.env.NEXT_PUBLIC_API_BA
 export interface ApiClientOptions {
   baseUrl?: string;
   fetch?: FetchLike;
-  isRolePreview?: () => boolean;
-  /** Called when a request stays 401 after a refresh attempt (default: a window event). */
+  /** Called when the refresh cookie is refused: the session is over and callers route to /login. */
   onSessionExpired?: () => void;
 }
 
-/** Fired on window when the session can no longer be refreshed. */
-export const SESSION_EXPIRED_EVENT = "prowise:session-expired";
+/** Pages where an ended session needs no redirect (the person is already signing in or setting up an account). */
+const AUTH_PAGE_PREFIXES = [
+  "/login", "/operator/login", "/signup", "/verify-email", "/forgot-password", "/reset-password",
+  "/change-password", "/invitations", "/account-setup", "/activate", "/create-organization",
+];
 
-/** Routes that start a session: the old access token is never sent to them. */
-const PUBLIC_AUTH_PATH = /^\/(?:api\/)?(?:v1\/)?auth\/(?:signup|signin|login|refresh|forgot-password|reset-password|password-reset)/;
+/** Clears the client session and, outside the sign-in pages, sends the person to /login (back to this page after). */
+export function endSessionAndGoToLogin(): void {
+  clearAuthSession();
+  if (typeof window === "undefined") return;
+  const { pathname, search } = window.location;
+  if (pathname === "/" || AUTH_PAGE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) return;
+  window.location.assign(`/login?next=${encodeURIComponent(pathname + search)}`);
+}
 
 export function createApiClient(options: ApiClientOptions = {}) {
   const fetcher = options.fetch ?? globalThis.fetch;
-  const isRolePreview = options.isRolePreview ?? (() => useAuthStore.getState().isRolePreview);
-  const onSessionExpired = options.onSessionExpired ?? (() => {
-    if (typeof window !== "undefined") window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
-  });
-  // The access token lives in memory only (never localStorage or a readable cookie). On a reload it is gone and
-  // the first request or establishSession() gets a new one from the httpOnly refresh cookie.
+  const onSessionExpired = options.onSessionExpired ?? endSessionAndGoToLogin;
+  /*
+   * The access token lives only in memory. It is never written to localStorage or a script-readable cookie (an XSS
+   * could read either). After a reload the server's HttpOnly cookies carry the session: the first 401 refreshes it.
+   */
   let accessToken: string | null = null;
-  let refreshing: Promise<string | null> | null = null;
+
+  function setAccessToken(token: string | null) {
+    accessToken = token;
+  }
+
+  let refreshing: Promise<string> | null = null;
 
   async function health(): Promise<HealthResponse> {
     const response = await request("/v1/health", { retryOnUnauthorized: false });
@@ -221,39 +236,28 @@ export function createApiClient(options: ApiClientOptions = {}) {
     path: string,
     requestOptions: RequestOptions = {},
   ): Promise<Response> {
-    const previewAllowed = path === "/v1/health" || path === "/v1/auth/signout";
-    if (isRolePreview() && mocksAllowed(readPermissionEnv()) && !previewAllowed) {
-      throw new ApiError(0, "ROLE_PREVIEW", "API requests are disabled during role preview.", "");
-    }
-
     const method = (requestOptions.method ?? "GET").toUpperCase();
     // Task 1.4: one key per logical mutation, reused when the request is retried after a token refresh,
     // so the server returns the earlier result instead of applying the change twice.
     const idempotencyKey =
-      requestOptions.raw ? undefined
-        : requestOptions.idempotencyKey ?? (MUTATION_METHODS.has(method) ? newClientId() : undefined);
+      requestOptions.idempotencyKey ?? (MUTATION_METHODS.has(method) ? newClientId() : undefined);
     const requestId = newClientId();
 
     let response: Response;
-    let sentWith: string | null = null;
     try {
       const headers = new Headers({ Accept: "application/json" });
       if (requestOptions.headers) {
         Object.entries(requestOptions.headers).forEach(([k, v]) => headers.set(k, v));
       }
-      if (requestOptions.raw) headers.set("Content-Type", requestOptions.raw.contentType || "application/octet-stream");
-      else if (requestOptions.body !== undefined) headers.set("Content-Type", "application/json");
-      // Never send the (possibly stale) access token to sign-up, sign-in or refresh: those start a new session.
-      sentWith = accessToken && !PUBLIC_AUTH_PATH.test(path) ? accessToken : null;
-      if (sentWith) headers.set("Authorization", `Bearer ${sentWith}`);
+      if (requestOptions.body !== undefined) headers.set("Content-Type", "application/json");
+      if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
       headers.set(REQUEST_ID_HEADER, requestId);
       if (idempotencyKey) headers.set(IDEMPOTENCY_KEY_HEADER, idempotencyKey);
       response = await fetcher(`${resolveApiBaseUrl(options.baseUrl)}${path}`, {
         method,
         headers,
         credentials: "include",
-        body: requestOptions.raw ? requestOptions.raw.data
-          : requestOptions.body === undefined ? undefined : JSON.stringify(requestOptions.body),
+        body: requestOptions.body === undefined ? undefined : JSON.stringify(requestOptions.body),
       });
     } catch (error) {
       throw new ApiError(
@@ -264,15 +268,11 @@ export function createApiClient(options: ApiClientOptions = {}) {
       );
     }
 
-    if (response.status === 401 && requestOptions.retryOnUnauthorized !== false && !PUBLIC_AUTH_PATH.test(path)) {
-      // Another request already got a new token while this one was in flight: retry with it, no second refresh.
-      // Otherwise refresh once (shared by every waiting request) and retry. Exactly one retry per request: no loops.
-      const current = accessToken && accessToken !== sentWith ? accessToken : await refreshAccessToken();
-      if (current) {
+    if (response.status === 401 && requestOptions.retryOnUnauthorized !== false && !NO_REFRESH_PATHS.has(path)) {
+      const refreshed = await refreshAccessToken().catch(() => null);
+      if (refreshed) {
         return request(path, { ...requestOptions, idempotencyKey, retryOnUnauthorized: false });
       }
-      // Only a failed refresh ends the session: let the app send the user to sign in.
-      onSessionExpired();
     }
     if (!response.ok) {
       throw await toApiError(response, requestId);
@@ -286,34 +286,35 @@ export function createApiClient(options: ApiClientOptions = {}) {
   }
 
   /**
-   * One refresh at a time: requests that hit 401 meanwhile wait for the same promise. Across tabs a Web Lock (when
-   * the browser has one) serializes refreshes so two tabs never present the same cookie at once.
+   * Exchanges the HttpOnly refresh cookie for a new access token. It never triggers another refresh. On failure the
+   * in-memory session is cleared and the promise rejects; a refused cookie also ends the client session.
    */
-  async function refreshAccessToken(): Promise<string | null> {
+  async function refreshAccessToken(): Promise<string> {
     if (!refreshing) {
-      const run = () =>
-        // retryOnUnauthorized: false — a 401 from refresh must not trigger another refresh (it would wait on itself).
-        json<{ access_token: string }>("/v1/auth/refresh", { method: "POST", retryOnUnauthorized: false })
-          .then((tokens) => {
-            accessToken = tokens.access_token;
-            return accessToken;
-          })
-          .catch(() => {
-            accessToken = null;
-            return null;
-          });
-      const locks = typeof navigator !== "undefined" ? (navigator as Navigator & { locks?: LockManager }).locks : undefined;
-      const pending: Promise<string | null> = locks ? (locks.request("prowise-session-refresh", run) as unknown as Promise<string | null>) : run();
-      refreshing = pending.finally(() => {
-        refreshing = null;
-      });
+      refreshing = json<{ access_token?: string }>("/v1/auth/refresh", {
+        method: "POST",
+        retryOnUnauthorized: false,
+      })
+        .then((tokens) => {
+          if (!tokens?.access_token) {
+            throw new ApiError(401, "UNAUTHORIZED", "Your session has ended. Sign in again.", "");
+          }
+          setAccessToken(tokens.access_token);
+          return tokens.access_token;
+        })
+        .catch((error: unknown) => {
+          setAccessToken(null);
+          // A refusal (4xx) ends the session; a network blip or 5xx leaves the signed-in state for a later retry.
+          if (!(error instanceof ApiError) || (error.status >= 400 && error.status < 500)) {
+            onSessionExpired();
+          }
+          throw error;
+        })
+        .finally(() => {
+          refreshing = null;
+        });
     }
     return refreshing;
-  }
-
-  /** Page load or reload: get an access token from the refresh cookie before any page decides access. */
-  async function ensureAccessToken(): Promise<string | null> {
-    return accessToken ?? refreshAccessToken();
   }
 
   return {
@@ -338,13 +339,13 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }),
     signin: (body: { email: string; password: string }) =>
       json<{ access_token: string }>("/v1/auth/signin", { method: "POST", body }).then((tokens) => {
-        accessToken = tokens.access_token;
+        setAccessToken(tokens.access_token);
         return tokens;
       }),
     login: (body: { email: string; password: string }) =>
       // /v1 path: the base URL is "/api" and only /api/v1/* is proxied ("/api/auth/login" became /api/api/... = 404).
       json<AuthLoginResponse>("/v1/auth/login", { method: "POST", body }).then((res) => {
-        accessToken = res.access_token;
+        setAccessToken(res.access_token);
         return res;
       }),
     changePassword: (body: { currentPassword?: string; newPassword: string }) =>
@@ -356,21 +357,23 @@ export function createApiClient(options: ApiClientOptions = {}) {
           new_password: body.newPassword,
         },
       }).then((tokens) => {
-        accessToken = tokens.access_token;
+        setAccessToken(tokens.access_token);
         return tokens;
       }),
     refresh: refreshAccessToken,
-    ensureAccessToken,
+    setAccessToken,
     /** Log out on every device: revokes all sessions of this user and clears the refresh cookie. */
     signoutEverywhere: async () => {
       await request("/v1/auth/logout-all", { method: "POST" });
       accessToken = null;
     },
     signout: async () => {
-      // /v1 path: the base URL is "/api" and only /api/v1/* is proxied to the backend; also the one sign-out
-      // path allowed during role preview.
-      await request("/v1/auth/signout", { method: "POST" });
-      accessToken = null;
+      // /v1 path: the base URL is "/api" and only /api/v1/* is proxied to the backend.
+      try {
+        await request("/v1/auth/signout", { method: "POST" });
+      } finally {
+        setAccessToken(null);
+      }
     },
     me: () => json<import("@/types/api").MeResponse>("/v1/me"),
     myPermissions: (orgId: string) =>
@@ -499,115 +502,6 @@ export function createApiClient(options: ApiClientOptions = {}) {
       json<Dto.ProjectDto>(`${orgPath(orgId)}/projects`, { method: "POST", body }),
     updateProject: (orgId: string, projectId: string, body: Dto.UpdateProjectDto) =>
       json<Dto.ProjectDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", body }),
-    // Super Admin (platform accounts only; the server requires PLATFORM_SUPER_ADMIN): stored platform data.
-    adminDashboard: () => json<Dto.AdminDashboardDto>("/v1/admin/dashboard"),
-    adminOrganizations: (search?: string) =>
-      json<Dto.AdminOrganizationDto[]>(`/v1/admin/organizations${search ? `?search=${encodeURIComponent(search)}` : ""}`),
-    // Task 3.1: Create Project setup, breakdown, assignment, work types and project documents.
-    uploadProjectDocument: (orgId: string, file: File) =>
-      json<Dto.ProjectDocumentDto>(`${orgPath(orgId)}/project-documents?file_name=${encodeURIComponent(file.name)}`,
-        { method: "POST", raw: { data: file, contentType: file.type || "application/octet-stream" } }),
-    createConfiguredProject: (orgId: string, body: Dto.ConfiguredProjectRequestDto) =>
-      json<Dto.ConfiguredProjectDto>(`${orgPath(orgId)}/projects/configured`, { method: "POST", body }),
-    projectDocuments: (orgId: string, projectId: string) =>
-      json<Dto.ProjectDocumentDto[]>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/documents`),
-    downloadProjectDocument: (orgId: string, projectId: string, documentId: string) =>
-      request(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}`)
-        .then((response) => response.blob()),
-    workItems: (orgId: string, projectId: string) =>
-      json<Dto.WorkItemDto[]>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items`),
-    addWorkItem: (orgId: string, projectId: string, body: Dto.AddWorkItemDto) =>
-      json<Dto.WorkItemDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items`, { method: "POST", body }),
-    updateWorkItem: (orgId: string, projectId: string, itemId: string, body: Dto.UpdateWorkItemDto) =>
-      json<Dto.WorkItemDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items/${encodeURIComponent(itemId)}`,
-        { method: "PATCH", body }),
-    retireWorkItem: (orgId: string, projectId: string, itemId: string, expectedVersion: number) =>
-      json<Dto.WorkItemDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items/${encodeURIComponent(itemId)}/retire`,
-        { method: "POST", body: { expected_version: expectedVersion } }),
-    assignWorkItem: (orgId: string, projectId: string, itemId: string, body: Dto.AssignmentDto) =>
-      json<Dto.WorkItemDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items/${encodeURIComponent(itemId)}/assignment`,
-        { method: "POST", body }),
-    assignmentHistory: (orgId: string, projectId: string, itemId: string) =>
-      json<Dto.AssignmentChangeDto[]>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items/${encodeURIComponent(itemId)}/assignment-history`),
-    projectAssignees: (orgId: string, projectId: string) =>
-      json<Dto.WorkPersonDto[]>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/assignees`),
-    assignableWork: (orgId: string) => json<Dto.AssignableItemDto[]>(`${orgPath(orgId)}/work-items/assignable`),
-    workTypes: (orgId: string) => json<Dto.WorkTypeDto[]>(`${orgPath(orgId)}/work-types`),
-    createWorkType: (orgId: string, body: { name: string; description?: string }) =>
-      json<Dto.WorkTypeDto>(`${orgPath(orgId)}/work-types`, { method: "POST", body }),
-    updateWorkType: (orgId: string, typeId: string, body: { name?: string; description?: string; expected_version: number }) =>
-      json<Dto.WorkTypeDto>(`${orgPath(orgId)}/work-types/${encodeURIComponent(typeId)}`, { method: "PATCH", body }),
-    retireWorkType: (orgId: string, typeId: string, expectedVersion: number) =>
-      json<Dto.WorkTypeDto>(`${orgPath(orgId)}/work-types/${encodeURIComponent(typeId)}/retire`,
-        { method: "POST", body: { expected_version: expectedVersion } }),
-    // Task 3.2: scope versions.
-    scopeVersions: (orgId: string, projectId: string) =>
-      json<Dto.ScopeVersionDto[]>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/scope-versions`),
-    createScopeDraft: (orgId: string, projectId: string, body: Dto.ScopeDraftDto) =>
-      json<Dto.ScopeVersionDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/scope-versions`, { method: "POST", body }),
-    approveScopeVersion: (orgId: string, projectId: string, versionId: string, expectedVersion: number) =>
-      json<Dto.ScopeVersionDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/scope-versions/${encodeURIComponent(versionId)}/approve`,
-        { method: "POST", body: { expected_version: expectedVersion } }),
-    // Tasks 3.3 and 3.5: review and rework, accepted-work progress.
-    myTasks: (orgId: string) => json<Dto.ReviewTaskDto[]>(`${orgPath(orgId)}/my-tasks`),
-    reviewQueue: (orgId: string) => json<Dto.ReviewTaskDto[]>(`${orgPath(orgId)}/review-queue`),
-    submitTask: (orgId: string, projectId: string, itemId: string, body: Dto.SubmitTaskDto) =>
-      json<Dto.ReviewTaskDto>(`${workItemPath(orgId, projectId, itemId)}/submit`, { method: "POST", body }),
-    approveTask: (orgId: string, projectId: string, itemId: string, body: Dto.ReviewDecisionDto) =>
-      json<Dto.ReviewTaskDto>(`${workItemPath(orgId, projectId, itemId)}/approve`, { method: "POST", body }),
-    requestTaskChanges: (orgId: string, projectId: string, itemId: string, body: Dto.ReviewDecisionDto) =>
-      json<Dto.ReviewTaskDto>(`${workItemPath(orgId, projectId, itemId)}/request-changes`, { method: "POST", body }),
-    reopenTask: (orgId: string, projectId: string, itemId: string, body: { reason: string; expected_version: number }) =>
-      json<Dto.ReviewTaskDto>(`${workItemPath(orgId, projectId, itemId)}/reopen`, { method: "POST", body }),
-    setTaskChecks: (orgId: string, projectId: string, itemId: string, body: { labels: string[]; expected_version: number }) =>
-      json<Dto.ReviewTaskDto>(`${workItemPath(orgId, projectId, itemId)}/checks`, { method: "PUT", body }),
-    reviewTask: (orgId: string, projectId: string, itemId: string) =>
-      json<Dto.ReviewTaskDto>(`${workItemPath(orgId, projectId, itemId)}/review`),
-    taskReviews: (orgId: string, projectId: string, itemId: string) =>
-      json<Dto.ReviewEventDto[]>(`${workItemPath(orgId, projectId, itemId)}/reviews`),
-    structuredProgress: (orgId: string, projectId: string) =>
-      json<Dto.StructuredProgressDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/progress`),
-    // Task 3.4: blockers across projects.
-    orgBlockers: (orgId: string) => json<Dto.OrgBlockerDto[]>(`${orgPath(orgId)}/blockers`),
-    orgBlocker: (orgId: string, blockerId: string) => json<Dto.OrgBlockerDto>(`${orgPath(orgId)}/blockers/${encodeURIComponent(blockerId)}`),
-    // Task 3.2: scope versions across projects.
-    orgScopeVersions: (orgId: string, status?: string) =>
-      json<Dto.ProjectScopeVersionDto[]>(`${orgPath(orgId)}/scope-versions${status ? `?status=${encodeURIComponent(status)}` : ""}`),
-    orgScopeVersion: (orgId: string, versionId: string) =>
-      json<Dto.ProjectScopeVersionDto>(`${orgPath(orgId)}/scope-versions/${encodeURIComponent(versionId)}`),
-    // Task 3.1: cross-project work items and team work.
-    orgWorkItems: (orgId: string, query: { project_id?: string; assignee?: string; state?: string } = {}) => {
-      const params = new URLSearchParams();
-      for (const [name, value] of Object.entries(query)) if (value) params.set(name, value);
-      const suffix = params.toString() ? `?${params.toString()}` : "";
-      return json<Dto.AssignableItemDto[]>(`${orgPath(orgId)}/work-items${suffix}`);
-    },
-    orgWorkItem: (orgId: string, itemId: string) => json<Dto.AssignableItemDto>(`${orgPath(orgId)}/work-items/${encodeURIComponent(itemId)}`),
-    myTeams: (orgId: string) => json<Dto.TeamWorkDto[]>(`${orgPath(orgId)}/my-teams`),
-    itemBlockers: (orgId: string, projectId: string, itemId: string) => json<Dto.BlockerDto[]>(`${workItemPath(orgId, projectId, itemId)}/blockers`),
-    // Task 2.3: work calendar, cadence and due occurrences.
-    orgCalendar: (orgId: string) => json<Dto.OrgCalendarDto>(`${orgPath(orgId)}/calendar`),
-    updateOrgCalendar: (orgId: string, body: Dto.UpdateOrgCalendarDto) =>
-      json<Dto.OrgCalendarDto>(`${orgPath(orgId)}/calendar`, { method: "PUT", body }),
-    projectCadence: (orgId: string, projectId: string) => json<Dto.ProjectCadenceDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/cadence`),
-    updateProjectCadence: (orgId: string, projectId: string, body: Dto.UpdateCadenceDto) =>
-      json<Dto.ProjectCadenceDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/cadence`, { method: "PUT", body }),
-    projectSchedule: (orgId: string, projectId: string) => json<Dto.ProjectScheduleDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/schedule`),
-    // Task 3.4: dependencies and blockers.
-    dependencyBoard: (orgId: string, projectId: string) => json<Dto.DependencyBoardDto>(`${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/dependencies`),
-    linkDependency: (orgId: string, projectId: string, successorId: string, body: { predecessor_id: string; expected_version: number }) =>
-      json<Dto.DependencyChangeDto>(`${workItemPath(orgId, projectId, successorId)}/dependencies`, { method: "POST", body }),
-    removeDependency: (orgId: string, projectId: string, successorId: string, linkId: string, expectedVersion: number) =>
-      json<Dto.DependencyChangeDto>(`${workItemPath(orgId, projectId, successorId)}/dependencies/${encodeURIComponent(linkId)}/remove`,
-        { method: "POST", body: { expected_version: expectedVersion } }),
-    releaseDependencies: (orgId: string, projectId: string, itemId: string, body: { treatment: "DROP" | "BRIDGE"; expected_version: number }) =>
-      json<Dto.DependencyChangeDto>(`${workItemPath(orgId, projectId, itemId)}/dependencies/release`, { method: "POST", body }),
-    clearDependencyFlag: (orgId: string, projectId: string, itemId: string, expectedVersion: number) =>
-      json<Dto.DependencyItemRefDto>(`${workItemPath(orgId, projectId, itemId)}/dependency-flag/clear`, { method: "POST", body: { expected_version: expectedVersion } }),
-    raiseBlocker: (orgId: string, projectId: string, itemId: string, body: Dto.RaiseBlockerDto) =>
-      json<Dto.RaisedBlockerDto>(`${workItemPath(orgId, projectId, itemId)}/blockers`, { method: "POST", body }),
-    resolveBlocker: (orgId: string, projectId: string, itemId: string, blockerId: string, body: { resolution: string; expected_version: number }) =>
-      json<Dto.RaisedBlockerDto>(`${workItemPath(orgId, projectId, itemId)}/blockers/${encodeURIComponent(blockerId)}/resolve`, { method: "POST", body }),
     // Task 2.2: check-ins use the org-bound token (no org in the path).
     progressSummary: (projectId: string) =>
       json<Dto.ProgressSummaryDto>(`/v1/projects/${encodeURIComponent(projectId)}/checkins/summary`),
@@ -795,10 +689,96 @@ export function createApiClient(options: ApiClientOptions = {}) {
       loginHistory: (id: string) =>
         json<UserLoginHistoryItem[]>(`/v1/admin/users/${id}/login-history`),
     },
+    /**
+     * Read-only server settings status. Secrets come back with `value: null` (configured / missing only); there is
+     * deliberately no write or generate call: keys are managed in the server environment, never from the browser.
+     */
+    platformKeys: {
+      get: () => json<Admin.PlatformKeysResponse>("/v1/admin/platform-keys"),
+    },
+    /** Super Admin console endpoints (all require PLATFORM_SUPER_ADMIN on the server). */
+    admin: {
+      dashboard: () => json<Admin.AdminDashboard>("/v1/admin/dashboard"),
+      organizations: {
+        list: (params: Admin.AdminOrganizationQuery = {}) =>
+          json<Admin.AdminOrganization[]>(`/v1/admin/organizations${queryString(params)}`),
+        get: (id: string) => json<Admin.AdminOrganization>(`/v1/admin/organizations/${encodeURIComponent(id)}`),
+        summary: () => json<Admin.AdminOrganizationSummary>("/v1/admin/organizations/summary"),
+      },
+      auditLogs: {
+        list: (params: Admin.AdminAuditLogQuery = {}) =>
+          json<Admin.AdminAuditLog[]>(`/v1/admin/audit-logs${queryString(params)}`),
+      },
+      operators: {
+        list: (params: Admin.AdminOperatorQuery = {}) =>
+          json<Admin.AdminOperator[]>(`/v1/admin/operators${queryString(params)}`),
+        get: (id: string) => json<Admin.AdminOperator>(`/v1/admin/operators/${encodeURIComponent(id)}`),
+        permissions: (id: string) =>
+          json<Admin.AdminOperatorPermissions>(`/v1/admin/operators/${encodeURIComponent(id)}/permissions`),
+        /** The backend takes no expectedVersion here; the Idempotency-Key header makes a retry safe. */
+        setStatus: (id: string, status: Admin.AdminOperatorStatus, idempotencyKey?: string) =>
+          json<Admin.AdminOperator>(`/v1/admin/operators/${encodeURIComponent(id)}/status`, {
+            method: "PATCH",
+            body: { status },
+            idempotencyKey,
+          }),
+        resendInvite: (id: string, idempotencyKey?: string) =>
+          request(`/v1/admin/operators/${encodeURIComponent(id)}/resend-invite`, { method: "POST", idempotencyKey }),
+        revokeSessions: (id: string, idempotencyKey?: string) =>
+          request(`/v1/admin/operators/${encodeURIComponent(id)}/revoke-sessions`, { method: "POST", idempotencyKey }),
+      },
+      announcements: {
+        list: (params: Admin.AdminAnnouncementQuery = {}) =>
+          json<Admin.AdminAnnouncement[]>(`/v1/admin/announcements${queryString(params)}`),
+        get: (id: string) => json<Admin.AdminAnnouncement>(`/v1/admin/announcements/${encodeURIComponent(id)}`),
+      },
+      emailTemplates: {
+        list: (params: Admin.AdminEmailTemplateQuery = {}) =>
+          json<Admin.AdminEmailTemplate[]>(`/v1/admin/email-templates${queryString(params)}`),
+        get: (id: string) => json<Admin.AdminEmailTemplate>(`/v1/admin/email-templates/${encodeURIComponent(id)}`),
+      },
+      roles: {
+        list: () => json<Admin.AdminRole[]>("/v1/admin/roles"),
+        get: (id: string) => json<Admin.AdminRole>(`/v1/admin/roles/${encodeURIComponent(id)}`),
+      },
+      permissions: {
+        list: () => json<Admin.AdminPermission[]>("/v1/admin/permissions"),
+      },
+      plans: {
+        list: () => json<Admin.AdminPlan[]>("/v1/admin/plans"),
+        get: (id: string) => json<Admin.AdminPlan>(`/v1/admin/plans/${encodeURIComponent(id)}`),
+      },
+      subscriptions: {
+        list: (params: Admin.AdminSubscriptionQuery = {}) =>
+          json<Admin.AdminSubscription[]>(`/v1/admin/subscriptions${queryString(params)}`),
+        get: (id: string) => json<Admin.AdminSubscription>(`/v1/admin/subscriptions/${encodeURIComponent(id)}`),
+      },
+      invoices: {
+        list: (params: Admin.AdminInvoiceQuery = {}) =>
+          json<Admin.AdminInvoice[]>(`/v1/admin/invoices${queryString(params)}`),
+        get: (id: string) => json<Admin.AdminInvoice>(`/v1/admin/invoices/${encodeURIComponent(id)}`),
+        summary: () => json<Admin.AdminInvoiceSummary>("/v1/admin/invoices/summary"),
+      },
+    },
   };
 }
 
 export const apiClient = createApiClient();
+
+export type { PlatformKeyItem, PlatformKeysResponse } from "@/types/admin";
+
+/** `?a=1&b=2` from the set (non-empty, non-"ALL") values; empty string when there are none. */
+export function queryString(params: object): string {
+  const query = new URLSearchParams();
+  Object.entries(params as Record<string, unknown>).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    const text = String(value).trim();
+    if (text === "" || text === "ALL") return;
+    query.set(key, text);
+  });
+  const qs = query.toString();
+  return qs ? `?${qs}` : "";
+}
 
 /* ---------------------------------------------------------------- SMTP (mirrors EmailProviderDTOs) */
 
@@ -947,10 +927,6 @@ export interface OperatorEmailDeliveryLog {
 
 function orgPath(orgId: string): string {
   return `/v1/organizations/${encodeURIComponent(orgId)}`;
-}
-
-function workItemPath(orgId: string, projectId: string, itemId: string): string {
-  return `${orgPath(orgId)}/projects/${encodeURIComponent(projectId)}/work-items/${encodeURIComponent(itemId)}`;
 }
 
 async function toApiError(response: Response, sentRequestId = ""): Promise<ApiError> {

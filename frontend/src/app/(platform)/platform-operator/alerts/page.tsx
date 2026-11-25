@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
 import {
   AlertTriangle,
   Bell,
@@ -11,8 +10,19 @@ import {
   List,
   ShieldAlert,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
+import type { OpsAlert } from "@/types/admin-operations";
+import { useOperatorPermissions } from "../_services/operator-access";
+import { operatorApi } from "../_services/operator-api";
 import { formatDateTime } from "../_services/operator-service";
+import {
+  MutationNotice,
+  NotAvailableButton,
+  OperatorResourceStatus,
+  humanizeCode,
+  rowsOf,
+  useOperatorMutation,
+  useOperatorResource,
+} from "../_components/OperatorLive";
 import {
   BulkSelectionBar,
   DemoDataBanner,
@@ -32,13 +42,47 @@ import {
 
 type AlertSortField = "title" | "category" | "severity" | "status" | "triggeredAt";
 
+/** One alert as the page shows it, read from GET /v1/operator/monitoring/alerts. */
+interface AlertRow {
+  id: string;
+  title: string;
+  /** source_module from the server. */
+  category: string;
+  /** "Critical" | "Warning" | "Info" (server severity, title-cased). */
+  severity: string;
+  /** The server only knows acknowledged / not acknowledged; there is no resolved state yet. */
+  status: "Active" | "Acknowledged" | "Resolved";
+  /** The alert message (the server stores no separate threshold rule). */
+  thresholdSummary: string;
+  /** Owning department (the server stores no other target). */
+  affectedTarget: string;
+  triggeredAt: string;
+  acknowledgedBy?: string;
+  /** The server does not link alerts to incidents yet. */
+  linkedIncidentId?: string;
+}
+
+function toAlertRow(a: OpsAlert): AlertRow {
+  return {
+    id: a.id,
+    title: a.title,
+    category: humanizeCode(a.source_module),
+    severity: humanizeCode(a.severity),
+    status: a.acknowledged ? "Acknowledged" : "Active",
+    thresholdSummary: a.message ?? "—",
+    affectedTarget: a.department_id ? humanizeCode(a.department_id) : "All departments",
+    triggeredAt: a.created_at ?? "",
+    acknowledgedBy: a.acknowledged_by ?? undefined,
+  };
+}
+
 export default function OperatorAlertsPage() {
-  const alerts = usePlatformOperatorStore((s) => s.alerts);
-  const acknowledgeAlert = usePlatformOperatorStore((s) => s.acknowledgeAlert);
-  const resolveAlert = usePlatformOperatorStore((s) => s.resolveAlert);
-  const createIncidentFromAlert = usePlatformOperatorStore((s) => s.createIncidentFromAlert);
-  const bulkAcknowledgeAlerts = usePlatformOperatorStore((s) => s.bulkAcknowledgeAlerts);
-  const bulkResolveAlerts = usePlatformOperatorStore((s) => s.bulkResolveAlerts);
+  const { state: alertsState, reload } = useOperatorResource(() => operatorApi.alerts.list(), "alerts");
+  const alerts = useMemo(() => rowsOf(alertsState).map(toAlertRow), [alertsState]);
+  const { busy, notice, clearNotice, run } = useOperatorMutation(reload);
+  const acknowledgeAlert = (alertId: string) =>
+    void run(`ack:${alertId}`, () => operatorApi.alerts.acknowledge(alertId), "Alert acknowledged.");
+  const isReady = alertsState.status === "ready";
   const { can } = useOperatorPermissions();
   const canManage = can("system.manage");
 
@@ -53,7 +97,6 @@ export default function OperatorAlertsPage() {
 
   const activeCount = useMemo(() => alerts.filter((a) => a.status === "Active").length, [alerts]);
   const acknowledgedCount = useMemo(() => alerts.filter((a) => a.status === "Acknowledged").length, [alerts]);
-  const resolvedCount = useMemo(() => alerts.filter((a) => a.status === "Resolved").length, [alerts]);
 
   const handleSort = (field: AlertSortField) => {
     if (sortField === field) {
@@ -113,8 +156,8 @@ export default function OperatorAlertsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Alerts & Notifications"
-        badge={`${activeCount} Unacknowledged`}
-        demoLabel="Demo Alert Rules"
+        badge={isReady ? `${activeCount} Unacknowledged` : undefined}
+        liveData
         description="Respond to threshold alerts, acknowledge incoming warnings, and promote active issues into formal incidents."
         actions={
           <Link href="/platform-operator/incidents">
@@ -131,25 +174,27 @@ export default function OperatorAlertsPage() {
         description="Promoted alerts automatically create a linked incident in Incident Management and track resolution back to the original alert."
       />
 
+      <MutationNotice notice={notice} onReload={reload} onDismiss={clearNotice} />
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiCard
           label="Active Alerts"
-          value={activeCount}
+          value={isReady ? activeCount : "-"}
           sublabel="Awaiting operator acknowledgement"
           icon={Bell}
           tone={activeCount > 0 ? "amber" : "emerald"}
         />
         <KpiCard
           label="Acknowledged & In Progress"
-          value={acknowledgedCount}
+          value={isReady ? acknowledgedCount : "-"}
           sublabel="Assigned or linked to incident"
           icon={ShieldAlert}
           tone="blue"
         />
         <KpiCard
           label="Resolved Alerts"
-          value={resolvedCount}
-          sublabel="Metrics returned within threshold"
+          value="—"
+          sublabel="Not available yet: alerts have no resolved state on the server"
           icon={CheckCircle2}
           tone="emerald"
         />
@@ -226,7 +271,16 @@ export default function OperatorAlertsPage() {
           }
         />
 
-        {paginated.length === 0 ? (
+        {!isReady || alerts.length === 0 ? (
+          <OperatorResourceStatus
+            state={alertsState}
+            isEmpty={(d) => d.length === 0}
+            onRetry={reload}
+            emptyIcon={CheckCircle2}
+            emptyTitle="No alerts"
+            emptyDescription="The server has no operational alerts right now."
+          />
+        ) : paginated.length === 0 ? (
           <EmptyState
             icon={CheckCircle2}
             title="No alerts match your filter"
@@ -241,31 +295,13 @@ export default function OperatorAlertsPage() {
               onClear={() => setSelectedIds([])}
               actions={
                 <>
-                  <OpButton
-                    variant="outline"
-                    size="xs"
-                    disabled={!canManage}
-                    onClick={() => {
-                      const count = bulkAcknowledgeAlerts(selectedIds);
-                      toast.success(`Acknowledged ${count} alert(s).`);
-                      setSelectedIds([]);
-                    }}
-                  >
+                  <NotAvailableButton variant="outline" size="xs" hideLabel reason="no bulk acknowledge endpoint">
                     Acknowledge ({selectedIds.length})
-                  </OpButton>
-                  <OpButton
-                    variant="primary"
-                    size="xs"
-                    disabled={!canManage}
-                    onClick={() => {
-                      const count = bulkResolveAlerts(selectedIds);
-                      toast.success(`Resolved ${count} alert(s).`);
-                      setSelectedIds([]);
-                    }}
-                  >
+                  </NotAvailableButton>
+                  <NotAvailableButton variant="primary" size="xs" hideLabel reason="alerts cannot be resolved on the server">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     Resolve ({selectedIds.length})
-                  </OpButton>
+                  </NotAvailableButton>
                 </>
               }
             />
@@ -346,41 +382,33 @@ export default function OperatorAlertsPage() {
                               <OpButton
                                 variant="outline"
                                 size="xs"
-                                disabled={!canManage}
-                                onClick={() => {
-                                  acknowledgeAlert(alert.id);
-                                  toast.success("Alert acknowledged.");
-                                }}
+                                disabled={!canManage || busy !== null}
+                                isLoading={busy === `ack:${alert.id}`}
+                                onClick={() => acknowledgeAlert(alert.id)}
                               >
                                 Acknowledge
                               </OpButton>
                             )}
                             {!alert.linkedIncidentId && alert.status !== "Resolved" && (
-                              <OpButton
+                              <NotAvailableButton
                                 variant="subtle"
                                 size="xs"
-                                disabled={!canManage}
-                                onClick={() => {
-                                  const inc = createIncidentFromAlert(alert.id);
-                                  if (inc) toast.success(`Opened ${inc.code} from alert.`);
-                                }}
+                                hideLabel
+                                reason="alerts cannot be linked to incidents on the server"
                               >
                                 <AlertTriangle className="w-3.5 h-3.5" />
                                 Incident
-                              </OpButton>
+                              </NotAvailableButton>
                             )}
                             {alert.status !== "Resolved" && (
-                              <OpButton
+                              <NotAvailableButton
                                 variant="primary"
                                 size="xs"
-                                disabled={!canManage}
-                                onClick={() => {
-                                  resolveAlert(alert.id);
-                                  toast.success("Alert marked Resolved.");
-                                }}
+                                hideLabel
+                                reason="alerts cannot be resolved on the server"
                               >
                                 Resolve
-                              </OpButton>
+                              </NotAvailableButton>
                             )}
                           </div>
                         </td>
@@ -423,42 +451,32 @@ export default function OperatorAlertsPage() {
                       <OpButton
                         variant="outline"
                         size="xs"
-                        disabled={!canManage}
-                        onClick={() => {
-                          acknowledgeAlert(alert.id);
-                          toast.success("Alert acknowledged.");
-                        }}
+                        disabled={!canManage || busy !== null}
+                        isLoading={busy === `ack:${alert.id}`}
+                        onClick={() => acknowledgeAlert(alert.id)}
                       >
                         Acknowledge
                       </OpButton>
                     )}
                     {!alert.linkedIncidentId && alert.status !== "Resolved" && (
-                      <OpButton
+                      <NotAvailableButton
                         variant="subtle"
                         size="xs"
-                        disabled={!canManage}
-                        onClick={() => {
-                          const inc = createIncidentFromAlert(alert.id);
-                          if (inc) toast.success(`Opened ${inc.code} from alert.`);
-                        }}
+                        reason="alerts cannot be linked to incidents on the server"
                       >
                         <AlertTriangle className="w-3.5 h-3.5" />
                         Create Incident
-                      </OpButton>
+                      </NotAvailableButton>
                     )}
                     {alert.status !== "Resolved" && (
-                      <OpButton
+                      <NotAvailableButton
                         variant="primary"
                         size="xs"
-                        disabled={!canManage}
-                        onClick={() => {
-                          resolveAlert(alert.id);
-                          toast.success("Alert marked Resolved.");
-                        }}
+                        reason="alerts cannot be resolved on the server"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         Resolve
-                      </OpButton>
+                      </NotAvailableButton>
                     )}
                   </div>
                 </div>

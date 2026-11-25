@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { Notification } from "@/types";
-import { INITIAL_NOTIFICATIONS } from "@/lib/mock-data";
 
 interface NotificationStoreState {
   notifications: Notification[];
@@ -11,9 +10,10 @@ interface NotificationStoreState {
   clearNotification: (id: string) => void;
 }
 
+/** In-session notifications only; starts empty (there is no organization notifications API yet). */
 export const useNotificationStore = create<NotificationStoreState>((set) => ({
-  notifications: INITIAL_NOTIFICATIONS,
-  unreadCount: INITIAL_NOTIFICATIONS.filter((n: Notification) => !n.read).length,
+  notifications: [],
+  unreadCount: 0,
 
 
   markAsRead: (id: string) =>

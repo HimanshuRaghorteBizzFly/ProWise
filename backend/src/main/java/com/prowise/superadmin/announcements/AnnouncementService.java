@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.prowise.common.api.ApiException;
+import com.prowise.common.persistence.ExpectedVersion;
+import com.prowise.superadmin.common.AdminRequests;
 import com.prowise.superadmin.audit.AuditService;
 
 @Service
@@ -48,7 +50,7 @@ public class AnnouncementService {
     @Transactional(readOnly = true)
     public AnnouncementDTOs.AnnouncementResponse getAnnouncement(String id) {
         AnnouncementEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ANNOUNCEMENT_NOT_FOUND", "Announcement not found: " + id));
+                .orElseThrow(ApiException::notFound);
         return toResponse(entity);
     }
 
@@ -75,13 +77,14 @@ public class AnnouncementService {
         entity.setUpdatedAt(Instant.now());
 
         AnnouncementEntity saved = repository.save(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "COMMUNICATION",
                 "CREATE_ANNOUNCEMENT",
                 "Created platform announcement: " + saved.getTitle(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 saved.getTitle(),
                 "INFO"
         );
@@ -91,7 +94,8 @@ public class AnnouncementService {
 
     public AnnouncementDTOs.AnnouncementResponse updateAnnouncement(String id, AnnouncementDTOs.UpdateAnnouncementRequest req, String actorEmail) {
         AnnouncementEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ANNOUNCEMENT_NOT_FOUND", "Announcement not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), req.expectedVersion());
 
         if (req.title() != null) entity.setTitle(req.title().trim());
         if (req.message() != null) entity.setMessage(req.message().trim());
@@ -106,13 +110,14 @@ public class AnnouncementService {
         entity.setUpdatedAt(Instant.now());
 
         AnnouncementEntity updated = repository.save(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "COMMUNICATION",
                 "UPDATE_ANNOUNCEMENT",
                 "Updated announcement: " + updated.getTitle(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getTitle(),
                 "INFO"
         );
@@ -120,21 +125,23 @@ public class AnnouncementService {
         return toResponse(updated);
     }
 
-    public AnnouncementDTOs.AnnouncementResponse publishAnnouncement(String id, String actorEmail) {
+    public AnnouncementDTOs.AnnouncementResponse publishAnnouncement(String id, Long expectedVersion, String actorEmail) {
         AnnouncementEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ANNOUNCEMENT_NOT_FOUND", "Announcement not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), expectedVersion);
 
         entity.setStatus("PUBLISHED");
         entity.setPublishedAt(Instant.now());
         entity.setUpdatedAt(Instant.now());
         AnnouncementEntity updated = repository.save(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "COMMUNICATION",
                 "PUBLISH_ANNOUNCEMENT",
                 "Published platform-wide announcement: " + updated.getTitle(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getTitle(),
                 "WARNING"
         );
@@ -142,20 +149,22 @@ public class AnnouncementService {
         return toResponse(updated);
     }
 
-    public AnnouncementDTOs.AnnouncementResponse archiveAnnouncement(String id, String actorEmail) {
+    public AnnouncementDTOs.AnnouncementResponse archiveAnnouncement(String id, Long expectedVersion, String actorEmail) {
         AnnouncementEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ANNOUNCEMENT_NOT_FOUND", "Announcement not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), expectedVersion);
 
         entity.setStatus("ARCHIVED");
         entity.setUpdatedAt(Instant.now());
         AnnouncementEntity updated = repository.save(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "COMMUNICATION",
                 "ARCHIVE_ANNOUNCEMENT",
                 "Archived announcement: " + updated.getTitle(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 updated.getTitle(),
                 "INFO"
         );
@@ -163,33 +172,42 @@ public class AnnouncementService {
         return toResponse(updated);
     }
 
-    public void deleteAnnouncement(String id, String actorEmail) {
+    public void deleteAnnouncement(String id, Long expectedVersion, String actorEmail) {
         AnnouncementEntity entity = repository.findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ANNOUNCEMENT_NOT_FOUND", "Announcement not found: " + id));
+                .orElseThrow(ApiException::notFound);
+        ExpectedVersion.checkRequired(entity.getVersion(), expectedVersion);
 
         repository.delete(entity);
+        repository.flush();
 
         auditService.logActivity(
                 "COMMUNICATION",
                 "DELETE_ANNOUNCEMENT",
                 "Deleted announcement: " + entity.getTitle(),
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 entity.getTitle(),
                 "WARNING"
         );
     }
 
-    public void bulkDelete(List<String> ids, String actorEmail) {
-        List<AnnouncementEntity> list = repository.findAllById(ids);
+    /** All-or-nothing: an unknown id is 404 and an outdated version 409 STALE_VERSION; nothing is deleted then. */
+    public void bulkDelete(List<AdminRequests.VersionedId> items, String actorEmail) {
+        List<AnnouncementEntity> list = new java.util.ArrayList<>();
+        for (AdminRequests.VersionedId item : items) {
+            AnnouncementEntity entity = repository.findById(item.id()).orElseThrow(ApiException::notFound);
+            ExpectedVersion.checkRequired(entity.getVersion(), item.expectedVersion());
+            list.add(entity);
+        }
         repository.deleteAll(list);
+        repository.flush();
 
         auditService.logActivity(
                 "COMMUNICATION",
                 "BULK_DELETE_ANNOUNCEMENTS",
                 "Bulk deleted " + list.size() + " announcements",
                 "Super Admin",
-                actorEmail != null ? actorEmail : "superadmin@prowise.io",
+                actorEmail,
                 list.size() + " announcements",
                 "WARNING"
         );

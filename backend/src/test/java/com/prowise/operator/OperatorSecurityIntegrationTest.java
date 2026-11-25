@@ -40,6 +40,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.test.web.servlet.MvcResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prowise.authz.TestDatabase;
 import com.prowise.testsupport.CapturedMail;
@@ -166,7 +167,8 @@ class OperatorSecurityIntegrationTest {
         String token = operatorLogin(deptEmail, OPERATOR_PASSWORD).path("access_token").asText();
         mockMvc.perform(get("/v1/operator/me").header("Authorization", "Bearer " + token)).andExpect(status().isOk());
 
-        asAdmin(patch("/v1/operators/" + deptId + "/access-level"), Map.of("access_level", "MAIN_PLATFORM_OPERATOR"))
+        asAdmin(patch("/v1/operators/" + deptId + "/access-level"),
+                Map.of("access_level", "MAIN_PLATFORM_OPERATOR", "expected_version", operatorVersion(deptId)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/v1/operator/me").header("Authorization", "Bearer " + token)).andExpect(status().isUnauthorized());
@@ -174,12 +176,14 @@ class OperatorSecurityIntegrationTest {
 
     @Test
     void refreshRotatesAndAReplayedRefreshTokenIsRefused() throws Exception {
-        JsonNode login = operatorLogin(deptEmail, OPERATOR_PASSWORD);
-        String firstRefresh = login.path("refresh_token").asText();
+        MvcResult loginResult = operatorPost("/v1/auth/operator/login", Map.of("email", deptEmail, "password", OPERATOR_PASSWORD))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode login = objectMapper.readTree(loginResult.getResponse().getContentAsString());
+        String firstRefresh = loginResult.getResponse().getCookie("prowise_operator_refresh_token").getValue();
 
-        JsonNode rotated = json(operatorPost("/v1/auth/operator/refresh", Map.of("refresh_token", firstRefresh))
-                .andExpect(status().isOk()));
-        assertThat(rotated.path("refresh_token").asText()).isNotBlank().isNotEqualTo(firstRefresh);
+        MvcResult rotated = operatorPost("/v1/auth/operator/refresh", Map.of("refresh_token", firstRefresh))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(rotated.getResponse().getCookie("prowise_operator_refresh_token").getValue()).isNotBlank().isNotEqualTo(firstRefresh);
 
         operatorPost("/v1/auth/operator/refresh", Map.of("refresh_token", firstRefresh)).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/v1/operator/me").header("Authorization", "Bearer " + login.path("access_token").asText()))
@@ -227,7 +231,8 @@ class OperatorSecurityIntegrationTest {
     void suspendingAnOperatorInvalidatesItsTokenImmediately() throws Exception {
         String token = operatorLogin(deptEmail, OPERATOR_PASSWORD).path("access_token").asText();
 
-        asAdmin(patch("/v1/operators/" + deptId + "/status"), Map.of("status", "SUSPENDED")).andExpect(status().isOk());
+        asAdmin(patch("/v1/operators/" + deptId + "/status"), Map.of("status", "SUSPENDED", "expected_version", operatorVersion(deptId)))
+                .andExpect(status().isOk());
 
         mockMvc.perform(get("/v1/operator/me").header("Authorization", "Bearer " + token)).andExpect(status().isUnauthorized());
         operatorPost("/v1/auth/operator/login", Map.of("email", deptEmail, "password", OPERATOR_PASSWORD))
@@ -241,6 +246,99 @@ class OperatorSecurityIntegrationTest {
         operatorPost("/v1/auth/operator/login", Map.of("email", deptEmail, "password", OPERATOR_PASSWORD))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCOUNT_SETUP_INCOMPLETE"));
+    }
+
+    // ---- Phase 1 hardening: operator sign-in matches user sign-in.
+
+    @Test
+    void anInactiveOperatorIsOnlyRevealedAfterTheRightPassword() throws Exception {
+        jdbc.update("UPDATE platform_operators SET status = 'INACTIVE' WHERE id = ?", deptId);
+        operatorPost("/v1/auth/operator/login", Map.of("email", deptEmail, "password", "Wrong-Password-77!"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+        operatorPost("/v1/auth/operator/login", Map.of("email", deptEmail, "password", OPERATOR_PASSWORD))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_INACTIVE"));
+    }
+
+    @Test
+    void fiveWrongPasswordsLockTheOperatorAccount() throws Exception {
+        for (int i = 0; i < 5; i++) {
+            operatorPost("/v1/auth/operator/login", Map.of("email", deptEmail, "password", "Wrong-Password-77!"))
+                    .andExpect(status().isUnauthorized());
+        }
+        operatorPost("/v1/auth/operator/login", Map.of("email", deptEmail, "password", OPERATOR_PASSWORD))
+                .andExpect(status().isLocked())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"));
+    }
+
+    @Test
+    void operatorTokensNeverAppearInResponseBodiesAndCookiesAreHttpOnly() throws Exception {
+        MvcResult login = operatorPost("/v1/auth/operator/login", Map.of("email", deptEmail, "password", OPERATOR_PASSWORD))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.refresh_token").doesNotExist())
+                .andExpect(jsonPath("$.access_token").isNotEmpty())
+                .andReturn();
+        jakarta.servlet.http.Cookie refresh = login.getResponse().getCookie("prowise_operator_refresh_token");
+        assertThat(refresh).isNotNull();
+        assertThat(refresh.isHttpOnly()).isTrue();
+        mockMvc.perform(post("/v1/auth/operator/refresh").cookie(refresh))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.refresh_token").doesNotExist());
+    }
+
+    @Test
+    void aReplayedOperatorRefreshTokenSignsOutEveryOperatorSession() throws Exception {
+        MvcResult first = operatorPost("/v1/auth/operator/login", Map.of("email", deptEmail, "password", OPERATOR_PASSWORD))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode other = operatorLogin(deptEmail, OPERATOR_PASSWORD);
+        jakarta.servlet.http.Cookie stolen = first.getResponse().getCookie("prowise_operator_refresh_token");
+
+        mockMvc.perform(post("/v1/auth/operator/refresh").cookie(stolen)).andExpect(status().isOk());
+        mockMvc.perform(post("/v1/auth/operator/refresh").cookie(stolen)).andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/v1/operator/me").header("Authorization", "Bearer " + other.path("access_token").asText()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void concurrentOperatorRefreshesWithOneTokenYieldAtMostOneSession() throws Exception {
+        jakarta.servlet.http.Cookie refresh = operatorPost("/v1/auth/operator/login",
+                        Map.of("email", deptEmail, "password", OPERATOR_PASSWORD))
+                .andExpect(status().isOk()).andReturn().getResponse().getCookie("prowise_operator_refresh_token");
+        List<Integer> statuses = concurrently(6, () -> mockMvc.perform(post("/v1/auth/operator/refresh").cookie(refresh))
+                .andReturn().getResponse().getStatus());
+        assertThat(statuses.stream().filter(s -> s == 200).count()).isLessThanOrEqualTo(1);
+    }
+
+    @Test
+    void invitationAcceptanceUsesThePasswordPolicyIsSingleUseUnderConcurrencyAndEndsOldSessions() throws Exception {
+        JsonNode existing = operatorLogin(deptEmail, OPERATOR_PASSWORD);
+        String raw = com.prowise.operator.auth.OperatorAuthService.randomToken();
+        jdbc.update("INSERT INTO operator_invitations (operator_id, email, token_hash, expires_at) VALUES (?, ?, ?, now() + interval '1 day')",
+                deptId, deptEmail, com.prowise.operator.auth.OperatorAuthService.hash(raw));
+
+        operatorPost("/v1/auth/operator/accept-invitation", Map.of("token", raw, "new_password", "alllowercaseletters"))
+                .andExpect(status().isBadRequest());
+
+        List<Integer> statuses = concurrently(5, () -> operatorPost("/v1/auth/operator/accept-invitation",
+                Map.of("token", raw, "new_password", "Accepted-Invite-Pass-4!")).andReturn().getResponse().getStatus());
+        assertThat(statuses.stream().filter(s -> s == 201).count()).isEqualTo(1);
+
+        mockMvc.perform(get("/v1/operator/me").header("Authorization", "Bearer " + existing.path("access_token").asText()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void operatorPasswordResetUsesTheFullPasswordPolicy() throws Exception {
+        String raw = com.prowise.operator.auth.OperatorAuthService.randomToken();
+        jdbc.update("INSERT INTO operator_password_resets (operator_id, email, token_hash, expires_at) VALUES (?, ?, ?, now() + interval '30 minutes')",
+                deptId, deptEmail, com.prowise.operator.auth.OperatorAuthService.hash(raw));
+        operatorPost("/v1/auth/operator/reset-password", Map.of("token", raw, "new_password", "alllowercaseletters"))
+                .andExpect(status().isBadRequest());
+        // The weak attempt did not burn the single-use link.
+        operatorPost("/v1/auth/operator/reset-password", Map.of("token", raw, "new_password", "Strong-Reset-Pass-5!"))
+                .andExpect(status().isOk());
     }
 
     private List<MockHttpServletRequestBuilder> managementRequests(String target) throws Exception {
@@ -260,6 +358,11 @@ class OperatorSecurityIntegrationTest {
                 delete("/v1/operators/" + target));
     }
 
+    /** The version a Super Admin client would have read before editing (rule 5: expected_version). */
+    private long operatorVersion(String id) {
+        return jdbc.queryForObject("SELECT version FROM platform_operators WHERE id = ?", Long.class, id);
+    }
+
     private void insertOperator(String id, String email, String accessLevel, String department) {
         jdbc.update("""
                 INSERT INTO platform_operators (id, name, email, role_id, access_level, department_id, status,
@@ -274,11 +377,11 @@ class OperatorSecurityIntegrationTest {
     }
 
     private ResultActions operatorPost(String path, Map<String, String> body) throws Exception {
-        return mockMvc.perform(post(path).header("X-Forwarded-For", TestAccounts.randomClientAddress())
+        return mockMvc.perform(post(path).with(com.prowise.testsupport.TestAccounts.randomClient())
                 .contentType("application/json").content(objectMapper.writeValueAsString(body)));
     }
 
-    private ResultActions asAdmin(MockHttpServletRequestBuilder request, Map<String, String> body) throws Exception {
+    private ResultActions asAdmin(MockHttpServletRequestBuilder request, Map<String, ?> body) throws Exception {
         return mockMvc.perform(request.header("Authorization", "Bearer " + adminToken)
                 .contentType("application/json").content(objectMapper.writeValueAsString(body)));
     }

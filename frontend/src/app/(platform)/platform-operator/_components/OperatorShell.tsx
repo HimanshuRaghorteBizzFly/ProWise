@@ -10,6 +10,9 @@ import { useAuthStore } from "@/store/auth-store";
 import { usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
 import { useSuperAdminStore } from "../../super-admin/_store/useSuperAdminStore";
 import { formatDateTime } from "../_services/operator-service";
+import { operatorApi } from "../_services/operator-api";
+import { useOperatorResource } from "./OperatorLive";
+import type { OpsDashboardStats } from "@/types/admin-operations";
 import {
   OPERATOR_DEPARTMENTS,
   isRouteAuthorized,
@@ -154,6 +157,37 @@ const ROUTE_TITLES: Record<string, { section: string; label: string }> = {
 };
 
 
+/** Sidebar badge numbers, by nav item id. Only real server counters; an item without one shows no number. */
+export interface OperatorBadgeCounts {
+  incidents?: number;
+  "support-tickets"?: number;
+  "access-requests"?: number;
+  alerts?: number;
+  "failed-events"?: number;
+  "sync-jobs"?: number;
+  "email-delivery"?: number;
+  maintenance?: number;
+}
+
+/**
+ * Badge counts from GET /v1/operator/dashboard/stats. Zero or a missing counter = no badge (undefined). Payment
+ * failures and the other items have no stats counter, so they never get a number here.
+ */
+export function badgeCountsFromStats(stats: OpsDashboardStats | null | undefined): OperatorBadgeCounts {
+  const n = (v: number | null | undefined) => (typeof v === "number" && v > 0 ? v : undefined);
+  if (!stats) return {};
+  return {
+    incidents: n(stats.openIncidents),
+    "support-tickets": n(stats.openTickets),
+    "access-requests": n(stats.pendingAccessRequests),
+    alerts: n(stats.unacknowledgedAlerts),
+    "failed-events": n(stats.failedOutboxEvents),
+    "sync-jobs": n(stats.failedJobs),
+    "email-delivery": n(stats.failedEmailDeliveries24h),
+    maintenance: n(stats.activeMaintenanceWindows),
+  };
+}
+
 export function OperatorShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -162,10 +196,6 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
 
   const incidents = usePlatformOperatorStore((s) => s.incidents);
   const tickets = usePlatformOperatorStore((s) => s.tickets);
-  const webhooks = usePlatformOperatorStore((s) => s.webhooks);
-  const alerts = usePlatformOperatorStore((s) => s.alerts);
-  const paymentFailures = usePlatformOperatorStore((s) => s.paymentFailures);
-  const accessRequests = usePlatformOperatorStore((s) => s.accessRequests);
   const activityLogs = usePlatformOperatorStore((s) => s.activityLogs);
   const orgHealth = usePlatformOperatorStore((s) => s.orgHealth);
   const accountSettings = usePlatformOperatorStore((s) => s.accountSettings);
@@ -173,7 +203,6 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
   const setActiveOperatorProfile = usePlatformOperatorStore((s) => s.setActiveOperatorProfile);
   const sidebarCollapsed = usePlatformOperatorStore((s) => s.sidebarCollapsed);
   const setSidebarCollapsed = usePlatformOperatorStore((s) => s.setSidebarCollapsed);
-  const resetOperatorDemoData = usePlatformOperatorStore((s) => s.resetOperatorDemoData);
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -217,14 +246,12 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
-  const openIncidentsCount = incidents.filter((i) => i.status !== "Resolved").length;
-  const openTicketsCount = tickets.filter((t) => t.status !== "Resolved").length;
-  const failedWebhooksCount = webhooks.filter((w) => w.status === "Failed").length;
-  const activeAlertsCount = alerts.filter((a) => a.status === "Active").length;
-  const openPaymentFailures = paymentFailures.filter(
-    (p) => p.retryStatus === "Scheduled" || p.retryStatus === "Retried — Failed"
-  ).length;
-  const pendingAccessCount = accessRequests.filter((r) => r.status === "Pending Approval").length;
+  // Sidebar badges: real counters from the server (never the demo store).
+  const shellStats = useOperatorResource(() => operatorApi.dashboardStats(), "shell-stats");
+  const badges = useMemo(
+    () => badgeCountsFromStats(shellStats.state.status === "ready" ? shellStats.state.data : null),
+    [shellStats.state],
+  );
 
   const rawSections: NavSection[] = useMemo(
     () => [
@@ -266,7 +293,7 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
             label: "Incident Management",
             href: "/platform-operator/incidents",
             icon: AlertTriangle,
-            badgeCount: openIncidentsCount || undefined,
+            badgeCount: badges.incidents,
           },
           {
             id: "support-tickets",
@@ -274,14 +301,14 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
             href: "/platform-operator/support-tickets",
             matchPaths: ["/platform-operator/support-tickets", "/platform-operator/tickets"],
             icon: LifeBuoy,
-            badgeCount: openTicketsCount || undefined,
+            badgeCount: badges["support-tickets"],
           },
           {
             id: "access-requests",
             label: "Support Access Requests",
             href: "/platform-operator/access-requests",
             icon: KeyRound,
-            badgeCount: pendingAccessCount || undefined,
+            badgeCount: badges["access-requests"],
           },
         ],
       },
@@ -313,13 +340,14 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
             label: "Failed Events & Retries",
             href: "/platform-operator/failed-events",
             icon: RotateCcw,
-            badgeCount: failedWebhooksCount || undefined,
+            badgeCount: badges["failed-events"],
           },
           {
             id: "sync-jobs",
             label: "Sync Jobs & Queues",
             href: "/platform-operator/sync-jobs",
             icon: RefreshCw,
+            badgeCount: badges["sync-jobs"],
           },
           {
             id: "api-errors",
@@ -338,6 +366,7 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
             label: "Email Delivery & SMTP Health",
             href: "/platform-operator/email-delivery",
             icon: Mail,
+            badgeCount: badges["email-delivery"],
           },
           {
             id: "email-drafts",
@@ -368,7 +397,7 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
             label: "Payment Failures",
             href: "/platform-operator/payment-failures",
             icon: FileWarning,
-            badgeCount: openPaymentFailures || undefined,
+            // No server counter for payment failures: the item stays, without a number.
           },
           {
             id: "invoice-delivery",
@@ -393,13 +422,14 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
             label: "Maintenance Operations",
             href: "/platform-operator/maintenance",
             icon: Wrench,
+            badgeCount: badges.maintenance,
           },
           {
             id: "alerts",
             label: "Alerts & Notifications",
             href: "/platform-operator/alerts",
             icon: Bell,
-            badgeCount: activeAlertsCount || undefined,
+            badgeCount: badges.alerts,
           },
         ],
       },
@@ -422,29 +452,23 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
         ],
       },
     ],
-    [
-      openIncidentsCount,
-      openTicketsCount,
-      pendingAccessCount,
-      failedWebhooksCount,
-      openPaymentFailures,
-      activeAlertsCount,
-    ]
+    [badges]
   );
 
-  const activeDepartment = accountSettings.department || "Site Reliability";
+  const activeDepartment = accountSettings.department || "Platform Operations";
   const superAdminOperators = useSuperAdminStore((s) => s.operators);
 
   const activeOperator = useMemo(() => {
     const byId = superAdminOperators.find((o) => o.id === accountSettings.activeOperatorId);
-    if (byId) return byId;
+    if (byId) return { ...byId, accessLevel: byId.accessLevel || "MAIN_PLATFORM_OPERATOR" };
     const byDept = superAdminOperators.find((o) => o.department === activeDepartment);
-    if (byDept) return byDept;
+    if (byDept) return { ...byDept, accessLevel: byDept.accessLevel || "MAIN_PLATFORM_OPERATOR" };
     return {
       id: "op-current",
       name: accountSettings.name,
       email: accountSettings.email,
       department: activeDepartment,
+      accessLevel: "MAIN_PLATFORM_OPERATOR" as const,
       roleId: "role-platform-operator",
       status: "ACTIVE" as const,
       mfaEnabled: accountSettings.mfaEnabled,
@@ -526,7 +550,7 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
     toast.success(`Switched to ${next} mode`);
   };
 
-  const totalNotifs = activeAlertsCount + failedWebhooksCount + openPaymentFailures;
+  const totalNotifs = (badges.alerts ?? 0) + (badges["failed-events"] ?? 0);
 
   const renderSidebarBody = (isMobileDrawer: boolean) => {
     const collapsed = isMobileDrawer ? false : sidebarCollapsed;
@@ -956,18 +980,6 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
                     <Clock className="w-3.5 h-3.5" />
                     Activity History
                   </Link>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      resetOperatorDemoData();
-                      setProfileMenuOpen(false);
-                      toast.success("Reset Platform Operator demo workspace to initial state.");
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    Reset Demo Data
-                  </button>
                   <button
                     type="button"
                     onClick={() => {

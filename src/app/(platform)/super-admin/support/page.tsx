@@ -148,7 +148,7 @@ export default function SupportOversightPage() {
   useEffect(() => {
     try {
       if (typeof window !== "undefined") {
-        const opTickets = usePlatformOperatorStore.getState().tickets;
+        const opTickets = (usePlatformOperatorStore.getState() as any).tickets || [];
         for (const opT of opTickets) {
           const match = supportTickets.find((t) => t.ticketNumber === opT.ticketNumber || t.id === opT.id);
           if (match && opT.status === "Resolved" && match.status !== "Resolved" && match.status !== "Closed") {
@@ -211,7 +211,7 @@ export default function SupportOversightPage() {
   const [incidentSummary, setIncidentSummary] = useState("");
   const [incidentSeverity, setIncidentSeverity] = useState<"Minor" | "Major" | "Critical">("Major");
   const [incidentLevel, setIncidentLevel] = useState<"Tier 1 — Operator" | "Tier 2 — Engineering" | "Executive Escalation">("Tier 2 — Engineering");
-  const [incidentOwner, setIncidentOwner] = useState(operators[0]?.id || "op-2");
+  const [incidentOwner, setIncidentOwner] = useState(operators[0]?.id || "op-main-1");
   const [incidentTargetTicket, setIncidentTargetTicket] = useState<SupportEscalationTicket | null>(null);
 
   // Optional Secondary Action: Manually Log Customer Case Modal
@@ -462,7 +462,7 @@ export default function SupportOversightPage() {
       setIncidentSeverity("Major");
     }
     setIncidentLevel("Tier 2 — Engineering");
-    setIncidentOwner(operators[0]?.id || "op-2");
+    setIncidentOwner(operators[0]?.id || "op-main-1");
     setIncidentModalOpen(true);
   };
 

@@ -270,7 +270,7 @@ class SignupVerificationIntegrationTest {
     }
 
     private ResultActions signupFrom(String client, String address, String password) throws Exception {
-        return mockMvc.perform(post("/v1/auth/signup").header("X-Forwarded-For", client).contentType("application/json")
+        return mockMvc.perform(post("/v1/auth/signup").with(request -> { request.setRemoteAddr(client); return request; }).contentType("application/json")
                 .content(objectMapper.writeValueAsString(Map.of("email", address, "password", password, "name", "Self Registered"))));
     }
 

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { AccessMapView } from "../src/components/owner/AccessMapView";
-import { FIXTURE_GRANTS } from "../src/lib/fixtures/permissions";
+import { FIXTURE_GRANTS } from "./fixtures/permissions";
 import { PERMISSION_KEYS } from "../src/lib/permissions";
 
 const render = (props: Partial<React.ComponentProps<typeof AccessMapView>> = {}) =>
@@ -11,7 +11,6 @@ const render = (props: Partial<React.ComponentProps<typeof AccessMapView>> = {})
     <AccessMapView
       family="owner"
       grants={FIXTURE_GRANTS.ORGANIZATION_OWNER}
-      source="fixture"
       scopeReported
       isCurrentOwner
       {...props}
@@ -51,7 +50,6 @@ describe("Access Map", () => {
 
   it("warns when the API does not report scope", () => {
     const markup = render({
-      source: "api",
       scopeReported: false,
       grants: [{ key: "project.read", scope: "ORG" }],
     });
@@ -65,7 +63,4 @@ describe("Access Map", () => {
     expect(markup).not.toContain("Scope not reported by API");
   });
 
-  it("labels fixture data", () => {
-    expect(render()).toContain("Sample data");
-  });
 });

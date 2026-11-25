@@ -1,16 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { getRoleDashboardPath } from "../src/store/auth-store";
 import { ROUTES } from "../src/config/routes";
 import { getNavigationConfig } from "../src/config/navigation";
-import {
-  getViewerProjects,
-  getViewerTasks,
-  getViewerMilestones,
-  getViewerActivity,
-  getViewerFiles,
-  getViewerMembers,
-  getViewerCalendarEvents,
-} from "../src/app/(workspace)/org/[orgId]/viewer/_services/viewer-service";
+import { loadViewerProjects } from "../src/app/(workspace)/org/[orgId]/viewer/_services/useViewerProjects";
+import { apiClient } from "../src/lib/api";
 
 describe("Viewer Panel Routing & UI/UX Integrity", () => {
   it("sends users without an active organization to workspace selection", () => {
@@ -42,47 +35,48 @@ describe("Viewer Panel Routing & UI/UX Integrity", () => {
     expect(orgRoutes.VIEWER.DELIVERY_STATUS).toBe("/org/org-acme/viewer/delivery-status");
   });
 
-  it("provides all 10 sidebar navigation items for Viewer role", () => {
-    const navSections = getNavigationConfig("VIEWER", "org-acme");
-    const allItems = navSections.flatMap((s) => s.items);
+  it("lists only Viewer modules backed by a live API in the sidebar", () => {
+    const titles = getNavigationConfig("VIEWER", "org-acme").flatMap((s) => s.items).map((i) => i.title);
+    expect(titles).toEqual(["Dashboard", "Projects", "Progress"]);
+    for (const hidden of ["Tasks & Work", "Reports", "Calendar", "Team Directory", "Files & Evidence", "Activity", "Notifications", "Settings"]) {
+      expect(titles).not.toContain(hidden);
+    }
+  });
+});
 
-    expect(allItems.length).toBeGreaterThanOrEqual(10);
-    const titles = allItems.map((i) => i.title);
+describe("Viewer project loading (real API only)", () => {
+  afterEach(() => vi.restoreAllMocks());
 
-    expect(titles).toContain("Dashboard");
-    expect(titles).toContain("Projects");
-    expect(titles).toContain("Tasks & Work");
-    expect(titles).toContain("Progress");
-    expect(titles).toContain("Reports");
-    expect(titles).toContain("Calendar");
-    expect(titles).toContain("Team Directory");
-    expect(titles).toContain("Files & Evidence");
-    expect(titles).toContain("Activity");
-    expect(titles).toContain("Notifications");
-    expect(titles).toContain("Settings");
+  const project = (id: string) => ({ id, key: id.toUpperCase(), name: id }) as never;
+
+  it("follows the API cursor until has_more is false", async () => {
+    const spy = vi
+      .spyOn(apiClient, "projects")
+      .mockResolvedValueOnce({ items: [project("p1"), project("p2")], next_cursor: "c1", has_more: true })
+      .mockResolvedValueOnce({ items: [project("p3")], next_cursor: null, has_more: false });
+
+    const projects = await loadViewerProjects("org-1");
+
+    expect(projects.map((p) => p.id)).toEqual(["p1", "p2", "p3"]);
+    expect(spy).toHaveBeenNthCalledWith(1, "org-1", { limit: 50, cursor: undefined });
+    expect(spy).toHaveBeenNthCalledWith(2, "org-1", { limit: 50, cursor: "c1" });
   });
 
-  it("serves persistent demo data for all viewer services", () => {
-    const projects = getViewerProjects("org-acme");
-    expect(projects.length).toBeGreaterThan(0);
+  it("returns an empty list when the organization has no projects (no sample fallback)", async () => {
+    vi.spyOn(apiClient, "projects").mockResolvedValueOnce({ items: [], next_cursor: null, has_more: false });
+    await expect(loadViewerProjects("org-1")).resolves.toEqual([]);
+  });
 
-    const tasks = getViewerTasks("org-acme");
-    expect(tasks.length).toBeGreaterThan(0);
-    expect(tasks[0].primaryAssignee).toBeDefined();
+  it("propagates API failures instead of substituting data", async () => {
+    vi.spyOn(apiClient, "projects").mockRejectedValueOnce(new Error("boom"));
+    await expect(loadViewerProjects("org-1")).rejects.toThrow("boom");
+  });
 
-    const milestones = getViewerMilestones("org-acme");
-    expect(milestones.length).toBeGreaterThan(0);
-
-    const activity = getViewerActivity("org-acme");
-    expect(activity.length).toBeGreaterThan(0);
-
-    const files = getViewerFiles("org-acme");
-    expect(files.length).toBeGreaterThan(0);
-
-    const members = getViewerMembers("org-acme");
-    expect(members.length).toBeGreaterThan(0);
-
-    const events = getViewerCalendarEvents("org-acme");
-    expect(events.length).toBeGreaterThan(0);
+  it("stops on a repeated cursor instead of looping forever", async () => {
+    vi.spyOn(apiClient, "projects")
+      .mockResolvedValueOnce({ items: [project("p1")], next_cursor: "c1", has_more: true })
+      .mockResolvedValueOnce({ items: [project("p2")], next_cursor: "c1", has_more: true });
+    const projects = await loadViewerProjects("org-1");
+    expect(projects.map((p) => p.id)).toEqual(["p1", "p2"]);
   });
 });

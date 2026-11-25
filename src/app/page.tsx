@@ -5,7 +5,6 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
-  GitBranch,
   Layers,
   Menu,
   Moon,
@@ -17,7 +16,6 @@ import {
 import { useAuthStore, getRoleDashboardPath } from "@/store/auth-store";
 import { useThemeStore } from "@/store/theme-store";
 import { Button } from "@/components/ui/button";
-import { RoleTestBanner } from "@/components/navigation/role-test-banner";
 import { cn } from "@/lib/utils";
 import styles from "@/styles/landing.module.css";
 import {
@@ -38,7 +36,7 @@ const NAV_LINKS = [
 ];
 
 export default function LandingPage() {
-  const { currentRole, currentOrg } = useAuthStore();
+  const { currentRole, currentOrg, isAuthenticated } = useAuthStore();
   const { resolvedTheme, toggleTheme } = useThemeStore();
   const [mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -47,9 +45,8 @@ export default function LandingPage() {
     setMounted(true);
   }, []);
 
-  const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
-  const appDashboardUrl = getRoleDashboardPath(currentRole, safeOrgId);
-  const structuredFixtureUrl = `/org/${safeOrgId}/developer/projects/proj-structured-cds/structured`;
+  // Signed-in people go to their own dashboard; everyone else signs in first.
+  const appDashboardUrl = isAuthenticated ? getRoleDashboardPath(currentRole, currentOrg?.id ?? "") : "/login";
 
   return (
     <div
@@ -60,11 +57,6 @@ export default function LandingPage() {
     >
       {/* Dynamic Cursor Spotlight, Aurora Orbs & Subtle Grid */}
       <InteractiveBackdrop />
-
-      {/* Preserved Role Switcher Test Banner */}
-      <div className="relative z-40">
-        <RoleTestBanner />
-      </div>
 
       {/* Sticky Glassmorphism Navigation */}
       <header className="sticky top-0 z-40 border-b border-[var(--color-border)]/80 bg-[var(--color-surface)]/80 backdrop-blur-xl transition-colors">
@@ -262,12 +254,6 @@ export default function LandingPage() {
                   </Link>
                 </MagneticWrapper>
 
-                <Link href={structuredFixtureUrl}>
-                  <Button variant="ghost" size="lg" className="px-4">
-                    <GitBranch className="w-4 h-4 mr-2 text-blue-500" />
-                    <span>CDS API Fixture</span>
-                  </Button>
-                </Link>
               </motion.div>
 
               {/* Micro-Metrics Row */}

@@ -54,11 +54,6 @@ import { StaleVersionBanner } from "@/components/org-console/StaleVersionBanner"
 import { formatDay } from "@/components/projects/formatDay";
 import { ProgressSummaryContent } from "@/components/progress/CheckInViews";
 import { useProgressSummary } from "@/components/progress/useCheckInApi";
-import { BreakdownTab, DocumentsTab, StructuredSetupSteps } from "@/components/work/WorkViews";
-import { ScopeTab } from "@/components/work/ScopeViews";
-import { ProgressTab } from "@/components/work/ReviewViews";
-import { DependenciesTab } from "@/components/work/DependencyViews";
-import { ScheduleCard } from "@/components/calendar/CalendarViews";
 import { apiErrorMessage, type LoadState } from "@/components/org-console/useRoleApi";
 import {
   type PortfolioFilters,
@@ -125,15 +120,6 @@ function timeZones(current?: string): string[] {
     zones = ["UTC", "Europe/London", "America/New_York", "Asia/Kolkata"];
   }
   return current && !zones.includes(current) ? [current, ...zones] : zones;
-}
-
-/** Today's calendar day (YYYY-MM-DD) in an IANA time zone; the browser's own day if the zone is unknown. */
-export function todayIn(timeZone: string, now: Date = new Date()): string {
-  try {
-    return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-  } catch {
-    return new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-  }
 }
 
 function suggestKey(name: string) {
@@ -351,9 +337,6 @@ export function ProjectCreateView({ base }: { base: ProjectBase }) {
   const options = useProjectOptions(orgId);
   const { createProject } = useProjectMutations(orgId);
   const [error, setError] = useState("");
-  // Task 3.1: a Structured project goes through the setup steps first; it is created only at their end.
-  const [setupFor, setSetupFor] = useState<CreateProjectDto | null>(null);
-  const [draftDetails, setDraftDetails] = useState<CreateProjectDto | undefined>(undefined);
 
   if (permissionStatus === "ready" && !can("project.create" as PermissionKey)) {
     return (
@@ -371,21 +354,13 @@ export function ProjectCreateView({ base }: { base: ProjectBase }) {
       description="An Individual project needs one accountable developer and starts with zero tasks and no percentage."
     >
       <ProjectGate state={options} base={base}>
-        {(data) => setupFor ? (
-          <StructuredSetupSteps orgId={orgId} details={setupFor} options={data} onBack={() => { setDraftDetails(setupFor); setSetupFor(null); }}
-            onCreated={(project) => router.push(href(`projects/${project.id}`))} />
-        ) : (
+        {(data) => (
           <CreateForm
             options={data}
-            initial={draftDetails}
             saving={createProject.isPending}
             error={error}
             onSubmit={(body) => {
               setError("");
-              if (body.mode === "STRUCTURED") {
-                setSetupFor(body);
-                return;
-              }
               createProject.mutate(body, {
                 onSuccess: (project) => {
                   toast.success(`${project.key} created`);
@@ -402,28 +377,19 @@ export function ProjectCreateView({ base }: { base: ProjectBase }) {
   );
 }
 
-function CreateForm({ options, initial, saving, error, onSubmit, onInvalid }: {
+function CreateForm({ options, saving, error, onSubmit, onInvalid }: {
   options: ProjectOptionsDto;
-  initial?: CreateProjectDto;
   saving: boolean;
   error: string;
   onSubmit: (body: CreateProjectDto) => void;
   onInvalid: (message: string) => void;
 }) {
-  const [form, setForm] = useState<FormState>(initial ? {
-    name: initial.name, key: initial.key, keyTouched: true, description: initial.description ?? "", mode: initial.mode ?? "INDIVIDUAL",
-    status: (initial.status as "PLANNED" | "ACTIVE") ?? "PLANNED", priority: (initial.priority as ProjectPriorityDto) ?? "MEDIUM",
-    pm: initial.project_manager_membership_id ?? "", accountable: initial.accountable_membership_id ?? "",
-    members: initial.member_membership_ids ?? [], team: initial.team_id ?? "", startOn: initial.start_on ?? "",
-    targetOn: initial.target_on ?? "", timezone: initial.timezone ?? options.default_timezone,
-  } : {
+  const [form, setForm] = useState<FormState>({
     name: "", key: "", keyTouched: false, description: "", mode: "INDIVIDUAL", status: "PLANNED", priority: "MEDIUM",
     pm: "", accountable: "", members: [], team: "", startOn: "", targetOn: "", timezone: options.default_timezone,
   });
   const set = <K extends keyof FormState>(field: K, value: FormState[K]) => setForm((current) => ({ ...current, [field]: value }));
   const zones = useMemo(() => timeZones(form.timezone), [form.timezone]);
-  // A new project starts today or later; "today" is the calendar day in the project's time zone.
-  const today = todayIn(form.timezone);
 
   return (
     <form
@@ -433,10 +399,7 @@ function CreateForm({ options, initial, saving, error, onSubmit, onInvalid }: {
         if (!form.name.trim()) return onInvalid("Enter a project name.");
         if (!/^[A-Z][A-Z0-9]{1,9}$/.test(form.key)) return onInvalid("The key needs 2 to 10 capital letters or digits and must start with a letter.");
         if (form.mode === "INDIVIDUAL" && !form.accountable) return onInvalid("Choose the accountable developer for an Individual project.");
-        if (form.startOn && form.startOn < today) return onInvalid("The start date can't be in the past. Pick today or a later day.");
-        if (form.targetOn && form.targetOn < (form.startOn || today)) {
-          return onInvalid(form.startOn ? "The target date must be on or after the start date." : "The target date can't be in the past.");
-        }
+        if (form.startOn && form.targetOn && form.targetOn < form.startOn) return onInvalid("The target date must be on or after the start date.");
         onSubmit({
           name: form.name.trim(),
           key: form.key,
@@ -481,7 +444,7 @@ function CreateForm({ options, initial, saving, error, onSubmit, onInvalid }: {
                   <span className="block text-[var(--color-text-muted)]">
                     {value === "INDIVIDUAL"
                       ? "One accountable developer reports progress. No tasks needed."
-                      : "Next you upload documents, add phases and add tasks with points; progress counts approved tasks."}
+                      : "Weighted, approved and reviewed work breakdown (task 3.x)."}
                   </span>
                 </span>
               </label>
@@ -497,12 +460,8 @@ function CreateForm({ options, initial, saving, error, onSubmit, onInvalid }: {
       <div className="space-y-4">
         <Panel title="Schedule" icon={CalendarDays} description="Dates are calendar days in the project time zone.">
           <div className="space-y-3">
-            <AdminInput label="Start date" type="date" value={form.startOn} min={today} onChange={(e) => {
-              const startOn = e.target.value;
-              // Moving the start past the target clears the target, so it is picked again from the new start.
-              setForm((current) => ({ ...current, startOn, targetOn: current.targetOn && startOn && current.targetOn < startOn ? "" : current.targetOn }));
-            }} />
-            <AdminInput label="Target date" type="date" value={form.targetOn} min={form.startOn || today} onChange={(e) => set("targetOn", e.target.value)} />
+            <AdminInput label="Start date" type="date" value={form.startOn} onChange={(e) => set("startOn", e.target.value)} />
+            <AdminInput label="Target date" type="date" value={form.targetOn} min={form.startOn || undefined} onChange={(e) => set("targetOn", e.target.value)} />
             <AdminSelect label="Time zone" value={form.timezone} onChange={(e) => set("timezone", e.target.value)}>
               {zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
             </AdminSelect>
@@ -520,7 +479,7 @@ function CreateForm({ options, initial, saving, error, onSubmit, onInvalid }: {
           </div>
         </Panel>
         <ErrorLine message={error} />
-        <AdminButton type="submit" isLoading={saving} className="w-full"><FolderPlus className="w-3.5 h-3.5" /> {form.mode === "STRUCTURED" ? "Next: documents, phases and tasks" : "Create project"}</AdminButton>
+        <AdminButton type="submit" isLoading={saving} className="w-full"><FolderPlus className="w-3.5 h-3.5" /> Create project</AdminButton>
       </div>
     </form>
   );
@@ -586,7 +545,7 @@ function PeopleFields(props: {
  * Project workspace shell
  * ==================================================================== */
 
-type WorkspaceTab = "overview" | "updates" | "repositories" | "activity" | "settings" | "breakdown" | "documents" | "scope" | "progress" | "dependencies";
+type WorkspaceTab = "overview" | "updates" | "repositories" | "activity" | "settings";
 
 export function ProjectWorkspaceView({ base, projectId }: { base: ProjectBase; projectId: string }) {
   const { orgId, href } = useBaseHref(base);
@@ -614,11 +573,6 @@ export function ProjectWorkspaceView({ base, projectId }: { base: ProjectBase; p
             ]
             : [
               { value: "overview", label: "Overview" },
-              { value: "breakdown", label: "Breakdown" },
-              { value: "scope", label: "Scope" },
-              { value: "dependencies", label: "Dependencies" },
-              { value: "progress", label: "Progress" },
-              { value: "documents", label: "Documents" },
               { value: "activity", label: "Activity" },
               { value: "settings", label: "Settings" },
             ];
@@ -631,12 +585,12 @@ export function ProjectWorkspaceView({ base, projectId }: { base: ProjectBase; p
                 {row.archived && <StatusBadge label="Archived · read-only" tone="neutral" />}
               </div>
               <SegmentTabs<WorkspaceTab> value={tab} onChange={setTab} options={tabs} />
-              {tab === "overview" && <OverviewTab project={row} scheduleHref={href(`projects/${row.id}/schedule`)} />}
-              {tab === "breakdown" && <BreakdownTab project={row} />}
-              {tab === "scope" && <ScopeTab project={row} />}
-              {tab === "progress" && <ProgressTab project={row} />}
-              {tab === "dependencies" && <DependenciesTab project={row} />}
-              {tab === "documents" && <DocumentsTab project={row} />}
+              {row.mode === "STRUCTURED" && (
+                <p className="text-[11px] text-[var(--color-text-muted)]">
+                  Breakdown, Scope, Reviews and Dependencies tabs arrive with tasks 3.1 to 3.4 (Later).
+                </p>
+              )}
+              {tab === "overview" && <OverviewTab project={row} />}
               {tab === "updates" && <UpdatesTab projectId={row.id} />}
               {tab === "repositories" && (
                 <Panel title="Repositories" icon={GitBranch}>
@@ -678,7 +632,7 @@ function UpdatesTab({ projectId }: { projectId: string }) {
   return <ProgressSummaryContent summary={state.data} />;
 }
 
-function OverviewTab({ project, scheduleHref }: { project: ProjectDto; scheduleHref?: string }) {
+function OverviewTab({ project }: { project: ProjectDto }) {
   return (
     <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -708,7 +662,6 @@ function OverviewTab({ project, scheduleHref }: { project: ProjectDto; scheduleH
             </p>
           )}
         </Panel>
-        <ScheduleCard project={project} scheduleHref={scheduleHref} />
         <Panel title="People" icon={UserRound}>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             <Detail label="Accountable developer" value={project.accountable?.email ?? "None"} />

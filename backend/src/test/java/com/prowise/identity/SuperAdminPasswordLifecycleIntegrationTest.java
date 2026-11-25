@@ -113,7 +113,7 @@ class SuperAdminPasswordLifecycleIntegrationTest {
     @Test
     void forgotPasswordEmailsAResetLinkWithoutRevealingWhetherTheAccountExists() throws Exception {
         activateDirectly();
-        String refreshBefore = json(login(EMAIL, FIRST_PASSWORD).andExpect(status().isOk())).path("refresh_token").asText();
+        String refreshBefore = login(EMAIL, FIRST_PASSWORD).andExpect(status().isOk()).andReturn().getResponse().getCookie("prowise_refresh_token").getValue();
 
         forgot("nobody-" + UUID.randomUUID() + "@prowise.test").andExpect(status().isAccepted());
         verify(mailSender, never()).send(any(MimeMessage.class));
@@ -141,7 +141,7 @@ class SuperAdminPasswordLifecycleIntegrationTest {
     void changePasswordVerifiesCurrentRefusesReuseAndEndsOtherSessions() throws Exception {
         activateDirectly();
         String access = json(login(EMAIL, FIRST_PASSWORD).andExpect(status().isOk())).path("access_token").asText();
-        String otherRefresh = json(login(EMAIL, FIRST_PASSWORD).andExpect(status().isOk())).path("refresh_token").asText();
+        String otherRefresh = login(EMAIL, FIRST_PASSWORD).andExpect(status().isOk()).andReturn().getResponse().getCookie("prowise_refresh_token").getValue();
 
         change(access, "Wrong-Current-Pass-9!", NEW_PASSWORD).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_CURRENT_PASSWORD"));
@@ -180,12 +180,12 @@ class SuperAdminPasswordLifecycleIntegrationTest {
     }
 
     private ResultActions forgot(String email) throws Exception {
-        return mockMvc.perform(post("/v1/auth/forgot-password").header("X-Forwarded-For", TestAccounts.randomClientAddress())
+        return mockMvc.perform(post("/v1/auth/forgot-password").with(com.prowise.testsupport.TestAccounts.randomClient())
                 .contentType("application/json").content(objectMapper.writeValueAsString(Map.of("email", email))));
     }
 
     private ResultActions login(String email, String password) throws Exception {
-        return mockMvc.perform(post("/v1/auth/login").header("X-Forwarded-For", TestAccounts.randomClientAddress())
+        return mockMvc.perform(post("/v1/auth/login").with(com.prowise.testsupport.TestAccounts.randomClient())
                 .contentType("application/json").content(objectMapper.writeValueAsString(Map.of("email", email, "password", password))));
     }
 

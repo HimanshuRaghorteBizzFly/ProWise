@@ -157,6 +157,7 @@ class OperatorAuthenticationTest {
                 .thenReturn(Optional.of(existingSession));
         when(operatorRepository.findById("op-1")).thenReturn(Optional.of(testOperator));
         when(sessionRepository.save(any(OperatorSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(sessionRepository.claimForRotation(existingSession.getId())).thenReturn(1);
 
         OperatorAuthDTOs.OperatorAuthResponse refreshed = authService.refresh(
                 rawRefreshToken, "127.0.0.1", "TestAgent"
@@ -166,9 +167,8 @@ class OperatorAuthenticationTest {
         assertThat(refreshed.accessToken()).isNotBlank();
         assertThat(refreshed.refreshToken()).isNotEqualTo(rawRefreshToken);
 
-        // Verify old session revoked
-        assertThat(existingSession.isRevoked()).isTrue();
-        assertThat(existingSession.getRevokedBy()).isEqualTo("TOKEN_ROTATED");
+        // The old session is revoked through the atomic rotation claim (sets revoked_by = TOKEN_ROTATED).
+        org.mockito.Mockito.verify(sessionRepository).claimForRotation(existingSession.getId());
     }
 
     @Test
@@ -200,6 +200,7 @@ class OperatorAuthenticationTest {
         testOperator.setPasswordSetupCompleted(false);
 
         when(invitationRepository.findByTokenHashAndAcceptedAtIsNull(hash)).thenReturn(Optional.of(invite));
+        when(invitationRepository.markAcceptedIfOpen(org.mockito.ArgumentMatchers.eq(hash), any(Instant.class))).thenReturn(1);
         when(operatorRepository.findById("op-1")).thenReturn(Optional.of(testOperator));
         when(operatorRepository.save(any(PlatformOperatorEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(sessionRepository.save(any(OperatorSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -212,6 +213,7 @@ class OperatorAuthenticationTest {
         assertThat(testOperator.getStatus()).isEqualTo("ACTIVE");
         assertThat(testOperator.isPasswordSetupCompleted()).isTrue();
         assertThat(passwordEncoder.matches("BrandNewPassword123!", testOperator.getPasswordHash())).isTrue();
-        assertThat(invite.getAcceptedAt()).isNotNull();
+        // Accepted through the atomic single-use claim.
+        org.mockito.Mockito.verify(invitationRepository).markAcceptedIfOpen(org.mockito.ArgumentMatchers.eq(hash), any(Instant.class));
     }
 }

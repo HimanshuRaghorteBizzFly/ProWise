@@ -29,6 +29,7 @@ public class DeveloperDTOs {
         String title,
         String key,
         String projectCode,
+        String projectId,
         Instant dueDate,
         String priority,
         String state

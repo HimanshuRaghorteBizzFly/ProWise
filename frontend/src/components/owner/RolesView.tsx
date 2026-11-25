@@ -16,7 +16,6 @@ import type { PermissionGrant } from "@/types/permission";
 
 export interface RolesViewProps {
   roles: OrgRoleResponse[];
-  source: "api" | "fixture";
   canManageRoles: boolean;
   /** The viewer's own grants: nobody can grant a key they do not hold. */
   heldGrants: readonly PermissionGrant[];
@@ -24,7 +23,7 @@ export interface RolesViewProps {
 }
 
 
-export function RolesView({ roles, source, canManageRoles, heldGrants, basePath }: RolesViewProps) {
+export function RolesView({ roles, canManageRoles, heldGrants, basePath }: RolesViewProps) {
   const selected = roles[0];
   const held = new Set(heldGrants.filter((grant) => grant.scope === "ORG").map((grant) => grant.key));
 
@@ -32,7 +31,6 @@ export function RolesView({ roles, source, canManageRoles, heldGrants, basePath 
     <PageHeader
       title="Roles & permissions"
       description="Role templates are starting points only; a role name grants nothing by itself. This page is read-only."
-      simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={
         canManageRoles ? (
           <Link

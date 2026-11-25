@@ -10,13 +10,24 @@ import {
   FileWarning,
   ShieldCheck,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
-import { SubscriptionRecord } from "../_types";
+import { useDebounced } from "@/components/super-admin/admin-resource";
+import type { OperatorSubscriptionItem } from "@/types/operator-console";
+import { operatorApi } from "../_services/operator-api";
 import { exportRowsToCsv, formatShortDate } from "../_services/operator-service";
+import {
+  NotAvailableButton,
+  OperatorResourceStatus,
+  formatMoney,
+  humanizeCode,
+  pageItemsOf,
+  pageTotalOf,
+  toServerPaging,
+  useOperatorResource,
+  type ResourceState,
+} from "../_components/OperatorLive";
 import {
   BulkSelectionBar,
   DemoDataBanner,
-  EmptyState,
   FilterBar,
   KpiCard,
   OpButton,
@@ -35,12 +46,24 @@ import {
 
 type SubSortField = "orgName" | "planName" | "status" | "seatsUsed" | "renewalDate";
 
-export default function OperatorSubscriptionStatusPage() {
-  const subscriptions = usePlatformOperatorStore((s) => s.subscriptions);
-  const updateSubscriptionNote = usePlatformOperatorStore((s) => s.updateSubscriptionNote);
-  const { can } = useOperatorPermissions();
-  const canTriage = can("billing.triage");
+const NOTE_REASON = "support notes have no server endpoint yet";
 
+/** Server status code -> the label the page has always used ("PAST_DUE" -> "Past Due", "TRIALING" -> "Trial"). */
+function statusLabel(status: string): string {
+  const s = status.toUpperCase();
+  if (s === "TRIALING" || s === "TRIAL") return "Trial";
+  if (s === "CANCELED") return "Cancelled";
+  return humanizeCode(s);
+}
+
+const totalOf = (state: ResourceState<{ total: number }>) => (state.status === "ready" ? state.data.total : null);
+
+/**
+ * Read-only subscription status from GET /v1/operator/subscriptions (billing.subscriptions:view). Billing is dormant
+ * in V1: plan changes and suspensions belong to Super Admin, and support notes have no endpoint yet, so "Edit Note"
+ * stays visible but disabled.
+ */
+export default function OperatorSubscriptionStatusPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [sortField, setSortField] = useState<SubSortField>("orgName");
@@ -48,17 +71,34 @@ export default function OperatorSubscriptionStatusPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
 
-  const [noteTarget, setNoteTarget] = useState<SubscriptionRecord | null>(null);
+  const [noteTarget, setNoteTarget] = useState<OperatorSubscriptionItem | null>(null);
   const [noteText, setNoteText] = useState("");
 
-  const activeCount = useMemo(
-    () => subscriptions.filter((s) => s.status === "Active" || s.status === "Trial").length,
-    [subscriptions]
+  const debouncedSearch = useDebounced(search);
+  const paging = toServerPaging(page, pageSize);
+  const { state, reload } = useOperatorResource(
+    () => operatorApi.subscriptions({ search: debouncedSearch, status: statusFilter, ...paging }),
+    `subscriptions:${debouncedSearch}:${statusFilter}:${paging.page}:${paging.size}`,
   );
-  const pastDueOrSuspended = useMemo(
-    () => subscriptions.filter((s) => s.status === "Past Due" || s.status === "Suspended").length,
-    [subscriptions]
+  // KPI counts: the server's totals per status (one-row reads; nothing is counted from a single page).
+  const allRes = useOperatorResource(() => operatorApi.subscriptions({ size: 1 }), "subscriptions-total");
+  const activeRes = useOperatorResource(() => operatorApi.subscriptions({ status: "ACTIVE", size: 1 }), "subscriptions-active");
+  const trialRes = useOperatorResource(() => operatorApi.subscriptions({ status: "TRIALING", size: 1 }), "subscriptions-trialing");
+  const pastDueRes = useOperatorResource(() => operatorApi.subscriptions({ status: "PAST_DUE", size: 1 }), "subscriptions-past-due");
+  const suspendedRes = useOperatorResource(
+    () => operatorApi.subscriptions({ status: "SUSPENDED", size: 1 }),
+    "subscriptions-suspended",
   );
+
+  const subscriptions = useMemo(() => pageItemsOf(state), [state]);
+  const total = pageTotalOf(state);
+  const activeTotal = totalOf(activeRes.state);
+  const trialTotal = totalOf(trialRes.state);
+  const pastDueTotal = totalOf(pastDueRes.state);
+  const suspendedTotal = totalOf(suspendedRes.state);
+  const activeCount = activeTotal === null || trialTotal === null ? null : activeTotal + trialTotal;
+  const pastDueOrSuspended = pastDueTotal === null || suspendedTotal === null ? null : pastDueTotal + suspendedTotal;
+  const monitoredTotal = totalOf(allRes.state);
 
   const handleSort = (field: SubSortField) => {
     if (sortField === field) {
@@ -69,35 +109,21 @@ export default function OperatorSubscriptionStatusPage() {
     }
   };
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const list = subscriptions.filter((s) => {
-      const matchesQ =
-        !q ||
-        s.orgName.toLowerCase().includes(q) ||
-        s.planName.toLowerCase().includes(q) ||
-        s.supportNote.toLowerCase().includes(q);
-      const matchesStatus = statusFilter === "ALL" || s.status === statusFilter;
-      return matchesQ && matchesStatus;
-    });
-    return [...list].sort((a, b) => {
+  const sorted = useMemo(() => {
+    return [...subscriptions].sort((a, b) => {
       let cmp = 0;
-      if (sortField === "orgName") cmp = a.orgName.localeCompare(b.orgName);
-      else if (sortField === "planName") cmp = a.planName.localeCompare(b.planName);
+      if (sortField === "orgName") cmp = (a.org_name ?? "").localeCompare(b.org_name ?? "");
+      else if (sortField === "planName") cmp = (a.plan_name ?? "").localeCompare(b.plan_name ?? "");
       else if (sortField === "status") cmp = a.status.localeCompare(b.status);
-      else if (sortField === "seatsUsed") cmp = a.seatsUsed - b.seatsUsed;
-      else cmp = new Date(a.renewalDate).getTime() - new Date(b.renewalDate).getTime();
+      else if (sortField === "seatsUsed") cmp = a.seats_used - b.seats_used;
+      else cmp = new Date(a.current_period_end ?? 0).getTime() - new Date(b.current_period_end ?? 0).getTime();
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [subscriptions, search, statusFilter, sortField, sortDir]);
+  }, [subscriptions, sortField, sortDir]);
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, pageSize]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  }, [debouncedSearch, statusFilter, pageSize]);
 
   const {
     selectedIds,
@@ -108,35 +134,34 @@ export default function OperatorSubscriptionStatusPage() {
     toggleSelectPage,
     toggleSelectOne,
   } = useTableSelection(
-    filtered.map((s) => s.id),
-    paginated.map((s) => s.id)
+    sorted.map((s) => s.id),
+    sorted.map((s) => s.id)
   );
 
   const handleSaveNote = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!noteTarget) return;
-    updateSubscriptionNote(noteTarget.id, noteText.trim());
-    toast.success(`Support note updated for ${noteTarget.orgName}.`);
+    // Support notes have no server endpoint: nothing is saved locally either.
     setNoteTarget(null);
   };
+
+  const csvRow = (s: OperatorSubscriptionItem) => [
+    s.org_name ?? s.org_id,
+    s.plan_name ?? s.plan_code ?? "—",
+    humanizeCode(s.billing_cycle),
+    statusLabel(s.status),
+    s.seats_used,
+    s.seats,
+    s.current_period_end ?? "",
+    formatMoney(s.amount, s.currency),
+  ];
 
   const handleExportCsv = () => {
     exportRowsToCsv(
       `prowise-subscription-status-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Sr No", "Organization", "Plan", "Cycle", "Status", "Seats Used", "Seats Limit", "Renewal Date", "Support Note"],
-      filtered.map((s, i) => [
-        i + 1,
-        s.orgName,
-        s.planName,
-        s.billingCycle,
-        s.status,
-        s.seatsUsed,
-        s.seatsLimit,
-        s.renewalDate,
-        s.supportNote,
-      ])
+      ["Sr No", "Organization", "Plan", "Cycle", "Status", "Seats Used", "Seats Limit", "Renewal Date", "Amount"],
+      sorted.map((s, i) => [i + 1, ...csvRow(s)])
     );
-    toast.success(`Exported ${filtered.length} subscription record(s).`);
+    toast.success(`Exported ${sorted.length} subscription record(s).`);
   };
 
   return (
@@ -144,7 +169,7 @@ export default function OperatorSubscriptionStatusPage() {
       <PageHeader
         title="Subscription Status"
         badge="Read-Only + Support Notes"
-        demoLabel="Delegated Billing Monitoring"
+        liveData
         description="Monitor organization subscription health, license seat headroom, and upcoming renewals to assist customers proactively."
         actions={
           <Link href="/platform-operator/payment-failures">
@@ -164,21 +189,21 @@ export default function OperatorSubscriptionStatusPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiCard
           label="Active & Trial Accounts"
-          value={activeCount}
+          value={activeCount ?? "-"}
           sublabel="Operating in good standing"
           icon={CheckCircle2}
           tone="emerald"
         />
         <KpiCard
           label="Past Due / Suspended"
-          value={pastDueOrSuspended}
+          value={pastDueOrSuspended ?? "-"}
           sublabel="Requires customer payment follow-up"
           icon={AlertTriangle}
-          tone={pastDueOrSuspended > 0 ? "amber" : "emerald"}
+          tone={pastDueOrSuspended ? "amber" : "emerald"}
         />
         <KpiCard
           label="Total Monitored Subscriptions"
-          value={subscriptions.length}
+          value={monitoredTotal ?? "-"}
           sublabel="Across Starter, Growth, and Enterprise"
           icon={ShieldCheck}
           tone="teal"
@@ -196,7 +221,7 @@ export default function OperatorSubscriptionStatusPage() {
             setStatusFilter("ALL");
           }}
           onExportCsv={handleExportCsv}
-          exportDisabled={filtered.length === 0}
+          exportDisabled={sorted.length === 0}
           filters={
             <div className="w-44">
               <OpSelect
@@ -205,48 +230,43 @@ export default function OperatorSubscriptionStatusPage() {
                 aria-label="Filter subscription status"
                 options={[
                   { label: "All Statuses", value: "ALL" },
-                  { label: "Active", value: "Active" },
-                  { label: "Trial", value: "Trial" },
-                  { label: "Past Due", value: "Past Due" },
-                  { label: "Suspended", value: "Suspended" },
-                  { label: "Cancelled", value: "Cancelled" },
+                  { label: "Active", value: "ACTIVE" },
+                  { label: "Trial", value: "TRIALING" },
+                  { label: "Past Due", value: "PAST_DUE" },
+                  { label: "Suspended", value: "SUSPENDED" },
+                  { label: "Cancelled", value: "CANCELLED" },
                 ]}
               />
             </div>
           }
         />
 
-        {paginated.length === 0 ? (
-          <EmptyState
-            icon={ShieldCheck}
-            title="No subscriptions found"
-            description="No subscription records match your current search or filter."
+        {state.status !== "ready" || sorted.length === 0 ? (
+          <OperatorResourceStatus
+            state={state.status === "ready" ? { status: "ready", data: sorted } : state}
+            isEmpty={(data) => data.length === 0}
+            onRetry={() => void reload()}
+            emptyIcon={ShieldCheck}
+            emptyTitle="No subscriptions found"
+            emptyDescription="No subscription records match your current search or filter."
           />
         ) : (
           <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
             <BulkSelectionBar
               selectedCount={selectedIds.length}
-              totalFilteredCount={filtered.length}
-              onSelectAllMatching={() => setSelectedIds(filtered.map((s) => s.id))}
+              totalFilteredCount={sorted.length}
+              onSelectAllMatching={() => setSelectedIds(sorted.map((s) => s.id))}
               onClear={() => setSelectedIds([])}
               actions={
                 <OpButton
                   variant="outline"
                   size="xs"
                   onClick={() => {
-                    const selectedList = subscriptions.filter((s) => selectedSet.has(s.id));
+                    const selectedList = sorted.filter((s) => selectedSet.has(s.id));
                     exportRowsToCsv(
                       `prowise-selected-subscriptions-${new Date().toISOString().slice(0, 10)}.csv`,
-                      ["Organization", "Plan", "Cycle", "Status", "Seats Used", "Renewal Date", "Support Note"],
-                      selectedList.map((s) => [
-                        s.orgName,
-                        s.planName,
-                        s.billingCycle,
-                        s.status,
-                        s.seatsUsed,
-                        s.renewalDate,
-                        s.supportNote,
-                      ])
+                      ["Organization", "Plan", "Cycle", "Status", "Seats Used", "Seats Limit", "Renewal Date", "Amount"],
+                      selectedList.map(csvRow)
                     );
                     toast.success(`Exported ${selectedList.length} selected subscription(s).`);
                   }}
@@ -291,10 +311,11 @@ export default function OperatorSubscriptionStatusPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-border)] text-xs">
-                  {paginated.map((sub, idx) => {
-                    const srNo = (safePage - 1) * pageSize + idx + 1;
+                  {sorted.map((sub, idx) => {
+                    const srNo = (page - 1) * pageSize + idx + 1;
                     const isSelected = selectedSet.has(sub.id);
-                    const pct = Math.min(100, Math.round((sub.seatsUsed / sub.seatsLimit) * 100));
+                    const pct = sub.seats > 0 ? Math.min(100, Math.round((sub.seats_used / sub.seats) * 100)) : 0;
+                    const orgName = sub.org_name ?? sub.org_id;
                     return (
                       <tr key={sub.id} className={isSelected ? "bg-teal-500/5" : "hover:bg-[var(--color-hover)]/50"}>
                         <td className="py-3 px-3.5">
@@ -302,7 +323,7 @@ export default function OperatorSubscriptionStatusPage() {
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggleSelectOne(sub.id)}
-                            aria-label={`Select ${sub.orgName}`}
+                            aria-label={`Select ${orgName}`}
                             className="h-4 w-4 rounded border-[var(--color-border)] bg-[var(--color-app-bg)] accent-teal-600 cursor-pointer"
                           />
                         </td>
@@ -312,27 +333,30 @@ export default function OperatorSubscriptionStatusPage() {
                         <td className="py-3 px-3.5 min-w-[220px]">
                           <div className="flex items-start gap-2.5">
                             <span className="h-7 w-7 rounded-lg bg-teal-500/15 text-[10px] font-bold text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 mt-0.5">
-                              {getOrgInitials(sub.orgName)}
+                              {getOrgInitials(orgName)}
                             </span>
                             <div>
-                              <p className="font-semibold text-[var(--color-text-primary)]">{sub.orgName}</p>
+                              <p className="font-semibold text-[var(--color-text-primary)]">{orgName}</p>
                               <p className="text-[11px] text-[var(--color-text-secondary)] mt-0.5">
-                                {sub.supportNote || "No support note"}
+                                {sub.org_slug ?? ""}
+                                {sub.cancel_at_period_end ? " · cancels at period end" : sub.auto_renew ? " · auto-renews" : " · no auto-renew"}
                               </p>
                             </div>
                           </div>
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
-                          <p className="font-medium text-[var(--color-text-primary)]">{sub.planName}</p>
-                          <p className="text-[11px] text-[var(--color-text-muted)]">{sub.billingCycle}</p>
+                          <p className="font-medium text-[var(--color-text-primary)]">{sub.plan_name ?? sub.plan_code ?? "—"}</p>
+                          <p className="text-[11px] text-[var(--color-text-muted)]">
+                            {humanizeCode(sub.billing_cycle)} · {formatMoney(sub.amount, sub.currency)}
+                          </p>
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
-                          <StatusBadge label={sub.status} tone={getStatusTone(sub.status)} dot />
+                          <StatusBadge label={statusLabel(sub.status)} tone={getStatusTone(statusLabel(sub.status))} dot />
                         </td>
                         <td className="py-3 px-3.5 min-w-[140px]">
                           <div className="flex justify-between text-[11px] text-[var(--color-text-secondary)] mb-1">
                             <span>
-                              {sub.seatsUsed} / {sub.seatsLimit} seats
+                              {sub.seats_used} / {sub.seats} seats
                             </span>
                             <span>{pct}%</span>
                           </div>
@@ -341,21 +365,13 @@ export default function OperatorSubscriptionStatusPage() {
                           </div>
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap text-[var(--color-text-secondary)]">
-                          {formatShortDate(sub.renewalDate)}
+                          {formatShortDate(sub.current_period_end ?? "")}
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap text-right">
-                          <OpButton
-                            variant="outline"
-                            size="xs"
-                            disabled={!canTriage}
-                            onClick={() => {
-                              setNoteTarget(sub);
-                              setNoteText(sub.supportNote);
-                            }}
-                          >
+                          <NotAvailableButton variant="outline" size="xs" reason={NOTE_REASON} wrapperClassName="items-end">
                             <Edit3 className="w-3.5 h-3.5" />
                             Edit Note
-                          </OpButton>
+                          </NotAvailableButton>
                         </td>
                       </tr>
                     );
@@ -367,8 +383,8 @@ export default function OperatorSubscriptionStatusPage() {
         )}
 
         <PaginationBar
-          currentPage={safePage}
-          totalItems={filtered.length}
+          currentPage={page}
+          totalItems={total}
           pageSize={pageSize}
           onPageChange={setPage}
           onPageSizeChange={(n) => {
@@ -381,7 +397,7 @@ export default function OperatorSubscriptionStatusPage() {
       <OpModal
         isOpen={Boolean(noteTarget)}
         onClose={() => setNoteTarget(null)}
-        title={noteTarget ? `Support Note — ${noteTarget.orgName}` : "Support Note"}
+        title={noteTarget ? `Support Note — ${noteTarget.org_name ?? noteTarget.org_id}` : "Support Note"}
         description="Share billing coordination context with fellow operators and Super Admin."
         maxWidth="md"
       >
@@ -397,9 +413,9 @@ export default function OperatorSubscriptionStatusPage() {
             <OpButton type="button" variant="outline" size="sm" onClick={() => setNoteTarget(null)}>
               Cancel
             </OpButton>
-            <OpButton type="submit" variant="primary" size="sm">
+            <NotAvailableButton variant="primary" size="sm" reason={NOTE_REASON}>
               Save Note
-            </OpButton>
+            </NotAvailableButton>
           </div>
         </form>
       </OpModal>

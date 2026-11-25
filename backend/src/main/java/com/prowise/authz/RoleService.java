@@ -74,7 +74,7 @@ public class RoleService {
                        (SELECT count(*) FROM grants g
                          WHERE g.org_id = ? AND COALESCE(g.template_role_id, g.org_role_id) = r.id) AS grant_count
                 FROM roles r
-                WHERE (r.is_template AND r.id <> ?) OR r.org_id = ?
+                WHERE (r.is_template AND r.is_active AND r.id <> ?) OR r.org_id = ?
                 ORDER BY r.is_template DESC, r.name
                 """, (rs, rowNum) -> toResponse(
                         rs.getObject("id", UUID.class), rs.getString("name"), rs.getBoolean("is_template"),
@@ -291,6 +291,7 @@ public class RoleService {
                 SELECT DISTINCT rp.permission_key
                 FROM grants g
                 JOIN role_permissions rp ON rp.role_id = COALESCE(g.template_role_id, g.org_role_id)
+                JOIN roles r ON r.id = rp.role_id AND r.is_active
                 WHERE g.org_id = ? AND g.membership_id = ?
                   AND (g.expires_at IS NULL OR g.expires_at > now())
                 ORDER BY rp.permission_key
@@ -372,7 +373,9 @@ public class RoleService {
             customRole(organizationId, orgRoleId);
             return orgRoleId;
         }
-        Integer count = jdbc.queryForObject("SELECT count(*) FROM role_templates WHERE role_id = ?",
+        // An inactive template (deactivated custom role, task 1.5 governance) cannot be granted or invited with.
+        Integer count = jdbc.queryForObject(
+                "SELECT count(*) FROM role_templates t JOIN roles r ON r.id = t.role_id WHERE t.role_id = ? AND r.is_active",
                 Integer.class, templateRoleId);
         if (count == null || count != 1 || PLATFORM_OPERATOR_TEMPLATE_ID.equals(templateRoleId)) {
             throw PermissionService.notFound();
@@ -425,7 +428,7 @@ public class RoleService {
                        (SELECT count(*) FROM grants g
                          WHERE g.org_id = ? AND COALESCE(g.template_role_id, g.org_role_id) = r.id) AS grant_count
                 FROM roles r
-                WHERE r.id = ? AND ((r.is_template AND r.id <> ?) OR r.org_id = ?)
+                WHERE r.id = ? AND ((r.is_template AND r.is_active AND r.id <> ?) OR r.org_id = ?)
                 """, (rs, rowNum) -> toResponse(rs.getObject("id", UUID.class), rs.getString("name"),
                         rs.getBoolean("is_template"), rs.getLong("version"), rs.getLong("grant_count")),
                 organizationId, roleId, PLATFORM_OPERATOR_TEMPLATE_ID, organizationId);

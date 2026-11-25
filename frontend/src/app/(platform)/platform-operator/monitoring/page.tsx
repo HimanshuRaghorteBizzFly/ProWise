@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import {
   Activity,
   AlertTriangle,
@@ -13,8 +12,21 @@ import {
   RefreshCw,
   Server,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
+import type { OpsDashboardStats, OpsIntegration } from "@/types/admin-operations";
+import { useOperatorPermissions } from "../_services/operator-access";
+import { operatorApi } from "../_services/operator-api";
 import { formatDateTime } from "../_services/operator-service";
+import {
+  MutationNotice,
+  NotAvailableButton,
+  NotAvailableText,
+  OperatorResourceStatus,
+  humanizeCode,
+  rowsOf,
+  useOperatorMutation,
+  useOperatorResource,
+  type ResourceState,
+} from "../_components/OperatorLive";
 import {
   BulkSelectionBar,
   DemoDataBanner,
@@ -31,49 +43,126 @@ import {
   getStatusTone,
   useTableSelection,
 } from "../_components/OperatorPrimitives";
-import { QueueBarChart } from "../_components/OperatorCharts";
 
 type MonitorSortField = "serviceName" | "cpuPct" | "memoryPct" | "latencyMs" | "queueDepth" | "status";
 
+/**
+ * One monitored service. The only per-service records the server has are integration installations
+ * (GET /v1/operator/integrations: name, type, status, health, error count, last sync). CPU, memory, latency, queue
+ * depth and uptime have no endpoint, so they are null and shown as "Not available yet".
+ */
+interface ServiceRow {
+  id: string;
+  serviceName: string;
+  category: "API & Compute" | "Database & Cache" | "Background Workers" | "Integrations";
+  status: "Operational" | "Elevated" | "Degraded";
+  cpuPct: number | null;
+  memoryPct: number | null;
+  latencyMs: number | null;
+  queueDepth: number | null;
+  uptime30d: string | null;
+  note: string;
+}
+
+function healthToStatus(health: string | null | undefined): ServiceRow["status"] {
+  const h = (health ?? "").toUpperCase();
+  if (h === "HEALTHY" || h === "OPERATIONAL") return "Operational";
+  if (h === "DEGRADED" || h === "DOWN" || h === "OUTAGE" || h === "FAILED") return "Degraded";
+  return "Elevated";
+}
+
+function toServiceRow(i: OpsIntegration): ServiceRow {
+  const parts = [
+    `${humanizeCode(i.type)} · ${humanizeCode(i.status)}`,
+    `${i.error_count} error(s)`,
+    i.last_synced_at ? `last sync ${formatDateTime(i.last_synced_at)}` : "never synced",
+  ];
+  return {
+    id: i.id,
+    serviceName: i.name,
+    category: "Integrations",
+    status: healthToStatus(i.health),
+    cpuPct: null,
+    memoryPct: null,
+    latencyMs: null,
+    queueDepth: null,
+    uptime30d: null,
+    note: parts.join(" · "),
+  };
+}
+
+const NA_TELEMETRY = "no infrastructure telemetry endpoint";
+
+function MetricValue({ value, suffix = "" }: { value: number | string | null; suffix?: string }) {
+  if (value === null) return <NotAvailableText reason={NA_TELEMETRY} />;
+  return (
+    <>
+      {value}
+      {suffix}
+    </>
+  );
+}
+
+/** Real operational counters from GET /v1/operator/dashboard/stats (the server's health-score string is never shown). */
+function LiveCounters({ state, onRetry }: { state: ResourceState<OpsDashboardStats>; onRetry: () => void }) {
+  if (state.status !== "ready") {
+    return (
+      <OperatorResourceStatus
+        state={state}
+        isEmpty={() => false}
+        onRetry={onRetry}
+        emptyTitle=""
+        emptyDescription=""
+        rows={1}
+      />
+    );
+  }
+  const items: { label: string; value: number | undefined }[] = [
+    { label: "Open incidents", value: state.data.openIncidents },
+    { label: "Open tickets", value: state.data.openTickets },
+    { label: "Webhooks retrying", value: state.data.pendingWebhooks },
+    { label: "Failed jobs", value: state.data.failedJobs },
+    { label: "Unacknowledged alerts", value: state.data.unacknowledgedAlerts },
+  ];
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      {items.map((item) => (
+        <div key={item.label} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3">
+          <span className="block text-[11px] text-[var(--color-text-muted)]">{item.label}</span>
+          <strong className="text-lg tabular-nums text-[var(--color-text-primary)]">
+            {typeof item.value === "number" ? item.value : <NotAvailableText />}
+          </strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function SystemMonitoringPage() {
-  const systemMetrics = usePlatformOperatorStore((s) => s.systemMetrics);
-  const lastTelemetryTickAt = usePlatformOperatorStore((s) => s.lastTelemetryTickAt);
-  const tickLiveDemoMetrics = usePlatformOperatorStore((s) => s.tickLiveDemoMetrics);
-  const createIncidentFromService = usePlatformOperatorStore((s) => s.createIncidentFromService);
+  const integrations = useOperatorResource(() => operatorApi.integrations(), "integrations");
+  const stats = useOperatorResource(() => operatorApi.dashboardStats(), "dashboard-stats");
+  const systemMetrics = useMemo(() => rowsOf(integrations.state).map(toServiceRow), [integrations.state]);
+  const [lastLoadedAt, setLastLoadedAt] = useState<string>("");
+  useEffect(() => {
+    if (integrations.state.status === "ready") setLastLoadedAt(new Date().toISOString());
+  }, [integrations.state]);
+  const refreshAll = () => {
+    void integrations.reload();
+    void stats.reload();
+  };
   const { can } = useOperatorPermissions();
   const canOpenIncident = can("incidents.manage");
+  const { busy, notice, clearNotice, run } = useOperatorMutation(refreshAll);
 
   const [viewMode, setViewMode] = useState<"CARDS" | "TABLE">("CARDS");
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  /* No live telemetry stream exists, so there is nothing to auto-refresh; the toggle stays visible but disabled. */
+  const autoRefresh = false;
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [sortField, setSortField] = useState<MonitorSortField>("status");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
-
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const id = setInterval(() => {
-      tickLiveDemoMetrics();
-    }, 10000);
-    return () => clearInterval(id);
-  }, [autoRefresh, tickLiveDemoMetrics]);
-
-  const avgCpu = useMemo(() => {
-    if (systemMetrics.length === 0) return 0;
-    return Math.round(systemMetrics.reduce((s, m) => s + m.cpuPct, 0) / systemMetrics.length);
-  }, [systemMetrics]);
-
-  const avgMemory = useMemo(() => {
-    if (systemMetrics.length === 0) return 0;
-    return Math.round(systemMetrics.reduce((s, m) => s + m.memoryPct, 0) / systemMetrics.length);
-  }, [systemMetrics]);
-
-  const dbPool = useMemo(() => {
-    const db = systemMetrics.find((m) => m.dbConnectionsPct !== undefined);
-    return db?.dbConnectionsPct || 52;
-  }, [systemMetrics]);
 
   const elevatedCount = useMemo(
     () => systemMetrics.filter((m) => m.status !== "Operational").length,
@@ -105,10 +194,10 @@ export default function SystemMonitoringPage() {
     return [...list].sort((a, b) => {
       let cmp = 0;
       if (sortField === "serviceName") cmp = a.serviceName.localeCompare(b.serviceName);
-      else if (sortField === "cpuPct") cmp = a.cpuPct - b.cpuPct;
-      else if (sortField === "memoryPct") cmp = a.memoryPct - b.memoryPct;
-      else if (sortField === "latencyMs") cmp = a.latencyMs - b.latencyMs;
-      else if (sortField === "queueDepth") cmp = a.queueDepth - b.queueDepth;
+      else if (sortField === "cpuPct") cmp = (a.cpuPct ?? -1) - (b.cpuPct ?? -1);
+      else if (sortField === "memoryPct") cmp = (a.memoryPct ?? -1) - (b.memoryPct ?? -1);
+      else if (sortField === "latencyMs") cmp = (a.latencyMs ?? -1) - (b.latencyMs ?? -1);
+      else if (sortField === "queueDepth") cmp = (a.queueDepth ?? -1) - (b.queueDepth ?? -1);
       else cmp = (rank[a.status] ?? 9) - (rank[b.status] ?? 9);
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -135,42 +224,39 @@ export default function SystemMonitoringPage() {
     paginated.map((s) => s.id)
   );
 
-  const chartData = useMemo(
-    () =>
-      systemMetrics.map((m) => ({
-        label: m.serviceName.split(" ")[0],
-        cpu: m.cpuPct,
-        memory: m.memoryPct,
-      })),
-    [systemMetrics]
-  );
-
+  /** Real create: POST /v1/operator/incidents for the service, then reload. Severity follows the service health. */
   const handleOpenIncident = (svcId: string) => {
-    const inc = createIncidentFromService(svcId);
-    if (inc) toast.success(`Opened incident ${inc.code} for ${inc.affectedService}.`);
+    const svc = systemMetrics.find((m) => m.id === svcId);
+    if (!svc) return;
+    const severity = svc.status === "Degraded" ? "SEV_2" : svc.status === "Elevated" ? "SEV_3" : "SEV_4";
+    void run(
+      `incident:${svcId}`,
+      () =>
+        operatorApi.incidents.create({
+          title: `${svc.serviceName}: ${svc.status}`,
+          severity,
+          description: `Opened from System Monitoring. ${svc.note}`,
+        }),
+      `Opened an incident for ${svc.serviceName}.`,
+    );
   };
+
+  const servicesReady = integrations.state.status === "ready";
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="System Monitoring"
-        badge={autoRefresh ? "Auto-Refresh 10s" : `${systemMetrics.length} Core Services`}
-        demoLabel="Demo Data (Simulated)"
+        badge={autoRefresh ? "Auto-Refresh 10s" : servicesReady ? `${systemMetrics.length} Core Services` : undefined}
+        liveData
         description="Track compute load, memory usage, database capacity, queue depth, and open incidents directly from degraded services."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <OpButton variant="outline" size="sm" onClick={() => setAutoRefresh((v) => !v)}>
+            <NotAvailableButton variant="outline" size="sm" reason="there is no live telemetry stream">
               <Activity className="w-3.5 h-3.5" />
               {autoRefresh ? "Pause Stream" : "Resume Stream"}
-            </OpButton>
-            <OpButton
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                tickLiveDemoMetrics();
-                toast.success("Refreshed simulated infrastructure telemetry.");
-              }}
-            >
+            </NotAvailableButton>
+            <OpButton variant="primary" size="sm" onClick={refreshAll}>
               <RefreshCw className="w-3.5 h-3.5" />
               Refresh Telemetry
             </OpButton>
@@ -181,36 +267,48 @@ export default function SystemMonitoringPage() {
       <DemoDataBanner
         title="Simulated Infrastructure Metrics"
         description={`Values reflect live simulated telemetry (updated ${formatDateTime(
-          lastTelemetryTickAt
+          lastLoadedAt
         )}). Connect Spring Boot Actuator or cloud telemetry to monitor production clusters.`}
       />
+
+      <MutationNotice notice={notice} onReload={refreshAll} onDismiss={clearNotice} />
+
+      <SurfaceCard className="p-4 sm:p-5 space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Live Operational Counters</h3>
+          <p className="text-xs text-[var(--color-text-secondary)]">
+            Counts read from the server{lastLoadedAt ? ` (loaded ${formatDateTime(lastLoadedAt)})` : ""}.
+          </p>
+        </div>
+        <LiveCounters state={stats.state} onRetry={stats.reload} />
+      </SurfaceCard>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <KpiCard
           label="Average Cluster CPU"
-          value={`${avgCpu}%`}
-          sublabel="Across API, database & workers"
+          value="—"
+          sublabel="Not available yet"
           icon={Cpu}
-          tone={avgCpu > 75 ? "amber" : "teal"}
+          tone="slate"
         />
         <KpiCard
           label="Average Memory Usage"
-          value={`${avgMemory}%`}
-          sublabel="Within healthy operating limits"
+          value="—"
+          sublabel="Not available yet"
           icon={HardDrive}
-          tone="blue"
+          tone="slate"
         />
         <KpiCard
           label="Database Connection Pool"
-          value={`${dbPool}%`}
-          sublabel="Primary & read-replica capacity"
+          value="—"
+          sublabel="Not available yet"
           icon={Database}
-          tone="emerald"
+          tone="slate"
         />
         <KpiCard
           label="Elevated Services"
-          value={elevatedCount}
-          sublabel="Services under higher than normal load"
+          value={servicesReady ? elevatedCount : "-"}
+          sublabel="Integrations not reporting healthy"
           icon={Server}
           tone={elevatedCount > 0 ? "amber" : "emerald"}
         />
@@ -219,21 +317,15 @@ export default function SystemMonitoringPage() {
       <SurfaceCard className="p-4 sm:p-5 space-y-3">
         <div>
           <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
-            CPU vs. Memory Utilization by Service (Demo Data)
+            CPU vs. Memory Utilization by Service
           </h3>
           <p className="text-xs text-[var(--color-text-secondary)]">
             Compares active compute load and allocated memory percentages across core components.
           </p>
         </div>
-        <QueueBarChart
-          data={chartData}
-          primaryKey="cpu"
-          primaryLabel="CPU %"
-          secondaryKey="memory"
-          secondaryLabel="Memory %"
-          unit="%"
-          height={230}
-        />
+        <div className="flex h-[230px] items-center justify-center rounded-lg border border-dashed border-[var(--color-border)]">
+          <NotAvailableText reason={NA_TELEMETRY} className="text-sm" />
+        </div>
       </SurfaceCard>
 
       <SurfaceCard className="p-4 sm:p-5 space-y-4">
@@ -292,7 +384,16 @@ export default function SystemMonitoringPage() {
           }
         />
 
-        {paginated.length === 0 ? (
+        {!servicesReady || systemMetrics.length === 0 ? (
+          <OperatorResourceStatus
+            state={integrations.state}
+            isEmpty={(d) => d.length === 0}
+            onRetry={integrations.reload}
+            emptyIcon={Server}
+            emptyTitle="No monitored services"
+            emptyDescription="The server has no integration installations to report health for."
+          />
+        ) : paginated.length === 0 ? (
           <EmptyState
             icon={Server}
             title="No services match your filter"
@@ -322,19 +423,10 @@ export default function SystemMonitoringPage() {
                 onSelectAllMatching={() => setSelectedIds(filtered.map((s) => s.id))}
                 onClear={() => setSelectedIds([])}
                 actions={
-                  <OpButton
-                    variant="subtle"
-                    size="xs"
-                    disabled={!canOpenIncident}
-                    onClick={() => {
-                      selectedIds.forEach((id) => createIncidentFromService(id));
-                      toast.success(`Opened incidents for ${selectedIds.length} selected service(s).`);
-                      setSelectedIds([]);
-                    }}
-                  >
+                  <NotAvailableButton variant="subtle" size="xs" hideLabel reason="no bulk incident endpoint">
                     <AlertTriangle className="w-3.5 h-3.5" />
                     Open Incident ({selectedIds.length})
-                  </OpButton>
+                  </NotAvailableButton>
                 }
               />
             </div>
@@ -378,26 +470,26 @@ export default function SystemMonitoringPage() {
                       <div>
                         <div className="flex justify-between mb-1">
                           <span className="text-[var(--color-text-secondary)]">CPU Usage</span>
-                          <strong className="text-[var(--color-text-primary)]">{svc.cpuPct}%</strong>
+                          <strong className="text-[var(--color-text-primary)]"><MetricValue value={svc.cpuPct} suffix="%" /></strong>
                         </div>
                         <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
                           <div
                             className={`h-full rounded-full transition-all ${
-                              svc.cpuPct > 80 ? "bg-rose-500" : svc.cpuPct > 65 ? "bg-amber-500" : "bg-teal-500"
+                              (svc.cpuPct ?? 0) > 80 ? "bg-rose-500" : (svc.cpuPct ?? 0) > 65 ? "bg-amber-500" : "bg-teal-500"
                             }`}
-                            style={{ width: `${svc.cpuPct}%` }}
+                            style={{ width: `${svc.cpuPct ?? 0}%` }}
                           />
                         </div>
                       </div>
                       <div>
                         <div className="flex justify-between mb-1">
                           <span className="text-[var(--color-text-secondary)]">Memory Usage</span>
-                          <strong className="text-[var(--color-text-primary)]">{svc.memoryPct}%</strong>
+                          <strong className="text-[var(--color-text-primary)]"><MetricValue value={svc.memoryPct} suffix="%" /></strong>
                         </div>
                         <div className="h-1.5 rounded-full bg-[var(--color-border)] overflow-hidden">
                           <div
                             className="h-full rounded-full bg-blue-500 transition-all"
-                            style={{ width: `${svc.memoryPct}%` }}
+                            style={{ width: `${svc.memoryPct ?? 0}%` }}
                           />
                         </div>
                       </div>
@@ -406,15 +498,15 @@ export default function SystemMonitoringPage() {
                     <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[var(--color-border)] text-[11px]">
                       <div>
                         <span className="text-[var(--color-text-muted)] block">Response</span>
-                        <strong className="text-[var(--color-text-primary)]">{svc.latencyMs} ms</strong>
+                        <strong className="text-[var(--color-text-primary)]"><MetricValue value={svc.latencyMs} suffix=" ms" /></strong>
                       </div>
                       <div>
                         <span className="text-[var(--color-text-muted)] block">Queue</span>
-                        <strong className="text-[var(--color-text-primary)]">{svc.queueDepth} jobs</strong>
+                        <strong className="text-[var(--color-text-primary)]"><MetricValue value={svc.queueDepth} suffix=" jobs" /></strong>
                       </div>
                       <div>
                         <span className="text-[var(--color-text-muted)] block">30d Uptime</span>
-                        <strong className="text-emerald-600 dark:text-emerald-400">{svc.uptime30d}</strong>
+                        <strong className="text-emerald-600 dark:text-emerald-400"><MetricValue value={svc.uptime30d} /></strong>
                       </div>
                     </div>
 
@@ -425,7 +517,8 @@ export default function SystemMonitoringPage() {
                       <OpButton
                         variant="outline"
                         size="xs"
-                        disabled={!canOpenIncident}
+                        disabled={!canOpenIncident || busy !== null}
+                        isLoading={busy === `incident:${svc.id}`}
                         onClick={() => handleOpenIncident(svc.id)}
                       >
                         <AlertTriangle className="w-3 h-3" />
@@ -445,19 +538,10 @@ export default function SystemMonitoringPage() {
               onSelectAllMatching={() => setSelectedIds(filtered.map((s) => s.id))}
               onClear={() => setSelectedIds([])}
               actions={
-                <OpButton
-                  variant="subtle"
-                  size="xs"
-                  disabled={!canOpenIncident}
-                  onClick={() => {
-                    selectedIds.forEach((id) => createIncidentFromService(id));
-                    toast.success(`Opened incidents for ${selectedIds.length} selected service(s).`);
-                    setSelectedIds([]);
-                  }}
-                >
+                <NotAvailableButton variant="subtle" size="xs" hideLabel reason="no bulk incident endpoint">
                   <AlertTriangle className="w-3.5 h-3.5" />
                   Open Incident ({selectedIds.length})
-                </OpButton>
+                </NotAvailableButton>
               }
             />
             <div className="overflow-x-auto">
@@ -520,10 +604,10 @@ export default function SystemMonitoringPage() {
                           <p className="font-semibold text-[var(--color-text-primary)]">{svc.serviceName}</p>
                           <p className="text-[11px] text-[var(--color-text-muted)]">{svc.category}</p>
                         </td>
-                        <td className="py-3 px-3.5 tabular-nums font-medium">{svc.cpuPct}%</td>
-                        <td className="py-3 px-3.5 tabular-nums font-medium">{svc.memoryPct}%</td>
-                        <td className="py-3 px-3.5 tabular-nums">{svc.latencyMs} ms</td>
-                        <td className="py-3 px-3.5 tabular-nums">{svc.queueDepth}</td>
+                        <td className="py-3 px-3.5 tabular-nums font-medium"><MetricValue value={svc.cpuPct} suffix="%" /></td>
+                        <td className="py-3 px-3.5 tabular-nums font-medium"><MetricValue value={svc.memoryPct} suffix="%" /></td>
+                        <td className="py-3 px-3.5 tabular-nums"><MetricValue value={svc.latencyMs} suffix=" ms" /></td>
+                        <td className="py-3 px-3.5 tabular-nums"><MetricValue value={svc.queueDepth} /></td>
                         <td className="py-3 px-3.5">
                           <StatusBadge label={svc.status} tone={getStatusTone(svc.status)} dot />
                         </td>
@@ -531,7 +615,8 @@ export default function SystemMonitoringPage() {
                           <OpButton
                             variant="outline"
                             size="xs"
-                            disabled={!canOpenIncident}
+                            disabled={!canOpenIncident || busy !== null}
+                            isLoading={busy === `incident:${svc.id}`}
                             onClick={() => handleOpenIncident(svc.id)}
                           >
                             <AlertTriangle className="w-3 h-3" />

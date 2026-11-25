@@ -17,13 +17,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prowise.identity.AuthPrincipal;
+import com.prowise.superadmin.common.AdminRequests;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping({"/v1/admin/invoices", "/api/v1/admin/invoices"})
-@Tag(name = "Super Admin Invoices", description = "Invoicing lifecycle, itemization, and dunning reminders")
+@Tag(name = "Super Admin Invoices", description = "Invoicing lifecycle. Mutations need expected_version (409 STALE_VERSION when stale) and accept Idempotency-Key.")
 public class InvoiceController {
 
     private final InvoiceService invoiceService;
@@ -64,59 +64,58 @@ public class InvoiceController {
             HttpServletRequest request,
             @Valid @RequestBody InvoiceDTOs.CreateInvoiceRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(invoiceService.generateInvoice(body, actor));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('invoices.manage')")
-    @Operation(summary = "Update an existing invoice")
+    @Operation(summary = "Update an existing invoice (expected_version required)")
     public ResponseEntity<InvoiceDTOs.InvoiceResponse> updateInvoice(
             HttpServletRequest request,
             @PathVariable String id,
             @Valid @RequestBody InvoiceDTOs.UpdateInvoiceRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.ok(invoiceService.updateInvoice(id, body, actor));
     }
 
     @PostMapping("/{id}/mark-paid")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('invoices.manage')")
-    @Operation(summary = "Mark invoice as paid")
+    @Operation(summary = "Mark invoice as paid (body: expected_version, optional payment_id)")
     public ResponseEntity<InvoiceDTOs.InvoiceResponse> markInvoicePaid(
             HttpServletRequest request,
             @PathVariable String id,
-            @RequestParam(required = false) String paymentId
+            @RequestParam(required = false) String paymentId,
+            @RequestBody(required = false) InvoiceDTOs.MarkPaidRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        return ResponseEntity.ok(invoiceService.markInvoicePaid(id, paymentId, actor));
+        String actor = AdminRequests.actor(request);
+        String payment = body != null && body.paymentId() != null ? body.paymentId() : paymentId;
+        return ResponseEntity.ok(invoiceService.markInvoicePaid(id, payment, body != null ? body.expectedVersion() : null, actor));
     }
 
     @PostMapping("/{id}/void")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('invoices.manage')")
-    @Operation(summary = "Void an invoice")
+    @Operation(summary = "Void an invoice (body: expected_version)")
     public ResponseEntity<InvoiceDTOs.InvoiceResponse> voidInvoice(
             HttpServletRequest request,
-            @PathVariable String id
+            @PathVariable String id,
+            @RequestBody(required = false) AdminRequests.VersionRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        return ResponseEntity.ok(invoiceService.voidInvoice(id, actor));
+        String actor = AdminRequests.actor(request);
+        return ResponseEntity.ok(invoiceService.voidInvoice(id, com.prowise.superadmin.common.AdminRequests.expected(body), actor));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('invoices.manage')")
-    @Operation(summary = "Delete an invoice")
+    @Operation(summary = "Delete an invoice (?expectedVersion= required)")
     public ResponseEntity<Void> deleteInvoice(
             HttpServletRequest request,
-            @PathVariable String id
+            @PathVariable String id,
+            @RequestParam(required = false) Long expectedVersion
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        invoiceService.deleteInvoice(id, actor);
+        String actor = AdminRequests.actor(request);
+        invoiceService.deleteInvoice(id, expectedVersion, actor);
         return ResponseEntity.noContent().build();
     }
 
@@ -128,8 +127,7 @@ public class InvoiceController {
             @PathVariable String id,
             @RequestBody(required = false) InvoiceDTOs.SendReminderRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         invoiceService.sendInvoiceReminder(id, body, actor);
         return ResponseEntity.ok().build();
     }

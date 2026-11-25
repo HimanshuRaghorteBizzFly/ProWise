@@ -33,3 +33,21 @@ export function passwordStrength(password: string): { level: PasswordStrength; s
   if (met < PASSWORD_RULES.length) return { level: met <= 2 ? "weak" : "fair", score };
   return { level: score >= 6 ? "strong" : "good", score };
 }
+
+/** Same sentence the backend PasswordPolicy returns. */
+export const PASSWORD_POLICY_MESSAGE =
+  "Use 12 to 200 characters with an uppercase letter, a lowercase letter, a number and a special character.";
+
+/**
+ * Validates a new password and its confirmation exactly as typed (never trimmed: spaces are characters).
+ * Returns the first problem to show, or null when the server rule is met and both entries match.
+ */
+export function passwordChangeError(newPassword: string, confirmation: string): string | null {
+  const unmet = unmetPasswordRules(newPassword);
+  if (unmet.length > 0) {
+    if (unmet[0].id === "length" && newPassword.length > 200) return "Use at most 200 characters.";
+    return `${PASSWORD_POLICY_MESSAGE} Missing: ${unmet.map((rule) => rule.label.toLowerCase()).join(", ")}.`;
+  }
+  if (newPassword !== confirmation) return "New password and confirmation do not match.";
+  return null;
+}

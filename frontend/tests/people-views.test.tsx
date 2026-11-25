@@ -59,7 +59,7 @@ beforeEach(() => {
 describe("people API client", () => {
   it("creates an invitation with an Idempotency-Key and keeps tokens out of URLs", async () => {
     const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({}), { status: 200 }));
-    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock, isRolePreview: () => false });
+    const client = createApiClient({ baseUrl: "http://api.test", fetch: fetchMock });
 
     await client.createInvitation("org-1", { email: "a@b.test", template_role_id: "r", expires_in_days: 7 });
     await client.previewInvitation("secret-token");

@@ -26,9 +26,15 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class PlatformOperatorController {
 
     private final OperatorService operatorService;
+    private final com.prowise.operator.console.OperatorDashboardService dashboardService;
+    private final com.prowise.operator.console.OperatorPermissionGuard permissionGuard;
 
-    public PlatformOperatorController(OperatorService operatorService) {
+    public PlatformOperatorController(OperatorService operatorService,
+            com.prowise.operator.console.OperatorDashboardService dashboardService,
+            com.prowise.operator.console.OperatorPermissionGuard permissionGuard) {
         this.operatorService = operatorService;
+        this.dashboardService = dashboardService;
+        this.permissionGuard = permissionGuard;
     }
 
     // 1. List Operators
@@ -68,7 +74,7 @@ public class PlatformOperatorController {
     // 4. Update Operator
     @PatchMapping({"/v1/operators/{id}", "/api/v1/operators/{id}", "/v1/admin/operators/{id}", "/api/v1/admin/operators/{id}"})
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
-    @Operation(summary = "Update an operator profile or shift assignment")
+    @Operation(summary = "Update an operator profile or shift assignment (expected_version required)")
     public OperatorDTOs.OperatorResponse updateOperator(
             @PathVariable String id,
             @RequestBody OperatorDTOs.UpdateOperatorRequest request,
@@ -81,31 +87,33 @@ public class PlatformOperatorController {
     // 5. Delete Operator (With protection against deleting last super admin)
     @DeleteMapping({"/v1/operators/{id}", "/api/v1/operators/{id}", "/v1/admin/operators/{id}", "/api/v1/admin/operators/{id}"})
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
-    @Operation(summary = "Delete an operator account")
+    @Operation(summary = "Delete an operator account (?expectedVersion= required)")
     public ResponseEntity<Void> deleteOperator(
             @PathVariable String id,
+            @RequestParam(required = false) Long expectedVersion,
             Authentication authentication
     ) {
         String actor = actorOf(authentication);
-        operatorService.deleteOperator(id, actor);
+        operatorService.deleteOperator(id, expectedVersion, actor);
         return ResponseEntity.noContent().build();
     }
 
     // 6. Toggle or Update Status
     @PostMapping({"/v1/operators/{id}/toggle-status", "/api/v1/operators/{id}/toggle-status", "/v1/admin/operators/{id}/toggle-status", "/api/v1/admin/operators/{id}/toggle-status"})
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
-    @Operation(summary = "Toggle operator active or suspended status")
+    @Operation(summary = "Toggle operator active or suspended status (body: expected_version)")
     public OperatorDTOs.OperatorResponse toggleStatus(
             @PathVariable String id,
+            @RequestBody(required = false) com.prowise.superadmin.common.AdminRequests.VersionRequest body,
             Authentication authentication
     ) {
         String actor = actorOf(authentication);
-        return operatorService.toggleOperatorStatus(id, actor);
+        return operatorService.toggleOperatorStatus(id, com.prowise.superadmin.common.AdminRequests.expected(body), actor);
     }
 
     @PatchMapping({"/v1/operators/{id}/status", "/api/v1/operators/{id}/status", "/v1/admin/operators/{id}/status", "/api/v1/admin/operators/{id}/status"})
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
-    @Operation(summary = "Explicitly set operator status (ACTIVE, INACTIVE, SUSPENDED, INVITED)")
+    @Operation(summary = "Explicitly set operator status (ACTIVE, INACTIVE, SUSPENDED, INVITED); body: status, expected_version")
     public OperatorDTOs.OperatorResponse updateStatus(
             @PathVariable String id,
             @RequestBody(required = false) OperatorDTOs.StatusUpdateRequest body,
@@ -113,33 +121,33 @@ public class PlatformOperatorController {
     ) {
         String actor = actorOf(authentication);
         String status = (body != null) ? body.status() : null;
-        return operatorService.updateOperatorStatus(id, status, actor);
+        return operatorService.updateOperatorStatus(id, status, body != null ? body.expectedVersion() : null, actor);
     }
 
     // 6b. Update Access Level
     @PatchMapping({"/v1/operators/{id}/access-level", "/api/v1/operators/{id}/access-level", "/v1/admin/operators/{id}/access-level", "/api/v1/admin/operators/{id}/access-level"})
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
-    @Operation(summary = "Update operator access level (MAIN_PLATFORM_OPERATOR vs DEPARTMENT_OPERATOR)")
+    @Operation(summary = "Update operator access level (MAIN_PLATFORM_OPERATOR vs DEPARTMENT_OPERATOR); body: access_level, expected_version")
     public OperatorDTOs.OperatorResponse updateAccessLevel(
             @PathVariable String id,
             @RequestBody OperatorDTOs.UpdateAccessLevelRequest body,
             Authentication authentication
     ) {
         String actor = actorOf(authentication);
-        return operatorService.updateAccessLevel(id, body != null ? body.accessLevel() : null, actor);
+        return operatorService.updateAccessLevel(id, body != null ? body.accessLevel() : null, body != null ? body.expectedVersion() : null, actor);
     }
 
     // 6c. Update Department
     @PatchMapping({"/v1/operators/{id}/department", "/api/v1/operators/{id}/department", "/v1/admin/operators/{id}/department", "/api/v1/admin/operators/{id}/department"})
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
-    @Operation(summary = "Update operator assigned department")
+    @Operation(summary = "Update operator assigned department (body: department_id, expected_version)")
     public OperatorDTOs.OperatorResponse updateDepartment(
             @PathVariable String id,
             @RequestBody OperatorDTOs.UpdateDepartmentRequest body,
             Authentication authentication
     ) {
         String actor = actorOf(authentication);
-        return operatorService.updateDepartment(id, body != null ? body.departmentId() : null, actor);
+        return operatorService.updateDepartment(id, body != null ? body.departmentId() : null, body != null ? body.expectedVersion() : null, actor);
     }
 
     // 7. Get Effective Permissions
@@ -153,7 +161,7 @@ public class PlatformOperatorController {
     // 8. Update / Override Permissions
     @PutMapping({"/v1/operators/{id}/permissions", "/api/v1/operators/{id}/permissions", "/v1/admin/operators/{id}/permissions", "/api/v1/admin/operators/{id}/permissions"})
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN')")
-    @Operation(summary = "Set explicit permission overrides for an operator")
+    @Operation(summary = "Set explicit permission overrides for an operator (body: overrides, reset_to_defaults, expected_version of the operator)")
     public OperatorDTOs.EffectivePermissionsResponse updatePermissions(
             @PathVariable String id,
             @RequestBody OperatorDTOs.UpdatePermissionsPayload payload,
@@ -244,10 +252,10 @@ public class PlatformOperatorController {
     // 15. Personalized Department Dashboard Data
     @GetMapping({"/v1/operator/dashboard", "/api/v1/operator/dashboard"})
     @PreAuthorize("hasAuthority('PLATFORM_OPERATOR') or hasAuthority('PLATFORM_SUPER_ADMIN')")
-    @Operation(summary = "Get personalized department telemetry for operator dashboard")
-    public OperatorDTOs.OperatorDashboardResponse getDashboard(Authentication authentication) {
-        String email = emailOf(authentication);
-        return operatorService.getDashboardSummary(email);
+    @Operation(summary = "Department dashboard KPIs counted from real platform data (department_data holds all counts; health_score is null: not measured)")
+    public OperatorDTOs.OperatorDashboardResponse getDashboard(jakarta.servlet.http.HttpServletRequest request) {
+        AuthPrincipal principal = AuthPrincipal.require(request);
+        return dashboardService.summary(principal, permissionGuard.isMainOperator(principal));
     }
 
     /** The signed-in email. Authentication#getName() would be the whole principal record (session id included). */

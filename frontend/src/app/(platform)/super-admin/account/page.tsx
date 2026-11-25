@@ -8,7 +8,8 @@ import type { MeResponse } from "@/types/api";
 import { isPasswordAcceptable } from "@/lib/password-policy";
 import { PasswordInput, PasswordStrengthChecklist } from "@/components/auth/PasswordFields";
 import { formatDateTime } from "../_services/super-admin-service";
-import { AdminButton, ConfirmActionModal, PageHeader, StatusBadge, SurfaceCard } from "../_components/SuperAdminPrimitives";
+import { AdminButton, ConfirmActionModal, PageHeader, PaginationBar, StatusBadge, SurfaceCard } from "../_components/SuperAdminPrimitives";
+import { usePagedRows } from "@/components/super-admin/use-paged-rows";
 
 /**
  * Super Admin profile and security settings, backed by the real identity API:
@@ -120,6 +121,7 @@ export default function SuperAdminAccountPage() {
   };
 
   const mismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
+  const { pageRows: sessionPage, barProps: sessionBarProps } = usePagedRows(sessions);
 
   return (
     <div className="space-y-6">
@@ -232,7 +234,7 @@ export default function SuperAdminAccountPage() {
             {sessions.length === 0 && !sessionsLoading && (
               <p className="text-xs text-[var(--color-text-muted)]">No active sessions found.</p>
             )}
-            {sessions.map((session) => (
+            {sessionPage.map((session) => (
               <div
                 key={session.id}
                 className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5"
@@ -257,6 +259,7 @@ export default function SuperAdminAccountPage() {
               </div>
             ))}
           </div>
+          {sessions.length > 0 && <PaginationBar {...sessionBarProps} />}
         </SurfaceCard>
 
         <SurfaceCard className="p-4 sm:p-6 space-y-3">

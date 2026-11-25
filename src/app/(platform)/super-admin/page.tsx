@@ -63,6 +63,7 @@ import { UpcomingEventsWidget } from "./_components/UpcomingEventsWidget";
 import { AdminCalendarEvent } from "./_types";
 import { generateSynchronizedCalendarEvents } from "./_services/calendar-service";
 
+
 const PLAN_COLORS = ["#64748B", "#3B82F6", "#8B5CF6", "#10B981", "#F59E0B"];
 
 export default function SuperAdminDashboardPage() {
@@ -78,6 +79,7 @@ export default function SuperAdminDashboardPage() {
   const incidents = useSuperAdminStore((s) => s.incidents);
   const accessApprovals = useSuperAdminStore((s) => s.accessApprovals);
   const manualCalendarEvents = useSuperAdminStore((s) => s.manualCalendarEvents);
+  const activeRoleId = useSuperAdminStore((s) => s.activeRoleId);
 
   const { can } = useAdminPermissions();
 
@@ -362,7 +364,6 @@ export default function SuperAdminDashboardPage() {
       <PageHeader
         title="Platform Overview"
         description="Super Admin mission control: cross-tenant health, revenue trajectory, administrative calendar, and operational governance."
-        simulationLabel="Reactive Demo Data"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {/* Live Auto-Refresh Controls */}

@@ -33,7 +33,7 @@ public final class TestAccounts {
     public static Account signUpVerifyAndLogin(MockMvc mockMvc, JdbcTemplate jdbc, AccountTokenService tokens,
             ObjectMapper objectMapper, String email, String password) throws Exception {
         mockMvc.perform(post("/v1/auth/signup")
-                        .header("X-Forwarded-For", randomClientAddress())
+                        .with(randomClient())
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(java.util.Map.of(
                                 "email", email, "password", password, "name", email.split("@")[0]))))
@@ -51,6 +51,12 @@ public final class TestAccounts {
                 .andReturn();
         JsonNode body = objectMapper.readTree(login.getResponse().getContentAsString());
         return new Account(id, email, body.path("access_token").asText(), login);
+    }
+
+    /** A request from a random private address, set on the connection (the server never reads X-Forwarded-For). */
+    public static org.springframework.test.web.servlet.request.RequestPostProcessor randomClient() {
+        String address = randomClientAddress();
+        return request -> { request.setRemoteAddr(address); return request; };
     }
 
     public static String randomClientAddress() {

@@ -1,13 +1,23 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 
+export interface TableProps extends React.TableHTMLAttributes<HTMLTableElement> {
+  scrollRegionLabel?: string;
+}
+
 export function Table({
   className,
   children,
+  scrollRegionLabel,
   ...props
-}: React.TableHTMLAttributes<HTMLTableElement>) {
+}: TableProps) {
   return (
-    <div className="w-full overflow-x-auto rounded-xl border border-app-border">
+    <div
+      className="w-full overflow-x-auto rounded-xl border border-app-border"
+      role={scrollRegionLabel ? "region" : undefined}
+      aria-label={scrollRegionLabel}
+      tabIndex={scrollRegionLabel ? 0 : undefined}
+    >
       <table className={cn("w-full text-left text-sm text-app-text-primary", className)} {...props}>
         {children}
       </table>

@@ -48,7 +48,7 @@ public class OperatorAuthDTOs {
 
     public record OperatorAuthResponse(
             String accessToken,
-            String refreshToken,
+            @com.fasterxml.jackson.annotation.JsonIgnore String refreshToken,
             String tokenType,
             long expiresIn,
             OperatorInfo operator,

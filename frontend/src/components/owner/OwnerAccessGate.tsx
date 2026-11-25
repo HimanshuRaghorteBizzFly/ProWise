@@ -1,12 +1,10 @@
 "use client";
 
 import React from "react";
-import { useParams } from "next/navigation";
 
 import { PanelLayout } from "@/components/layouts/panel-layout";
 import { OwnerPageState } from "@/components/owner/OwnerPageState";
 import { usePermissions } from "@/hooks/usePermissions";
-import { previewEnabled } from "@/lib/permissions";
 import { useAuthStore } from "@/store/auth-store";
 import type { PermissionKey } from "@/types/permission";
 
@@ -34,32 +32,27 @@ export function OwnerAccessGate({
   loading = false,
   accessLostMessage = "Your workspace context is missing or expired. Select an authorized workspace and try again.",
 }: OwnerAccessGateProps) {
-  const { currentOrg, currentRole, sessionStatus } = useAuthStore();
-  const isRolePreview = useAuthStore((state) => state.isRolePreview) && previewEnabled();
+  const { currentOrg, currentRole } = useAuthStore();
   const { can, canAny, status, retry } = usePermissions();
-  const params = useParams();
-  const routeOrgId = typeof params?.orgId === "string" ? params.orgId : "";
+  const reload = () => {
+    if (typeof window !== "undefined") window.location.reload();
+  };
   const shell = (content: React.ReactNode) => (
     <PanelLayout title={workspaceLabel} breadcrumb={[{ label: currentOrg.name || "Organization" }]}>
       {content}
     </PanelLayout>
   );
 
-  // Wait for the server session before judging anything (no "restricted access" flash after sign-up or sign-in).
-  if (loading || status === "loading" || (!isRolePreview && sessionStatus === "checking")) {
+  if (!currentOrg?.id || !currentRole || status === "access-lost") {
+    return shell(<OwnerPageState state="access-lost" description={accessLostMessage} onRetry={reload} />);
+  }
+  if (loading || status === "loading") {
     return shell(<OwnerPageState state="loading" label={`Checking access to the ${workspaceLabel.toLowerCase()}`} />);
   }
   if (status === "unauthenticated") {
     return shell(
-      <OwnerPageState state="error" title="Session expired" description="Your session has ended. Sign in again to continue."
-        onRetry={() => window.location.assign("/login")} />,
+      <OwnerPageState state="error" title="Session expired" description="Your session has ended. Sign in again to continue." onRetry={reload} />,
     );
-  }
-  // The page's organization must be the session's active organization (task 1.3: switching is explicit).
-  const wrongWorkspace = !isRolePreview && routeOrgId !== "" && routeOrgId !== currentOrg?.id;
-  if (!currentOrg?.id || !currentRole || status === "access-lost" || wrongWorkspace) {
-    return shell(<OwnerPageState state="access-lost" description={accessLostMessage}
-      onRetry={() => window.location.assign("/select-workspace")} />);
   }
   if (status === "error") {
     return shell(

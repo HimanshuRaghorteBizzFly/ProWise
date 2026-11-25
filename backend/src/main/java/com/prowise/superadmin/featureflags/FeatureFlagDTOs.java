@@ -16,7 +16,8 @@ public final class FeatureFlagDTOs {
             boolean enabled,
             String audience,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            long version
     ) {
         public static FeatureFlagResponse fromEntity(FeatureFlagEntity e) {
             return new FeatureFlagResponse(
@@ -27,7 +28,8 @@ public final class FeatureFlagDTOs {
                     Boolean.TRUE.equals(e.getEnabled()),
                     e.getAudience(),
                     e.getCreatedAt(),
-                    e.getUpdatedAt()
+                    e.getUpdatedAt(),
+                    e.getVersion() == null ? 0L : e.getVersion()
             );
         }
     }
@@ -44,10 +46,12 @@ public final class FeatureFlagDTOs {
             String label,
             String description,
             Boolean enabled,
-            String audience
+            String audience,
+            Long expectedVersion
     ) {}
 
     public record ToggleFlagRequest(
-            @NotNull Boolean enabled
+            @NotNull Boolean enabled,
+            Long expectedVersion
     ) {}
 }

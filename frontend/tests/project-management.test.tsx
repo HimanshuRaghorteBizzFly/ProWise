@@ -175,7 +175,6 @@ describe("Task 2.1: Project Management Frontend", () => {
           projects={mockProjects}
           users={[{ id: "usr-dev-1", name: "Alice Developer", email: "alice@example.com" }]}
           teams={[]}
-          source="api"
           can={can}
         />
       );

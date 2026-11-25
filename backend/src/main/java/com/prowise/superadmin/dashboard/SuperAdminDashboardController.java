@@ -21,7 +21,7 @@ public class SuperAdminDashboardController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('audit.view') or hasAuthority('orgs.view')")
+    @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('ROLE_PLATFORM_SUPER_ADMIN') or hasAuthority('ROLE_SUPER_ADMIN') or hasAuthority('SUPER_ADMIN') or hasAuthority('audit.view') or hasAuthority('orgs.view')")
     @Operation(summary = "Get aggregated executive dashboard telemetry, revenue overview, and recent activity")
     public ResponseEntity<SuperAdminDashboardDTOs.SuperAdminDashboardResponse> getDashboard() {
         return ResponseEntity.ok(dashboardService.getDashboardData());

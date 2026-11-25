@@ -130,7 +130,7 @@ public class DeveloperServiceTest {
         task2.setDueDate(Instant.now().plusSeconds(86400));
 
         when(workItemRepository.findByOrgIdAndPrimaryAssigneeId(ORG, USER)).thenReturn(List.of(task1, task2));
-        when(bugRepository.countOpenAssigned(ORG, USER, "RESOLVED")).thenReturn(1L);
+        when(bugRepository.countOpenAssigned(ORG, USER)).thenReturn(1L);
         when(codeReviewRepository.countByOrgIdAndReviewerIdAndStatus(ORG, USER, "PENDING")).thenReturn(2L);
         when(developerNotificationRepository.countByOrgIdAndUserIdAndReadFalse(ORG, USER)).thenReturn(3L);
         when(gitHubActivityRepository.findByOrgIdOrderByCreatedAtDesc(ORG)).thenReturn(List.of());
@@ -146,6 +146,31 @@ public class DeveloperServiceTest {
         assertEquals(2, summary.pendingReviewsCount());
         assertEquals(3, summary.unreadNotificationsCount());
         assertEquals(1, summary.upcomingDeadlines().size());
+    }
+
+    @Test
+    @DisplayName("Regression: a deadline's project_code is the project's key, the id stays in project_id")
+    void deadlineProjectCodeIsTheProjectKey() {
+        ProjectEntity proj = new ProjectEntity();
+        proj.setId("proj-77");
+        proj.setOrgId(ORG);
+        proj.setKey("CRM");
+        proj.setLifecycle("ACTIVE");
+        when(projectRepository.findAssignedProjectsInOrg(ORG, USER)).thenReturn(List.of(proj));
+        WorkItemEntity task = new WorkItemEntity();
+        task.setId("task-9");
+        task.setKey("CRM-9");
+        task.setProjectId("proj-77");
+        task.setPrimaryAssigneeId(USER);
+        task.setState("IN_PROGRESS");
+        task.setDueDate(Instant.now().plusSeconds(3600));
+        when(workItemRepository.findByOrgIdAndPrimaryAssigneeId(ORG, USER)).thenReturn(List.of(task));
+
+        DeveloperDTOs.DeadlineItemDTO deadline = developerService.getDashboardSummary(actor(USER)).upcomingDeadlines().get(0);
+
+        assertEquals("CRM", deadline.projectCode());
+        assertEquals("proj-77", deadline.projectId());
+        assertEquals("CRM-9", deadline.key());
     }
 
     @Test

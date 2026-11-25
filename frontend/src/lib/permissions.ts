@@ -85,50 +85,22 @@ export function canAnyWithGrants(
   return keys.some((key) => canWithGrants(grants, key, target));
 }
 
-export interface PermissionEnv {
-  nodeEnv: string | undefined;
-  useMocks: string | undefined;
-}
-
-export function readPermissionEnv(): PermissionEnv {
-  return { nodeEnv: process.env.NODE_ENV, useMocks: process.env.NEXT_PUBLIC_USE_MOCKS };
-}
-
-/**
- * Sample (fixture) data only when explicitly requested with NEXT_PUBLIC_USE_MOCKS=true, and never in a production
- * build. Normal use always shows the real server data or a real error / empty / "Later" state.
- */
-export function mocksAllowed(env: PermissionEnv): boolean {
-  return env.nodeEnv !== "production" && env.useMocks === "true";
-}
-
-/** Dev preview tools (Quick Navigator, role preview): same rule as sample data. */
-export function previewEnabled(env: PermissionEnv = readPermissionEnv()): boolean {
-  return mocksAllowed(env);
-}
-
-/** Fixture is used without calling the API only when explicitly requested outside production. */
-export function mocksRequested(env: PermissionEnv, rolePreview = false): boolean {
-  return mocksAllowed(env) && (env.useMocks === "true" || rolePreview);
-}
-
 /** Status 0 (network failure) or a gateway error from the Next.js /api proxy. 500 is a normal error. */
 export function isBackendUnreachable(status: number): boolean {
   return status === 0 || status === 502 || status === 503 || status === 504;
 }
 
-export type FailureKind = "fixture" | "unauthenticated" | "forbidden" | "not-found" | "error";
+export type FailureKind = "unauthenticated" | "forbidden" | "not-found" | "error";
 
 /**
- * One rule for permissions and page data. Unreachable backend (network failure, missing base URL,
- * proxy 502/503/504) falls back to the typed fixture outside production only. 401/403/404 never do.
+ * One rule for permissions and page data. There is no sample-data fallback: an unreachable backend is an error
+ * like any other, shown as an error state with retry.
  */
-export function classifyFailure(error: unknown, env: PermissionEnv): FailureKind {
+export function classifyFailure(error: unknown): FailureKind {
   const status =
     typeof error === "object" && error !== null && "status" in error && typeof error.status === "number"
       ? error.status
       : 0;
-  if (isBackendUnreachable(status)) return mocksAllowed(env) ? "fixture" : "error";
   if (status === 401) return "unauthenticated";
   if (status === 403) return "forbidden";
   if (status === 404) return "not-found";

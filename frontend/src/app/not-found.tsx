@@ -19,7 +19,7 @@ export default function RootNotFound() {
         pathname.includes("progress") ||
         pathname.includes("dashboard")
       ) {
-        router.replace("/org/org-acme/viewer/dashboard");
+        router.replace("/select-workspace");
       }
     }
   }, [router]);
@@ -39,10 +39,10 @@ export default function RootNotFound() {
 
         <div className="pt-2 flex flex-col gap-2.5">
           <Link
-            href="/org/org-acme/viewer/dashboard"
+            href="/select-workspace"
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-xs"
           >
-            <LayoutDashboard className="w-4 h-4" /> Go to Viewer Dashboard
+            <LayoutDashboard className="w-4 h-4" /> Go to my workspaces
           </Link>
           <Link
             href="/"

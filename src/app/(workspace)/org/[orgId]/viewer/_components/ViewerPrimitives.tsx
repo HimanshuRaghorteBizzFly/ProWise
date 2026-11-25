@@ -3,7 +3,6 @@
 import React from "react";
 import {
   Lock,
-  Sparkles,
   AlertCircle,
   ChevronLeft,
   ChevronRight,
@@ -15,7 +14,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
-  FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +26,6 @@ export interface ViewerPageHeaderProps {
   description?: string;
   badge?: string;
   readOnly?: boolean;
-  simulationLabel?: string;
   actions?: React.ReactNode;
 }
 
@@ -37,7 +34,6 @@ export function ViewerPageHeader({
   description,
   badge,
   readOnly = true,
-  simulationLabel = "Read-Only Scoped Data",
   actions,
 }: ViewerPageHeaderProps) {
   return (
@@ -59,15 +55,6 @@ export function ViewerPageHeader({
             >
               <Lock className="w-3 h-3 text-slate-500" />
               <span>Read-Only</span>
-            </span>
-          )}
-          {simulationLabel && (
-            <span
-              title="Viewer metrics and telemetry are scoped from persistent organization demo records."
-              className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 dark:text-blue-300 select-none"
-            >
-              <FlaskConical className="w-3 h-3 text-blue-500" />
-              <span>{simulationLabel}</span>
             </span>
           )}
         </div>
@@ -492,21 +479,6 @@ export function ReadOnlyBadge({ className }: { className?: string }) {
     >
       <Lock className="w-3 h-3 text-slate-500" />
       <span>Read-Only</span>
-    </span>
-  );
-}
-
-export function SimulatedMetricBadge({ className }: { className?: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-900 select-none",
-        className
-      )}
-      title="Metrics calculated from active baseline and developer check-in fixtures"
-    >
-      <Sparkles className="w-2.5 h-2.5 text-blue-500" />
-      <span>Simulated Metric</span>
     </span>
   );
 }

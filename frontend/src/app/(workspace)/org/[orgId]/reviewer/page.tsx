@@ -4,7 +4,6 @@ import { CheckCircle2, GitPullRequestArrow, RotateCcw } from "lucide-react";
 import { useParams } from "next/navigation";
 
 import {
-  ButtonLink,
   KpiGrid,
   KpiTile,
   PageFrame,
@@ -41,7 +40,6 @@ export default function ReviewerDashboardPage() {
       status={status}
       errorMessage={errorMessage}
       onRetry={retry}
-      actions={<ButtonLink href={href("queue")}><GitPullRequestArrow className="w-3.5 h-3.5" /> Review queue</ButtonLink>}
     >
       <KpiGrid>
         <KpiTile
@@ -50,28 +48,25 @@ export default function ReviewerDashboardPage() {
           icon={GitPullRequestArrow}
           tone="blue"
           chip={{ label: "Assigned", tone: "info" }}
-          footer="Review queue"
-          href={href("queue")}
+          footer="Assigned to you"
         />
         <KpiTile
           label="Approved reviews"
           value={metrics.approved}
           icon={CheckCircle2}
           tone="emerald"
-          footer="Review history"
-          href={href("history")}
+          footer="Assigned to you"
         />
         <KpiTile
           label="Changes requested"
           value={metrics.changesRequested}
           icon={RotateCcw}
           tone="rose"
-          footer="Review history"
-          href={href("history")}
+          footer="Assigned to you"
         />
       </KpiGrid>
 
-      <Panel title="Assigned reviews" description="Review status and pull-request details are persisted records; Git activity does not set project completion." icon={GitPullRequestArrow} action={{ label: "Queue", href: href("queue") }}>
+      <Panel title="Assigned reviews" description="Review status and pull-request details are persisted records; Git activity does not set project completion." icon={GitPullRequestArrow}>
         <div className="space-y-0.5">
           {codeReviews.length === 0 && (
             <p className="py-6 text-center text-xs text-[var(--color-text-muted)]">No assigned code reviews were returned.</p>

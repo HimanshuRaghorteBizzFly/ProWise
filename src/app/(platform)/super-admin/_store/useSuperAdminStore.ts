@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { safeJSONStorage } from "@/lib/safe-storage";
 import {
   AccessApprovalRequest,
   ActivityCategory,
@@ -20,6 +21,7 @@ import {
   PaymentMethodType,
   PaymentTransaction,
   PermissionKey,
+  PermissionOverrideItem,
   PlatformBrandingPreferences,
   PlatformIntegration,
   PlatformOperator,
@@ -148,7 +150,11 @@ interface SuperAdminStoreState {
   createOperator: (input: Omit<PlatformOperator, "id" | "createdAt" | "lastActiveAt">) => { ok: boolean; error?: string };
   updateOperator: (id: string, updates: Partial<PlatformOperator>) => { ok: boolean; error?: string };
   toggleOperatorStatus: (id: string) => { ok: boolean; error?: string };
+  setOperatorStatus: (id: string, status: PlatformOperator["status"], reason?: string) => { ok: boolean; error?: string };
   deleteOperator: (id: string) => { ok: boolean; error?: string };
+  revokeOperatorSessions: (id: string) => { ok: boolean; count: number; error?: string };
+  updateOperatorPermissions: (id: string, overrides: PermissionOverrideItem[]) => { ok: boolean; error?: string };
+  resendOperatorInvite: (id: string) => { ok: boolean; error?: string };
 
   // Roles
   createRole: (input: Omit<AdminRole, "id" | "createdAt" | "updatedAt" | "isSystem" | "slug">) => { ok: boolean; error?: string; role?: AdminRole };
@@ -380,7 +386,7 @@ const getInitialSnapshot = () => ({
   supportTickets: SEED_SUPPORT_TICKETS,
   accountProfile: SEED_ACCOUNT_PROFILE,
   activeRoleId: "role-super-admin",
-  activeOperatorId: "op-1",
+  activeOperatorId: "op-main-1",
   sidebarCollapsed: false,
 });
 
@@ -397,9 +403,15 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
 
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setActiveRolePreview: (roleId) => {
-        const role = get().roles.find((r) => r.id === roleId);
+        const role =
+          get().roles.find(
+            (r) =>
+              r.id === roleId ||
+              r.slug === roleId ||
+              (roleId.includes("super-admin") || roleId === "role-sa" ? r.id === "role-super-admin" : false)
+          ) || get().roles[0];
         if (!role) return;
-        set({ activeRoleId: roleId });
+        set({ activeRoleId: role.id });
         get().logActivity(
           "ROLE",
           "ROLE_PREVIEW_SWITCHED",
@@ -417,8 +429,8 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
           category,
           action,
           summary,
-          actorName: state.accountProfile?.name || actor?.name || "Arthur Pendelton",
-          actorEmail: state.accountProfile?.email || actor?.email || "superadmin@prowise.io",
+          actorName: state.accountProfile?.name || actor?.name || "Super Admin",
+          actorEmail: state.accountProfile?.email || actor?.email || "superadmin@prowise.com",
           targetLabel,
           severity,
           timestamp: new Date().toISOString(),
@@ -721,17 +733,87 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         const state = get();
         const target = state.operators.find((o) => o.id === id);
         if (!target) return { ok: false, error: "Operator not found." };
-        if (target.id === state.activeOperatorId) {
-          return { ok: false, error: "Cannot delete the currently signed-in Super Admin." };
+        set((s) => ({ operators: s.operators.filter((o) => o.id !== id) }));
+        get().logActivity("OPERATOR", "OPERATOR_REMOVED", `Removed operator ${target.name}`, "WARNING", target.email);
+        return { ok: true };
+      },
+
+      revokeOperatorSessions: (id) => {
+        const state = get();
+        const target = state.operators.find((o) => o.id === id);
+        if (!target) return { ok: false, count: 0, error: "Operator not found." };
+        const count = target.activeSessionsCount || 1;
+        set((s) => ({
+          operators: s.operators.map((op) =>
+            op.id === id ? { ...op, activeSessionsCount: 0 } : op
+          ),
+        }));
+        get().logActivity(
+          "OPERATOR",
+          "OPERATOR_UPDATED",
+          `Revoked ${count} active session(s) for ${target.name} (${target.email})`,
+          "WARNING",
+          target.email
+        );
+        return { ok: true, count };
+      },
+
+      updateOperatorPermissions: (id, overrides) => {
+        const state = get();
+        const target = state.operators.find((o) => o.id === id);
+        if (!target) return { ok: false, error: "Operator not found." };
+        set((s) => ({
+          operators: s.operators.map((op) =>
+            op.id === id ? { ...op, permissionOverrides: overrides } : op
+          ),
+        }));
+        get().logActivity(
+          "OPERATOR",
+          "OPERATOR_UPDATED",
+          `Updated permission overrides (${overrides.length} rules) for ${target.name}`,
+          "INFO",
+          target.email
+        );
+        return { ok: true };
+      },
+
+      setOperatorStatus: (id, newStatus, reason) => {
+        const state = get();
+        const target = state.operators.find((o) => o.id === id);
+        if (!target) return { ok: false, error: "Operator not found." };
+        if (target.id === state.activeOperatorId && newStatus !== "ACTIVE") {
+          return { ok: false, error: "You cannot change status of your own active session operator." };
         }
         const activeSuperAdmins = state.operators.filter(
           (o) => o.roleId === "role-super-admin" && o.status === "ACTIVE"
         );
-        if (target.roleId === "role-super-admin" && target.status === "ACTIVE" && activeSuperAdmins.length <= 1) {
-          return { ok: false, error: "Cannot remove the last active Super Administrator." };
+        if (target.roleId === "role-super-admin" && newStatus !== "ACTIVE" && activeSuperAdmins.length <= 1) {
+          return { ok: false, error: "At least one active Super Administrator is required." };
         }
-        set((s) => ({ operators: s.operators.filter((o) => o.id !== id) }));
-        get().logActivity("OPERATOR", "OPERATOR_REMOVED", `Removed operator ${target.name}`, "WARNING", target.email);
+        set((s) => ({
+          operators: s.operators.map((op) => (op.id === id ? { ...op, status: newStatus } : op)),
+        }));
+        get().logActivity(
+          "OPERATOR",
+          newStatus === "SUSPENDED" ? "OPERATOR_DEACTIVATED" : "OPERATOR_UPDATED",
+          `Operator ${target.name} status changed to ${newStatus}${reason ? `: ${reason}` : ""}`,
+          newStatus === "SUSPENDED" ? "WARNING" : "INFO",
+          target.email
+        );
+        return { ok: true };
+      },
+
+      resendOperatorInvite: (id) => {
+        const state = get();
+        const target = state.operators.find((o) => o.id === id);
+        if (!target) return { ok: false, error: "Operator not found." };
+        get().logActivity(
+          "OPERATOR",
+          "OPERATOR_CREATED",
+          `Resent platform operator invitation email to ${target.email}`,
+          "INFO",
+          target.email
+        );
         return { ok: true };
       },
 
@@ -2208,7 +2290,7 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
 
       decideAccessApproval: (id, decision, customHours) => {
         const target = get().accessApprovals.find((a) => a.id === id);
-        const reviewer = get().accountProfile.name || "Arthur Pendelton";
+        const reviewer = get().accountProfile.name || "Super Admin";
         set((s) => ({
           accessApprovals: s.accessApprovals.map((a) =>
             a.id === id
@@ -2235,7 +2317,7 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
 
       revokeAccessApproval: (id) => {
         const target = get().accessApprovals.find((a) => a.id === id);
-        const reviewer = get().accountProfile.name || "Arthur Pendelton";
+        const reviewer = get().accountProfile.name || "Super Admin";
         set((s) => ({
           accessApprovals: s.accessApprovals.map((a) =>
             a.id === id ? { ...a, status: "REVOKED", reviewedBy: reviewer, reviewedAt: new Date().toISOString() } : a
@@ -2381,7 +2463,7 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         // Sync to operator store if available
         try {
           if (typeof window !== "undefined") {
-            const opStore = usePlatformOperatorStore.getState();
+            const opStore = usePlatformOperatorStore.getState() as any;
             opStore.createTicket({
               orgId,
               orgName: org?.name || orgId,
@@ -2416,8 +2498,8 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         // Synchronize with Platform Operator store
         try {
           if (typeof window !== "undefined") {
-            const opStore = usePlatformOperatorStore.getState();
-            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === id);
+            const opStore = usePlatformOperatorStore.getState() as any;
+            const matched = opStore.tickets?.find((t: any) => t.ticketNumber === target.ticketNumber || t.id === id);
             if (matched) {
               const opUpdates: any = {};
               if (updates.status) opUpdates.status = updates.status === "Closed" ? "Resolved" : updates.status;
@@ -2437,8 +2519,8 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         const profile = get().accountProfile;
         const newMsg: TicketMessage = {
           id: `msg-${Date.now()}`,
-          senderName: profile.name || "Arthur Pendelton",
-          senderEmail: profile.email || "superadmin@prowise.io",
+          senderName: profile.name || "Super Admin",
+          senderEmail: profile.email || "superadmin@prowise.com",
           senderRole: "super-admin",
           message: message.trim(),
           isInternal,
@@ -2448,7 +2530,7 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         const auditItem: TicketAuditEvent = {
           id: `aud-${Date.now()}`,
           action: isInternal ? "Internal Staff Note Added" : "Public Customer Reply Sent",
-          actor: profile.name || "Arthur Pendelton",
+          actor: profile.name || "Super Admin",
           timestamp: now,
           details: isInternal ? "Private note for internal governance" : "Delivered to customer contact email",
         };
@@ -2477,8 +2559,8 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         // Sync comments to operator store
         try {
           if (typeof window !== "undefined") {
-            const opStore = usePlatformOperatorStore.getState();
-            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            const opStore = usePlatformOperatorStore.getState() as any;
+            const matched = opStore.tickets?.find((t: any) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
             if (matched) {
               opStore.addTicketComment(
                 matched.id,
@@ -2499,7 +2581,7 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         const auditItem: TicketAuditEvent = {
           id: `aud-${Date.now()}`,
           action: "Operator Reassigned",
-          actor: state.accountProfile.name || "Arthur Pendelton",
+          actor: state.accountProfile.name || "Super Admin",
           timestamp: now,
           details: `Reassigned ticket ownership to ${opName} (${op?.department || "Operations"})`,
         };
@@ -2525,8 +2607,8 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
 
         try {
           if (typeof window !== "undefined") {
-            const opStore = usePlatformOperatorStore.getState();
-            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            const opStore = usePlatformOperatorStore.getState() as any;
+            const matched = opStore.tickets?.find((t: any) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
             if (matched) {
               opStore.updateTicket(matched.id, { assignee: opName });
             }
@@ -2544,7 +2626,7 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         const auditItem: TicketAuditEvent = {
           id: `aud-${Date.now()}`,
           action: "Priority Changed",
-          actor: state.accountProfile.name || "Arthur Pendelton",
+          actor: state.accountProfile.name || "Super Admin",
           timestamp: now,
           details: `Changed priority from ${target.priority} to ${priority} (${slaMinutes}m SLA target)`,
         };
@@ -2572,8 +2654,8 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
 
         try {
           if (typeof window !== "undefined") {
-            const opStore = usePlatformOperatorStore.getState();
-            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            const opStore = usePlatformOperatorStore.getState() as any;
+            const matched = opStore.tickets?.find((t: any) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
             if (matched) {
               opStore.updateTicket(matched.id, { priority: priority as any });
             }
@@ -2589,7 +2671,7 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         const auditItem: TicketAuditEvent = {
           id: `aud-${Date.now()}`,
           action: "Ticket Escalated",
-          actor: state.accountProfile.name || "Arthur Pendelton",
+          actor: state.accountProfile.name || "Super Admin",
           timestamp: now,
           details: reason || "Escalated for Super Admin leadership oversight and immediate resolution",
         };
@@ -2614,8 +2696,8 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
 
         try {
           if (typeof window !== "undefined") {
-            const opStore = usePlatformOperatorStore.getState();
-            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            const opStore = usePlatformOperatorStore.getState() as any;
+            const matched = opStore.tickets?.find((t: any) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
             if (matched) {
               opStore.updateTicket(matched.id, { status: "Escalated" });
             }
@@ -2631,7 +2713,7 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         const auditItem: TicketAuditEvent = {
           id: `aud-${Date.now()}`,
           action: "Ticket Resolved",
-          actor: state.accountProfile.name || "Arthur Pendelton",
+          actor: state.accountProfile.name || "Super Admin",
           timestamp: now,
           details: `Resolution: ${resolutionNotes}${rootCause ? ` (Root Cause: ${rootCause})` : ""}`,
         };
@@ -2660,8 +2742,8 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
 
         try {
           if (typeof window !== "undefined") {
-            const opStore = usePlatformOperatorStore.getState();
-            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            const opStore = usePlatformOperatorStore.getState() as any;
+            const matched = opStore.tickets?.find((t: any) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
             if (matched) {
               opStore.updateTicket(matched.id, { status: "Resolved", slaState: "On Track" });
             }
@@ -2677,7 +2759,7 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         const auditItem: TicketAuditEvent = {
           id: `aud-${Date.now()}`,
           action: "Ticket Reopened",
-          actor: state.accountProfile.name || "Arthur Pendelton",
+          actor: state.accountProfile.name || "Super Admin",
           timestamp: now,
           details: `Reopened ticket: ${reason}`,
         };
@@ -2704,8 +2786,8 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
 
         try {
           if (typeof window !== "undefined") {
-            const opStore = usePlatformOperatorStore.getState();
-            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            const opStore = usePlatformOperatorStore.getState() as any;
+            const matched = opStore.tickets?.find((t: any) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
             if (matched) {
               opStore.updateTicket(matched.id, { status: "Open" });
             }
@@ -2721,7 +2803,7 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         const auditItem: TicketAuditEvent = {
           id: `aud-${Date.now()}`,
           action: "Ticket Closed & Archived",
-          actor: state.accountProfile.name || "Arthur Pendelton",
+          actor: state.accountProfile.name || "Super Admin",
           timestamp: now,
           details: "Case closed permanently and archived to customer support history",
         };
@@ -2747,8 +2829,8 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
 
         try {
           if (typeof window !== "undefined") {
-            const opStore = usePlatformOperatorStore.getState();
-            const matched = opStore.tickets.find((t) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
+            const opStore = usePlatformOperatorStore.getState() as any;
+            const matched = opStore.tickets?.find((t: any) => t.ticketNumber === target.ticketNumber || t.id === ticketId);
             if (matched) {
               opStore.updateTicket(matched.id, { status: "Resolved" });
             }
@@ -2781,7 +2863,7 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
         const auditItem: TicketAuditEvent = {
           id: `aud-${Date.now()}`,
           action: "Linked to Platform Incident",
-          actor: state.accountProfile.name || "Arthur Pendelton",
+          actor: state.accountProfile.name || "Super Admin",
           timestamp: now,
           details: `Linked to platform incident ${incident?.incidentCode || incidentId}: ${incident?.title || ""}`,
         };
@@ -2973,13 +3055,26 @@ export const useSuperAdminStore = create<SuperAdminStoreState>()(
       },
     }),
     {
-      name: "prowise-super-admin-store-v4",
+      name: "prowise-super-admin-store-v11",
+      storage: safeJSONStorage,
       skipHydration: true,
       onRehydrateStorage: () => (state) => {
         if (state) {
           const { roles: reconciled, migrated } = reconcileRoles(state.roles);
           if (migrated || reconciled.length !== state.roles.length) {
             state.roles = reconciled;
+          }
+          // Enforce platform operator policy & purge any Super Admin records from operators
+          const cleanOps = (state.operators || []).filter(
+            (op) =>
+              op.roleId !== "role-super-admin" &&
+              !op.name.toLowerCase().includes("super admin") &&
+              !op.email.toLowerCase().includes("ajrockstar3888")
+          );
+          if (cleanOps.length === 0) {
+            state.operators = SEED_OPERATORS;
+          } else {
+            state.operators = cleanOps;
           }
           const validRoleIds = new Set(state.roles.map((r) => r.id));
           state.operators = state.operators.map((op) => {

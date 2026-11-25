@@ -13,13 +13,27 @@ import {
   Plus,
   Send,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
-import { OperatorTicket } from "../_types";
-import { exportRowsToCsv, formatDateTime, isValidEmail } from "../_services/operator-service";
+import type { OpsSupportTicket, TicketPriority, TicketStatus } from "@/types/admin-operations";
+import { useOperatorPermissions } from "../_services/operator-access";
+import { operatorApi } from "../_services/operator-api";
+import { exportRowsToCsv, formatDateTime } from "../_services/operator-service";
+import {
+  MutationNotice,
+  NOT_AVAILABLE,
+  NotAvailableButton,
+  NotAvailableText,
+  OperatorResourceStatus,
+  humanizeCode,
+  operatorChoices,
+  readyValue,
+  rowsOf,
+  useOperatorDirectory,
+  useOperatorMutation,
+  useOperatorResource,
+} from "../_components/OperatorLive";
 import {
   BulkSelectionBar,
   DemoDataBanner,
-  EmptyState,
   FilterBar,
   KpiCard,
   OpButton,
@@ -38,70 +52,78 @@ import {
   useTableSelection,
 } from "../_components/OperatorPrimitives";
 
-const OPERATORS = ["Alex Rivera", "Priya Nair", "Marcus Chen", "Elena Brooks"];
 type TicketSortField = "ticketNumber" | "orgName" | "priority" | "status" | "slaMinutesRemaining" | "updatedAt";
 
+const STATUS_OPTIONS: { label: string; value: TicketStatus }[] = [
+  { label: "Open", value: "OPEN" },
+  { label: "In Progress", value: "IN_PROGRESS" },
+  { label: "Waiting on Customer", value: "WAITING_CUSTOMER" },
+  { label: "Resolved", value: "RESOLVED" },
+  { label: "Closed", value: "CLOSED" },
+];
+
+const PRIORITY_OPTIONS: { label: string; value: TicketPriority }[] = [
+  { label: "Urgent", value: "URGENT" },
+  { label: "High", value: "HIGH" },
+  { label: "Medium", value: "MEDIUM" },
+  { label: "Low", value: "LOW" },
+];
+
+/** Category is not stored by the server; kept for the (disabled) create form. */
+const CATEGORY_OPTIONS = [
+  { label: "Integration", value: "Integration" },
+  { label: "Workspace Access", value: "Workspace Access" },
+  { label: "Billing & Invoices", value: "Billing & Invoices" },
+  { label: "Performance", value: "Performance" },
+  { label: "General", value: "General" },
+];
+
+const isClosed = (t: OpsSupportTicket) => ["RESOLVED", "CLOSED"].includes((t.status || "").toUpperCase());
+const orgOf = (t: OpsSupportTicket) => t.customer_name || "—";
+const ownerOf = (t: OpsSupportTicket) => t.assigned_operator_name || "Unassigned";
+const updatedOf = (t: OpsSupportTicket) => t.updated_at ?? t.created_at ?? "";
+
+function priorityTone(priority: string): "danger" | "warning" | "info" {
+  const p = (priority || "").toUpperCase();
+  if (p === "URGENT") return "danger";
+  if (p === "HIGH") return "warning";
+  return "info";
+}
+
 export default function OperatorSupportTicketsPage() {
-  const tickets = usePlatformOperatorStore((s) => s.tickets);
-  const orgHealth = usePlatformOperatorStore((s) => s.orgHealth);
-  const createTicket = usePlatformOperatorStore((s) => s.createTicket);
-  const updateTicket = usePlatformOperatorStore((s) => s.updateTicket);
-  const addTicketComment = usePlatformOperatorStore((s) => s.addTicketComment);
-  const bulkResolveTickets = usePlatformOperatorStore((s) => s.bulkResolveTickets);
-  const escalateTicketToIncident = usePlatformOperatorStore((s) => s.escalateTicketToIncident);
   const { can } = useOperatorPermissions();
   const canManage = can("tickets.manage");
+
+  const ticketsResource = useOperatorResource(() => operatorApi.tickets.list(), "tickets");
+  const tickets = rowsOf(ticketsResource.state);
+  const directory = useOperatorDirectory();
+  const operatorOptions = operatorChoices(directory.state);
+  const reload = () => void ticketsResource.reload();
+  const mutation = useOperatorMutation(reload);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [priorityFilter, setPriorityFilter] = useState("ALL");
-  const [slaFilter, setSlaFilter] = useState("ALL");
-  const [sortField, setSortField] = useState<TicketSortField>("slaMinutesRemaining");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [sortField, setSortField] = useState<TicketSortField>("updatedAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
 
-  // Create Modal
+  // Create Modal: kept on the page; there is no create endpoint so it never opens.
   const [createOpen, setCreateOpen] = useState(false);
-  const [orgId, setOrgId] = useState("");
-  const [requesterEmail, setRequesterEmail] = useState("");
-  const [subject, setSubject] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState<OperatorTicket["category"]>("Integration");
-  const [priority, setPriority] = useState<OperatorTicket["priority"]>("High");
-  const [assignee, setAssignee] = useState(OPERATORS[0]);
-  const [formError, setFormError] = useState<string | null>(null);
 
-  // Inspect Drawer
+  // Inspect Drawer (record re-read from the latest list so its version is current)
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [replyText, setReplyText] = useState("");
 
   const closeOverlays = () => {
     setCreateOpen(false);
     setSelectedId(null);
   };
 
-  const selectedTicket = useMemo(
-    () => tickets.find((t) => t.id === selectedId) || null,
-    [tickets, selectedId]
-  );
+  const selectedTicket = useMemo(() => tickets.find((t) => t.id === selectedId) || null, [tickets, selectedId]);
 
-  const activeTickets = useMemo(
-    () => tickets.filter((t) => t.status !== "Resolved"),
-    [tickets]
-  );
-  const slaRiskCount = useMemo(
-    () => activeTickets.filter((t) => t.slaState !== "On Track").length,
-    [activeTickets]
-  );
-  const escalatedCount = useMemo(
-    () => activeTickets.filter((t) => t.status === "Escalated").length,
-    [activeTickets]
-  );
-  const resolvedCount = useMemo(
-    () => tickets.filter((t) => t.status === "Resolved").length,
-    [tickets]
-  );
+  const activeTickets = useMemo(() => tickets.filter((t) => !isClosed(t)), [tickets]);
+  const resolvedCount = useMemo(() => tickets.filter(isClosed).length, [tickets]);
 
   const handleSort = (field: TicketSortField) => {
     if (sortField === field) {
@@ -114,36 +136,35 @@ export default function OperatorSupportTicketsPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const priRank: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+    const priRank: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
     const list = tickets.filter((t) => {
       const matchesQ =
         !q ||
-        t.ticketNumber.toLowerCase().includes(q) ||
-        t.orgName.toLowerCase().includes(q) ||
-        t.subject.toLowerCase().includes(q) ||
-        t.assignee.toLowerCase().includes(q) ||
-        t.requesterEmail.toLowerCase().includes(q);
+        t.id.toLowerCase().includes(q) ||
+        (t.customer_name || "").toLowerCase().includes(q) ||
+        (t.subject || "").toLowerCase().includes(q) ||
+        ownerOf(t).toLowerCase().includes(q) ||
+        (t.customer_email || "").toLowerCase().includes(q);
       const matchesStatus = statusFilter === "ALL" || t.status === statusFilter;
       const matchesPriority = priorityFilter === "ALL" || t.priority === priorityFilter;
-      const matchesSla = slaFilter === "ALL" || t.slaState === slaFilter;
-      return matchesQ && matchesStatus && matchesPriority && matchesSla;
+      return matchesQ && matchesStatus && matchesPriority;
     });
 
     return [...list].sort((a, b) => {
       let cmp = 0;
-      if (sortField === "ticketNumber") cmp = a.ticketNumber.localeCompare(b.ticketNumber);
-      else if (sortField === "orgName") cmp = a.orgName.localeCompare(b.orgName);
+      if (sortField === "ticketNumber") cmp = a.id.localeCompare(b.id);
+      else if (sortField === "orgName") cmp = orgOf(a).localeCompare(orgOf(b));
       else if (sortField === "priority") cmp = (priRank[a.priority] ?? 9) - (priRank[b.priority] ?? 9);
-      else if (sortField === "status") cmp = a.status.localeCompare(b.status);
-      else if (sortField === "slaMinutesRemaining") cmp = a.slaMinutesRemaining - b.slaMinutesRemaining;
-      else cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+      else if (sortField === "status") cmp = (a.status || "").localeCompare(b.status || "");
+      else if (sortField === "slaMinutesRemaining") cmp = 0; // SLA is not tracked by the server
+      else cmp = new Date(updatedOf(a)).getTime() - new Date(updatedOf(b)).getTime();
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [tickets, search, statusFilter, priorityFilter, slaFilter, sortField, sortDir]);
+  }, [tickets, search, statusFilter, priorityFilter, sortField, sortDir]);
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, priorityFilter, slaFilter, pageSize]);
+  }, [search, statusFilter, priorityFilter, pageSize]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -162,66 +183,33 @@ export default function OperatorSupportTicketsPage() {
     paginated.map((t) => t.id)
   );
 
-  const openCreateModal = () => {
-    closeOverlays();
-    const firstOrg = orgHealth[0];
-    setOrgId(firstOrg?.id || "org-acme");
-    setRequesterEmail("");
-    setSubject("");
-    setDescription("");
-    setCategory("Integration");
-    setPriority("High");
-    setAssignee(OPERATORS[0]);
-    setFormError(null);
-    setCreateOpen(true);
-  };
-
   const openTicketDrawer = (id: string) => {
     closeOverlays();
     setSelectedId(id);
-    setReplyText("");
   };
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const chosenOrg = orgHealth.find((o) => o.id === orgId);
-    if (!chosenOrg) {
-      setFormError("Please select an organization.");
-      return;
-    }
-    if (!isValidEmail(requesterEmail)) {
-      setFormError("Please enter a valid customer contact email address.");
-      return;
-    }
-    if (subject.trim().length < 5) {
-      setFormError("Please provide a descriptive ticket subject.");
-      return;
-    }
-    if (description.trim().length < 10) {
-      setFormError("Please explain the issue details (at least 10 characters).");
-      return;
-    }
+  const changeStatus = (t: OpsSupportTicket, status: string) =>
+    void mutation.run(
+      "status",
+      () => operatorApi.tickets.update(t.id, { status: status as TicketStatus }, t.version),
+      `Ticket status changed to ${humanizeCode(status)}.`
+    );
 
-    const created = createTicket({
-      orgId: chosenOrg.id,
-      orgName: chosenOrg.orgName,
-      subject: subject.trim(),
-      description: description.trim(),
-      category,
-      priority,
-      assignee,
-      requesterEmail: requesterEmail.trim(),
-    });
-    toast.success(`Support ticket ${created.ticketNumber} created.`);
-    setCreateOpen(false);
-  };
+  const changePriority = (t: OpsSupportTicket, priority: string) =>
+    void mutation.run(
+      "priority",
+      () => operatorApi.tickets.update(t.id, { priority: priority as TicketPriority }, t.version),
+      "Ticket priority updated."
+    );
 
-  const handleSendReply = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTicket || !replyText.trim()) return;
-    addTicketComment(selectedTicket.id, replyText.trim());
-    setReplyText("");
-    toast.success("Comment added to ticket conversation (simulated).");
+  const changeAssignee = (t: OpsSupportTicket, operatorId: string) => {
+    if (!operatorId) return;
+    const name = operatorOptions.find((o) => o.value === operatorId)?.label ?? operatorId;
+    void mutation.run(
+      "assign",
+      () => operatorApi.tickets.assign(t.id, operatorId, "", t.version),
+      `Assigned to ${name}.`
+    );
   };
 
   const handleExportCsv = () => {
@@ -230,31 +218,33 @@ export default function OperatorSupportTicketsPage() {
       ["Sr No", "Ticket #", "Organization", "Category", "Priority", "Status", "Assignee", "SLA State", "Updated"],
       filtered.map((t, i) => [
         i + 1,
-        t.ticketNumber,
-        t.orgName,
-        t.category,
-        t.priority,
-        t.status,
-        t.assignee,
-        t.slaState,
-        t.updatedAt,
+        t.id,
+        t.customer_name ?? "",
+        "",
+        humanizeCode(t.priority),
+        humanizeCode(t.status),
+        ownerOf(t),
+        "",
+        updatedOf(t),
       ])
     );
     toast.success(`Exported ${filtered.length} support ticket(s) to CSV.`);
   };
 
+  const busy = mutation.busy !== null;
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Support Tickets"
-        badge={`${activeTickets.length} Open`}
-        demoLabel="Demo SLA Queue"
+        badge={`${readyValue(ticketsResource.state, () => activeTickets.length)} Open`}
+        liveData
         description="Triage customer support tickets, coordinate responses, track SLA targets, and escalate service issues directly into Incidents."
         actions={
-          <OpButton variant="primary" size="sm" disabled={!canManage} onClick={openCreateModal}>
+          <NotAvailableButton variant="primary" size="sm" reason="no ticket create endpoint">
             <Plus className="w-4 h-4" />
             New Ticket
-          </OpButton>
+          </NotAvailableButton>
         }
       />
 
@@ -263,32 +253,29 @@ export default function OperatorSupportTicketsPage() {
         description="Updates, replies, SLA state, and one-click escalation to Incidents synchronize directly with Incident Management and Activity Logs."
       />
 
+      <MutationNotice
+        notice={mutation.notice}
+        onReload={() => {
+          mutation.clearNotice();
+          reload();
+        }}
+        onDismiss={mutation.clearNotice}
+      />
+
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <KpiCard
           label="Open Queue"
-          value={activeTickets.length}
+          value={readyValue(ticketsResource.state, () => activeTickets.length)}
           sublabel="Waiting on operator or customer"
           icon={LifeBuoy}
           tone={activeTickets.length > 0 ? "teal" : "emerald"}
         />
-        <KpiCard
-          label="SLA At Risk / Breached"
-          value={slaRiskCount}
-          sublabel="Requires rapid operator attention"
-          icon={Clock}
-          tone={slaRiskCount > 0 ? "amber" : "emerald"}
-        />
-        <KpiCard
-          label="Escalated Tickets"
-          value={escalatedCount}
-          sublabel="Linked to active incidents or Super Admin"
-          icon={AlertTriangle}
-          tone={escalatedCount > 0 ? "rose" : "slate"}
-        />
+        <KpiCard label="SLA At Risk / Breached" value="—" sublabel={NOT_AVAILABLE} icon={Clock} tone="slate" />
+        <KpiCard label="Escalated Tickets" value="—" sublabel={NOT_AVAILABLE} icon={AlertTriangle} tone="slate" />
         <KpiCard
           label="Resolved"
-          value={resolvedCount}
-          sublabel="Completed during session"
+          value={readyValue(ticketsResource.state, () => resolvedCount)}
+          sublabel="Resolved or closed tickets"
           icon={CheckCircle2}
           tone="emerald"
         />
@@ -299,14 +286,11 @@ export default function OperatorSupportTicketsPage() {
           search={search}
           onSearchChange={setSearch}
           searchPlaceholder="Search ticket #, organization, subject, or requester..."
-          hasActiveFilters={Boolean(
-            search || statusFilter !== "ALL" || priorityFilter !== "ALL" || slaFilter !== "ALL"
-          )}
+          hasActiveFilters={Boolean(search || statusFilter !== "ALL" || priorityFilter !== "ALL")}
           onResetFilters={() => {
             setSearch("");
             setStatusFilter("ALL");
             setPriorityFilter("ALL");
-            setSlaFilter("ALL");
           }}
           onExportCsv={handleExportCsv}
           exportDisabled={filtered.length === 0}
@@ -317,14 +301,7 @@ export default function OperatorSupportTicketsPage() {
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                   aria-label="Filter status"
-                  options={[
-                    { label: "All Statuses", value: "ALL" },
-                    { label: "Open", value: "Open" },
-                    { label: "In Progress", value: "In Progress" },
-                    { label: "Waiting on Customer", value: "Waiting on Customer" },
-                    { label: "Escalated", value: "Escalated" },
-                    { label: "Resolved", value: "Resolved" },
-                  ]}
+                  options={[{ label: "All Statuses", value: "ALL" }, ...STATUS_OPTIONS]}
                 />
               </div>
               <div className="w-32">
@@ -332,19 +309,14 @@ export default function OperatorSupportTicketsPage() {
                   value={priorityFilter}
                   onChange={(e) => setPriorityFilter(e.target.value)}
                   aria-label="Filter priority"
-                  options={[
-                    { label: "All Priority", value: "ALL" },
-                    { label: "Critical", value: "Critical" },
-                    { label: "High", value: "High" },
-                    { label: "Medium", value: "Medium" },
-                    { label: "Low", value: "Low" },
-                  ]}
+                  options={[{ label: "All Priority", value: "ALL" }, ...PRIORITY_OPTIONS]}
                 />
               </div>
-              <div className="w-32">
+              <div className="w-32" title={`${NOT_AVAILABLE}: SLA is not tracked by the server`}>
                 <OpSelect
-                  value={slaFilter}
-                  onChange={(e) => setSlaFilter(e.target.value)}
+                  value="ALL"
+                  disabled
+                  onChange={() => undefined}
                   aria-label="Filter SLA"
                   options={[
                     { label: "All SLA", value: "ALL" },
@@ -358,11 +330,23 @@ export default function OperatorSupportTicketsPage() {
           }
         />
 
-        {paginated.length === 0 ? (
-          <EmptyState
-            icon={MessageSquare}
-            title="No tickets match your filter"
-            description="Reset your filters or create a support ticket on behalf of an organization."
+        {ticketsResource.state.status !== "ready" || tickets.length === 0 ? (
+          <OperatorResourceStatus
+            state={ticketsResource.state}
+            isEmpty={(rows) => rows.length === 0}
+            onRetry={reload}
+            emptyIcon={MessageSquare}
+            emptyTitle="No support tickets yet"
+            emptyDescription="No customer support tickets are recorded on the server."
+          />
+        ) : paginated.length === 0 ? (
+          <OperatorResourceStatus
+            state={{ status: "ready", data: [] as OpsSupportTicket[] }}
+            isEmpty={() => true}
+            onRetry={reload}
+            emptyIcon={MessageSquare}
+            emptyTitle="No tickets match your filter"
+            emptyDescription="Reset your filters or create a support ticket on behalf of an organization."
           />
         ) : (
           <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
@@ -372,19 +356,10 @@ export default function OperatorSupportTicketsPage() {
               onSelectAllMatching={() => setSelectedIds(filtered.map((t) => t.id))}
               onClear={() => setSelectedIds([])}
               actions={
-                <OpButton
-                  variant="primary"
-                  size="xs"
-                  disabled={!canManage}
-                  onClick={() => {
-                    const count = bulkResolveTickets(selectedIds);
-                    toast.success(`Resolved ${count} selected support ticket(s).`);
-                    setSelectedIds([]);
-                  }}
-                >
+                <NotAvailableButton variant="primary" size="xs" reason="no bulk resolve endpoint">
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   Mark Resolved ({selectedIds.length})
-                </OpButton>
+                </NotAvailableButton>
               }
             />
             <div className="overflow-x-auto">
@@ -431,7 +406,7 @@ export default function OperatorSupportTicketsPage() {
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggleSelectOne(t.id)}
-                            aria-label={`Select ${t.ticketNumber}`}
+                            aria-label={`Select ${t.id}`}
                             className="h-4 w-4 rounded border-[var(--color-border)] bg-[var(--color-app-bg)] accent-teal-600 cursor-pointer"
                           />
                         </td>
@@ -441,49 +416,40 @@ export default function OperatorSupportTicketsPage() {
                         <td className="py-3 px-3.5 max-w-[300px]">
                           <div className="flex items-start gap-2.5">
                             <span className="h-7 w-7 rounded-lg bg-teal-500/15 border border-teal-500/25 flex items-center justify-center text-[10px] font-bold text-teal-700 dark:text-teal-300 shrink-0 mt-0.5">
-                              {getOrgInitials(t.orgName)}
+                              {getOrgInitials(t.customer_name || "?")}
                             </span>
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="rounded border border-[var(--color-border)] bg-[var(--color-app-bg)] px-1.5 py-0.5 text-[10px] font-bold">
-                                  {t.ticketNumber}
+                                  {t.id}
                                 </span>
                                 <span className="text-[11px] font-medium text-teal-600 dark:text-teal-400">
-                                  {t.category}
+                                  <NotAvailableText className="text-[11px]" reason="ticket category is not stored" />
                                 </span>
                               </div>
                               <p className="font-semibold text-[var(--color-text-primary)] truncate mt-0.5">
                                 {t.subject}
                               </p>
                               <p className="text-[11px] text-[var(--color-text-muted)] truncate">
-                                {t.orgName} · {t.requesterEmail}
+                                {orgOf(t)} · {t.customer_email || "—"}
                               </p>
                             </div>
                           </div>
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
-                          <StatusBadge
-                            label={t.priority}
-                            tone={t.priority === "Critical" ? "danger" : t.priority === "High" ? "warning" : "info"}
-                          />
+                          <StatusBadge label={humanizeCode(t.priority)} tone={priorityTone(t.priority)} />
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
-                          <StatusBadge label={t.status} tone={getStatusTone(t.status)} dot />
+                          <StatusBadge label={humanizeCode(t.status)} tone={getStatusTone(humanizeCode(t.status))} dot />
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
                           <div className="space-y-0.5">
-                            <StatusBadge label={t.slaState} tone={getStatusTone(t.slaState)} />
-                            <p className="text-[10px] text-[var(--color-text-muted)]">
-                              {t.status === "Resolved"
-                                ? "Closed"
-                                : t.slaMinutesRemaining <= 0
-                                ? "Target passed"
-                                : `${t.slaMinutesRemaining}m remaining`}
-                            </p>
+                            <NotAvailableText reason="SLA is not tracked by the server" />
+                            <p className="text-[10px] text-[var(--color-text-muted)]">{isClosed(t) ? "Closed" : "—"}</p>
                           </div>
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap font-medium text-[var(--color-text-primary)]">
-                          {t.assignee}
+                          {ownerOf(t)}
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap text-right">
                           <div className="inline-flex items-center gap-1.5">
@@ -491,19 +457,11 @@ export default function OperatorSupportTicketsPage() {
                               <Eye className="w-3.5 h-3.5" />
                               Inspect
                             </OpButton>
-                            {!t.linkedIncidentId && t.status !== "Resolved" && (
-                              <OpButton
-                                variant="subtle"
-                                size="xs"
-                                disabled={!canManage}
-                                onClick={() => {
-                                  const inc = escalateTicketToIncident(t.id);
-                                  if (inc) toast.success(`Escalated to incident ${inc.code}.`);
-                                }}
-                              >
+                            {!isClosed(t) && (
+                              <NotAvailableButton variant="subtle" size="xs" hideLabel reason="no ticket-to-incident endpoint">
                                 <AlertTriangle className="w-3 h-3" />
                                 Incident
-                              </OpButton>
+                              </NotAvailableButton>
                             )}
                           </div>
                         </td>
@@ -528,7 +486,7 @@ export default function OperatorSupportTicketsPage() {
         />
       </SurfaceCard>
 
-      {/* Create Ticket Modal */}
+      {/* Create Ticket Modal (no create endpoint yet: kept, never opened, submit disabled) */}
       <OpModal
         isOpen={createOpen}
         onClose={() => setCreateOpen(false)}
@@ -536,83 +494,38 @@ export default function OperatorSupportTicketsPage() {
         description="Record a customer request for operator triage and SLA tracking."
         maxWidth="lg"
       >
-        <form onSubmit={handleCreateSubmit} className="space-y-4">
-          {formError && (
-            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
-              {formError}
-            </div>
-          )}
-
+        <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <OpSelect
-              label="Organization *"
-              value={orgId}
-              onChange={(e) => setOrgId(e.target.value)}
-              options={orgHealth.map((o) => ({ label: o.orgName, value: o.id }))}
-            />
-            <OpInput
-              label="Requester Contact Email *"
-              type="email"
-              value={requesterEmail}
-              onChange={(e) => setRequesterEmail(e.target.value)}
-              placeholder="admin@company.com"
-            />
+            <OpSelect label="Organization *" value="" disabled onChange={() => undefined} options={[]} />
+            <OpInput label="Requester Contact Email *" type="email" disabled placeholder="admin@company.com" />
           </div>
 
           <OpInput
             label="Ticket Subject *"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
+            disabled
             placeholder="e.g. Need assistance verifying GitHub repository sync"
           />
 
           <OpTextarea
             label="Issue Description *"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            disabled
             placeholder="Summarize the customer issue and steps requested..."
             rows={3}
           />
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <OpSelect
-              label="Category"
-              value={category}
-              onChange={(e) => setCategory(e.target.value as OperatorTicket["category"])}
-              options={[
-                { label: "Integration", value: "Integration" },
-                { label: "Workspace Access", value: "Workspace Access" },
-                { label: "Billing & Invoices", value: "Billing & Invoices" },
-                { label: "Performance", value: "Performance" },
-                { label: "General", value: "General" },
-              ]}
-            />
-            <OpSelect
-              label="Priority"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as OperatorTicket["priority"])}
-              options={[
-                { label: "Critical", value: "Critical" },
-                { label: "High", value: "High" },
-                { label: "Medium", value: "Medium" },
-                { label: "Low", value: "Low" },
-              ]}
-            />
-            <OpSelect
-              label="Assign To"
-              value={assignee}
-              onChange={(e) => setAssignee(e.target.value)}
-              options={OPERATORS.map((n) => ({ label: n, value: n }))}
-            />
+            <OpSelect label="Category" value="Integration" disabled onChange={() => undefined} options={CATEGORY_OPTIONS} />
+            <OpSelect label="Priority" value="HIGH" disabled onChange={() => undefined} options={PRIORITY_OPTIONS} />
+            <OpSelect label="Assign To" value="" disabled onChange={() => undefined} options={operatorOptions} />
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
             <OpButton type="button" variant="outline" size="sm" onClick={() => setCreateOpen(false)}>
               Cancel
             </OpButton>
-            <OpButton type="submit" variant="primary" size="sm">
+            <NotAvailableButton variant="primary" size="sm" reason="no ticket create endpoint">
               Create Ticket
-            </OpButton>
+            </NotAvailableButton>
           </div>
         </form>
       </OpModal>
@@ -621,18 +534,16 @@ export default function OperatorSupportTicketsPage() {
       <SlideOverDrawer
         isOpen={Boolean(selectedTicket)}
         onClose={() => setSelectedId(null)}
-        title={selectedTicket ? `${selectedTicket.ticketNumber} — ${selectedTicket.orgName}` : "Ticket"}
+        title={selectedTicket ? `${selectedTicket.id} — ${orgOf(selectedTicket)}` : "Ticket"}
         subtitle={selectedTicket?.subject}
       >
         {selectedTicket && (
           <div className="space-y-4">
             <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5 text-xs space-y-1">
               <p className="font-semibold text-[var(--color-text-primary)]">Customer Description</p>
-              <p className="text-[var(--color-text-secondary)] leading-relaxed">
-                {selectedTicket.description}
-              </p>
+              <p className="text-[var(--color-text-secondary)] leading-relaxed">{selectedTicket.description || "—"}</p>
               <p className="text-[11px] text-[var(--color-text-muted)] pt-1">
-                Contact: {selectedTicket.requesterEmail} · Opened {formatDateTime(selectedTicket.createdAt)}
+                Contact: {selectedTicket.customer_email || "—"} · Opened {formatDateTime(selectedTicket.created_at ?? "")}
               </p>
             </div>
 
@@ -640,71 +551,43 @@ export default function OperatorSupportTicketsPage() {
               <OpSelect
                 label="Status"
                 value={selectedTicket.status}
-                disabled={!canManage}
-                onChange={(e) => {
-                  updateTicket(selectedTicket.id, {
-                    status: e.target.value as OperatorTicket["status"],
-                  });
-                  toast.success(`Ticket status changed to ${e.target.value}.`);
-                }}
-                options={[
-                  { label: "Open", value: "Open" },
-                  { label: "In Progress", value: "In Progress" },
-                  { label: "Waiting on Customer", value: "Waiting on Customer" },
-                  { label: "Escalated", value: "Escalated" },
-                  { label: "Resolved", value: "Resolved" },
-                ]}
+                disabled={!canManage || busy}
+                onChange={(e) => changeStatus(selectedTicket, e.target.value)}
+                options={STATUS_OPTIONS}
               />
               <OpSelect
                 label="Priority"
                 value={selectedTicket.priority}
-                disabled={!canManage}
-                onChange={(e) => {
-                  updateTicket(selectedTicket.id, {
-                    priority: e.target.value as OperatorTicket["priority"],
-                  });
-                  toast.success("Ticket priority updated.");
-                }}
-                options={[
-                  { label: "Critical", value: "Critical" },
-                  { label: "High", value: "High" },
-                  { label: "Medium", value: "Medium" },
-                  { label: "Low", value: "Low" },
-                ]}
+                disabled={!canManage || busy}
+                onChange={(e) => changePriority(selectedTicket, e.target.value)}
+                options={PRIORITY_OPTIONS}
               />
               <OpSelect
                 label="Assignee"
-                value={selectedTicket.assignee}
-                disabled={!canManage}
-                onChange={(e) => {
-                  updateTicket(selectedTicket.id, { assignee: e.target.value });
-                  toast.success(`Assigned to ${e.target.value}.`);
-                }}
-                options={OPERATORS.map((n) => ({ label: n, value: n }))}
+                value={selectedTicket.assigned_operator_id || ""}
+                disabled={!canManage || busy}
+                onChange={(e) => changeAssignee(selectedTicket, e.target.value)}
+                options={[
+                  ...(selectedTicket.assigned_operator_id ? [] : [{ label: "Unassigned", value: "" }]),
+                  ...operatorOptions,
+                  ...(selectedTicket.assigned_operator_id &&
+                  !operatorOptions.some((o) => o.value === selectedTicket.assigned_operator_id)
+                    ? [{ label: ownerOf(selectedTicket), value: selectedTicket.assigned_operator_id }]
+                    : []),
+                ]}
               />
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {!selectedTicket.linkedIncidentId && selectedTicket.status !== "Resolved" ? (
-                <OpButton
-                  variant="subtle"
-                  size="xs"
-                  disabled={!canManage}
-                  onClick={() => {
-                    const inc = escalateTicketToIncident(selectedTicket.id);
-                    if (inc) toast.success(`Escalated ticket to incident ${inc.code}.`);
-                  }}
-                >
+              {!isClosed(selectedTicket) && (
+                <NotAvailableButton variant="subtle" size="xs" reason="no ticket-to-incident endpoint">
                   <AlertTriangle className="w-3.5 h-3.5" />
                   Escalate to Incident
-                </OpButton>
-              ) : selectedTicket.linkedIncidentId ? (
-                <Link href="/platform-operator/incidents">
-                  <OpButton variant="outline" size="xs">
-                    View Linked Incident
-                  </OpButton>
-                </Link>
-              ) : null}
+                </NotAvailableButton>
+              )}
+              <NotAvailableButton variant="outline" size="xs" reason="tickets are not linked to incidents yet">
+                View Linked Incident
+              </NotAvailableButton>
               <Link href="/platform-operator/access-requests">
                 <OpButton variant="outline" size="xs">
                   Request Scoped Access
@@ -713,45 +596,26 @@ export default function OperatorSupportTicketsPage() {
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-semibold text-[var(--color-text-primary)]">
-                Updates & Comments ({selectedTicket.comments.length})
-              </p>
+              <p className="text-xs font-semibold text-[var(--color-text-primary)]">Updates & Comments (—)</p>
               <div className="max-h-52 overflow-y-auto space-y-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3 text-xs">
-                {selectedTicket.comments.length === 0 ? (
-                  <p className="text-[var(--color-text-muted)] text-center py-4">
-                    No updates recorded yet.
-                  </p>
-                ) : (
-                  selectedTicket.comments.map((c) => (
-                    <div
-                      key={c.id}
-                      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5 space-y-1"
-                    >
-                      <div className="flex justify-between gap-2 text-[11px] text-[var(--color-text-muted)]">
-                        <strong className="text-[var(--color-text-primary)]">
-                          {c.author} ({c.roleLabel})
-                        </strong>
-                        <span>{formatDateTime(c.createdAt)}</span>
-                      </div>
-                      <p className="text-[var(--color-text-secondary)]">{c.message}</p>
-                    </div>
-                  ))
-                )}
+                <p className="text-[var(--color-text-muted)] text-center py-4">
+                  No updates recorded yet. <NotAvailableText reason="the ticket message thread has no endpoint" />
+                </p>
               </div>
 
-              <form onSubmit={handleSendReply} className="space-y-2 pt-1">
+              <form onSubmit={(e) => e.preventDefault()} className="space-y-2 pt-1">
                 <OpTextarea
                   label="Post Operator Update / Reply"
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
+                  disabled
+                  helperText={`${NOT_AVAILABLE}: the ticket message thread has no endpoint.`}
                   placeholder="Write a clear, helpful update for the customer or fellow operators..."
                   rows={2}
                 />
                 <div className="flex justify-end">
-                  <OpButton type="submit" variant="primary" size="xs" disabled={!canManage || !replyText.trim()}>
+                  <NotAvailableButton variant="primary" size="xs" reason="the ticket message thread has no endpoint">
                     <Send className="w-3 h-3" />
                     Add Comment
-                  </OpButton>
+                  </NotAvailableButton>
                 </div>
               </form>
             </div>

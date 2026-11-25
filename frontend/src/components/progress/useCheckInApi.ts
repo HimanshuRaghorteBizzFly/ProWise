@@ -10,12 +10,10 @@ import type {
   PendingReviewDto,
   ProgressSummaryDto,
 } from "@/types/api";
-import { toState, withFixture, type LoadState } from "@/components/org-console/useRoleApi";
-import { PREVIEW_PENDING_REVIEWS, previewProgressSummary } from "@/lib/fixtures/preview-data";
+import { toState, type LoadState } from "@/components/org-console/useRoleApi";
 
 /**
- * Task 2.2: Individual check-ins and Team Lead approval on the real API. Outside production, an unreachable API or
- * role preview shows labelled read-only sample data instead of an error (same rule as the other consoles).
+ * Task 2.2: Individual check-ins and Team Lead approval on the real API. Failures show an error state with retry.
  */
 
 const QUERY = { retry: false } as const;
@@ -23,7 +21,7 @@ const QUERY = { retry: false } as const;
 export function useProgressSummary(projectId: string): LoadState<ProgressSummaryDto> {
   return toState(useQuery({
     queryKey: ["progress-summary", projectId],
-    queryFn: () => withFixture(() => apiClient.progressSummary(projectId), () => previewProgressSummary(projectId)),
+    queryFn: () => apiClient.progressSummary(projectId),
     enabled: Boolean(projectId),
     ...QUERY,
   }));
@@ -32,7 +30,7 @@ export function useProgressSummary(projectId: string): LoadState<ProgressSummary
 export function usePendingReviews(orgId: string): LoadState<PendingReviewDto[]> {
   return toState(useQuery({
     queryKey: ["pending-reviews", orgId],
-    queryFn: () => withFixture(() => apiClient.pendingReviews(orgId), () => PREVIEW_PENDING_REVIEWS),
+    queryFn: () => apiClient.pendingReviews(orgId),
     enabled: Boolean(orgId),
     ...QUERY,
   }));

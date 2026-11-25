@@ -4,8 +4,6 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api";
-import { establishSession } from "@/lib/session";
-import { switchWorkspace } from "@/lib/workspace-switch";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,12 +30,8 @@ export default function CreateOrganizationPage() {
         timezone,
         calendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
       });
-      // Bind the session to the new organization (the creator is its Owner), then land from the server session.
-      const switched = await switchWorkspace(organization.id);
-      if (!switched.ok) throw new Error(switched.message);
-      const session = await establishSession();
       toast.success(`Organization ${name} created!`);
-      router.replace(session.activeOrgId === organization.id ? session.target : `/org/${organization.id}/owner/dashboard`);
+      window.location.assign(`/org/${organization.id}/owner/dashboard`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to create the organization.");
     }

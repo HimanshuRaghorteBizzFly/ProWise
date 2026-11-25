@@ -7,7 +7,7 @@ import { getNavigationConfig } from "@/config/navigation";
 import { Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function ViewerSidebar({ orgId = "org-1" }: { orgId?: string }) {
+export function ViewerSidebar({ orgId }: { orgId: string }) {
   const pathname = usePathname();
   const sections = getNavigationConfig("VIEWER", orgId);
 

@@ -1,118 +1,63 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import { safeJSONStorage } from "@/lib/safe-storage";
 import { User, SystemRole, Organization } from "@/types";
 
-const DEFAULT_ORG: Organization = {
-  id: "org-acme",
-  slug: "acme-health",
-  name: "Acme Health Technologies",
-  ownerId: "usr-owner",
-  timezone: "America/New_York",
-  workCalendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
-  createdAt: "2026-02-15T09:00:00Z",
-  plan: "ENTERPRISE",
+/** Placeholder until the backend (/v1/me or a sign-in answer) supplies the real person and organization. */
+const EMPTY_ORG: Organization = {
+  id: "",
+  slug: "",
+  name: "",
+  ownerId: "",
+  timezone: "UTC",
+  workCalendar: { workDays: [], dailyHours: 0, holidays: [] },
+  createdAt: "",
+  plan: "FREE",
   status: "ACTIVE",
 };
 
-const DEFAULT_USER: User = {
-  id: "usr-viewer",
-  email: "jordan.lee@acmehealth.com",
-  name: "Jordan Lee (Viewer)",
-  timezone: "America/New_York",
-  createdAt: "2026-02-25T16:00:00Z",
-};
-
-const EMPTY_USER: User = DEFAULT_USER;
-const EMPTY_ORG: Organization = DEFAULT_ORG;
-
-export const ROLE_PERSONAS: Record<SystemRole, User> = {
-  SUPER_ADMIN: {
-    id: "00000000-0000-0000-0000-000000000001",
-    email: "superadmin@prowise.com",
-    name: "Super Admin",
-    timezone: "America/New_York",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-  PLATFORM_OPERATOR: {
-    id: "00000000-0000-0000-0000-000000000002",
-    email: "operator@prowise.io",
-    name: "Platform Operator",
-    timezone: "America/New_York",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-  ORGANIZATION_OWNER: {
-    id: "usr-owner",
-    email: "dr.sarah.lin@acmehealth.com",
-    name: "Dr. Sarah Lin",
-    timezone: "America/New_York",
-    createdAt: "2026-02-01T00:00:00Z",
-  },
-  ORGANIZATION_ADMIN: {
-    id: "usr-admin",
-    email: "david.kim@acmehealth.com",
-    name: "David Kim",
-    timezone: "America/New_York",
-    createdAt: "2026-02-01T00:00:00Z",
-  },
-  PROJECT_MANAGER: {
-    id: "usr-manager",
-    email: "priya.raman@acmehealth.com",
-    name: "Priya Raman",
-    timezone: "America/New_York",
-    createdAt: "2026-02-01T00:00:00Z",
-  },
-  TEAM_LEAD: {
-    id: "usr-lead",
-    email: "marcus.chen@acmehealth.com",
-    name: "Marcus Chen",
-    timezone: "America/New_York",
-    createdAt: "2026-02-01T00:00:00Z",
-  },
-  DEVELOPER: {
-    id: "00000000-0000-0000-0000-000000000003",
-    email: "alex.rivera@acmehealth.com",
-    name: "Alex Rivera",
-    timezone: "America/New_York",
-    createdAt: "2026-02-01T00:00:00Z",
-  },
-  QA_REVIEWER: {
-    id: "usr-qa",
-    email: "elena.ruiz@acmehealth.com",
-    name: "Elena Ruiz",
-    timezone: "America/New_York",
-    createdAt: "2026-02-01T00:00:00Z",
-  },
-  VIEWER: {
-    id: "usr-viewer",
-    email: "jordan.lee@acmehealth.com",
-    name: "Jordan Lee",
-    timezone: "America/New_York",
-    createdAt: "2026-02-01T00:00:00Z",
-  },
+const EMPTY_USER: User = {
+  id: "",
+  email: "",
+  name: "",
+  timezone: "UTC",
+  createdAt: "",
 };
 
 export function getRoleDashboardPath(role: SystemRole, orgId = ""): string {
-  const safeOrgId = orgId && orgId.trim() !== "" ? orgId : "org-acme";
+  const hasOrg = orgId.trim() !== "";
+  const workspacePath = hasOrg ? `/org/${orgId}` : "/select-workspace";
+
   switch (role) {
     case "SUPER_ADMIN":
       return "/super-admin/dashboard";
+
     case "PLATFORM_OPERATOR":
       return "/platform-operator/dashboard";
+
     case "ORGANIZATION_OWNER":
-      return `/org/${safeOrgId}/owner/dashboard`;
+      return hasOrg ? `${workspacePath}/owner/dashboard` : workspacePath;
+
     case "ORGANIZATION_ADMIN":
-      return `/org/${safeOrgId}/admin/dashboard`;
+      return hasOrg ? `${workspacePath}/admin/dashboard` : workspacePath;
+
     case "PROJECT_MANAGER":
-      return `/org/${safeOrgId}/manager/dashboard`;
+      return hasOrg ? `${workspacePath}/manager/dashboard` : workspacePath;
+
     case "TEAM_LEAD":
-      return `/org/${safeOrgId}/lead/dashboard`;
+      return hasOrg ? `${workspacePath}/lead/dashboard` : workspacePath;
+
     case "DEVELOPER":
-      return `/org/${safeOrgId}/developer/dashboard`;
+      return hasOrg ? `${workspacePath}/developer/dashboard` : workspacePath;
+
     case "QA_REVIEWER":
-      return `/org/${safeOrgId}/reviewer/dashboard`;
+      return hasOrg ? `${workspacePath}/reviewer/dashboard` : workspacePath;
+
     case "VIEWER":
-      return `/org/${safeOrgId}/viewer/dashboard`;
+      return hasOrg ? `${workspacePath}/viewer/dashboard` : workspacePath;
+
     default:
-      return `/org/${safeOrgId}/viewer/dashboard`;
+      return workspacePath;
   }
 }
 
@@ -127,68 +72,79 @@ interface AuthState {
   setCurrentUser: (user: User) => void;
   setCurrentRole: (role: SystemRole) => void;
   setCurrentOrg: (org: Organization) => void;
-  switchRole: (role: SystemRole) => void;
   switchOrg: (orgId: string) => void;
   login: (email: string, role?: SystemRole) => void;
-  switchRoleAndNavigate: (role: SystemRole, routerPush: (url: string) => void) => void;
-  switchUserAndRole: (userId: string, routerPush: (url: string) => void) => void;
   logout: () => void;
   hydrate: (user: User, organizations: Organization[], role: SystemRole) => void;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
-  currentUser: EMPTY_USER,
-  currentRole: "VIEWER",
-  currentOrg: EMPTY_ORG,
-  organizations: [],
-  activeRole: "ORGANIZATION_OWNER",
-  activeOrgId: "",
-  isAuthenticated: false,
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set, get) => ({
+      currentUser: EMPTY_USER,
+      currentRole: "VIEWER",
+      currentOrg: EMPTY_ORG,
+      organizations: [],
+      activeRole: "VIEWER",
+      activeOrgId: "",
+      isAuthenticated: false,
 
-  setCurrentUser: (user) => set({ currentUser: user }),
-  setCurrentRole: (role) => set({ currentRole: role, activeRole: role }),
-  setCurrentOrg: (org) => set({ currentOrg: org, activeOrgId: org.id }),
+      setCurrentUser: (user) => set({ currentUser: user }),
+      setCurrentRole: (role) => set({ currentRole: role, activeRole: role }),
+      setCurrentOrg: (org) => set({ currentOrg: org, activeOrgId: org.id }),
 
-  switchRole: (role) => {
-    const persona = ROLE_PERSONAS[role] || DEFAULT_USER;
-    set({ currentUser: persona, currentRole: role, activeRole: role });
-  },
+      switchOrg: (orgId) => {
+        if (get().currentOrg.id === orgId) return;
+        const next = get().organizations.find((org) => org.id === orgId);
+        if (next) set({ currentOrg: next, activeOrgId: next.id });
+      },
 
-  switchOrg: (orgId) => {
-    if (get().currentOrg.id === orgId) return;
-  },
+      login: (email, role) => {
+        const targetRole = role || "VIEWER";
+        set((state) => ({
+          currentRole: targetRole,
+          activeRole: targetRole,
+          isAuthenticated: true,
+          currentUser: {
+            ...state.currentUser,
+            email: email || state.currentUser.email,
+            name: state.currentUser.name || (email ? email.split("@")[0] : state.currentUser.name),
+          },
+        }));
+      },
 
-  login: (_email, role) => set({ currentRole: role || "VIEWER", activeRole: role || "VIEWER", isAuthenticated: true }),
+      logout: () => {
+        set({
+          currentUser: EMPTY_USER,
+          currentRole: "VIEWER",
+          activeRole: "VIEWER",
+          currentOrg: EMPTY_ORG,
+          organizations: [],
+          activeOrgId: "",
+          isAuthenticated: false,
+        });
+      },
 
-  switchRoleAndNavigate: (role, routerPush) => {
-    const { currentOrg } = get();
-    const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
-    const persona = ROLE_PERSONAS[role] || DEFAULT_USER;
-    set({ currentUser: persona, currentRole: role, activeRole: role });
-    const targetUrl = getRoleDashboardPath(role, safeOrgId);
-    routerPush(targetUrl);
-  },
-
-  switchUserAndRole: (userId, routerPush) => {
-    const { currentOrg, currentRole } = get();
-    const safeOrgId = currentOrg?.id && currentOrg.id.trim() !== "" ? currentOrg.id : "org-acme";
-    routerPush(getRoleDashboardPath(currentRole, safeOrgId));
-  },
-
-  logout: () => {
-    set({ currentUser: DEFAULT_USER, currentOrg: DEFAULT_ORG, activeOrgId: "org-acme", isAuthenticated: false });
-  },
-
-  hydrate: (user, organizations, role) => {
-    const organization = organizations[0] || EMPTY_ORG;
-    set({
-      currentUser: user,
-      currentOrg: organization,
-      organizations,
-      currentRole: role,
-      activeRole: role,
-      activeOrgId: organization.id,
-      isAuthenticated: true,
-    });
-  },
-}));
+      hydrate: (user, organizations, role) => {
+        const organization = organizations[0] || EMPTY_ORG;
+        set({
+          currentUser: user,
+          currentOrg: organization,
+          organizations,
+          currentRole: role,
+          activeRole: role,
+          activeOrgId: organization.id,
+          isAuthenticated: true,
+        });
+      },
+    }),
+    {
+      name: "prowise-auth-store",
+      // Version 2 discards state persisted by older builds (which could hold sample personas); the backend re-supplies it.
+      version: 2,
+      migrate: () => ({}) as AuthState,
+      storage: safeJSONStorage,
+      skipHydration: true,
+    }
+  )
+);

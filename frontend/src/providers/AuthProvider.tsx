@@ -37,17 +37,12 @@ function sendToSignIn() {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { currentUser, currentRole, currentOrg, isAuthenticated, hydrate } = useAuthStore();
+  const { currentUser, currentRole, currentOrg, isAuthenticated, hydrate, logout } = useAuthStore();
   const setOrganizations = useWorkspaceStore((state) => state.setOrganizations);
 
   useEffect(() => {
-    window.addEventListener(SESSION_EXPIRED_EVENT, sendToSignIn);
-    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, sendToSignIn);
-  }, []);
-
-  useEffect(() => {
     let active = true;
-    establishSession().catch((error: unknown) => {
+    apiClient.me().then((me) => {
       if (!active) return;
       const store = useAuthStore.getState();
       const preview = previewEnabled() && store.isRolePreview;
@@ -93,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
     };
-  }, [hydrate, setOrganizations]);
+  }, [hydrate, logout, setOrganizations]);
 
   return (
     <AuthContext.Provider
@@ -103,6 +98,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   );
 }
+
+function toSystemRole(role: string | undefined): SystemRole {
+  const roles: SystemRole[] = [
+    "SUPER_ADMIN", "PLATFORM_OPERATOR", "ORGANIZATION_OWNER", "ORGANIZATION_ADMIN",
+    "PROJECT_MANAGER", "TEAM_LEAD", "DEVELOPER", "QA_REVIEWER", "VIEWER",
+  ];
+  return role && roles.includes(role as SystemRole) ? role as SystemRole : "VIEWER";
+}
+
+function parseCalendar(value: string) {
+  try {
+    const calendar = JSON.parse(value) as { workDays?: number[]; dailyHours?: number; holidays?: string[] };
+    return {
+      workDays: calendar.workDays || [],
+      dailyHours: calendar.dailyHours || 0,
+      holidays: calendar.holidays || [],
+    };
+  } catch {
+    return { workDays: [], dailyHours: 0, holidays: [] };
+  }
+}
+
 
 export const useAuthContext = () => {
   const ctx = useContext(AuthContext);

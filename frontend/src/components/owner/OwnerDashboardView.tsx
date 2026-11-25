@@ -43,7 +43,7 @@ import type {
   PortfolioData,
   RepositoryRow,
   TeamRow,
-} from "@/lib/fixtures/org-admin";
+} from "@/types/org-admin";
 import type { PermissionKey } from "@/types/permission";
 import type { Project, ProjectHealth } from "@/types";
 
@@ -170,7 +170,6 @@ export function OwnerDashboardView({
       <PageHeader
         title="Organization overview"
         description={`A delivery and access snapshot for ${orgName}. Progress is shown by the project’s own reporting method; GitHub activity never determines completion.`}
-        simulationLabel="Sample data"
         actions={
           <>
             <Link href={`${basePath}/projects/new`} className={LINK_CLASS}>
@@ -491,7 +490,7 @@ export function OwnerDashboardView({
 
       <div className="flex items-center gap-2 text-xs text-app-text-muted">
         <Building2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        Dashboard uses organization-scoped sample data through the existing fixture adapters.
+        Figures are scoped to this organization and come from its API data.
         {!portfolio.length && <CircleHelp className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
       </div>
     </div>

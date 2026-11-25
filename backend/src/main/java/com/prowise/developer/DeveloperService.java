@@ -128,11 +128,6 @@ public class DeveloperService {
 
     /** task.update on the project, and the caller is the assignee or may assign work there. */
     private void requireTaskEdit(Actor actor, WorkItemEntity item) {
-        if (workItemRepository.countBreakdownItems(item.getId()) > 0) {
-            // Breakdown tasks change only through submit / review / reopen (task 3.3): no direct Done, no PR shortcut.
-            throw new com.prowise.common.api.ApiException(org.springframework.http.HttpStatus.CONFLICT, "USE_TASK_REVIEW",
-                    "This task follows the review flow: submit it for review instead.");
-        }
         access.requireAction(actor, item.getProjectId(), PermissionKey.TASK_UPDATE);
         boolean assignee = actor.userId().equals(item.getPrimaryAssigneeId());
         if (!assignee && !access.can(actor, item.getProjectId(), PermissionKey.TASK_ASSIGN)) {
@@ -162,7 +157,7 @@ public class DeveloperService {
                 .filter(w -> !"DONE".equalsIgnoreCase(w.getState()) && w.getDueDate() != null && w.getDueDate().isBefore(now))
                 .count();
 
-        long openBugs = bugRepository.countOpenAssigned(actor.orgId(), actor.userId(), "RESOLVED");
+        long openBugs = bugRepository.countOpenAssigned(actor.orgId(), actor.userId());
         long pendingReviews = codeReviewRepository.countByOrgIdAndReviewerIdAndStatus(actor.orgId(), actor.userId(), "PENDING");
         long unreadNotifications = developerNotificationRepository.countByOrgIdAndUserIdAndReadFalse(actor.orgId(), actor.userId());
 
@@ -183,12 +178,15 @@ public class DeveloperService {
                 .map(this::mapWorkItemToDTO)
                 .toList();
 
+        java.util.Map<String, String> projectKeys = new java.util.HashMap<>();
+        projects.forEach(p -> projectKeys.put(p.getId(), p.getKey()));
         List<DeveloperDTOs.DeadlineItemDTO> upcomingDeadlines = myWorkItems.stream()
                 .filter(w -> w.getDueDate() != null && !"DONE".equalsIgnoreCase(w.getState()))
                 .sorted((a, b) -> a.getDueDate().compareTo(b.getDueDate()))
                 .limit(6)
                 .map(w -> new DeveloperDTOs.DeadlineItemDTO(
-                        w.getId(), w.getTitle(), w.getKey(), w.getProjectId(), w.getDueDate(), w.getPriority(), w.getState()))
+                        w.getId(), w.getTitle(), w.getKey(), projectKeys.get(w.getProjectId()), w.getProjectId(),
+                        w.getDueDate(), w.getPriority(), w.getState()))
                 .toList();
 
         List<GitHubActivityEntity> recentGit = access.canAtOrg(actor, PermissionKey.REPO_READ)
@@ -476,14 +474,7 @@ public class DeveloperService {
             codeReviewCommentRepository.save(comment);
         }
 
-        if ("APPROVED".equalsIgnoreCase(req.decision()) && review.getWorkItemId() != null
-                && workItemRepository.countBreakdownItems(review.getWorkItemId()) == 0) { // a merged PR never replaces review (AS-03)
-            workItemRepository.findByIdAndOrgId(review.getWorkItemId(), actor.orgId()).ifPresent(item -> {
-                item.setState("DONE");
-                item.setUpdatedAt(Instant.now());
-                workItemRepository.save(item);
-            });
-        }
+        // A code review (pull request) is evidence only: it never completes a work item (rule 9, task 3.3).
         return codeReviewRepository.save(review);
     }
 

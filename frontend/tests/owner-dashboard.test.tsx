@@ -1,9 +1,8 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { OwnerDashboardView } from "../src/components/owner/OwnerDashboardView";
-import { getOwnerDashboardStateForOrg } from "../src/hooks/useOwnerDashboard";
 import {
   FIXTURE_AUDIT,
   FIXTURE_INVITATIONS,
@@ -11,8 +10,8 @@ import {
   FIXTURE_PORTFOLIO,
   FIXTURE_REPOSITORIES,
   FIXTURE_TEAMS,
-} from "../src/lib/fixtures/org-admin";
-import { SEEDED_PROJECTS, SEEDED_USERS } from "../src/lib/mock-data";
+} from "./fixtures/org-admin";
+import { SEEDED_PROJECTS, SEEDED_USERS } from "./fixtures/mock-data";
 
 const orgId = "org-acme";
 const orgName = "Acme Health Technologies";
@@ -44,11 +43,11 @@ function renderDashboard(props: Partial<React.ComponentProps<typeof OwnerDashboa
 }
 
 describe("Owner dashboard", () => {
-  it("renders organization KPIs and both portfolio charts from sample fixtures", () => {
+  it("renders organization KPIs and both portfolio charts", () => {
     const markup = renderDashboard();
 
     expect(markup).toContain("Organization overview");
-    expect(markup).toContain("Sample data");
+    expect(markup).not.toContain("Sample data");
     expect(markup).toContain("Active projects");
     expect(markup).toContain("Active members");
     expect(markup).toContain("Active teams");
@@ -97,27 +96,5 @@ describe("Owner dashboard", () => {
     expect(markup).toContain("No members are listed yet");
     expect(markup).toContain("No repositories connected");
     expect(markup).toContain("No audit events are recorded");
-  });
-
-  it("does not show a previous organization's dashboard while the new scope loads", () => {
-    const acmeProjects = SEEDED_PROJECTS.filter((project) => project.orgId === orgId);
-    const state = getOwnerDashboardStateForOrg(
-      { status: "ready", orgId, projects: acmeProjects, users: SEEDED_USERS },
-      "org-nova",
-    );
-
-    expect(state.orgId).toBe("org-nova"); // never the previous organization's data
-    vi.stubEnv("NEXT_PUBLIC_USE_MOCKS", "");
-    expect(getOwnerDashboardStateForOrg(
-      { status: "ready", orgId, projects: acmeProjects, users: SEEDED_USERS },
-      "org-nova",
-    )).toEqual({ status: "unavailable", orgId: "org-nova" }); // normal use: no sample data
-    vi.stubEnv("NEXT_PUBLIC_USE_MOCKS", "true");
-    const preview = getOwnerDashboardStateForOrg(
-      { status: "ready", orgId, projects: acmeProjects, users: SEEDED_USERS },
-      "org-nova",
-    );
-    vi.unstubAllEnvs();
-    expect(preview).toEqual({ status: "loading", orgId: "org-nova" });
   });
 });

@@ -1,7 +1,5 @@
 "use client";
 
-import { previewEnabled } from "@/lib/permissions";
-import { LiveOperatorDashboard } from "./_components/LiveOperatorDashboard";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -12,16 +10,12 @@ import {
   Building2,
   CheckCircle2,
   ChevronDown,
-  Clock,
   CreditCard,
   DatabaseBackup,
   FileCheck2,
   FileWarning,
-  Flame,
-  HelpCircle,
   History,
   KeyRound,
-  LayoutDashboard,
   LifeBuoy,
   Mail,
   MailPlus,
@@ -31,28 +25,20 @@ import {
   RefreshCw,
   RotateCcw,
   Server,
-  Shield,
   ShieldAlert,
   ShieldCheck,
-  UserCheck,
-  Users,
   Wrench,
-  XCircle,
 } from "lucide-react";
-import { usePlatformOperatorStore } from "./_store/usePlatformOperatorStore";
-import { useSuperAdminStore } from "../super-admin/_store/useSuperAdminStore";
 import { formatDateTime } from "./_services/operator-service";
+import { operatorApi } from "./_services/operator-api";
 import {
-  DEPARTMENT_DEFAULT_MODULES,
   OPERATOR_DEPARTMENTS,
   OPERATOR_MODULE_CATALOG,
   OperatorDepartmentName,
-  isRouteAuthorized,
   normalizeDepartmentName,
   resolveEffectivePermission,
 } from "./_services/operator-permission-service";
 import {
-  DemoDataBanner,
   KpiCard,
   OpButton,
   PageHeader,
@@ -60,7 +46,21 @@ import {
   SurfaceCard,
   getStatusTone,
 } from "./_components/OperatorPrimitives";
-import { QueueBarChart, TelemetryAreaChart } from "./_components/OperatorCharts";
+import { QueueBarChart } from "./_components/OperatorCharts";
+import {
+  MutationNotice,
+  NOT_AVAILABLE,
+  NotAvailableButton,
+  NotAvailableText,
+  OperatorResourceStatus,
+  formatMoney,
+  humanizeCode,
+  pageItemsOf,
+  rowsOf,
+  useOperatorMutation,
+  useOperatorResource,
+  type ResourceState,
+} from "./_components/OperatorLive";
 
 function getDepartmentBadgeClass(dept: string): string {
   const key = dept.toLowerCase();
@@ -74,79 +74,205 @@ function getDepartmentBadgeClass(dept: string): string {
   return "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300";
 }
 
-function PreviewPlatformOperatorDashboardPage() {
-  const orgHealth = usePlatformOperatorStore((s) => s.orgHealth);
-  const systemMetrics = usePlatformOperatorStore((s) => s.systemMetrics);
-  const incidents = usePlatformOperatorStore((s) => s.incidents);
-  const tickets = usePlatformOperatorStore((s) => s.tickets);
-  const webhooks = usePlatformOperatorStore((s) => s.webhooks);
-  const syncJobs = usePlatformOperatorStore((s) => s.syncJobs);
-  const apiEndpoints = usePlatformOperatorStore((s) => s.apiEndpoints);
-  const alerts = usePlatformOperatorStore((s) => s.alerts);
-  const accessRequests = usePlatformOperatorStore((s) => s.accessRequests);
-  const paymentFailures = usePlatformOperatorStore((s) => s.paymentFailures);
-  const invoiceDeliveries = usePlatformOperatorStore((s) => s.invoiceDeliveries);
-  const emailDeliveries = usePlatformOperatorStore((s) => s.emailDeliveries);
-  const emailDrafts = usePlatformOperatorStore((s) => s.emailDrafts);
-  const announcementDrafts = usePlatformOperatorStore((s) => s.announcementDrafts);
-  const subscriptions = usePlatformOperatorStore((s) => s.subscriptions);
-  const backups = usePlatformOperatorStore((s) => s.backups);
-  const maintenanceWindows = usePlatformOperatorStore((s) => s.maintenanceWindows);
-  const smtpHealth = usePlatformOperatorStore((s) => s.smtpHealth);
-  const activityLogs = usePlatformOperatorStore((s) => s.activityLogs);
-  const accountSettings = usePlatformOperatorStore((s) => s.accountSettings);
-  const setOperatorDepartment = usePlatformOperatorStore((s) => s.setOperatorDepartment);
-  const setActiveOperatorProfile = usePlatformOperatorStore((s) => s.setActiveOperatorProfile);
-  const lastTelemetryTickAt = usePlatformOperatorStore((s) => s.lastTelemetryTickAt);
-  const tickLiveDemoMetrics = usePlatformOperatorStore((s) => s.tickLiveDemoMetrics);
-  const acknowledgeAlert = usePlatformOperatorStore((s) => s.acknowledgeAlert);
-  const createIncidentFromAlert = usePlatformOperatorStore((s) => s.createIncidentFromAlert);
-  const retryWebhookEvent = usePlatformOperatorStore((s) => s.retryWebhookEvent);
-  const retryAllFailedWebhooks = usePlatformOperatorStore((s) => s.retryAllFailedWebhooks);
-  const retryPaymentFailure = usePlatformOperatorStore((s) => s.retryPaymentFailure);
-  const resendEmailDelivery = usePlatformOperatorStore((s) => s.resendEmailDelivery);
+/** Placeholder shown inside a kept card whose data source has no backend yet. Never sample values. */
+function NotAvailablePanel({ reason }: { reason: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-app-bg)] p-6 text-center text-xs text-[var(--color-text-secondary)]">
+      <p className="font-semibold text-[var(--color-text-muted)]">{NOT_AVAILABLE}</p>
+      <p className="mt-1">{reason}</p>
+    </div>
+  );
+}
 
-  const superAdminOperators = useSuperAdminStore((s) => s.operators);
+/** Loading / error (Retry) / empty for a list card; renders `children` when the list has rows. */
+function ListState<T>({
+  state,
+  rows,
+  onRetry,
+  emptyTitle,
+  emptyDescription,
+  children,
+}: {
+  state: ResourceState<T[]>;
+  rows: T[];
+  onRetry: () => void;
+  emptyTitle: string;
+  emptyDescription: string;
+  children: React.ReactNode;
+}) {
+  if (state.status !== "ready" || rows.length === 0) {
+    return (
+      <OperatorResourceStatus
+        state={state.status === "ready" ? { status: "ready", data: rows } : state}
+        isEmpty={(data) => data.length === 0}
+        onRetry={onRetry}
+        emptyTitle={emptyTitle}
+        emptyDescription={emptyDescription}
+        rows={2}
+      />
+    );
+  }
+  return <>{children}</>;
+}
 
-  const [autoPulseEnabled, setAutoPulseEnabled] = useState(true);
-  const [deptPickerOpen, setDeptPickerOpen] = useState(false);
+/** A count from a loaded list: the real figure, or "—" while loading / after a failure. */
+function countOf<T>(state: ResourceState<T[]>, predicate: (row: T) => boolean = () => true): number | string {
+  return state.status === "ready" ? state.data.filter(predicate).length : "—";
+}
 
-  // Active department and operator resolution
-  const activeDepartmentRaw = accountSettings.department || "Site Reliability";
-  const activeDepartment = normalizeDepartmentName(activeDepartmentRaw);
+/** A paged console resource seen as a plain list resource (its `items`), for ListState. */
+function asListState<T>(state: ResourceState<{ items: T[] }>): ResourceState<T[]> {
+  return state.status === "ready" ? { status: "ready", data: state.data.items ?? [] } : state;
+}
 
-  const activeOperator = useMemo(() => {
-    const byId = superAdminOperators.find((o) => o.id === accountSettings.activeOperatorId);
-    if (byId) return byId;
-    const byDept = superAdminOperators.find((o) => o.department === activeDepartment);
-    if (byDept) return byDept;
-    return {
-      id: "op-current",
-      name: accountSettings.name,
-      email: accountSettings.email,
-      department: activeDepartment,
-      roleId: "role-platform-operator",
-      status: "ACTIVE" as const,
-      mfaEnabled: accountSettings.mfaEnabled,
-      onCall: true,
-      shiftName: accountSettings.shiftName,
-      permissionOverrides: [],
-      lastActiveAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-    };
-  }, [superAdminOperators, accountSettings, activeDepartment]);
+const upper = (value: string | null | undefined) => (value ?? "").toUpperCase();
+const NA_SUB = NOT_AVAILABLE;
+const AUTO_REFRESH_MS = 60_000;
 
-  const permissionOverrides = useMemo(
-    () => activeOperator.permissionOverrides || [],
-    [activeOperator.permissionOverrides]
+export default function PlatformOperatorDashboardPage() {
+  /* ---------------------------------------------------------------- live reads (no demo store, no seed) */
+  const me = useOperatorResource(() => operatorApi.me(), "me");
+  const myPermissions = useOperatorResource(() => operatorApi.myPermissions(), "my-permissions");
+  const summary = useOperatorResource(() => operatorApi.dashboard(), "dashboard");
+  const stats = useOperatorResource(() => operatorApi.dashboardStats(), "dashboard-stats");
+  const incidentsRes = useOperatorResource(() => operatorApi.incidents.list(), "incidents");
+  const ticketsRes = useOperatorResource(() => operatorApi.tickets.list(), "tickets");
+  const accessRes = useOperatorResource(() => operatorApi.accessRequests.list(), "access-requests");
+  const alertsRes = useOperatorResource(() => operatorApi.alerts.list(), "alerts");
+  const jobsRes = useOperatorResource(() => operatorApi.jobs(), "jobs");
+  const webhooksRes = useOperatorResource(() => operatorApi.webhooks(), "webhooks");
+  const maintenanceRes = useOperatorResource(() => operatorApi.maintenance.list(), "maintenance");
+  const outboxRes = useOperatorResource(() => operatorApi.outbox.failed(), "outbox-failed");
+  const emailRes = useOperatorResource(() => operatorApi.emailDelivery.list(), "email-delivery");
+  const operatorsRes = useOperatorResource(() => operatorApi.operatorProfiles(), "operator-directory");
+  // Operator console reads (paged, small pages; tiles use the server's `total`, never a page length).
+  const [todayStartIso] = useState(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString();
+  });
+  const orgsRes = useOperatorResource(() => operatorApi.organizations.list({ size: 6 }), "dash-orgs");
+  const subsRes = useOperatorResource(() => operatorApi.subscriptions({ size: 5 }), "dash-subscriptions");
+  const activeSubsRes = useOperatorResource(
+    () => operatorApi.subscriptions({ status: "ACTIVE", size: 1 }),
+    "dash-subscriptions-active"
+  );
+  const payFailRes = useOperatorResource(() => operatorApi.paymentFailures({ size: 5 }), "dash-payment-failures");
+  const invoicesRes = useOperatorResource(() => operatorApi.invoiceDelivery({ size: 5 }), "dash-invoices");
+  const invoicesFailedRes = useOperatorResource(
+    () => operatorApi.invoiceDelivery({ delivery_status: "FAILED", size: 1 }),
+    "dash-invoices-failed"
+  );
+  const invoicesNotSentRes = useOperatorResource(
+    () => operatorApi.invoiceDelivery({ delivery_status: "NOT_SENT", size: 1 }),
+    "dash-invoices-not-sent"
+  );
+  const apiSummaryRes = useOperatorResource(() => operatorApi.apiErrors.summary(), "dash-api-errors");
+  const emailDraftsRes = useOperatorResource(() => operatorApi.emailDrafts.list({ size: 3 }), "dash-email-drafts");
+  const emailDraftsSubmittedRes = useOperatorResource(
+    () => operatorApi.emailDrafts.list({ status: "SUBMITTED", size: 1 }),
+    "dash-email-drafts-submitted"
+  );
+  const annDraftsRes = useOperatorResource(
+    () => operatorApi.announcementDrafts.list({ size: 3 }),
+    "dash-announcement-drafts"
+  );
+  const annPendingRes = useOperatorResource(
+    () => operatorApi.announcementDrafts.list({ status: "PENDING_REVIEW", size: 1 }),
+    "dash-announcements-pending"
+  );
+  const annPublishedRes = useOperatorResource(
+    () => operatorApi.announcementDrafts.list({ status: "PUBLISHED", size: 1 }),
+    "dash-announcements-published"
+  );
+  const backupsRes = useOperatorResource(() => operatorApi.backups.list({ size: 5 }), "dash-backups");
+  const activityRes = useOperatorResource(() => operatorApi.activityLogs({ size: 8 }), "dash-activity");
+  const activityTodayRes = useOperatorResource(
+    () => operatorApi.activityLogs({ from: todayStartIso, size: 1 }),
+    `dash-activity-today:${todayStartIso}`
   );
 
-  // Check if a specific module can be viewed under current department and overrides
+  const reloaders = [
+    orgsRes.reload,
+    subsRes.reload,
+    activeSubsRes.reload,
+    payFailRes.reload,
+    invoicesRes.reload,
+    invoicesFailedRes.reload,
+    invoicesNotSentRes.reload,
+    apiSummaryRes.reload,
+    emailDraftsRes.reload,
+    emailDraftsSubmittedRes.reload,
+    annDraftsRes.reload,
+    annPendingRes.reload,
+    annPublishedRes.reload,
+    backupsRes.reload,
+    activityRes.reload,
+    activityTodayRes.reload,
+    me.reload,
+    myPermissions.reload,
+    summary.reload,
+    stats.reload,
+    incidentsRes.reload,
+    ticketsRes.reload,
+    accessRes.reload,
+    alertsRes.reload,
+    jobsRes.reload,
+    webhooksRes.reload,
+    maintenanceRes.reload,
+    outboxRes.reload,
+    emailRes.reload,
+    operatorsRes.reload,
+  ];
+  const reloadersRef = React.useRef(reloaders);
+  reloadersRef.current = reloaders;
+  const reloadAll = useCallback(() => {
+    reloadersRef.current.forEach((reload) => void reload());
+  }, []);
+
+  const alertMutation = useOperatorMutation(alertsRes.reload);
+
+  /* Real periodic re-read of the server lists (off by default); replaces the old simulated telemetry tick. */
+  const [autoPulseEnabled, setAutoPulseEnabled] = useState(false);
+  const [deptPickerOpen, setDeptPickerOpen] = useState(false);
+  const [viewDepartment, setViewDepartment] = useState<OperatorDepartmentName | null>(null);
+
+  useEffect(() => {
+    if (!autoPulseEnabled) return;
+    const id = setInterval(reloadAll, AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [autoPulseEnabled, reloadAll]);
+
+  // Assigned department comes from the server (operator profile, else the dashboard summary's department id).
+  const profile = me.state.status === "ready" ? me.state.data : null;
+  const assignedDepartmentId =
+    profile?.department ?? (summary.state.status === "ready" ? summary.state.data.department : undefined);
+  const assignedDepartment = normalizeDepartmentName(assignedDepartmentId ?? undefined);
+  const activeDepartment: OperatorDepartmentName = viewDepartment ?? assignedDepartment;
+  const canSwitchView =
+    upper(profile?.access_level) === "MAIN_PLATFORM_OPERATOR" || assignedDepartment === "Platform Operations";
+
+  const activeOperator = {
+    name: profile?.name ?? (me.state.status === "loading" ? "Loading operator" : "Operator"),
+    email: profile?.email ?? "—",
+    mfaEnabled: profile?.mfa_enabled ?? false,
+    onCall: profile?.on_call ?? false,
+    shiftName: profile?.shift_name ?? null,
+  };
+
+  // Individual grants / denies recorded on the server for this operator.
+  const permissionOverrides = useMemo(
+    () =>
+      myPermissions.state.status === "ready"
+        ? myPermissions.state.data.permissions.filter((p) => upper(p.state) !== "DEPARTMENT_DEFAULT")
+        : [],
+    [myPermissions.state]
+  );
+
+  // Check if a specific module can be viewed under current department (department defaults, as before)
   const canViewModule = useCallback(
-    (moduleKey: string) => {
-      return resolveEffectivePermission(activeDepartment, moduleKey, "view", permissionOverrides).allowed;
-    },
-    [activeDepartment, permissionOverrides]
+    (moduleKey: string) => resolveEffectivePermission(activeDepartment, moduleKey, "view").allowed,
+    [activeDepartment]
   );
 
   // Count authorized operational modules
@@ -154,148 +280,262 @@ function PreviewPlatformOperatorDashboardPage() {
     return OPERATOR_MODULE_CATALOG.filter((mod) => canViewModule(mod.key)).length;
   }, [canViewModule]);
 
-  useEffect(() => {
-    if (!autoPulseEnabled || accountSettings.autoRefreshSeconds === 0) return;
-    const ms = Math.max(5000, accountSettings.autoRefreshSeconds * 1000);
-    const id = setInterval(() => {
-      tickLiveDemoMetrics();
-    }, ms);
-    return () => clearInterval(id);
-  }, [autoPulseEnabled, accountSettings.autoRefreshSeconds, tickLiveDemoMetrics]);
+  /* ---------------------------------------------------------------- derived real figures */
+  const incidents = useMemo(() => rowsOf(incidentsRes.state), [incidentsRes.state]);
+  const tickets = useMemo(() => rowsOf(ticketsRes.state), [ticketsRes.state]);
+  const accessRequests = rowsOf(accessRes.state);
+  const alerts = useMemo(() => rowsOf(alertsRes.state), [alertsRes.state]);
+  const syncJobs = rowsOf(jobsRes.state);
+  const maintenanceWindows = rowsOf(maintenanceRes.state);
+  const emailDeliveries = useMemo(() => rowsOf(emailRes.state), [emailRes.state]);
+  const operators = rowsOf(operatorsRes.state);
 
-  // Derived metrics
-  const operationalOrgs = useMemo(
-    () => orgHealth.filter((o) => o.status === "Operational").length,
-    [orgHealth]
-  );
-  const openIncidents = useMemo(
-    () => incidents.filter((i) => i.status !== "Resolved"),
-    [incidents]
-  );
+  const openIncidents = useMemo(() => incidents.filter((i) => upper(i.status) !== "RESOLVED"), [incidents]);
   const openTickets = useMemo(
-    () => tickets.filter((t) => t.status !== "Resolved"),
+    () => tickets.filter((t) => upper(t.status) !== "RESOLVED" && upper(t.status) !== "CLOSED"),
     [tickets]
   );
-  const totalQueueDepth = useMemo(
-    () => systemMetrics.reduce((sum, m) => sum + m.queueDepth, 0),
-    [systemMetrics]
-  );
-  const avgApiLatency = useMemo(() => {
-    if (apiEndpoints.length === 0) return 0;
-    return Math.round(
-      apiEndpoints.reduce((sum, e) => sum + e.avgLatencyMs, 0) / apiEndpoints.length
-    );
-  }, [apiEndpoints]);
+  const activeAlerts = useMemo(() => alerts.filter((a) => !a.acknowledged), [alerts]);
 
-  const failedWebhooksCount = useMemo(
-    () => webhooks.filter((w) => w.status === "Failed" || w.status === "Retrying").length,
-    [webhooks]
+  const isFailedWebhook = (status: string) => upper(status) === "FAILED" || upper(status) === "RETRYING";
+  const failedWebhooksCount = countOf(webhooksRes.state, (w) => isFailedWebhook(w.status));
+  const failedOutboxCount = countOf(outboxRes.state);
+  const pendingSyncJobsCount = countOf(jobsRes.state, (j) => upper(j.status) !== "COMPLETED");
+  const pendingAccessCount = countOf(accessRes.state, (r) => upper(r.status) === "PENDING_APPROVAL");
+  const openIncidentsCount = countOf(incidentsRes.state, (i) => upper(i.status) !== "RESOLVED");
+  const openTicketsCount = countOf(
+    ticketsRes.state,
+    (t) => upper(t.status) !== "RESOLVED" && upper(t.status) !== "CLOSED"
   );
-  const unresolvedPaymentsCount = useMemo(
-    () =>
-      paymentFailures.filter(
-        (p) => p.retryStatus === "Scheduled" || p.retryStatus === "Retried — Failed"
-      ).length,
-    [paymentFailures]
+  const activeAlertsCount = countOf(alertsRes.state, (a) => !a.acknowledged);
+  const activeMaintenanceCount = countOf(
+    maintenanceRes.state,
+    (m) => upper(m.status) !== "COMPLETED" && upper(m.status) !== "CANCELLED"
   );
-  const pendingAccessCount = useMemo(
-    () => accessRequests.filter((r) => r.status === "Pending Approval").length,
-    [accessRequests]
+  const emailAcceptedCount = countOf(emailRes.state, (e) => upper(e.status) === "SMTP_ACCEPTED");
+  const emailFailedCount = countOf(emailRes.state, (e) => upper(e.status) === "FAILED" || upper(e.status) === "NOT_SENT");
+  const emailNotAcceptedCount = countOf(emailRes.state, (e) => upper(e.status) !== "SMTP_ACCEPTED");
+  const isBillingDept = (dept: string | null) => dept === "revenue-operations" || dept === "finance-tax";
+  const billingIncidentsCount = countOf(
+    incidentsRes.state,
+    (i) => upper(i.status) !== "RESOLVED" && isBillingDept(i.department_id)
   );
-  const bouncedInvoicesCount = useMemo(
-    () => invoiceDeliveries.filter((i) => i.deliveryStatus !== "Delivered").length,
-    [invoiceDeliveries]
+  const financeTicketsCount = countOf(ticketsRes.state, (t) => t.department_id === "finance-tax");
+  const communicationAlertsCount = countOf(
+    alertsRes.state,
+    (a) => !a.acknowledged && (a.department_id === "lifecycle-messaging" || a.department_id === "customer-communications")
   );
-  const pendingDraftsCount = useMemo(
-    () =>
-      emailDrafts.filter((d) => d.status === "Submitted for Approval").length +
-      announcementDrafts.filter((a) => a.status === "Submitted for Approval").length,
-    [emailDrafts, announcementDrafts]
+  const securityAlertsCount = countOf(
+    alertsRes.state,
+    (a) => !a.acknowledged && (upper(a.severity) === "CRITICAL" || a.department_id === "trust-compliance")
   );
+  const mfaCompliance =
+    operatorsRes.state.status === "ready"
+      ? `${operators.filter((o) => o.mfa_enabled).length} / ${operators.length}`
+      : "—";
+  // /dashboard/stats counters (real repository counts; its health score string is never shown).
+  const statsData = stats.state.status === "ready" ? stats.state.data : null;
+  const failedJobsStat = statsData?.failedJobs ?? "—";
+  const retryingWebhooksStat = statsData?.pendingWebhooks ?? "—";
+  const orgsByState = statsData?.organizationsByState ?? null;
+  const activeOrgsCount: number | string = orgsByState ? orgsByState.ACTIVE ?? 0 : "—";
+  const suspendedOrgsCount: number | string = orgsByState ? orgsByState.SUSPENDED ?? 0 : "—";
 
-  const activeAlerts = useMemo(
-    () => alerts.filter((a) => a.status !== "Resolved"),
-    [alerts]
-  );
+  // Console list totals (server `total`), "—" while loading or after a failure.
+  const totalOf = (state: ResourceState<{ total: number }>): number | string =>
+    state.status === "ready" ? state.data.total ?? 0 : "—";
+  const orgRows = pageItemsOf(orgsRes.state);
+  const totalOrgsCount = totalOf(orgsRes.state);
+  const subscriptionRows = pageItemsOf(subsRes.state);
+  const totalSubscriptionsCount = totalOf(subsRes.state);
+  const activeSubscriptionsCount = totalOf(activeSubsRes.state);
+  const paymentFailureRows = pageItemsOf(payFailRes.state);
+  const paymentFailuresCount = totalOf(payFailRes.state);
+  const invoiceRows = pageItemsOf(invoicesRes.state);
+  const invoicesTrackedCount = totalOf(invoicesRes.state);
+  const invoicesFailedCount = totalOf(invoicesFailedRes.state);
+  const invoicesNotSentCount = totalOf(invoicesNotSentRes.state);
+  const invoiceExceptionsCount =
+    typeof invoicesFailedCount === "number" && typeof invoicesNotSentCount === "number"
+      ? invoicesFailedCount + invoicesNotSentCount
+      : "—";
+  const apiSummary = apiSummaryRes.state.status === "ready" ? apiSummaryRes.state.data : null;
+  const apiErrors24h: number | string = apiSummary ? apiSummary.total : "—";
+  const apiServerErrors24h: number | string = apiSummary ? apiSummary.server_errors : "—";
+  const emailDraftRows = pageItemsOf(emailDraftsRes.state);
+  const emailDraftsCount = totalOf(emailDraftsRes.state);
+  const emailDraftsSubmittedCount = totalOf(emailDraftsSubmittedRes.state);
+  const announcementDraftRows = pageItemsOf(annDraftsRes.state);
+  const announcementDraftsCount = totalOf(annDraftsRes.state);
+  const announcementsPendingCount = totalOf(annPendingRes.state);
+  const announcementsPublishedCount = totalOf(annPublishedRes.state);
+  const pendingDraftsCount =
+    typeof emailDraftsSubmittedCount === "number" && typeof announcementsPendingCount === "number"
+      ? emailDraftsSubmittedCount + announcementsPendingCount
+      : "—";
+  const backupList = backupsRes.state.status === "ready" ? backupsRes.state.data : null;
+  const latestBackup = backupList?.items?.[0] ?? null;
+  const latestBackupLabel: string = !backupList
+    ? "—"
+    : !backupList.configured
+    ? "Not configured"
+    : latestBackup
+    ? humanizeCode(latestBackup.status)
+    : "No runs";
+  const succeededBackupsShown: number | string = backupList
+    ? backupList.items.filter((b) => upper(b.status) === "SUCCEEDED").length
+    : "—";
+  const activityRows = pageItemsOf(activityRes.state);
+  const activityTodayCount = totalOf(activityTodayRes.state);
 
-  // Live Chart Series
-  const apiTrendSeries = useMemo(() => {
-    const baseLatency = Math.max(40, avgApiLatency);
-    const baseRpm = apiEndpoints.reduce((sum, e) => sum + e.requestsPerMin, 0);
-    return [
-      { time: "-50m", latency: Math.max(25, baseLatency - 12), rpm: Math.round(baseRpm * 0.84) },
-      { time: "-40m", latency: Math.max(25, baseLatency - 6), rpm: Math.round(baseRpm * 0.89) },
-      { time: "-30m", latency: Math.max(25, baseLatency + 9), rpm: Math.round(baseRpm * 0.96) },
-      { time: "-20m", latency: Math.max(25, baseLatency + 3), rpm: Math.round(baseRpm * 0.92) },
-      { time: "-10m", latency: Math.max(25, baseLatency - 2), rpm: Math.round(baseRpm * 0.98) },
-      { time: "Now", latency: baseLatency, rpm: baseRpm },
-    ];
-  }, [avgApiLatency, apiEndpoints]);
+  const toneFor = (value: number | string, busy: "amber" | "rose" = "amber") =>
+    typeof value === "number" && value > 0 ? busy : "emerald";
 
-  const queueBarSeries = useMemo(() => {
-    return syncJobs.slice(0, 6).map((j) => ({
-      label: j.jobCode,
-      processed: j.processedCount,
-      retries: j.retries,
-    }));
-  }, [syncJobs]);
-
+  // Email status breakdown from the real delivery log (count per status, attempts beyond the first as exceptions).
   const emailDeliveryBarSeries = useMemo(() => {
-    return [
-      { label: "Delivered", processed: emailDeliveries.filter((e) => e.status === "Delivered").length * 280 + 940, retries: 0 },
-      { label: "Deferred", processed: 18, retries: 4 },
-      { label: "Bounced", processed: 6, retries: 6 },
-      { label: "In Flight", processed: 42, retries: 0 },
-    ];
+    const buckets = new Map<string, { processed: number; retries: number }>();
+    emailDeliveries.forEach((e) => {
+      const bucket = buckets.get(e.status) ?? { processed: 0, retries: 0 };
+      bucket.processed += 1;
+      bucket.retries += Math.max(0, e.attempts - 1);
+      buckets.set(e.status, bucket);
+    });
+    return Array.from(buckets.entries()).map(([status, v]) => ({ label: humanizeCode(status), ...v }));
   }, [emailDeliveries]);
 
-  // Filter activity logs to authorized categories for current department
-  const filteredActivityLogs = useMemo(() => {
-    switch (activeDepartment) {
-      case "Site Reliability":
-        return activityLogs.filter(
-          (l) => l.category === "System" || l.category === "Integration" || l.category === "Incident"
-        );
-      case "Lifecycle Messaging":
-        return activityLogs.filter(
-          (l) => l.category === "Communication" || l.category === "System"
-        );
-      case "Customer Communications":
-        return activityLogs.filter(
-          (l) => l.category === "Support" || l.category === "Communication" || l.category === "Account"
-        );
-      case "Revenue Operations":
-      case "Finance & Tax":
-        return activityLogs.filter(
-          (l) => l.category === "Billing" || l.category === "Incident" || l.category === "Account"
-        );
-      case "Trust & Compliance":
-        return activityLogs.filter(
-          (l) => l.category === "Account" || l.category === "System" || l.category === "Incident"
-        );
-      case "Platform Operations":
-      default:
-        return activityLogs;
-    }
-  }, [activeDepartment, activityLogs]);
-
   const handleSwitchDepartment = (dept: OperatorDepartmentName) => {
-    const sampleOp = superAdminOperators.find((o) => o.department === dept);
-    if (sampleOp) {
-      setActiveOperatorProfile({
-        id: sampleOp.id,
-        name: sampleOp.name,
-        email: sampleOp.email,
-        department: sampleOp.department,
-        shiftName: sampleOp.shiftName,
-        mfaEnabled: sampleOp.mfaEnabled,
-      });
-    } else {
-      setOperatorDepartment(dept);
-    }
+    setViewDepartment(dept === assignedDepartment ? null : dept);
     setDeptPickerOpen(false);
-    toast.success(`Active context switched to ${dept}`);
+    toast.success(
+      dept === assignedDepartment
+        ? `Showing your assigned department (${dept}).`
+        : `Showing the ${dept} view. Your assigned department is ${assignedDepartment}.`
+    );
   };
+
+  const acknowledge = (alertId: string) =>
+    void alertMutation.run(`ack-${alertId}`, () => operatorApi.alerts.acknowledge(alertId), "Alert acknowledged.");
+
+  /* Recent rows of the read-only billing lists (shared by the Revenue Operations and Finance & Tax views). */
+  const paymentFailureList = (
+    <ListState
+      state={asListState(payFailRes.state)}
+      rows={paymentFailureRows}
+      onRetry={() => void payFailRes.reload()}
+      emptyTitle="No payment failures"
+      emptyDescription="No failed payments are recorded."
+    >
+      <div className="space-y-2.5">
+        {paymentFailureRows.map((p) => (
+          <div
+            key={p.id}
+            className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5 space-y-1"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-[var(--color-text-primary)] truncate">{p.org_name ?? p.org_id ?? "—"}</span>
+              <span className="text-xs font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+                {formatMoney(p.amount, p.currency)}
+              </span>
+            </div>
+            <p className="text-[11px] text-[var(--color-text-secondary)] truncate">
+              {p.failure_reason ?? "No reason recorded"} · {p.invoice_number ?? "no invoice"}
+            </p>
+            <p className="text-[10px] text-[var(--color-text-muted)]">
+              {p.method ?? "—"}
+              {p.method_last4 ? ` •••• ${p.method_last4}` : ""} · {p.failed_at ? formatDateTime(p.failed_at) : "—"}
+            </p>
+          </div>
+        ))}
+      </div>
+    </ListState>
+  );
+
+  const subscriptionList = (
+    <ListState
+      state={asListState(subsRes.state)}
+      rows={subscriptionRows}
+      onRetry={() => void subsRes.reload()}
+      emptyTitle="No subscriptions"
+      emptyDescription="No organization has a subscription yet."
+    >
+      <div className="space-y-2.5">
+        {subscriptionRows.map((s) => (
+          <div
+            key={s.id}
+            className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5 space-y-1"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-[var(--color-text-primary)] truncate">{s.org_name ?? s.org_id}</span>
+              <StatusBadge label={humanizeCode(s.status)} tone={getStatusTone(s.status)} dot />
+            </div>
+            <p className="text-[11px] text-[var(--color-text-secondary)]">
+              {s.plan_name ?? s.plan_code ?? "—"} · {humanizeCode(s.billing_cycle)} · {s.seats_used} / {s.seats} seats
+            </p>
+            <p className="text-[10px] text-[var(--color-text-muted)]">
+              Renews: {s.current_period_end ? formatDateTime(s.current_period_end) : "—"}
+              {s.cancel_at_period_end ? " · cancels at period end" : ""}
+            </p>
+          </div>
+        ))}
+      </div>
+    </ListState>
+  );
+
+  /* Recent operator activity + audit entries (GET /v1/operator/activity-logs; the server applies the scope). */
+  const activityList = (
+    <ListState
+      state={asListState(activityRes.state)}
+      rows={activityRows}
+      onRetry={() => void activityRes.reload()}
+      emptyTitle="No operator activity"
+      emptyDescription="No operator activity has been recorded yet."
+    >
+      {activityRows.map((a) => (
+        <div key={`${a.source}-${a.id}`} className="py-2.5 text-xs space-y-0.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold text-[var(--color-text-primary)] truncate">{humanizeCode(a.action)}</span>
+            <span className="text-[10px] text-[var(--color-text-muted)] shrink-0">
+              {a.occurred_at ? formatDateTime(a.occurred_at) : "—"}
+            </span>
+          </div>
+          <p className="text-[11px] text-[var(--color-text-secondary)] truncate">
+            {a.operator_name ?? "System"} · {a.resource_type ?? a.module_key ?? "—"}
+            {a.resource_id ? ` ${a.resource_id}` : ""} · {humanizeCode(a.source)}
+          </p>
+        </div>
+      ))}
+    </ListState>
+  );
+
+  const invoiceList = (
+    <ListState
+      state={asListState(invoicesRes.state)}
+      rows={invoiceRows}
+      onRetry={() => void invoicesRes.reload()}
+      emptyTitle="No invoices"
+      emptyDescription="No invoices have been issued yet."
+    >
+      <div className="space-y-2.5">
+        {invoiceRows.map((inv) => (
+          <div
+            key={inv.invoice_id}
+            className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5 text-xs"
+          >
+            <div className="min-w-0">
+              <p className="font-semibold text-[var(--color-text-primary)] truncate">
+                {inv.invoice_number ?? inv.invoice_id} · {inv.org_name ?? "—"}
+              </p>
+              <p className="text-[11px] text-[var(--color-text-secondary)] truncate">
+                {formatMoney(inv.total)} · due {inv.due_date ?? "—"} · {inv.recipient_email ?? "no recipient"}
+              </p>
+            </div>
+            <StatusBadge label={humanizeCode(inv.delivery_status)} tone={getStatusTone(inv.delivery_status)} dot />
+          </div>
+        ))}
+      </div>
+    </ListState>
+  );
+
 
   return (
     <div className="space-y-6">
@@ -303,7 +543,7 @@ function PreviewPlatformOperatorDashboardPage() {
       <PageHeader
         title={`${activeDepartment} Operations Center`}
         badge={autoPulseEnabled ? "Auto-Refresh On" : "Manual Refresh"}
-        demoLabel="Simulated Live Telemetry"
+        liveData
         description={`Personalized operational console for ${activeDepartment}. Scoped by role permissions and Spring Boot deny-by-default access control.`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -324,13 +564,21 @@ function PreviewPlatformOperatorDashboardPage() {
                   <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)] mb-1">
                     Switch Operator Department
                   </div>
+                  {!canSwitchView && (
+                    <p className="px-2.5 py-1 text-[10px] text-[var(--color-text-muted)]">
+                      Your department is assigned by a Super Admin; other department views are for Main Platform Operators.
+                    </p>
+                  )}
                   {OPERATOR_DEPARTMENTS.map((dept) => {
                     const isSelected = dept === activeDepartment;
+                    const locked = !canSwitchView && dept !== assignedDepartment;
                     return (
                       <button
                         key={dept}
                         onClick={() => handleSwitchDepartment(dept)}
-                        className={`w-full flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs text-left transition-colors ${
+                        disabled={locked}
+                        title={locked ? "Only Main Platform Operators can view other departments" : undefined}
+                        className={`w-full flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                           isSelected
                             ? "bg-teal-500/15 text-teal-700 dark:text-teal-300 font-semibold"
                             : "hover:bg-[var(--color-hover)] text-[var(--color-text-secondary)]"
@@ -349,18 +597,12 @@ function PreviewPlatformOperatorDashboardPage() {
               variant="outline"
               size="sm"
               onClick={() => setAutoPulseEnabled((v) => !v)}
+              title="Re-reads the server lists every 60 seconds while on"
             >
               <Activity className="w-3.5 h-3.5" />
               {autoPulseEnabled ? "Pause Pulse" : "Resume Pulse"}
             </OpButton>
-            <OpButton
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                tickLiveDemoMetrics();
-                toast.success("Refreshed simulated telemetry.");
-              }}
-            >
+            <OpButton variant="primary" size="sm" onClick={reloadAll}>
               <RefreshCw className="w-3.5 h-3.5" />
               Refresh
             </OpButton>
@@ -399,8 +641,13 @@ function PreviewPlatformOperatorDashboardPage() {
               <p className="text-xs text-[var(--color-text-secondary)]">
                 {activeOperator.email} · Shift:{" "}
                 <span className="font-medium text-[var(--color-text-primary)]">
-                  {activeOperator.shiftName || "Americas Primary (08:00 - 16:00 EST)"}
+                  {activeOperator.shiftName || "Not set"}
                 </span>
+                {viewDepartment && (
+                  <span className="ml-1 text-[var(--color-text-muted)]">
+                    · Assigned department: {assignedDepartment}
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -427,7 +674,21 @@ function PreviewPlatformOperatorDashboardPage() {
             )}
           </div>
         </div>
+        {me.state.status === "error" && (
+          <p className="mt-3 text-xs text-rose-700 dark:text-rose-300">
+            Could not load your operator profile: {me.state.message}{" "}
+            <button className="underline font-medium" onClick={() => void me.reload()}>
+              Retry
+            </button>
+          </p>
+        )}
       </SurfaceCard>
+
+      <MutationNotice
+        notice={alertMutation.notice}
+        onReload={() => void alertsRes.reload()}
+        onDismiss={alertMutation.clearNotice}
+      />
 
       {/* =========================================================================
           DEPARTMENT 1: SITE RELIABILITY
@@ -438,31 +699,31 @@ function PreviewPlatformOperatorDashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <KpiCard
               label="System Health"
-              value={`${systemMetrics.filter((s) => s.status === "Operational").length} / ${systemMetrics.length}`}
-              sublabel="Services operating at nominal latency"
+              value="—"
+              sublabel={`${NA_SUB}: no service health metrics endpoint`}
               icon={Server}
-              tone={systemMetrics.every((s) => s.status === "Operational") ? "emerald" : "amber"}
+              tone="slate"
             />
             <KpiCard
               label="Failed Webhooks"
               value={failedWebhooksCount}
-              sublabel="Events awaiting retry delivery"
+              sublabel={`Failed or retrying receipts · ${retryingWebhooksStat} retrying`}
               icon={RotateCcw}
-              tone={failedWebhooksCount > 0 ? "amber" : "emerald"}
+              tone={toneFor(failedWebhooksCount)}
             />
             <KpiCard
               label="Pending Sync Jobs"
-              value={syncJobs.filter((j) => j.status !== "Completed").length}
-              sublabel={`${totalQueueDepth} items in background queue`}
+              value={pendingSyncJobsCount}
+              sublabel={`${failedJobsStat} failed job(s) in background queue`}
               icon={Activity}
               tone="teal"
             />
             <KpiCard
               label="Active Incidents & Backups"
-              value={`${openIncidents.length} / ${backups.filter((b) => b.status === "Verified").length}`}
-              sublabel={`${backups[0]?.status || "Verified"} backup snapshot`}
+              value={openIncidentsCount}
+              sublabel={`Open incidents · Latest backup: ${latestBackupLabel}`}
               icon={DatabaseBackup}
-              tone={openIncidents.length > 0 ? "rose" : "emerald"}
+              tone={toneFor(openIncidentsCount, "rose")}
             />
           </div>
 
@@ -471,30 +732,30 @@ function PreviewPlatformOperatorDashboardPage() {
             {[
               {
                 label: "Failed Webhooks",
-                count: failedWebhooksCount,
+                count: failedOutboxCount,
                 href: "/platform-operator/failed-events",
-                tone: failedWebhooksCount > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600",
+                tone: toneFor(failedOutboxCount) !== "emerald" ? "text-rose-600 dark:text-rose-400" : "text-emerald-600",
                 icon: RotateCcw,
               },
               {
                 label: "Sync Jobs & Queues",
-                count: syncJobs.length,
+                count: countOf(jobsRes.state),
                 href: "/platform-operator/sync-jobs",
                 tone: "text-teal-600 dark:text-teal-400",
                 icon: Activity,
               },
               {
                 label: "API Error Monitors",
-                count: apiEndpoints.filter((e) => e.status !== "Normal").length,
+                count: apiErrors24h,
                 href: "/platform-operator/api-errors",
-                tone: apiEndpoints.some((e) => e.status !== "Normal") ? "text-amber-600" : "text-emerald-600",
+                tone: toneFor(apiServerErrors24h, "rose") !== "emerald" ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400",
                 icon: AlertTriangle,
               },
               {
                 label: "Verified Backups",
-                count: backups.length,
+                count: backupList && !backupList.configured ? latestBackupLabel : succeededBackupsShown,
                 href: "/platform-operator/backups",
-                tone: "text-blue-600 dark:text-blue-400",
+                tone: latestBackup && upper(latestBackup.status) === "FAILED" ? "text-rose-600 dark:text-rose-400" : "text-teal-600 dark:text-teal-400",
                 icon: DatabaseBackup,
               },
             ].map((item) => {
@@ -524,7 +785,7 @@ function PreviewPlatformOperatorDashboardPage() {
                     API Response Time Trend
                   </h3>
                   <p className="text-xs text-[var(--color-text-secondary)]">
-                    Simulated average endpoint latency over the past 60 minutes.
+                    Average endpoint latency over the past 60 minutes.
                   </p>
                 </div>
                 <Link href="/platform-operator/api-errors">
@@ -533,13 +794,28 @@ function PreviewPlatformOperatorDashboardPage() {
                   </OpButton>
                 </Link>
               </div>
-              <TelemetryAreaChart
-                data={apiTrendSeries}
-                primaryKey="latency"
-                primaryLabel="Avg Latency"
-                unit=" ms"
-                height={230}
-              />
+              <NotAvailablePanel reason="The server does not record API latency over time yet." />
+              {apiSummary && (
+                <div className="space-y-1.5 text-xs">
+                  <p className="text-[var(--color-text-secondary)]">
+                    API errors in the last 24h: <span className="font-semibold text-[var(--color-text-primary)]">{apiSummary.total}</span>{" "}
+                    ({apiSummary.server_errors} server · {apiSummary.client_errors} client)
+                  </p>
+                  {apiSummary.by_path.slice(0, 3).map((p) => (
+                    <div
+                      key={`${p.method} ${p.path}`}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] px-2.5 py-1.5"
+                    >
+                      <span className="font-mono text-[11px] truncate">
+                        {p.method} {p.path}
+                      </span>
+                      <span className="tabular-nums text-[11px] text-[var(--color-text-muted)] shrink-0">
+                        {p.count} ({p.server_errors} 5xx)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </SurfaceCard>
 
             <SurfaceCard className="p-4 sm:p-5 space-y-3">
@@ -558,14 +834,7 @@ function PreviewPlatformOperatorDashboardPage() {
                   </OpButton>
                 </Link>
               </div>
-              <QueueBarChart
-                data={queueBarSeries}
-                primaryKey="processed"
-                primaryLabel="Processed"
-                secondaryKey="retries"
-                secondaryLabel="Retries"
-                height={230}
-              />
+              <NotAvailablePanel reason="Background jobs report attempts but no processed-item counts yet." />
             </SurfaceCard>
           </div>
 
@@ -588,12 +857,19 @@ function PreviewPlatformOperatorDashboardPage() {
                 </Link>
               </div>
 
-              {openIncidents.length === 0 ? (
+              {incidentsRes.state.status === "ready" && openIncidents.length === 0 ? (
                 <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-6 text-center text-xs text-[var(--color-text-secondary)]">
                   <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-2" />
-                  All platform services are operational. No open incidents.
+                  No open incidents.
                 </div>
               ) : (
+                <ListState
+                  state={incidentsRes.state}
+                  rows={openIncidents}
+                  onRetry={() => void incidentsRes.reload()}
+                  emptyTitle="No open incidents"
+                  emptyDescription="No open incidents."
+                >
                 <div className="space-y-2.5">
                   {openIncidents.map((inc) => (
                     <div
@@ -602,22 +878,23 @@ function PreviewPlatformOperatorDashboardPage() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <StatusBadge label={inc.severity} tone={getStatusTone(inc.severity)} />
+                          <StatusBadge label={humanizeCode(inc.severity)} tone={getStatusTone(inc.severity)} />
                           <span className="text-xs font-bold text-[var(--color-text-primary)]">
-                            {inc.code}
+                            {inc.id}
                           </span>
                         </div>
-                        <StatusBadge label={inc.status} tone={getStatusTone(inc.status)} dot />
+                        <StatusBadge label={humanizeCode(inc.status)} tone={getStatusTone(inc.status)} dot />
                       </div>
                       <p className="text-xs font-semibold text-[var(--color-text-primary)]">
                         {inc.title}
                       </p>
                       <p className="text-[11px] text-[var(--color-text-secondary)]">
-                        {inc.affectedService} · Assigned to {inc.assignedTo}
+                        {inc.department_name ?? "—"} · Assigned to {inc.assigned_operator_name ?? "Unassigned"}
                       </p>
                     </div>
                   ))}
                 </div>
+                </ListState>
               )}
             </SurfaceCard>
 
@@ -638,26 +915,7 @@ function PreviewPlatformOperatorDashboardPage() {
                 </Link>
               </div>
 
-              <div className="space-y-2.5">
-                {systemMetrics.slice(0, 4).map((svc) => (
-                  <div
-                    key={svc.id}
-                    className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3 space-y-2"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-[var(--color-text-primary)] truncate">
-                        {svc.serviceName}
-                      </span>
-                      <StatusBadge label={svc.status} tone={getStatusTone(svc.status)} dot />
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-[11px] text-[var(--color-text-secondary)]">
-                      <span>CPU: {svc.cpuPct}%</span>
-                      <span>Memory: {svc.memoryPct}%</span>
-                      <span>Latency: {svc.latencyMs}ms</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <NotAvailablePanel reason="CPU, memory and latency metrics are not collected by the server yet." />
             </SurfaceCard>
           </div>
         </div>
@@ -672,35 +930,31 @@ function PreviewPlatformOperatorDashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <KpiCard
               label="Emails Delivered"
-              value={`${emailDeliveries.filter((e) => e.status === "Delivered").length} / ${emailDeliveries.length}`}
-              sublabel="99.4% inbox placement rate"
+              value={emailRes.state.status === "ready" ? `${emailAcceptedCount} / ${emailDeliveries.length}` : "—"}
+              sublabel={`Accepted by SMTP server · inbox placement: ${NA_SUB}`}
               icon={Mail}
               tone="emerald"
             />
             <KpiCard
               label="Failed & Bounced"
-              value={emailDeliveries.filter((e) => e.status === "Bounced" || e.status === "Failed").length}
-              sublabel="Outbound bounce exceptions"
+              value={emailFailedCount}
+              sublabel="Failed or not sent attempts"
               icon={MailWarning}
-              tone={
-                emailDeliveries.some((e) => e.status === "Bounced" || e.status === "Failed")
-                  ? "amber"
-                  : "emerald"
-              }
+              tone={toneFor(emailFailedCount)}
             />
             <KpiCard
               label="SMTP Relay Status"
-              value={smtpHealth.connectionState}
-              sublabel={`${smtpHealth.inboxPlacementPct}% placement on SendGrid/SES`}
+              value="—"
+              sublabel={NA_SUB}
               icon={Radio}
-              tone="teal"
+              tone="slate"
             />
             <KpiCard
               label="Pending Drafts"
               value={pendingDraftsCount}
-              sublabel="Templates & broadcasts awaiting review"
+              sublabel={`Awaiting Super Admin review · ${emailDraftsSubmittedCount} email · ${announcementsPendingCount} announcement`}
               icon={MailPlus}
-              tone="blue"
+              tone={toneFor(pendingDraftsCount) === "emerald" ? "slate" : "blue"}
             />
           </div>
 
@@ -709,28 +963,28 @@ function PreviewPlatformOperatorDashboardPage() {
             {[
               {
                 label: "Email Delivery & Logs",
-                count: emailDeliveries.length,
+                count: countOf(emailRes.state),
                 href: "/platform-operator/email-delivery",
                 tone: "text-blue-600 dark:text-blue-400",
                 icon: Mail,
               },
               {
                 label: "Email Template Drafts",
-                count: emailDrafts.length,
+                count: emailDraftsCount,
                 href: "/platform-operator/email-drafts",
-                tone: "text-teal-600 dark:text-teal-400",
+                tone: "text-blue-600 dark:text-blue-400",
                 icon: MailPlus,
               },
               {
                 label: "Announcement Drafts",
-                count: announcementDrafts.length,
+                count: announcementDraftsCount,
                 href: "/platform-operator/announcement-drafts",
-                tone: "text-violet-600 dark:text-violet-400",
+                tone: "text-blue-600 dark:text-blue-400",
                 icon: Megaphone,
               },
               {
                 label: "Communication Alerts",
-                count: alerts.filter((a) => a.category === "System").length,
+                count: communicationAlertsCount,
                 href: "/platform-operator/alerts",
                 tone: "text-amber-600 dark:text-amber-400",
                 icon: AlertTriangle,
@@ -765,37 +1019,26 @@ function PreviewPlatformOperatorDashboardPage() {
                     Live connection pool and sender domain authentication state.
                   </p>
                 </div>
-                <StatusBadge label={smtpHealth.connectionState} tone="success" dot />
+                <StatusBadge label={NOT_AVAILABLE} tone="neutral" dot />
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3">
                   <p className="text-[11px] text-[var(--color-text-muted)]">Daily Outbound Sent</p>
                   <p className="text-base font-bold text-[var(--color-text-primary)] mt-1">
-                    {smtpHealth.dailySent.toLocaleString()} / {smtpHealth.dailyQuota.toLocaleString()}
+                    <NotAvailableText />
                   </p>
                 </div>
                 <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3">
                   <p className="text-[11px] text-[var(--color-text-muted)]">Inbox Placement</p>
                   <p className="text-base font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-                    {smtpHealth.inboxPlacementPct}%
+                    <NotAvailableText />
                   </p>
                 </div>
               </div>
 
               <div className="space-y-2 pt-1">
-                {smtpHealth.checks.map((check, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] p-2.5 text-xs"
-                  >
-                    <span className="text-[var(--color-text-secondary)]">{check.label}</span>
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      {check.detail}
-                    </span>
-                  </div>
-                ))}
+                <NotAvailablePanel reason="SMTP connection pool and sender domain checks are not exposed to operators yet." />
               </div>
             </SurfaceCard>
 
@@ -815,14 +1058,26 @@ function PreviewPlatformOperatorDashboardPage() {
                   </OpButton>
                 </Link>
               </div>
-              <QueueBarChart
-                data={emailDeliveryBarSeries}
-                primaryKey="processed"
-                primaryLabel="Volume"
-                secondaryKey="retries"
-                secondaryLabel="Exceptions"
-                height={230}
-              />
+              {emailRes.state.status === "ready" && emailDeliveryBarSeries.length > 0 ? (
+                <QueueBarChart
+                  data={emailDeliveryBarSeries}
+                  primaryKey="processed"
+                  primaryLabel="Volume"
+                  secondaryKey="retries"
+                  secondaryLabel="Exceptions"
+                  height={230}
+                />
+              ) : (
+                <ListState
+                  state={emailRes.state}
+                  rows={emailDeliveries}
+                  onRetry={() => void emailRes.reload()}
+                  emptyTitle="No email delivery attempts"
+                  emptyDescription="The delivery log is empty."
+                >
+                  {null}
+                </ListState>
+              )}
             </SurfaceCard>
           </div>
 
@@ -839,6 +1094,13 @@ function PreviewPlatformOperatorDashboardPage() {
                   </OpButton>
                 </Link>
               </div>
+              <ListState
+                state={emailRes.state}
+                rows={emailDeliveries}
+                onRetry={() => void emailRes.reload()}
+                emptyTitle="No email delivery attempts"
+                emptyDescription="The delivery log is empty."
+              >
               <div className="space-y-2">
                 {emailDeliveries.slice(0, 4).map((eml) => (
                   <div
@@ -848,11 +1110,11 @@ function PreviewPlatformOperatorDashboardPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <StatusBadge
-                          label={eml.status}
+                          label={humanizeCode(eml.status)}
                           tone={
-                            eml.status === "Delivered"
+                            upper(eml.status) === "SMTP_ACCEPTED"
                               ? "success"
-                              : eml.status === "Bounced"
+                              : upper(eml.status) === "FAILED" || upper(eml.status) === "NOT_SENT"
                               ? "danger"
                               : "warning"
                           }
@@ -866,21 +1128,19 @@ function PreviewPlatformOperatorDashboardPage() {
                         {eml.subject}
                       </p>
                     </div>
-                    {eml.status !== "Delivered" && (
-                      <OpButton
+                    {upper(eml.status) !== "SMTP_ACCEPTED" && (
+                      <NotAvailableButton
                         variant="subtle"
                         size="xs"
-                        onClick={() => {
-                          resendEmailDelivery(eml.id);
-                          toast.success(`Queued resend for ${eml.recipient}`);
-                        }}
+                        reason="logged emails cannot be re-sent (server returns EMAIL_RETRY_UNAVAILABLE)"
                       >
                         Resend
-                      </OpButton>
+                      </NotAvailableButton>
                     )}
                   </div>
                 ))}
               </div>
+              </ListState>
             </SurfaceCard>
 
             <SurfaceCard className="p-4 sm:p-5 space-y-3">
@@ -895,25 +1155,51 @@ function PreviewPlatformOperatorDashboardPage() {
                 </Link>
               </div>
               <div className="space-y-2">
-                {emailDrafts.map((d) => (
-                  <div
-                    key={d.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3 text-xs"
-                  >
-                    <div className="min-w-0">
-                      <span className="font-semibold text-[var(--color-text-primary)] truncate block">
-                        {d.name}
-                      </span>
-                      <p className="text-[11px] text-[var(--color-text-muted)] truncate mt-0.5">
-                        {d.subject}
-                      </p>
+                <ListState
+                  state={
+                    emailDraftsRes.state.status === "ready" && annDraftsRes.state.status === "ready"
+                      ? { status: "ready", data: [...emailDraftRows, ...announcementDraftRows] }
+                      : emailDraftsRes.state.status === "error"
+                      ? asListState(emailDraftsRes.state)
+                      : annDraftsRes.state.status === "error"
+                      ? asListState(annDraftsRes.state)
+                      : { status: "loading" }
+                  }
+                  rows={[...emailDraftRows, ...announcementDraftRows]}
+                  onRetry={() => {
+                    void emailDraftsRes.reload();
+                    void annDraftsRes.reload();
+                  }}
+                  emptyTitle="No drafts"
+                  emptyDescription="No email or announcement drafts have been written yet."
+                >
+                  {emailDraftRows.map((d) => (
+                    <div
+                      key={`email-${d.id}`}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[var(--color-text-primary)] truncate">{d.name}</p>
+                        <p className="text-[11px] text-[var(--color-text-secondary)] truncate">Email · {d.subject}</p>
+                      </div>
+                      <StatusBadge label={humanizeCode(d.status)} tone={getStatusTone(d.status)} dot />
                     </div>
-                    <StatusBadge
-                      label={d.status}
-                      tone={d.status === "Submitted for Approval" ? "warning" : "info"}
-                    />
-                  </div>
-                ))}
+                  ))}
+                  {announcementDraftRows.map((d) => (
+                    <div
+                      key={`ann-${d.id}`}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[var(--color-text-primary)] truncate">{d.title}</p>
+                        <p className="text-[11px] text-[var(--color-text-secondary)] truncate">
+                          Announcement · {humanizeCode(d.target_audience)}
+                        </p>
+                      </div>
+                      <StatusBadge label={humanizeCode(d.status)} tone={getStatusTone(d.status)} dot />
+                    </div>
+                  ))}
+                </ListState>
               </div>
             </SurfaceCard>
           </div>
@@ -929,21 +1215,17 @@ function PreviewPlatformOperatorDashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <KpiCard
               label="Open Support Tickets"
-              value={openTickets.length}
+              value={openTicketsCount}
               sublabel="Active tenant requests"
               icon={LifeBuoy}
-              tone={openTickets.length > 0 ? "amber" : "emerald"}
+              tone={toneFor(openTicketsCount)}
             />
             <KpiCard
               label="SLA At Risk / Breached"
-              value={tickets.filter((t) => t.slaState !== "On Track" && t.status !== "Resolved").length}
-              sublabel="Urgent attention required"
+              value="—"
+              sublabel={`${NA_SUB}: tickets carry no SLA timers`}
               icon={AlertTriangle}
-              tone={
-                tickets.some((t) => t.slaState !== "On Track" && t.status !== "Resolved")
-                  ? "rose"
-                  : "emerald"
-              }
+              tone="slate"
             />
             <KpiCard
               label="Support Access Requests"
@@ -954,10 +1236,10 @@ function PreviewPlatformOperatorDashboardPage() {
             />
             <KpiCard
               label="Announcements Published"
-              value={announcementDrafts.length}
-              sublabel="Platform broadcasts"
+              value={announcementsPublishedCount}
+              sublabel={`Operator drafts published by a Super Admin · ${announcementsPendingCount} pending review`}
               icon={Megaphone}
-              tone="violet"
+              tone="blue"
             />
           </div>
 
@@ -966,7 +1248,7 @@ function PreviewPlatformOperatorDashboardPage() {
             {[
               {
                 label: "Support Tickets Queue",
-                count: openTickets.length,
+                count: openTicketsCount,
                 href: "/platform-operator/support-tickets",
                 tone: "text-amber-600 dark:text-amber-400",
                 icon: LifeBuoy,
@@ -980,14 +1262,14 @@ function PreviewPlatformOperatorDashboardPage() {
               },
               {
                 label: "Customer Announcements",
-                count: announcementDrafts.length,
+                count: announcementDraftsCount,
                 href: "/platform-operator/announcement-drafts",
-                tone: "text-teal-600 dark:text-teal-400",
+                tone: "text-blue-600 dark:text-blue-400",
                 icon: Megaphone,
               },
               {
                 label: "Email Delivery Status",
-                count: emailDeliveries.filter((e) => e.status !== "Delivered").length,
+                count: emailNotAcceptedCount,
                 href: "/platform-operator/email-delivery",
                 tone: "text-rose-600 dark:text-rose-400",
                 icon: MailWarning,
@@ -1029,6 +1311,13 @@ function PreviewPlatformOperatorDashboardPage() {
                 </Link>
               </div>
 
+              <ListState
+                state={ticketsRes.state}
+                rows={openTickets}
+                onRetry={() => void ticketsRes.reload()}
+                emptyTitle="No open tickets"
+                emptyDescription="There are no open support tickets."
+              >
               <div className="space-y-2.5">
                 {openTickets.map((t) => (
                   <div
@@ -1037,26 +1326,23 @@ function PreviewPlatformOperatorDashboardPage() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <StatusBadge label={t.priority} tone={getStatusTone(t.priority)} />
+                        <StatusBadge label={humanizeCode(t.priority)} tone={getStatusTone(t.priority)} />
                         <span className="text-xs font-bold text-[var(--color-text-primary)]">
-                          {t.ticketNumber}
+                          {t.id}
                         </span>
                       </div>
-                      <StatusBadge
-                        label={t.slaState}
-                        tone={t.slaState === "On Track" ? "success" : "danger"}
-                        dot
-                      />
+                      <StatusBadge label={humanizeCode(t.status)} tone={getStatusTone(t.status)} dot />
                     </div>
                     <p className="text-xs font-semibold text-[var(--color-text-primary)] truncate">
                       {t.subject}
                     </p>
                     <p className="text-[11px] text-[var(--color-text-secondary)]">
-                      {t.orgName} · {t.requesterEmail} · {t.slaMinutesRemaining}m left
+                      {t.customer_name ?? "—"} · {t.customer_email ?? "—"} · SLA: {NOT_AVAILABLE}
                     </p>
                   </div>
                 ))}
               </div>
+              </ListState>
             </SurfaceCard>
 
             <SurfaceCard className="p-4 sm:p-5 space-y-4">
@@ -1076,6 +1362,13 @@ function PreviewPlatformOperatorDashboardPage() {
                 </Link>
               </div>
 
+              <ListState
+                state={accessRes.state}
+                rows={accessRequests}
+                onRetry={() => void accessRes.reload()}
+                emptyTitle="No access requests"
+                emptyDescription="No tenant support access has been requested."
+              >
               <div className="space-y-2.5">
                 {accessRequests.map((req) => (
                   <div
@@ -1084,17 +1377,18 @@ function PreviewPlatformOperatorDashboardPage() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold text-[var(--color-text-primary)]">
-                        {req.orgName}
+                        {req.org_id ?? "—"}
                       </span>
-                      <StatusBadge label={req.status} tone={getStatusTone(req.status)} dot />
+                      <StatusBadge label={humanizeCode(req.status)} tone={getStatusTone(req.status)} dot />
                     </div>
-                    <p className="text-xs text-[var(--color-text-secondary)]">{req.reason}</p>
+                    <p className="text-xs text-[var(--color-text-secondary)]">{req.reason ?? "—"}</p>
                     <p className="text-[11px] text-[var(--color-text-muted)]">
-                      Scope: {req.scope} · Duration: {req.durationHours}h
+                      Scope: {NOT_AVAILABLE} · Expires: {req.expires_at ? formatDateTime(req.expires_at) : "—"}
                     </p>
                   </div>
                 ))}
               </div>
+              </ListState>
             </SurfaceCard>
           </div>
         </div>
@@ -1109,29 +1403,29 @@ function PreviewPlatformOperatorDashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <KpiCard
               label="Active Subscriptions"
-              value={`${subscriptions.filter((s) => s.status === "Active").length} / ${subscriptions.length}`}
-              sublabel="Active revenue-generating tenants"
+              value={activeSubscriptionsCount}
+              sublabel={`Of ${totalSubscriptionsCount} subscription(s) on record`}
               icon={ShieldCheck}
-              tone="emerald"
+              tone="blue"
             />
             <KpiCard
               label="Payment Failures"
-              value={unresolvedPaymentsCount}
-              sublabel="In dunning & retry cycles"
+              value={paymentFailuresCount}
+              sublabel="Failed payments recorded (billing dormant: no retry)"
               icon={CreditCard}
-              tone={unresolvedPaymentsCount > 0 ? "rose" : "emerald"}
+              tone={toneFor(paymentFailuresCount, "rose")}
             />
             <KpiCard
               label="Bounced Invoices"
-              value={bouncedInvoicesCount}
-              sublabel="PDF delivery failures"
+              value={invoicesFailedCount}
+              sublabel={`Invoice emails that failed · ${invoicesNotSentCount} not sent`}
               icon={FileWarning}
-              tone={bouncedInvoicesCount > 0 ? "amber" : "emerald"}
+              tone={toneFor(invoicesFailedCount)}
             />
             <KpiCard
               label="Billing Incidents"
-              value={incidents.filter((i) => i.affectedService.toLowerCase().includes("billing") || i.affectedService.toLowerCase().includes("payment")).length}
-              sublabel="Revenue pipeline alerts"
+              value={billingIncidentsCount}
+              sublabel="Open Revenue Ops / Finance incidents"
               icon={AlertTriangle}
               tone="teal"
             />
@@ -1142,28 +1436,28 @@ function PreviewPlatformOperatorDashboardPage() {
             {[
               {
                 label: "Subscription Status",
-                count: subscriptions.length,
+                count: totalSubscriptionsCount,
                 href: "/platform-operator/subscription-status",
-                tone: "text-teal-600 dark:text-teal-400",
+                tone: "text-blue-600 dark:text-blue-400",
                 icon: ShieldCheck,
               },
               {
                 label: "Payment Failures Queue",
-                count: unresolvedPaymentsCount,
+                count: paymentFailuresCount,
                 href: "/platform-operator/payment-failures",
-                tone: unresolvedPaymentsCount > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600",
+                tone: toneFor(paymentFailuresCount, "rose") === "emerald" ? "text-emerald-600" : "text-rose-600 dark:text-rose-400",
                 icon: CreditCard,
               },
               {
                 label: "Invoice Delivery Receipts",
-                count: invoiceDeliveries.length,
+                count: invoicesTrackedCount,
                 href: "/platform-operator/invoice-delivery",
-                tone: "text-blue-600 dark:text-blue-400",
+                tone: "text-teal-600 dark:text-teal-400",
                 icon: FileCheck2,
               },
               {
                 label: "Billing Incidents",
-                count: openIncidents.length,
+                count: billingIncidentsCount,
                 href: "/platform-operator/incidents",
                 tone: "text-amber-600 dark:text-amber-400",
                 icon: AlertTriangle,
@@ -1206,39 +1500,12 @@ function PreviewPlatformOperatorDashboardPage() {
               </div>
 
               <div className="space-y-2.5">
-                {paymentFailures.map((pf) => (
-                  <div
-                    key={pf.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5"
-                  >
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-[var(--color-text-primary)]">
-                          {pf.orgName}
-                        </span>
-                        <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
-                          ${pf.amountUsd}
-                        </span>
-                      </div>
-                      <p className="text-xs text-[var(--color-text-secondary)]">{pf.failureReason}</p>
-                      <p className="text-[11px] text-[var(--color-text-muted)]">
-                        {pf.methodSummary} · Retry: {pf.retryStatus} (Attempt {pf.retryCount})
-                      </p>
-                    </div>
-                    {pf.retryStatus === "Scheduled" && (
-                      <OpButton
-                        variant="subtle"
-                        size="xs"
-                        onClick={() => {
-                          retryPaymentFailure(pf.id, true);
-                          toast.success(`Retried charge for ${pf.orgName}`);
-                        }}
-                      >
-                        Retry Charge
-                      </OpButton>
-                    )}
-                  </div>
-                ))}
+                {paymentFailureList}
+                <div className="flex justify-end">
+                  <NotAvailableButton variant="subtle" size="xs" reason="no payment retry endpoint">
+                    Retry Charge
+                  </NotAvailableButton>
+                </div>
               </div>
             </SurfaceCard>
 
@@ -1260,30 +1527,7 @@ function PreviewPlatformOperatorDashboardPage() {
               </div>
 
               <div className="space-y-2.5">
-                {subscriptions.map((sub) => (
-                  <div
-                    key={sub.id}
-                    className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5 space-y-1.5"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-[var(--color-text-primary)]">
-                        {sub.orgName}
-                      </span>
-                      <StatusBadge
-                        label={sub.status}
-                        tone={sub.status === "Active" ? "success" : "danger"}
-                        dot
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
-                      <span>{sub.planName} · {sub.billingCycle}</span>
-                      <span>Seats: {sub.seatsUsed} / {sub.seatsLimit}</span>
-                    </div>
-                    <p className="text-[11px] text-[var(--color-text-muted)]">
-                      Renews: {sub.renewalDate} · {sub.supportNote}
-                    </p>
-                  </div>
-                ))}
+                {subscriptionList}
               </div>
             </SurfaceCard>
           </div>
@@ -1299,29 +1543,29 @@ function PreviewPlatformOperatorDashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <KpiCard
               label="Paid Subscriptions"
-              value={`${subscriptions.filter((s) => s.status === "Active").length} Active`}
-              sublabel="Active revenue contracts"
+              value={activeSubscriptionsCount}
+              sublabel="Subscriptions in ACTIVE status"
               icon={ShieldCheck}
-              tone="emerald"
+              tone="blue"
             />
             <KpiCard
               label="Failed Gateway Charges"
-              value={unresolvedPaymentsCount}
-              sublabel="Requires settlement follow-up"
+              value={paymentFailuresCount}
+              sublabel="Failed payments recorded (billing dormant: no retry)"
               icon={CreditCard}
-              tone={unresolvedPaymentsCount > 0 ? "rose" : "emerald"}
+              tone={toneFor(paymentFailuresCount, "rose")}
             />
             <KpiCard
               label="Invoice Delivery Exceptions"
-              value={bouncedInvoicesCount}
-              sublabel="Tax invoices requiring resend"
+              value={invoiceExceptionsCount}
+              sublabel={`${invoicesFailedCount} failed · ${invoicesNotSentCount} not sent`}
               icon={MailWarning}
-              tone={bouncedInvoicesCount > 0 ? "amber" : "emerald"}
+              tone={toneFor(invoiceExceptionsCount)}
             />
             <KpiCard
               label="Finance Support Tickets"
-              value={tickets.filter((t) => t.category === "Billing & Invoices").length}
-              sublabel="Billing & invoice inquiries"
+              value={financeTicketsCount}
+              sublabel="Tickets routed to Finance & Tax"
               icon={LifeBuoy}
               tone="blue"
             />
@@ -1332,28 +1576,28 @@ function PreviewPlatformOperatorDashboardPage() {
             {[
               {
                 label: "Subscription Status",
-                count: subscriptions.length,
+                count: totalSubscriptionsCount,
                 href: "/platform-operator/subscription-status",
-                tone: "text-emerald-600 dark:text-emerald-400",
+                tone: "text-blue-600 dark:text-blue-400",
                 icon: ShieldCheck,
               },
               {
                 label: "Payment Failures",
-                count: unresolvedPaymentsCount,
+                count: paymentFailuresCount,
                 href: "/platform-operator/payment-failures",
-                tone: unresolvedPaymentsCount > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600",
+                tone: toneFor(paymentFailuresCount, "rose") === "emerald" ? "text-emerald-600" : "text-rose-600 dark:text-rose-400",
                 icon: CreditCard,
               },
               {
                 label: "Invoice Delivery Logs",
-                count: invoiceDeliveries.length,
+                count: invoicesTrackedCount,
                 href: "/platform-operator/invoice-delivery",
-                tone: "text-blue-600 dark:text-blue-400",
+                tone: "text-teal-600 dark:text-teal-400",
                 icon: FileCheck2,
               },
               {
                 label: "Financial Incidents",
-                count: openIncidents.length,
+                count: billingIncidentsCount,
                 href: "/platform-operator/incidents",
                 tone: "text-amber-600 dark:text-amber-400",
                 icon: AlertTriangle,
@@ -1396,28 +1640,7 @@ function PreviewPlatformOperatorDashboardPage() {
               </div>
 
               <div className="space-y-2.5">
-                {invoiceDeliveries.map((inv) => (
-                  <div
-                    key={inv.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5 text-xs"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-[var(--color-text-primary)]">
-                          {inv.invoiceNumber}
-                        </span>
-                        <StatusBadge
-                          label={inv.deliveryStatus}
-                          tone={inv.deliveryStatus === "Delivered" ? "success" : "warning"}
-                          dot
-                        />
-                      </div>
-                      <p className="text-[11px] text-[var(--color-text-secondary)] mt-0.5">
-                        {inv.orgName} · ${inv.amountUsd} · {inv.recipientEmail}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                {invoiceList}
               </div>
             </SurfaceCard>
 
@@ -1439,25 +1662,7 @@ function PreviewPlatformOperatorDashboardPage() {
               </div>
 
               <div className="space-y-2.5">
-                {paymentFailures.map((pf) => (
-                  <div
-                    key={pf.id}
-                    className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3.5 space-y-1.5"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-[var(--color-text-primary)]">
-                        {pf.orgName}
-                      </span>
-                      <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
-                        ${pf.amountUsd} USD
-                      </span>
-                    </div>
-                    <p className="text-xs text-[var(--color-text-secondary)]">{pf.failureReason}</p>
-                    <p className="text-[11px] text-[var(--color-text-muted)]">
-                      {pf.methodSummary} · Status: {pf.retryStatus}
-                    </p>
-                  </div>
-                ))}
+                {paymentFailureList}
               </div>
             </SurfaceCard>
           </div>
@@ -1473,15 +1678,15 @@ function PreviewPlatformOperatorDashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <KpiCard
               label="Audit Events Today"
-              value={activityLogs.length}
-              sublabel="Immutable platform audit trail"
+              value={activityTodayCount}
+              sublabel="Operator activity and audit entries since local midnight"
               icon={History}
               tone="teal"
             />
             <KpiCard
               label="Security Alerts"
-              value={alerts.filter((a) => a.category === "System" || a.severity === "Critical").length}
-              sublabel="Active threat signals"
+              value={securityAlertsCount}
+              sublabel="Unacknowledged critical / Trust & Compliance alerts"
               icon={ShieldAlert}
               tone="amber"
             />
@@ -1494,7 +1699,7 @@ function PreviewPlatformOperatorDashboardPage() {
             />
             <KpiCard
               label="Operator MFA Compliance"
-              value={`${superAdminOperators.filter((o) => o.mfaEnabled).length} / ${superAdminOperators.length}`}
+              value={mfaCompliance}
               sublabel="MFA verified operators"
               icon={ShieldCheck}
               tone="emerald"
@@ -1506,7 +1711,7 @@ function PreviewPlatformOperatorDashboardPage() {
             {[
               {
                 label: "Operational Activity Logs",
-                count: activityLogs.length,
+                count: totalOf(activityRes.state),
                 href: "/platform-operator/activity-logs",
                 tone: "text-teal-600 dark:text-teal-400",
                 icon: History,
@@ -1520,14 +1725,14 @@ function PreviewPlatformOperatorDashboardPage() {
               },
               {
                 label: "Security Anomaly Signals",
-                count: activeAlerts.length,
+                count: activeAlertsCount,
                 href: "/platform-operator/alerts",
                 tone: "text-amber-600 dark:text-amber-400",
                 icon: ShieldAlert,
               },
               {
                 label: "Compliance Incidents",
-                count: openIncidents.length,
+                count: openIncidentsCount,
                 href: "/platform-operator/incidents",
                 tone: "text-rose-600 dark:text-rose-400",
                 icon: AlertTriangle,
@@ -1569,27 +1774,7 @@ function PreviewPlatformOperatorDashboardPage() {
                 </Link>
               </div>
 
-              <div className="divide-y divide-[var(--color-border)]">
-                {activityLogs.slice(0, 6).map((log) => (
-                  <div key={log.id} className="py-2.5 text-xs space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <StatusBadge label={log.category} tone="neutral" />
-                        <span className="font-semibold text-[var(--color-text-primary)]">
-                          {log.action}
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-[var(--color-text-muted)] shrink-0">
-                        {formatDateTime(log.timestamp)}
-                      </span>
-                    </div>
-                    <p className="text-[var(--color-text-secondary)]">{log.summary}</p>
-                    <p className="text-[11px] text-[var(--color-text-muted)]">
-                      Actor: <span className="font-medium text-[var(--color-text-primary)]">{log.actorName}</span>
-                    </p>
-                  </div>
-                ))}
-              </div>
+              <div className="divide-y divide-[var(--color-border)]">{activityList}</div>
             </SurfaceCard>
 
             <SurfaceCard className="p-4 sm:p-5 space-y-4">
@@ -1609,6 +1794,13 @@ function PreviewPlatformOperatorDashboardPage() {
                 </Link>
               </div>
 
+              <ListState
+                state={accessRes.state}
+                rows={accessRequests}
+                onRetry={() => void accessRes.reload()}
+                emptyTitle="No access requests"
+                emptyDescription="No tenant support access has been requested."
+              >
               <div className="space-y-2.5">
                 {accessRequests.map((req) => (
                   <div
@@ -1617,18 +1809,19 @@ function PreviewPlatformOperatorDashboardPage() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold text-[var(--color-text-primary)]">
-                        {req.orgName}
+                        {req.org_id ?? "—"}
                       </span>
-                      <StatusBadge label={req.status} tone={getStatusTone(req.status)} dot />
+                      <StatusBadge label={humanizeCode(req.status)} tone={getStatusTone(req.status)} dot />
                     </div>
-                    <p className="text-xs text-[var(--color-text-secondary)]">{req.reason}</p>
+                    <p className="text-xs text-[var(--color-text-secondary)]">{req.reason ?? "—"}</p>
                     <div className="flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
-                      <span>Scope: {req.scope}</span>
-                      <span>Reviewer: {req.reviewedBy || "Pending Review"}</span>
+                      <span>Scope: {NOT_AVAILABLE}</span>
+                      <span>Reviewer: {req.approved_by || "Pending Review"}</span>
                     </div>
                   </div>
                 ))}
               </div>
+              </ListState>
             </SurfaceCard>
           </div>
         </div>
@@ -1643,28 +1836,28 @@ function PreviewPlatformOperatorDashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <KpiCard
               label="Workspaces Healthy"
-              value={`${operationalOrgs} / ${orgHealth.length}`}
-              sublabel="Operating within nominal SLA latency"
+              value={activeOrgsCount}
+              sublabel={`Active organizations · ${suspendedOrgsCount} suspended · service health: ${NA_SUB}`}
               icon={Building2}
-              tone={operationalOrgs === orgHealth.length ? "emerald" : "amber"}
-            />
-            <KpiCard
-              label="Open Platform Incidents"
-              value={openIncidents.length}
-              sublabel="Sev-1 to Sev-4 tracked issues"
-              icon={AlertTriangle}
-              tone={openIncidents.length > 0 ? "rose" : "emerald"}
-            />
-            <KpiCard
-              label="Average API Response"
-              value={`${avgApiLatency} ms`}
-              sublabel="Monitored customer endpoints"
-              icon={Server}
               tone="blue"
             />
             <KpiCard
+              label="Open Platform Incidents"
+              value={openIncidentsCount}
+              sublabel="Sev-1 to Sev-4 tracked issues"
+              icon={AlertTriangle}
+              tone={toneFor(openIncidentsCount, "rose")}
+            />
+            <KpiCard
+              label="Average API Response"
+              value="—"
+              sublabel={NA_SUB}
+              icon={Server}
+              tone="slate"
+            />
+            <KpiCard
               label="Active Maintenance & Alerts"
-              value={`${maintenanceWindows.filter((m) => m.status !== "Completed").length} / ${activeAlerts.length}`}
+              value={`${activeMaintenanceCount} / ${activeAlertsCount}`}
               sublabel="Scheduled maintenance & alarms"
               icon={Wrench}
               tone="teal"
@@ -1676,28 +1869,28 @@ function PreviewPlatformOperatorDashboardPage() {
             {[
               {
                 label: "Workspace Service Health",
-                count: operationalOrgs,
+                count: totalOrgsCount,
                 href: "/platform-operator/organization-status",
-                tone: "text-emerald-600 dark:text-emerald-400",
+                tone: "text-blue-600 dark:text-blue-400",
                 icon: Building2,
               },
               {
                 label: "System Monitoring",
-                count: systemMetrics.length,
+                count: <NotAvailableText />,
                 href: "/platform-operator/monitoring",
-                tone: "text-blue-600 dark:text-blue-400",
+                tone: "text-[var(--color-text-muted)]",
                 icon: Server,
               },
               {
                 label: "Incident Management",
-                count: openIncidents.length,
+                count: openIncidentsCount,
                 href: "/platform-operator/incidents",
                 tone: openIncidents.length > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600",
                 icon: AlertTriangle,
               },
               {
                 label: "Operational Alerts",
-                count: activeAlerts.length,
+                count: activeAlertsCount,
                 href: "/platform-operator/alerts",
                 tone: activeAlerts.length > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600",
                 icon: Activity,
@@ -1740,24 +1933,29 @@ function PreviewPlatformOperatorDashboardPage() {
               </div>
 
               <div className="space-y-2.5">
-                {orgHealth.slice(0, 5).map((org) => (
-                  <div
-                    key={org.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3 text-xs"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-[var(--color-text-primary)] truncate">
-                          {org.orgName}
-                        </span>
-                        <StatusBadge label={org.status} tone={getStatusTone(org.status)} dot />
+                <NotAvailablePanel reason="Workspace availability and latency are not measured by the server yet." />
+                <ListState
+                  state={asListState(orgsRes.state)}
+                  rows={orgRows}
+                  onRetry={() => void orgsRes.reload()}
+                  emptyTitle="No organizations"
+                  emptyDescription="No customer organizations exist yet."
+                >
+                  {orgRows.map((o) => (
+                    <div
+                      key={o.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-bg)] p-3 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[var(--color-text-primary)] truncate">{o.name}</p>
+                        <p className="text-[11px] text-[var(--color-text-secondary)] truncate">
+                          {o.plan_name ?? "No plan"} · {o.member_count} member(s) · {o.project_count} project(s)
+                        </p>
                       </div>
-                      <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
-                        {org.region} · {org.planName} · Uptime: {org.uptimePct}% · {org.avgResponseMs}ms
-                      </p>
+                      <StatusBadge label={humanizeCode(o.state)} tone={getStatusTone(o.state)} dot />
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </ListState>
               </div>
             </SurfaceCard>
 
@@ -1778,6 +1976,13 @@ function PreviewPlatformOperatorDashboardPage() {
                 </Link>
               </div>
 
+              <ListState
+                state={alertsRes.state}
+                rows={activeAlerts}
+                onRetry={() => void alertsRes.reload()}
+                emptyTitle="No active alerts"
+                emptyDescription="Every operational alert has been acknowledged."
+              >
               <div className="space-y-2.5">
                 {activeAlerts.map((alert) => (
                   <div
@@ -1786,44 +1991,39 @@ function PreviewPlatformOperatorDashboardPage() {
                   >
                     <div className="min-w-0 space-y-1">
                       <div className="flex items-center gap-2">
-                        <StatusBadge label={alert.severity} tone={getStatusTone(alert.severity)} />
+                        <StatusBadge label={humanizeCode(alert.severity)} tone={getStatusTone(alert.severity)} />
                         <span className="text-xs font-semibold text-[var(--color-text-primary)]">
                           {alert.title}
                         </span>
                       </div>
                       <p className="text-[11px] text-[var(--color-text-muted)]">
-                        Target: {alert.affectedTarget} · {formatDateTime(alert.triggeredAt)}
+                        Target: {alert.source_module ?? "—"} · {alert.created_at ? formatDateTime(alert.created_at) : "—"}
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {alert.status === "Active" && (
+                      {!alert.acknowledged && (
                         <OpButton
                           variant="outline"
                           size="xs"
-                          onClick={() => {
-                            acknowledgeAlert(alert.id);
-                            toast.success("Alert acknowledged.");
-                          }}
+                          isLoading={alertMutation.busy === `ack-${alert.id}`}
+                          disabled={alertMutation.busy !== null}
+                          onClick={() => acknowledge(alert.id)}
                         >
                           Acknowledge
                         </OpButton>
                       )}
-                      {!alert.linkedIncidentId && (
-                        <OpButton
-                          variant="subtle"
-                          size="xs"
-                          onClick={() => {
-                            const inc = createIncidentFromAlert(alert.id);
-                            if (inc) toast.success(`Opened incident ${inc.code}`);
-                          }}
-                        >
-                          Open Incident
-                        </OpButton>
-                      )}
+                      <NotAvailableButton
+                        variant="subtle"
+                        size="xs"
+                        reason="alerts cannot be linked to incidents yet; declare it from Incidents"
+                      >
+                        Open Incident
+                      </NotAvailableButton>
                     </div>
                   </div>
                 ))}
               </div>
+              </ListState>
             </SurfaceCard>
           </div>
         </div>
@@ -1842,25 +2042,25 @@ function PreviewPlatformOperatorDashboardPage() {
             {activeDepartment === "Site Reliability" && [
               {
                 label: "Retry Failed Webhook Deliveries",
-                desc: `${failedWebhooksCount} event(s) in retry queue`,
+                desc: `${failedOutboxCount} failed event(s) awaiting retry`,
                 href: "/platform-operator/failed-events",
                 icon: RotateCcw,
               },
               {
                 label: "Monitor Background Queue Depths",
-                desc: `${syncJobs.length} active worker pipelines`,
+                desc: `${countOf(jobsRes.state)} background job(s)`,
                 href: "/platform-operator/sync-jobs",
                 icon: Activity,
               },
               {
                 label: "Verify Database Backup Snapshots",
-                desc: `${backups.length} verified automated snapshots`,
+                desc: `Latest backup: ${latestBackupLabel}`,
                 href: "/platform-operator/backups",
                 icon: DatabaseBackup,
               },
               {
                 label: "Investigate API Error Spikes",
-                desc: `${apiEndpoints.length} monitored customer endpoints`,
+                desc: `${apiErrors24h} API error(s) in 24h · ${apiServerErrors24h} server`,
                 href: "/platform-operator/api-errors",
                 icon: Server,
               },
@@ -1889,25 +2089,25 @@ function PreviewPlatformOperatorDashboardPage() {
             {activeDepartment === "Lifecycle Messaging" && [
               {
                 label: "Draft System Email Template",
-                desc: `${emailDrafts.length} template draft(s)`,
+                desc: `${emailDraftsCount} email draft(s) · ${emailDraftsSubmittedCount} awaiting review`,
                 href: "/platform-operator/email-drafts",
                 icon: MailPlus,
               },
               {
                 label: "Author Broadcast Announcement",
-                desc: `${announcementDrafts.length} platform notice(s)`,
+                desc: `${announcementDraftsCount} announcement draft(s) · ${announcementsPendingCount} pending review`,
                 href: "/platform-operator/announcement-drafts",
                 icon: Megaphone,
               },
               {
                 label: "Inspect SMTP Gateway Health",
-                desc: `${smtpHealth.connectionState} · ${smtpHealth.dailySent} sent today`,
+                desc: `SMTP health: ${NOT_AVAILABLE}`,
                 href: "/platform-operator/email-delivery",
                 icon: Radio,
               },
               {
                 label: "Resend Bounced Notifications",
-                desc: `${emailDeliveries.filter((e) => e.status === "Bounced").length} bounced email(s)`,
+                desc: `${emailFailedCount} failed email(s) · resend: ${NOT_AVAILABLE}`,
                 href: "/platform-operator/email-delivery",
                 icon: MailWarning,
               },
@@ -1936,7 +2136,7 @@ function PreviewPlatformOperatorDashboardPage() {
             {activeDepartment === "Customer Communications" && [
               {
                 label: "Triage Urgent Support Tickets",
-                desc: `${openTickets.length} active ticket(s)`,
+                desc: `${openTicketsCount} active ticket(s)`,
                 href: "/platform-operator/support-tickets",
                 icon: LifeBuoy,
               },
@@ -1948,13 +2148,13 @@ function PreviewPlatformOperatorDashboardPage() {
               },
               {
                 label: "Draft Tenant Maintenance Notice",
-                desc: `${announcementDrafts.length} draft notice(s)`,
+                desc: `${announcementDraftsCount} draft notice(s) · ${announcementsPendingCount} pending review`,
                 href: "/platform-operator/announcement-drafts",
                 icon: Megaphone,
               },
               {
                 label: "Inspect Email Delivery Status",
-                desc: `${emailDeliveries.length} tracked deliveries`,
+                desc: `${countOf(emailRes.state)} tracked deliveries`,
                 href: "/platform-operator/email-delivery",
                 icon: Mail,
               },
@@ -1983,25 +2183,25 @@ function PreviewPlatformOperatorDashboardPage() {
             {activeDepartment === "Revenue Operations" && [
               {
                 label: "Triage Payment Failures",
-                desc: `${unresolvedPaymentsCount} charges in dunning queue`,
+                desc: `${paymentFailuresCount} failed payment(s) · retry: ${NOT_AVAILABLE}`,
                 href: "/platform-operator/payment-failures",
                 icon: CreditCard,
               },
               {
                 label: "Inspect Subscription Tiers",
-                desc: `${subscriptions.length} active customer contracts`,
+                desc: `${totalSubscriptionsCount} subscription(s) · ${activeSubscriptionsCount} active`,
                 href: "/platform-operator/subscription-status",
                 icon: ShieldCheck,
               },
               {
                 label: "Resend Bounced Invoices",
-                desc: `${bouncedInvoicesCount} invoice(s) needing delivery`,
+                desc: `${invoicesFailedCount} failed · ${invoicesNotSentCount} not sent`,
                 href: "/platform-operator/invoice-delivery",
                 icon: FileWarning,
               },
               {
                 label: "Track Billing Incidents",
-                desc: `${openIncidents.length} platform incident(s)`,
+                desc: `${billingIncidentsCount} billing incident(s)`,
                 href: "/platform-operator/incidents",
                 icon: AlertTriangle,
               },
@@ -2030,25 +2230,25 @@ function PreviewPlatformOperatorDashboardPage() {
             {activeDepartment === "Finance & Tax" && [
               {
                 label: "Review Payment Exceptions",
-                desc: `${unresolvedPaymentsCount} failed charge(s)`,
+                desc: `${paymentFailuresCount} failed charge(s)`,
                 href: "/platform-operator/payment-failures",
                 icon: CreditCard,
               },
               {
                 label: "Inspect Delivered Invoices",
-                desc: `${invoiceDeliveries.length} tax invoice records`,
+                desc: `${invoicesTrackedCount} invoice(s) · ${invoiceExceptionsCount} delivery exception(s)`,
                 href: "/platform-operator/invoice-delivery",
                 icon: FileCheck2,
               },
               {
                 label: "Audit Subscription Renewals",
-                desc: `${subscriptions.length} monitored subscriptions`,
+                desc: `${totalSubscriptionsCount} subscription(s) · ${activeSubscriptionsCount} active`,
                 href: "/platform-operator/subscription-status",
                 icon: ShieldCheck,
               },
               {
                 label: "View Billing Incidents",
-                desc: `${openIncidents.length} active platform incident(s)`,
+                desc: `${billingIncidentsCount} billing incident(s)`,
                 href: "/platform-operator/incidents",
                 icon: AlertTriangle,
               },
@@ -2077,7 +2277,7 @@ function PreviewPlatformOperatorDashboardPage() {
             {activeDepartment === "Trust & Compliance" && [
               {
                 label: "Inspect Operational Audit Logs",
-                desc: `${activityLogs.length} immutable events recorded`,
+                desc: `${activityTodayCount} event(s) today`,
                 href: "/platform-operator/activity-logs",
                 icon: History,
               },
@@ -2089,13 +2289,13 @@ function PreviewPlatformOperatorDashboardPage() {
               },
               {
                 label: "Audit Security Anomaly Alerts",
-                desc: `${activeAlerts.length} alarm signals`,
+                desc: `${activeAlertsCount} alarm signals`,
                 href: "/platform-operator/alerts",
                 icon: ShieldAlert,
               },
               {
                 label: "Verify Infrastructure Status",
-                desc: `${systemMetrics.length} monitored compute nodes`,
+                desc: `Infrastructure metrics: ${NOT_AVAILABLE}`,
                 href: "/platform-operator/monitoring",
                 icon: Server,
               },
@@ -2124,25 +2324,25 @@ function PreviewPlatformOperatorDashboardPage() {
             {activeDepartment === "Platform Operations" && [
               {
                 label: "Review Workspace Availabilities",
-                desc: `${operationalOrgs} / ${orgHealth.length} healthy`,
+                desc: `${activeOrgsCount} active workspace(s) · health: ${NOT_AVAILABLE}`,
                 href: "/platform-operator/organization-status",
                 icon: Building2,
               },
               {
                 label: "Declare Platform Incident",
-                desc: `${openIncidents.length} active incident(s)`,
+                desc: `${openIncidentsCount} active incident(s)`,
                 href: "/platform-operator/incidents",
                 icon: AlertTriangle,
               },
               {
                 label: "Schedule Maintenance Window",
-                desc: `${maintenanceWindows.length} planned maintenance item(s)`,
+                desc: `${countOf(maintenanceRes.state)} planned maintenance item(s)`,
                 href: "/platform-operator/maintenance",
                 icon: Wrench,
               },
               {
                 label: "Triage System Monitoring",
-                desc: `${systemMetrics.length} monitored services`,
+                desc: `${activeAlertsCount} unacknowledged alert(s) · service metrics: ${NOT_AVAILABLE}`,
                 href: "/platform-operator/monitoring",
                 icon: Server,
               },
@@ -2190,34 +2390,9 @@ function PreviewPlatformOperatorDashboardPage() {
             )}
           </div>
 
-          <div className="divide-y divide-[var(--color-border)]">
-            {filteredActivityLogs.slice(0, 5).map((log) => (
-              <div
-                key={log.id}
-                className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs"
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge label={log.category} tone="neutral" />
-                    <span className="font-semibold text-[var(--color-text-primary)]">
-                      {log.action}
-                    </span>
-                  </div>
-                  <p className="text-[var(--color-text-secondary)] mt-0.5">{log.summary}</p>
-                </div>
-                <span className="text-[11px] text-[var(--color-text-muted)] shrink-0">
-                  {log.actorName} · {formatDateTime(log.timestamp)}
-                </span>
-              </div>
-            ))}
-          </div>
+          <div className="divide-y divide-[var(--color-border)]">{activityList}</div>
         </SurfaceCard>
       </div>
     </div>
   );
-}
-
-/** Stored operational counts by default; the sample dashboard only in the dev preview (NEXT_PUBLIC_USE_MOCKS=true). */
-export default function PlatformOperatorDashboardPage() {
-  return previewEnabled() ? <PreviewPlatformOperatorDashboardPage /> : <LiveOperatorDashboard />;
 }

@@ -21,7 +21,8 @@ public class SubscriptionDTOs {
             boolean cancelAtPeriodEnd,
             String paymentMethodLabel,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            long version
     ) {}
 
     public record AssignSubscriptionRequest(
@@ -31,6 +32,11 @@ public class SubscriptionDTOs {
             Integer seats,
             Boolean autoRenew,
             String paymentMethodLabel
+    ) {}
+
+    public record CancelSubscriptionRequest(
+            Long expectedVersion,
+            Boolean immediate
     ) {}
 
     public record UpdateSubscriptionRequest(
@@ -43,6 +49,7 @@ public class SubscriptionDTOs {
             Instant currentPeriodEnd,
             Boolean autoRenew,
             Boolean cancelAtPeriodEnd,
-            String paymentMethodLabel
+            String paymentMethodLabel,
+            Long expectedVersion
     ) {}
 }

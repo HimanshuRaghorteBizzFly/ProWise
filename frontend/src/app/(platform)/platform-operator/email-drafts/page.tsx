@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   CheckCircle2,
@@ -9,15 +9,30 @@ import {
   LayoutGrid,
   List,
   MailPlus,
+  MessageSquareWarning,
   Monitor,
   Plus,
   Send,
   Smartphone,
   Trash2,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
-import { EmailTemplateDraft } from "../_types";
+import { useDebounced } from "@/components/super-admin/admin-resource";
+import type { OperatorEmailDraft, OperatorEmailDraftInput } from "@/types/operator-console";
+import { operatorApi } from "../_services/operator-api";
+import { useOperatorPermissions } from "../_services/operator-access";
 import { formatDateTime } from "../_services/operator-service";
+import {
+  FieldErrorText,
+  MutationNotice,
+  NotAvailableButton,
+  OperatorResourceStatus,
+  humanizeCode,
+  pageItemsOf,
+  pageTotalOf,
+  toServerPaging,
+  useOperatorMutation,
+  useOperatorResource,
+} from "../_components/OperatorLive";
 import {
   BulkSelectionBar,
   ConfirmModal,
@@ -45,7 +60,7 @@ type DraftCategoryTheme = {
   cta: string;
 };
 
-const DRAFT_CATEGORY_THEMES: Record<EmailTemplateDraft["category"], DraftCategoryTheme> = {
+const DRAFT_CATEGORY_THEMES: Record<string, DraftCategoryTheme> = {
   "Incident Notice": {
     gradient: "bg-gradient-to-r from-rose-600 to-orange-500",
     badge: "border-rose-500/35 bg-rose-500/15 text-rose-700 dark:text-rose-300",
@@ -72,7 +87,29 @@ const DRAFT_CATEGORY_THEMES: Record<EmailTemplateDraft["category"], DraftCategor
   },
 };
 
-function sanitizeDraftText(text: string): string {
+/** Category is free text on the server (max 60); unknown categories use the first theme. */
+function categoryTheme(category: string | null | undefined): DraftCategoryTheme {
+  return DRAFT_CATEGORY_THEMES[category ?? ""] || DRAFT_CATEGORY_THEMES["Incident Notice"];
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Draft",
+  SUBMITTED: "Submitted for Approval",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+};
+
+function statusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? humanizeCode(status);
+}
+
+/** The server only accepts changes (edit, delete, submit) in these states (409 INVALID_STATE otherwise). */
+const EDITABLE_STATUSES = new Set(["DRAFT", "REJECTED"]);
+const isEditable = (d: OperatorEmailDraft) => EDITABLE_STATUSES.has(d.status);
+const LOCKED_REASON = "Only drafts in Draft or Rejected can be changed.";
+
+/** Placeholder substitution for previews only; saved text is never changed by it. */
+function sanitizeDraftText(text: string | null | undefined): string {
   return (text || "")
     .replaceAll("{{org_name}}", "Acme Health Technologies")
     .replaceAll("{{recipient_name}}", "Sarah Chen");
@@ -87,13 +124,13 @@ function DraftEmailPreviewCard({
   ctaLabel,
 }: {
   device: "DESKTOP" | "MOBILE";
-  category: EmailTemplateDraft["category"];
+  category: string;
   subject: string;
   headline: string;
   bodyText: string;
   ctaLabel: string;
 }) {
-  const theme = DRAFT_CATEGORY_THEMES[category] || DRAFT_CATEGORY_THEMES["Incident Notice"];
+  const theme = categoryTheme(category);
   const isMobile = device === "MOBILE";
 
   return (
@@ -183,13 +220,6 @@ function DraftEmailPreviewCard({
 type DraftSortField = "name" | "category" | "status" | "updatedAt";
 
 export default function OperatorEmailDraftsPage() {
-  const emailDrafts = usePlatformOperatorStore((s) => s.emailDrafts);
-  const createEmailDraft = usePlatformOperatorStore((s) => s.createEmailDraft);
-  const updateEmailDraft = usePlatformOperatorStore((s) => s.updateEmailDraft);
-  const deleteEmailDraft = usePlatformOperatorStore((s) => s.deleteEmailDraft);
-  const submitEmailDraftForApproval = usePlatformOperatorStore((s) => s.submitEmailDraftForApproval);
-  const bulkSubmitEmailDrafts = usePlatformOperatorStore((s) => s.bulkSubmitEmailDrafts);
-  const bulkDeleteEmailDrafts = usePlatformOperatorStore((s) => s.bulkDeleteEmailDrafts);
   const { can } = useOperatorPermissions();
   const canManage = can("communications.draft");
 
@@ -200,26 +230,40 @@ export default function OperatorEmailDraftsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
+  const debouncedSearch = useDebounced(search);
+
+  const paging = toServerPaging(page, pageSize);
+  const { state, reload } = useOperatorResource(
+    () => operatorApi.emailDrafts.list({ status: statusFilter, search: debouncedSearch, ...paging }),
+    `email-drafts:${statusFilter}:${debouncedSearch}:${paging.page}:${paging.size}`,
+  );
+  const reloadList = useCallback(() => void reload(), [reload]);
+  const { busy, notice, fieldErrors, clearNotice, run } = useOperatorMutation(reloadList);
+  const emailDrafts = useMemo(() => pageItemsOf(state), [state]);
+  const total = pageTotalOf(state);
 
   // Editor Modal
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<OperatorEmailDraft | null>(null);
+  const editingId = editing?.id ?? null;
   const [previewDevice, setPreviewDevice] = useState<"DESKTOP" | "MOBILE">("DESKTOP");
   const [name, setName] = useState("");
-  const [category, setCategory] = useState<EmailTemplateDraft["category"]>("Incident Notice");
+  const [category, setCategory] = useState("Incident Notice");
   const [subject, setSubject] = useState("");
   const [headline, setHeadline] = useState("");
   const [bodyText, setBodyText] = useState("");
+  const [bodyHtml, setBodyHtml] = useState("");
   const [ctaLabel, setCtaLabel] = useState("");
+  const [audienceDescription, setAudienceDescription] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
   // Preview Modal
-  const [previewDraft, setPreviewDraft] = useState<EmailTemplateDraft | null>(null);
+  const [previewDraft, setPreviewDraft] = useState<OperatorEmailDraft | null>(null);
   const [standaloneDevice, setStandaloneDevice] = useState<"DESKTOP" | "MOBILE">("DESKTOP");
 
   // Confirm Modals
-  const [submitTarget, setSubmitTarget] = useState<EmailTemplateDraft | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<EmailTemplateDraft | null>(null);
+  const [submitTarget, setSubmitTarget] = useState<OperatorEmailDraft | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<OperatorEmailDraft | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const closeOverlays = () => {
@@ -239,35 +283,24 @@ export default function OperatorEmailDraftsPage() {
     }
   };
 
+  /** The server filters (status, search) and pages; sorting reorders the loaded page only. */
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const list = emailDrafts.filter((d) => {
-      const matchesQ =
-        !q ||
-        d.name.toLowerCase().includes(q) ||
-        d.subject.toLowerCase().includes(q) ||
-        d.category.toLowerCase().includes(q);
-      const matchesStatus = statusFilter === "ALL" || d.status === statusFilter;
-      return matchesQ && matchesStatus;
-    });
-
-    return [...list].sort((a, b) => {
+    return [...emailDrafts].sort((a, b) => {
       let cmp = 0;
       if (sortField === "name") cmp = a.name.localeCompare(b.name);
-      else if (sortField === "category") cmp = a.category.localeCompare(b.category);
+      else if (sortField === "category") cmp = (a.category ?? "").localeCompare(b.category ?? "");
       else if (sortField === "status") cmp = a.status.localeCompare(b.status);
-      else cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+      else cmp = new Date(a.updated_at ?? 0).getTime() - new Date(b.updated_at ?? 0).getTime();
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [emailDrafts, search, statusFilter, sortField, sortDir]);
+  }, [emailDrafts, sortField, sortDir]);
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, pageSize]);
+  }, [debouncedSearch, statusFilter, pageSize]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const safePage = page;
+  const paginated = filtered;
 
   const {
     selectedIds,
@@ -282,76 +315,156 @@ export default function OperatorEmailDraftsPage() {
     paginated.map((d) => d.id)
   );
 
+  const selectedRows = emailDrafts.filter((d) => selectedSet.has(d.id));
+
   const openCreate = () => {
     closeOverlays();
-    setEditingId(null);
+    clearNotice();
+    setEditing(null);
     setPreviewDevice("DESKTOP");
     setName("");
     setCategory("Incident Notice");
     setSubject("");
     setHeadline("");
     setBodyText("");
+    setBodyHtml("");
     setCtaLabel("");
+    setAudienceDescription("");
     setFormError(null);
     setEditorOpen(true);
   };
 
-  const openEdit = (draft: EmailTemplateDraft) => {
+  const openEdit = (draft: OperatorEmailDraft) => {
+    if (!isEditable(draft)) return;
     closeOverlays();
-    setEditingId(draft.id);
+    clearNotice();
+    setEditing(draft);
     setPreviewDevice("MOBILE");
     setName(draft.name);
-    setCategory(draft.category);
-    setSubject(sanitizeDraftText(draft.subject));
-    setHeadline(sanitizeDraftText(draft.headline));
-    setBodyText(sanitizeDraftText(draft.bodyText));
-    setCtaLabel(draft.ctaLabel);
+    setCategory(draft.category ?? "Incident Notice");
+    // The stored text is edited as-is (placeholders are only filled in previews).
+    setSubject(draft.subject);
+    setHeadline(draft.headline ?? "");
+    setBodyText(draft.body_text);
+    setBodyHtml(draft.body_html ?? "");
+    setCtaLabel(draft.cta_label ?? "");
+    setAudienceDescription(draft.audience_description ?? "");
     setFormError(null);
     setEditorOpen(true);
   };
 
-  const openPreview = (draft: EmailTemplateDraft) => {
+  const openPreview = (draft: OperatorEmailDraft) => {
     closeOverlays();
     setStandaloneDevice("DESKTOP");
     setPreviewDraft(draft);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim().length < 3 || subject.trim().length < 3 || bodyText.trim().length < 10) {
       setFormError("Please fill in draft name, email subject, and message content.");
       return;
     }
-    if (editingId) {
-      updateEmailDraft(editingId, {
-        name: name.trim(),
-        category,
-        subject: subject.trim(),
-        headline: headline.trim() || name.trim(),
-        bodyText: bodyText.trim(),
-        ctaLabel: ctaLabel.trim() || "Open ProWise",
-      });
-      toast.success("Email draft updated.");
-    } else {
-      createEmailDraft({
-        name: name.trim(),
-        category,
-        subject: subject.trim(),
-        headline: headline.trim() || name.trim(),
-        bodyText: bodyText.trim(),
-        ctaLabel: ctaLabel.trim() || "Open Workspace",
-      });
-      toast.success("Email draft saved. Submit to Super Admin when ready.");
-    }
-    setEditorOpen(false);
+    setFormError(null);
+    const body: OperatorEmailDraftInput = {
+      name: name.trim(),
+      category,
+      subject: subject.trim(),
+      headline: headline.trim() || name.trim(),
+      body_text: bodyText.trim(),
+      body_html: bodyHtml.trim() || null,
+      cta_label: ctaLabel.trim() || (editing ? "Open ProWise" : "Open Workspace"),
+      audience_description: audienceDescription.trim() || null,
+    };
+    // A failed save (unsafe HTML, stale version, permission) keeps the editor open with the server's message.
+    const ok = editing
+      ? await run(
+          `save-${editing.id}`,
+          () => operatorApi.emailDrafts.update(editing.id, body, editing.version),
+          editing.status === "REJECTED" ? "Email draft updated and returned to Draft." : "Email draft updated.",
+        )
+      : await run(
+          "create",
+          () => operatorApi.emailDrafts.create(body),
+          "Email draft saved. Submit to Super Admin when ready.",
+        );
+    if (ok) setEditorOpen(false);
   };
+
+  /** One request per draft (there is no bulk endpoint); each sends that draft's own expected_version. */
+  const bulkSubmit = () => {
+    const eligible = selectedRows.filter(isEditable);
+    if (eligible.length === 0) {
+      toast.info("Selected drafts are already submitted or approved.");
+      return;
+    }
+    void run(
+      "bulk-submit",
+      async () => {
+        for (const d of eligible) await operatorApi.emailDrafts.submit(d.id, d.version);
+      },
+      `Submitted ${eligible.length} draft(s) for Super Admin review.`,
+    ).then((ok) => ok && setSelectedIds([]));
+  };
+
+  const bulkDelete = () => {
+    const eligible = selectedRows.filter(isEditable);
+    if (eligible.length === 0) {
+      toast.info("Only drafts in Draft or Rejected can be deleted.");
+      return;
+    }
+    void run(
+      "bulk-delete",
+      async () => {
+        for (const d of eligible) await operatorApi.emailDrafts.remove(d.id, d.version);
+      },
+      `Deleted ${eligible.length} email draft(s).`,
+    ).then((ok) => ok && setSelectedIds([]));
+  };
+
+  const bulkActions = (
+    <>
+      <OpButton
+        variant="primary"
+        size="xs"
+        disabled={!canManage}
+        isLoading={busy === "bulk-submit"}
+        onClick={bulkSubmit}
+      >
+        <Send className="w-3.5 h-3.5" />
+        Submit ({selectedIds.length})
+      </OpButton>
+      <OpButton
+        variant="danger"
+        size="xs"
+        disabled={!canManage}
+        isLoading={busy === "bulk-delete"}
+        onClick={() => setBulkDeleteOpen(true)}
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+        Delete Selected
+      </OpButton>
+    </>
+  );
+
+  const editTitle = (d: OperatorEmailDraft) => (isEditable(d) ? undefined : LOCKED_REASON);
+
+  const reviewerNote = (d: OperatorEmailDraft) =>
+    d.status === "REJECTED" && d.reviewer_note ? (
+      <div className="flex items-start gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-[11px] text-rose-700 dark:text-rose-300">
+        <MessageSquareWarning className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+        <span>
+          <span className="font-semibold">Rejected by Super Admin:</span> {d.reviewer_note}
+        </span>
+      </div>
+    ) : null;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Email Template Drafts"
-        badge={`${emailDrafts.length} Drafts`}
-        demoLabel="Draft -> Super Admin Approval"
+        badge={state.status === "ready" ? `${total} Drafts` : undefined}
+        liveData
         description="Write customer-ready email drafts in plain English, preview on Desktop & Mobile, and submit for Super Admin approval."
         actions={
           <OpButton variant="primary" size="sm" disabled={!canManage} onClick={openCreate}>
@@ -365,6 +478,8 @@ export default function OperatorEmailDraftsPage() {
         title="Approval Boundary"
         description="Operators prepare and edit email drafts without curly-brace syntax or technical templates. Super Admin holds final approval to publish live templates."
       />
+
+      {!editorOpen && <MutationNotice notice={notice} onReload={reloadList} onDismiss={clearNotice} />}
 
       <SurfaceCard className="p-4 sm:p-5 space-y-4">
         <FilterBar
@@ -384,9 +499,10 @@ export default function OperatorEmailDraftsPage() {
                 aria-label="Filter draft status"
                 options={[
                   { label: "All States", value: "ALL" },
-                  { label: "Draft", value: "Draft" },
-                  { label: "Submitted for Approval", value: "Submitted for Approval" },
-                  { label: "Approved", value: "Approved" },
+                  { label: "Draft", value: "DRAFT" },
+                  { label: "Submitted for Approval", value: "SUBMITTED" },
+                  { label: "Approved", value: "APPROVED" },
+                  { label: "Rejected", value: "REJECTED" },
                 ]}
               />
             </div>
@@ -421,7 +537,16 @@ export default function OperatorEmailDraftsPage() {
           }
         />
 
-        {paginated.length === 0 ? (
+        {state.status !== "ready" ? (
+          <OperatorResourceStatus
+            state={state}
+            isEmpty={() => false}
+            onRetry={reloadList}
+            emptyIcon={MailPlus}
+            emptyTitle="No email template drafts found"
+            emptyDescription="Create a plain-English customer notification draft for Super Admin review."
+          />
+        ) : paginated.length === 0 ? (
           <EmptyState
             icon={MailPlus}
             title="No email template drafts found"
@@ -452,33 +577,7 @@ export default function OperatorEmailDraftsPage() {
                 totalFilteredCount={filtered.length}
                 onSelectAllMatching={() => setSelectedIds(filtered.map((d) => d.id))}
                 onClear={() => setSelectedIds([])}
-                actions={
-                  <>
-                    <OpButton
-                      variant="primary"
-                      size="xs"
-                      disabled={!canManage}
-                      onClick={() => {
-                        const count = bulkSubmitEmailDrafts(selectedIds);
-                        if (count > 0) toast.success(`Submitted ${count} draft(s) for Super Admin review.`);
-                        else toast.info("Selected drafts are already submitted or approved.");
-                        setSelectedIds([]);
-                      }}
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      Submit ({selectedIds.length})
-                    </OpButton>
-                    <OpButton
-                      variant="danger"
-                      size="xs"
-                      disabled={!canManage}
-                      onClick={() => setBulkDeleteOpen(true)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Delete Selected
-                    </OpButton>
-                  </>
-                }
+                actions={bulkActions}
               />
             </div>
 
@@ -486,7 +585,8 @@ export default function OperatorEmailDraftsPage() {
               {paginated.map((draft, idx) => {
                 const srNo = (safePage - 1) * pageSize + idx + 1;
                 const isSelected = selectedSet.has(draft.id);
-                const theme = DRAFT_CATEGORY_THEMES[draft.category];
+                const theme = categoryTheme(draft.category);
+                const editable = isEditable(draft);
                 return (
                   <div
                     key={draft.id}
@@ -507,10 +607,10 @@ export default function OperatorEmailDraftsPage() {
                           <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
                             #{srNo}
                           </span>
-                          <span className="font-semibold text-xs truncate">{draft.category}</span>
+                          <span className="font-semibold text-xs truncate">{draft.category ?? "Uncategorized"}</span>
                         </div>
                         <span className="rounded-full bg-black/20 px-2.5 py-0.5 text-[10px] font-semibold shrink-0">
-                          {draft.status}
+                          {statusLabel(draft.status)}
                         </span>
                       </div>
 
@@ -520,11 +620,12 @@ export default function OperatorEmailDraftsPage() {
                           Subject: {sanitizeDraftText(draft.subject)}
                         </p>
                         <p className="text-xs text-[var(--color-text-muted)] line-clamp-2">
-                          {sanitizeDraftText(draft.bodyText)}
+                          {sanitizeDraftText(draft.body_text)}
                         </p>
                         <p className="text-[11px] text-[var(--color-text-muted)]">
-                          Updated {formatDateTime(draft.updatedAt)}
+                          Updated {formatDateTime(draft.updated_at ?? draft.created_at ?? "")}
                         </p>
+                        {reviewerNote(draft)}
                       </div>
                     </div>
 
@@ -537,7 +638,8 @@ export default function OperatorEmailDraftsPage() {
                         <OpButton
                           variant="outline"
                           size="xs"
-                          disabled={!canManage}
+                          disabled={!canManage || !editable}
+                          title={editTitle(draft)}
                           onClick={() => openEdit(draft)}
                         >
                           <Edit3 className="w-3.5 h-3.5" />
@@ -546,7 +648,8 @@ export default function OperatorEmailDraftsPage() {
                         <OpButton
                           variant="ghost"
                           size="xs"
-                          disabled={!canManage}
+                          disabled={!canManage || !editable}
+                          title={editTitle(draft)}
                           aria-label={`Delete ${draft.name}`}
                           onClick={() => {
                             closeOverlays();
@@ -557,11 +660,12 @@ export default function OperatorEmailDraftsPage() {
                         </OpButton>
                       </div>
 
-                      {draft.status === "Draft" ? (
+                      {editable ? (
                         <OpButton
                           variant="primary"
                           size="xs"
                           disabled={!canManage}
+                          isLoading={busy === `submit-${draft.id}`}
                           onClick={() => {
                             closeOverlays();
                             setSubmitTarget(draft);
@@ -573,7 +677,7 @@ export default function OperatorEmailDraftsPage() {
                       ) : (
                         <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          {draft.status}
+                          {statusLabel(draft.status)}
                         </span>
                       )}
                     </div>
@@ -589,33 +693,7 @@ export default function OperatorEmailDraftsPage() {
               totalFilteredCount={filtered.length}
               onSelectAllMatching={() => setSelectedIds(filtered.map((d) => d.id))}
               onClear={() => setSelectedIds([])}
-              actions={
-                <>
-                  <OpButton
-                    variant="primary"
-                    size="xs"
-                    disabled={!canManage}
-                    onClick={() => {
-                      const count = bulkSubmitEmailDrafts(selectedIds);
-                      if (count > 0) toast.success(`Submitted ${count} draft(s) for Super Admin review.`);
-                      else toast.info("Selected drafts are already submitted or approved.");
-                      setSelectedIds([]);
-                    }}
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    Submit ({selectedIds.length})
-                  </OpButton>
-                  <OpButton
-                    variant="danger"
-                    size="xs"
-                    disabled={!canManage}
-                    onClick={() => setBulkDeleteOpen(true)}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Delete Selected
-                  </OpButton>
-                </>
-              }
+              actions={bulkActions}
             />
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[820px]">
@@ -654,7 +732,8 @@ export default function OperatorEmailDraftsPage() {
                   {paginated.map((draft, idx) => {
                     const srNo = (safePage - 1) * pageSize + idx + 1;
                     const isSelected = selectedSet.has(draft.id);
-                    const theme = DRAFT_CATEGORY_THEMES[draft.category];
+                    const theme = categoryTheme(draft.category);
+                    const editable = isEditable(draft);
                     return (
                       <tr key={draft.id} className={isSelected ? "bg-teal-500/5" : "hover:bg-[var(--color-hover)]/50"}>
                         <td className="py-3 px-3.5">
@@ -672,17 +751,22 @@ export default function OperatorEmailDraftsPage() {
                         <td className="py-3 px-3.5 font-semibold text-[var(--color-text-primary)]">{draft.name}</td>
                         <td className="py-3 px-3.5">
                           <span className={`inline-flex rounded-md border px-2 py-0.5 text-[10px] font-semibold ${theme.badge}`}>
-                            {draft.category}
+                            {draft.category ?? "Uncategorized"}
                           </span>
                         </td>
                         <td className="py-3 px-3.5 max-w-[240px] truncate text-[var(--color-text-secondary)]">
                           {sanitizeDraftText(draft.subject)}
+                          {draft.status === "REJECTED" && draft.reviewer_note && (
+                            <p className="text-[11px] text-rose-600 dark:text-rose-300 truncate" title={draft.reviewer_note}>
+                              Reviewer: {draft.reviewer_note}
+                            </p>
+                          )}
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
-                          <StatusBadge label={draft.status} tone={getStatusTone(draft.status)} dot />
+                          <StatusBadge label={statusLabel(draft.status)} tone={getStatusTone(statusLabel(draft.status))} dot />
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap text-[var(--color-text-secondary)]">
-                          {formatDateTime(draft.updatedAt)}
+                          {formatDateTime(draft.updated_at ?? draft.created_at ?? "")}
                         </td>
                         <td className="py-3 px-3.5 text-right whitespace-nowrap">
                           <div className="inline-flex items-center gap-1">
@@ -692,7 +776,8 @@ export default function OperatorEmailDraftsPage() {
                             <OpButton
                               variant="outline"
                               size="xs"
-                              disabled={!canManage}
+                              disabled={!canManage || !editable}
+                              title={editTitle(draft)}
                               onClick={() => openEdit(draft)}
                             >
                               Edit
@@ -700,7 +785,8 @@ export default function OperatorEmailDraftsPage() {
                             <OpButton
                               variant="ghost"
                               size="xs"
-                              disabled={!canManage}
+                              disabled={!canManage || !editable}
+                              title={editTitle(draft)}
                               aria-label={`Delete ${draft.name}`}
                               onClick={() => {
                                 closeOverlays();
@@ -722,7 +808,7 @@ export default function OperatorEmailDraftsPage() {
 
         <PaginationBar
           currentPage={safePage}
-          totalItems={filtered.length}
+          totalItems={total}
           pageSize={pageSize}
           onPageChange={setPage}
           onPageSizeChange={(n) => {
@@ -746,6 +832,8 @@ export default function OperatorEmailDraftsPage() {
               {formError}
             </div>
           )}
+          <MutationNotice notice={notice} onReload={reloadList} onDismiss={clearNotice} />
+          {editing && reviewerNote(editing)}
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
             <div className="lg:col-span-6 space-y-3">
@@ -755,16 +843,20 @@ export default function OperatorEmailDraftsPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Scheduled Upgrade Notice"
+                  error={fieldErrors.name}
                 />
                 <OpSelect
                   label="Category"
                   value={category}
-                  onChange={(e) => setCategory(e.target.value as EmailTemplateDraft["category"])}
+                  onChange={(e) => setCategory(e.target.value)}
                   options={[
                     { label: "Incident Notice", value: "Incident Notice" },
                     { label: "Billing", value: "Billing" },
                     { label: "Onboarding", value: "Onboarding" },
                     { label: "Reminders", value: "Reminders" },
+                    ...(["Incident Notice", "Billing", "Onboarding", "Reminders"].includes(category)
+                      ? []
+                      : [{ label: category, value: category }]),
                   ]}
                 />
               </div>
@@ -774,6 +866,7 @@ export default function OperatorEmailDraftsPage() {
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
                 placeholder="e.g. Scheduled Maintenance Window for Acme Health"
+                error={fieldErrors.subject}
               />
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -782,12 +875,14 @@ export default function OperatorEmailDraftsPage() {
                   value={headline}
                   onChange={(e) => setHeadline(e.target.value)}
                   placeholder="e.g. Upcoming Platform Improvement"
+                  error={fieldErrors.headline}
                 />
                 <OpInput
                   label="Action Button Label"
                   value={ctaLabel}
                   onChange={(e) => setCtaLabel(e.target.value)}
                   placeholder="e.g. Open Service Status"
+                  error={fieldErrors.cta_label}
                 />
               </div>
 
@@ -797,6 +892,26 @@ export default function OperatorEmailDraftsPage() {
                 onChange={(e) => setBodyText(e.target.value)}
                 placeholder="Type your clear, helpful message here in plain English..."
                 rows={6}
+                error={fieldErrors.body_text}
+              />
+
+              <div>
+                <OpTextarea
+                  label="HTML Body (optional)"
+                  value={bodyHtml}
+                  onChange={(e) => setBodyHtml(e.target.value)}
+                  placeholder="Optional HTML version. Scripts, iframes, event handlers and javascript: links are refused by the server."
+                  rows={4}
+                />
+                <FieldErrorText errors={fieldErrors} field="body_html" />
+              </div>
+
+              <OpInput
+                label="Audience Description"
+                value={audienceDescription}
+                onChange={(e) => setAudienceDescription(e.target.value)}
+                placeholder="e.g. Workspace owners on the Enterprise plan"
+                error={fieldErrors.audience_description}
               />
             </div>
 
@@ -850,7 +965,13 @@ export default function OperatorEmailDraftsPage() {
             <OpButton type="button" variant="outline" size="sm" onClick={() => setEditorOpen(false)}>
               Cancel
             </OpButton>
-            <OpButton type="submit" variant="primary" size="sm">
+            <OpButton
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={!canManage}
+              isLoading={busy === "create" || (editingId !== null && busy === `save-${editingId}`)}
+            >
               {editingId ? "Save Changes" : "Save Draft"}
             </OpButton>
           </div>
@@ -898,15 +1019,30 @@ export default function OperatorEmailDraftsPage() {
 
             <DraftEmailPreviewCard
               device={standaloneDevice}
-              category={previewDraft.category}
+              category={previewDraft.category ?? "Incident Notice"}
               subject={sanitizeDraftText(previewDraft.subject)}
               headline={sanitizeDraftText(previewDraft.headline)}
-              bodyText={sanitizeDraftText(previewDraft.bodyText)}
-              ctaLabel={previewDraft.ctaLabel}
+              bodyText={sanitizeDraftText(previewDraft.body_text)}
+              ctaLabel={previewDraft.cta_label ?? ""}
             />
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
-              <OpButton variant="outline" size="sm" disabled={!canManage} onClick={() => openEdit(previewDraft)}>
+            {reviewerNote(previewDraft)}
+
+            <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
+              <NotAvailableButton
+                variant="outline"
+                size="sm"
+                reason="nothing is sent from the operator console; drafts are reviewed by a Super Admin"
+              >
+                Send Test Email
+              </NotAvailableButton>
+              <OpButton
+                variant="outline"
+                size="sm"
+                disabled={!canManage || !isEditable(previewDraft)}
+                title={editTitle(previewDraft)}
+                onClick={() => openEdit(previewDraft)}
+              >
                 Edit Draft
               </OpButton>
               <OpButton variant="primary" size="sm" onClick={() => setPreviewDraft(null)}>
@@ -930,8 +1066,12 @@ export default function OperatorEmailDraftsPage() {
         variant="primary"
         onConfirm={() => {
           if (submitTarget) {
-            submitEmailDraftForApproval(submitTarget.id);
-            toast.success(`Submitted "${submitTarget.name}" for Super Admin approval.`);
+            const target = submitTarget;
+            void run(
+              `submit-${target.id}`,
+              () => operatorApi.emailDrafts.submit(target.id, target.version),
+              `Submitted "${target.name}" for Super Admin approval.`,
+            );
           }
         }}
       />
@@ -945,8 +1085,12 @@ export default function OperatorEmailDraftsPage() {
         variant="danger"
         onConfirm={() => {
           if (deleteTarget) {
-            deleteEmailDraft(deleteTarget.id);
-            toast.success("Email draft removed.");
+            const target = deleteTarget;
+            void run(
+              `delete-${target.id}`,
+              () => operatorApi.emailDrafts.remove(target.id, target.version),
+              "Email draft removed.",
+            );
           }
         }}
       />
@@ -958,11 +1102,7 @@ export default function OperatorEmailDraftsPage() {
         description="Removes all selected drafts from the Platform Operator draft list."
         confirmLabel={`Delete ${selectedIds.length} Draft(s)`}
         variant="danger"
-        onConfirm={() => {
-          const count = bulkDeleteEmailDrafts(selectedIds);
-          toast.success(`Deleted ${count} email draft(s).`);
-          setSelectedIds([]);
-        }}
+        onConfirm={bulkDelete}
       />
     </div>
   );

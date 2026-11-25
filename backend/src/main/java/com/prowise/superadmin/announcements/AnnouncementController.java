@@ -16,13 +16,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.prowise.identity.AuthPrincipal;
+import com.prowise.superadmin.common.AdminRequests;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping({"/v1/admin/announcements", "/api/v1/admin/announcements"})
-@Tag(name = "Super Admin Announcements", description = "Broadcast notices, maintenance banners and platform alerts")
+@Tag(name = "Super Admin Announcements", description = "Broadcast notices. Mutations need expected_version (409 STALE_VERSION when stale) and accept Idempotency-Key.")
 public class AnnouncementController {
 
     private final AnnouncementService announcementService;
@@ -56,71 +56,68 @@ public class AnnouncementController {
             HttpServletRequest request,
             @Valid @RequestBody AnnouncementDTOs.CreateAnnouncementRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(announcementService.createAnnouncement(body, actor));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('announcements.manage')")
-    @Operation(summary = "Update an existing announcement")
+    @Operation(summary = "Update an existing announcement (expected_version required)")
     public ResponseEntity<AnnouncementDTOs.AnnouncementResponse> updateAnnouncement(
             HttpServletRequest request,
             @PathVariable String id,
             @Valid @RequestBody AnnouncementDTOs.UpdateAnnouncementRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
+        String actor = AdminRequests.actor(request);
         return ResponseEntity.ok(announcementService.updateAnnouncement(id, body, actor));
     }
 
     @PostMapping("/{id}/publish")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('announcements.manage')")
-    @Operation(summary = "Publish an announcement to tenants immediately")
+    @Operation(summary = "Publish an announcement to tenants immediately (body: expected_version)")
     public ResponseEntity<AnnouncementDTOs.AnnouncementResponse> publishAnnouncement(
             HttpServletRequest request,
-            @PathVariable String id
+            @PathVariable String id,
+            @RequestBody(required = false) AdminRequests.VersionRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        return ResponseEntity.ok(announcementService.publishAnnouncement(id, actor));
+        String actor = AdminRequests.actor(request);
+        return ResponseEntity.ok(announcementService.publishAnnouncement(id, com.prowise.superadmin.common.AdminRequests.expected(body), actor));
     }
 
     @PostMapping("/{id}/archive")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('announcements.manage')")
-    @Operation(summary = "Archive an active announcement")
+    @Operation(summary = "Archive an active announcement (body: expected_version)")
     public ResponseEntity<AnnouncementDTOs.AnnouncementResponse> archiveAnnouncement(
             HttpServletRequest request,
-            @PathVariable String id
+            @PathVariable String id,
+            @RequestBody(required = false) AdminRequests.VersionRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        return ResponseEntity.ok(announcementService.archiveAnnouncement(id, actor));
+        String actor = AdminRequests.actor(request);
+        return ResponseEntity.ok(announcementService.archiveAnnouncement(id, com.prowise.superadmin.common.AdminRequests.expected(body), actor));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('announcements.manage')")
-    @Operation(summary = "Delete an announcement")
+    @Operation(summary = "Delete an announcement (?expectedVersion= required)")
     public ResponseEntity<Void> deleteAnnouncement(
             HttpServletRequest request,
-            @PathVariable String id
+            @PathVariable String id,
+            @RequestParam(required = false) Long expectedVersion
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        announcementService.deleteAnnouncement(id, actor);
+        String actor = AdminRequests.actor(request);
+        announcementService.deleteAnnouncement(id, expectedVersion, actor);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/bulk-delete")
     @PreAuthorize("hasAuthority('PLATFORM_SUPER_ADMIN') or hasAuthority('announcements.manage')")
-    @Operation(summary = "Bulk delete announcements")
+    @Operation(summary = "Bulk delete announcements (items: [{id, expected_version}]; all-or-nothing)")
     public ResponseEntity<Void> bulkDelete(
             HttpServletRequest request,
-            @Valid @RequestBody AnnouncementDTOs.BulkDeleteRequest body
+            @Valid @RequestBody AdminRequests.BulkVersionedRequest body
     ) {
-        AuthPrincipal principal = AuthPrincipal.current(request);
-        String actor = principal != null ? principal.email() : "superadmin@prowise.io";
-        announcementService.bulkDelete(body.ids(), actor);
+        String actor = AdminRequests.actor(request);
+        announcementService.bulkDelete(body.items(), actor);
         return ResponseEntity.noContent().build();
     }
 }

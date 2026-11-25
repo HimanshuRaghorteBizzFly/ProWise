@@ -18,6 +18,8 @@ public interface BugRepository extends JpaRepository<BugEntity, String> {
     @Query("SELECT b FROM BugEntity b WHERE b.orgId = :orgId AND b.assignedDeveloperId = :assignedTo")
     List<BugEntity> findByOrgIdAndAssignedTo(@Param("orgId") UUID orgId, @Param("assignedTo") String assignedTo);
 
-    @Query("SELECT COUNT(b) FROM BugEntity b WHERE b.orgId = :orgId AND b.assignedDeveloperId = :assignedTo AND b.status <> :status")
-    long countOpenAssigned(@Param("orgId") UUID orgId, @Param("assignedTo") String assignedTo, @Param("status") String status);
+    /** Bugs assigned to the developer that are still open: RESOLVED and CLOSED are terminal (V8 ck_bug_status). */
+    @Query("SELECT COUNT(b) FROM BugEntity b WHERE b.orgId = :orgId AND b.assignedDeveloperId = :assignedTo"
+            + " AND b.status NOT IN ('RESOLVED', 'CLOSED')")
+    long countOpenAssigned(@Param("orgId") UUID orgId, @Param("assignedTo") String assignedTo);
 }

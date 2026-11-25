@@ -26,11 +26,9 @@ import io.swagger.v3.oas.annotations.Operation;
 public class OrganizationSwitchController {
 
     private final AuthService authService;
-    private final SessionCookies cookies;
 
-    public OrganizationSwitchController(AuthService authService, SessionCookies cookies) {
+    public OrganizationSwitchController(AuthService authService) {
         this.authService = authService;
-        this.cookies = cookies;
     }
 
     @PostMapping("/{orgId}/switch")
@@ -40,7 +38,10 @@ public class OrganizationSwitchController {
             @PathVariable UUID orgId,
             Authentication authentication) {
         AuthPrincipal principal = (AuthPrincipal) authentication.getPrincipal();
-        return cookies.withTokens(authService.switchOrganization(principal, orgId), 200);
+        AuthService.SwitchResult result = authService.switchOrganizationWithRole(principal, orgId);
+        ResponseEntity<AuthController.AccessTokenResponse> withCookies = AuthController.withRefreshCookie(result.tokens(), 200);
+        return ResponseEntity.status(200).headers(withCookies.getHeaders())
+                .body(new SwitchResponse(result.tokens().accessToken(), result.role(), result.targetDashboardUrl()));
     }
 
     /** The org-bound token plus the role it carries there and the dashboard to open. */

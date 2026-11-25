@@ -8,13 +8,12 @@ import { OwnerPanel } from "@/components/owner/OwnerPanel";
 import { PageHeader, StatusBadge, SurfaceCard, type StatusTone } from "@/components/owner/primitives";
 import type { OrgNavFamily } from "@/components/owner/org-nav";
 import { formatUtcDate } from "@/components/owner/project-format";
-import type { RepositoryRow } from "@/lib/fixtures/org-admin";
+import type { RepositoryRow } from "@/types/org-admin";
 import type { PermissionKey } from "@/types/permission";
 
 export interface IntegrationsViewProps {
   family: OrgNavFamily;
   repositories: RepositoryRow[];
-  source: "api" | "fixture";
   can: (key: PermissionKey) => boolean;
   basePath?: string;
 }
@@ -26,7 +25,7 @@ const SYNC: Record<RepositoryRow["syncStatus"], { label: string; tone: StatusTon
   DISCONNECTED: { label: "Disconnected", tone: "neutral" },
 };
 
-export function IntegrationsView({ family, repositories, source, can, basePath }: IntegrationsViewProps) {
+export function IntegrationsView({ family, repositories, can, basePath }: IntegrationsViewProps) {
   const canConnect = can("repo.connect");
   // The owner approves integrations (blueprint section 3); there is no separate key, so org.manage gates it.
   const canApprove = family === "owner" && can("org.manage");
@@ -35,7 +34,6 @@ export function IntegrationsView({ family, repositories, source, can, basePath }
     <PageHeader
       title="Integrations (GitHub)"
       description="Selected GitHub repositories linked to this organization. Repository activity is evidence only and never sets completion."
-      simulationLabel={source === "fixture" ? "Sample data" : undefined}
       actions={
         canConnect || canApprove ? (
           <>

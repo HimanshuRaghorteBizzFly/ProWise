@@ -6,10 +6,16 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "support_access_requests")
 public class SupportAccessRequestEntity {
+
+    /** Optimistic lock (V34): exposed as "version", checked against the client's expected_version. */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
 
     @Id
     @Column(name = "id", length = 64)
@@ -64,4 +70,7 @@ public class SupportAccessRequestEntity {
     public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
 }

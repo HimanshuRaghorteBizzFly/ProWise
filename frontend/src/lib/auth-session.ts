@@ -73,6 +73,30 @@ export function applyLoginResponse(response: AuthLoginResponse): string {
 
   const role = toSystemRole(user.role) ?? "VIEWER";
   auth.login(user.email, role);
+  if (role === "SUPER_ADMIN") {
+    return "/super-admin/dashboard";
+  }
+  if (role === "PLATFORM_OPERATOR") {
+    return "/platform-operator/dashboard";
+  }
   if (response.requires_organization_selection) return "/select-org";
   return response.target_dashboard_url || "/select-org";
+}
+
+/**
+ * Ends the client-side session after the server refused it (failed me() or refresh): drops the persisted
+ * isAuthenticated flag and the remembered organization choices. The HttpOnly cookies are the server's to clear.
+ */
+export function clearAuthSession(): void {
+  useAuthStore.getState().logout();
+  try {
+    sessionStorage.removeItem(CHOICES_KEY);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("prowise_access_token");
+      document.cookie = "prowise_access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
+      document.cookie = "prowise_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
+    }
+  } catch {
+    /* storage unavailable: nothing to clear */
+  }
 }

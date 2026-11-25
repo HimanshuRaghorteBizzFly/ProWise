@@ -37,7 +37,7 @@ const DEPARTMENTS = [
 export default function OperatorLoginPage() {
   const router = useRouter();
   const { setCurrentRole, login: authLogin } = useAuthStore();
-  const updateAccountSettings = usePlatformOperatorStore((s) => s.updateAccountSettings);
+  const setOperatorProfile = usePlatformOperatorStore((s) => s.setOperatorProfile);
 
   const [mode, setMode] = useState<"login" | "forgot" | "invite" | "reset">("login");
   const [email, setEmail] = useState("");
@@ -92,15 +92,8 @@ export default function OperatorLoginPage() {
         localStorage.removeItem("prowise_operator_saved_email");
       }
 
-      // Update operator store
-      updateAccountSettings({
-        name: res.operator.name,
-        email: res.operator.email,
-        department: res.operator.departmentName as any,
-        shiftName: res.operator.shiftName,
-        mfaEnabled: res.operator.mfaEnabled,
-        activeOperatorId: res.operator.id,
-      });
+      // Keep the operator identity returned by the API for the shell header.
+      setOperatorProfile(res.operator);
 
       // Update global auth store
       setCurrentRole("PLATFORM_OPERATOR");

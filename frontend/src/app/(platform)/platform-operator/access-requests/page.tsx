@@ -13,14 +13,26 @@ import {
   ShieldCheck,
   XCircle,
 } from "lucide-react";
-import { useOperatorPermissions, usePlatformOperatorStore } from "../_store/usePlatformOperatorStore";
-import { SupportAccessRequestItem } from "../_types";
+import type { OpsAccessRequest } from "@/types/admin-operations";
+import { useOperatorPermissions } from "../_services/operator-access";
+import { operatorApi } from "../_services/operator-api";
 import { exportRowsToCsv, formatDateTime } from "../_services/operator-service";
+import {
+  MutationNotice,
+  NOT_AVAILABLE,
+  NotAvailableButton,
+  NotAvailableText,
+  OperatorResourceStatus,
+  humanizeCode,
+  readyValue,
+  rowsOf,
+  useOperatorMutation,
+  useOperatorResource,
+} from "../_components/OperatorLive";
 import {
   BulkSelectionBar,
   ConfirmModal,
   DemoDataBanner,
-  EmptyState,
   FilterBar,
   KpiCard,
   OpButton,
@@ -40,14 +52,36 @@ import {
 
 type AccessSortField = "orgName" | "ticketRef" | "durationHours" | "status" | "requestedAt";
 
+const STATUS_OPTIONS = [
+  { label: "Pending Approval", value: "PENDING_APPROVAL" },
+  { label: "Approved", value: "APPROVED" },
+  { label: "Denied", value: "REJECTED" },
+  { label: "Expired", value: "EXPIRED" },
+  { label: "Revoked", value: "REVOKED" },
+];
+
+const statusOf = (r: OpsAccessRequest) => (r.status || "").toUpperCase();
+const statusLabel = (r: OpsAccessRequest) => (statusOf(r) === "REJECTED" ? "Denied" : humanizeCode(r.status));
+const orgOf = (r: OpsAccessRequest) => r.org_id || "—";
+const ticketOf = (r: OpsAccessRequest) => r.ticket_id || "—";
+
+/** Window length in hours, only when the server has both the approval and the expiry instants. */
+function windowHours(r: OpsAccessRequest): number | null {
+  if (!r.approved_at || !r.expires_at) return null;
+  const ms = new Date(r.expires_at).getTime() - new Date(r.approved_at).getTime();
+  return Number.isFinite(ms) && ms > 0 ? Math.round(ms / 36e5) : null;
+}
+
 export default function OperatorAccessRequestsPage() {
-  const accessRequests = usePlatformOperatorStore((s) => s.accessRequests);
-  const orgHealth = usePlatformOperatorStore((s) => s.orgHealth);
-  const submitAccessRequest = usePlatformOperatorStore((s) => s.submitAccessRequest);
-  const revokeAccessRequest = usePlatformOperatorStore((s) => s.revokeAccessRequest);
-  const bulkRevokeAccessRequests = usePlatformOperatorStore((s) => s.bulkRevokeAccessRequests);
   const { can } = useOperatorPermissions();
   const canRequest = can("access.request");
+  /** Final approval decisions belong to Super Admin; operators see the buttons disabled. */
+  const canApprove = can("governance.super_admin_only");
+
+  const resource = useOperatorResource(() => operatorApi.accessRequests.list(), "access-requests");
+  const accessRequests = rowsOf(resource.state);
+  const reload = () => void resource.reload();
+  const mutation = useOperatorMutation(reload);
 
   const [viewMode, setViewMode] = useState<"TABLE" | "CARDS">("TABLE");
   const [search, setSearch] = useState("");
@@ -57,36 +91,16 @@ export default function OperatorAccessRequestsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
 
-  // Request Modal
+  // Request Modal: kept, never opened (no create endpoint yet).
   const [createOpen, setCreateOpen] = useState(false);
-  const [orgId, setOrgId] = useState("");
-  const [ticketRef, setTicketRef] = useState("");
-  const [scope, setScope] = useState<SupportAccessRequestItem["scope"]>("Read-Only Diagnostics");
-  const [durationHours, setDurationHours] = useState(2);
-  const [reason, setReason] = useState("");
-  const [formError, setFormError] = useState<string | null>(null);
 
-  // Revoke Confirm
-  const [revokeTarget, setRevokeTarget] = useState<SupportAccessRequestItem | null>(null);
+  // Revoke Confirm: kept, never opened (no revoke endpoint yet).
+  const [revokeTarget, setRevokeTarget] = useState<OpsAccessRequest | null>(null);
 
-  const closeOverlays = () => {
-    setCreateOpen(false);
-    setRevokeTarget(null);
-  };
-
-  const pendingCount = useMemo(
-    () => accessRequests.filter((r) => r.status === "Pending Approval").length,
-    [accessRequests]
-  );
-  const activeCount = useMemo(
-    () => accessRequests.filter((r) => r.status === "Approved").length,
-    [accessRequests]
-  );
+  const pendingCount = useMemo(() => accessRequests.filter((r) => statusOf(r) === "PENDING_APPROVAL").length, [accessRequests]);
+  const activeCount = useMemo(() => accessRequests.filter((r) => statusOf(r) === "APPROVED").length, [accessRequests]);
   const closedCount = useMemo(
-    () =>
-      accessRequests.filter(
-        (r) => r.status === "Expired" || r.status === "Revoked" || r.status === "Denied"
-      ).length,
+    () => accessRequests.filter((r) => ["EXPIRED", "REVOKED", "REJECTED"].includes(statusOf(r))).length,
     [accessRequests]
   );
 
@@ -104,20 +118,20 @@ export default function OperatorAccessRequestsPage() {
     const list = accessRequests.filter((r) => {
       const matchesQ =
         !q ||
-        r.orgName.toLowerCase().includes(q) ||
-        r.ticketRef.toLowerCase().includes(q) ||
-        r.scope.toLowerCase().includes(q) ||
-        r.reason.toLowerCase().includes(q);
-      const matchesStatus = statusFilter === "ALL" || r.status === statusFilter;
+        orgOf(r).toLowerCase().includes(q) ||
+        ticketOf(r).toLowerCase().includes(q) ||
+        (r.requester_email || "").toLowerCase().includes(q) ||
+        (r.reason || "").toLowerCase().includes(q);
+      const matchesStatus = statusFilter === "ALL" || statusOf(r) === statusFilter;
       return matchesQ && matchesStatus;
     });
     return [...list].sort((a, b) => {
       let cmp = 0;
-      if (sortField === "orgName") cmp = a.orgName.localeCompare(b.orgName);
-      else if (sortField === "ticketRef") cmp = a.ticketRef.localeCompare(b.ticketRef);
-      else if (sortField === "durationHours") cmp = a.durationHours - b.durationHours;
-      else if (sortField === "status") cmp = a.status.localeCompare(b.status);
-      else cmp = new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime();
+      if (sortField === "orgName") cmp = orgOf(a).localeCompare(orgOf(b));
+      else if (sortField === "ticketRef") cmp = ticketOf(a).localeCompare(ticketOf(b));
+      else if (sortField === "durationHours") cmp = (windowHours(a) ?? -1) - (windowHours(b) ?? -1);
+      else if (sortField === "status") cmp = statusOf(a).localeCompare(statusOf(b));
+      else cmp = new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime();
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [accessRequests, search, statusFilter, sortField, sortDir]);
@@ -143,43 +157,10 @@ export default function OperatorAccessRequestsPage() {
     paginated.map((r) => r.id)
   );
 
-  const openModal = () => {
-    closeOverlays();
-    setOrgId(orgHealth[0]?.id || "org-acme");
-    setTicketRef("");
-    setScope("Read-Only Diagnostics");
-    setDurationHours(2);
-    setReason("");
-    setFormError(null);
-    setCreateOpen(true);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const chosenOrg = orgHealth.find((o) => o.id === orgId);
-    if (!chosenOrg) {
-      setFormError("Please select the target organization.");
-      return;
-    }
-    if (!ticketRef.trim()) {
-      setFormError("Please link a valid support ticket reference (e.g. SUP-5104).");
-      return;
-    }
-    if (reason.trim().length < 10) {
-      setFormError("Please explain why temporary access is required (at least 10 characters).");
-      return;
-    }
-    submitAccessRequest({
-      orgId: chosenOrg.id,
-      orgName: chosenOrg.orgName,
-      ticketRef: ticketRef.trim(),
-      scope,
-      reason: reason.trim(),
-      durationHours,
-    });
-    toast.success("Access request submitted to Super Admin for approval.");
-    setCreateOpen(false);
-  };
+  const approve = (r: OpsAccessRequest) =>
+    void mutation.run(`approve:${r.id}`, () => operatorApi.accessRequests.approve(r.id, r.version), "Access request approved.");
+  const reject = (r: OpsAccessRequest) =>
+    void mutation.run(`reject:${r.id}`, () => operatorApi.accessRequests.reject(r.id, r.version), "Access request denied.");
 
   const handleExportCsv = () => {
     exportRowsToCsv(
@@ -187,16 +168,45 @@ export default function OperatorAccessRequestsPage() {
       ["Sr No", "Ticket Ref", "Organization", "Scope", "Duration (h)", "Status", "Requested At", "Reason"],
       filtered.map((r, i) => [
         i + 1,
-        r.ticketRef,
-        r.orgName,
-        r.scope,
-        r.durationHours,
-        r.status,
-        r.requestedAt,
-        r.reason,
+        r.ticket_id ?? "",
+        r.org_id ?? "",
+        "",
+        windowHours(r) ?? "",
+        statusLabel(r),
+        r.created_at ?? "",
+        r.reason ?? "",
       ])
     );
     toast.success(`Exported ${filtered.length} access request(s).`);
+  };
+
+  /** Approve / Deny for a pending request (real endpoints, expected_version from the row). */
+  const decisionButtons = (r: OpsAccessRequest) => {
+    const tip = canApprove ? undefined : "Final approval decisions belong to Super Admin.";
+    return (
+      <span className="inline-flex items-center gap-1.5" title={tip}>
+        <OpButton
+          variant="primary"
+          size="xs"
+          disabled={!canApprove || mutation.busy !== null}
+          isLoading={mutation.busy === `approve:${r.id}`}
+          onClick={() => approve(r)}
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          Approve
+        </OpButton>
+        <OpButton
+          variant="outline"
+          size="xs"
+          disabled={!canApprove || mutation.busy !== null}
+          isLoading={mutation.busy === `reject:${r.id}`}
+          onClick={() => reject(r)}
+        >
+          <XCircle className="w-3.5 h-3.5" />
+          Deny
+        </OpButton>
+      </span>
+    );
   };
 
   return (
@@ -204,13 +214,13 @@ export default function OperatorAccessRequestsPage() {
       <PageHeader
         title="Support Access Requests"
         badge="Zero Standing Access"
-        demoLabel="Super Admin Approval Required"
+        liveData
         description="Submit justified requests for temporary customer workspace troubleshooting, track expiry, and end sessions early."
         actions={
-          <OpButton variant="primary" size="sm" disabled={!canRequest} onClick={openModal}>
+          <NotAvailableButton variant="primary" size="sm" reason="no access request create endpoint">
             <Plus className="w-4 h-4" />
             Request Access
-          </OpButton>
+          </NotAvailableButton>
         }
       />
 
@@ -219,25 +229,34 @@ export default function OperatorAccessRequestsPage() {
         description="Platform Operators can request and revoke their own active temporary access sessions. Final approval decisions belong exclusively to Super Admin."
       />
 
+      <MutationNotice
+        notice={mutation.notice}
+        onReload={() => {
+          mutation.clearNotice();
+          reload();
+        }}
+        onDismiss={mutation.clearNotice}
+      />
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiCard
           label="Awaiting Super Admin Approval"
-          value={pendingCount}
+          value={readyValue(resource.state, () => pendingCount)}
           sublabel="Queued in Super Admin Approvals"
           icon={Clock}
           tone={pendingCount > 0 ? "amber" : "emerald"}
         />
         <KpiCard
           label="Active Approved Windows"
-          value={activeCount}
+          value={readyValue(resource.state, () => activeCount)}
           sublabel="Time-limited troubleshooting sessions"
           icon={ShieldCheck}
           tone="teal"
         />
         <KpiCard
           label="Expired / Ended"
-          value={closedCount}
-          sublabel="Automatically expired or revoked early"
+          value={readyValue(resource.state, () => closedCount)}
+          sublabel="Expired, revoked or denied"
           icon={CheckCircle2}
           tone="slate"
         />
@@ -261,14 +280,7 @@ export default function OperatorAccessRequestsPage() {
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 aria-label="Filter by request status"
-                options={[
-                  { label: "All Requests", value: "ALL" },
-                  { label: "Pending Approval", value: "Pending Approval" },
-                  { label: "Approved", value: "Approved" },
-                  { label: "Denied", value: "Denied" },
-                  { label: "Expired", value: "Expired" },
-                  { label: "Revoked", value: "Revoked" },
-                ]}
+                options={[{ label: "All Requests", value: "ALL" }, ...STATUS_OPTIONS]}
               />
             </div>
           }
@@ -302,14 +314,28 @@ export default function OperatorAccessRequestsPage() {
           }
         />
 
-        {paginated.length === 0 ? (
-          <EmptyState
-            icon={KeyRound}
-            title="No access requests found"
-            description="No support access requests match your search or filter."
-            actionLabel={canRequest ? "Request Access" : undefined}
-            onAction={canRequest ? openModal : undefined}
-          />
+        {resource.state.status !== "ready" || paginated.length === 0 ? (
+          <div className="space-y-3">
+            <OperatorResourceStatus
+              state={resource.state.status === "ready" ? { status: "ready", data: paginated } : resource.state}
+              isEmpty={(rows) => rows.length === 0}
+              onRetry={reload}
+              emptyIcon={KeyRound}
+              emptyTitle="No access requests found"
+              emptyDescription={
+                accessRequests.length === 0
+                  ? "No support access requests are recorded on the server."
+                  : "No support access requests match your search or filter."
+              }
+            />
+            {resource.state.status === "ready" && canRequest && (
+              <div className="flex justify-center">
+                <NotAvailableButton size="sm" reason="no access request create endpoint">
+                  Request Access
+                </NotAvailableButton>
+              </div>
+            )}
+          </div>
         ) : viewMode === "TABLE" ? (
           <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
             <BulkSelectionBar
@@ -318,19 +344,10 @@ export default function OperatorAccessRequestsPage() {
               onSelectAllMatching={() => setSelectedIds(filtered.map((r) => r.id))}
               onClear={() => setSelectedIds([])}
               actions={
-                <OpButton
-                  variant="danger"
-                  size="xs"
-                  disabled={!canRequest}
-                  onClick={() => {
-                    const count = bulkRevokeAccessRequests(selectedIds);
-                    toast.success(`Revoked ${count} selected access window(s).`);
-                    setSelectedIds([]);
-                  }}
-                >
+                <NotAvailableButton variant="danger" size="xs" reason="no revoke endpoint">
                   <XCircle className="w-3.5 h-3.5" />
                   Revoke Selected ({selectedIds.length})
-                </OpButton>
+                </NotAvailableButton>
               }
             />
             <div className="overflow-x-auto">
@@ -372,6 +389,7 @@ export default function OperatorAccessRequestsPage() {
                   {paginated.map((req, idx) => {
                     const srNo = (safePage - 1) * pageSize + idx + 1;
                     const isSelected = selectedSet.has(req.id);
+                    const hours = windowHours(req);
                     return (
                       <tr key={req.id} className={isSelected ? "bg-teal-500/5" : "hover:bg-[var(--color-hover)]/50"}>
                         <td className="py-3 px-3.5">
@@ -379,7 +397,7 @@ export default function OperatorAccessRequestsPage() {
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggleSelectOne(req.id)}
-                            aria-label={`Select ${req.ticketRef}`}
+                            aria-label={`Select ${ticketOf(req)}`}
                             className="h-4 w-4 rounded border-[var(--color-border)] bg-[var(--color-app-bg)] accent-teal-600 cursor-pointer"
                           />
                         </td>
@@ -389,47 +407,49 @@ export default function OperatorAccessRequestsPage() {
                         <td className="py-3 px-3.5 max-w-[260px]">
                           <div className="flex items-start gap-2.5">
                             <span className="h-7 w-7 rounded-lg bg-teal-500/15 border border-teal-500/25 flex items-center justify-center text-[10px] font-bold text-teal-700 dark:text-teal-300 shrink-0 mt-0.5">
-                              {getOrgInitials(req.orgName)}
+                              {getOrgInitials(req.requester_email || orgOf(req))}
                             </span>
                             <div className="min-w-0">
-                              <p className="font-semibold text-[var(--color-text-primary)] truncate">{req.orgName}</p>
-                              <p className="text-[11px] text-[var(--color-text-muted)] truncate">{req.reason}</p>
+                              <p className="font-semibold text-[var(--color-text-primary)] truncate" title={orgOf(req)}>
+                                {orgOf(req)}
+                              </p>
+                              <p className="text-[11px] text-[var(--color-text-muted)] truncate">
+                                {req.reason || "—"}
+                                {req.requester_email ? ` · ${req.requester_email}` : ""}
+                              </p>
                             </div>
                           </div>
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
                           <div className="space-y-1">
                             <span className="rounded border border-[var(--color-border)] bg-[var(--color-app-bg)] px-1.5 py-0.5 text-[10px] font-bold">
-                              {req.ticketRef}
+                              {ticketOf(req)}
                             </span>
-                            <p className="text-[11px] text-[var(--color-text-secondary)]">{req.scope}</p>
+                            <p className="text-[11px] text-[var(--color-text-secondary)]">
+                              <NotAvailableText className="text-[11px]" reason="access scope is not stored" />
+                            </p>
                           </div>
                         </td>
-                        <td className="py-3 px-3.5 whitespace-nowrap font-medium">{req.durationHours}h</td>
+                        <td className="py-3 px-3.5 whitespace-nowrap font-medium">{hours !== null ? `${hours}h` : "—"}</td>
                         <td className="py-3 px-3.5 whitespace-nowrap">
-                          <StatusBadge label={req.status} tone={getStatusTone(req.status)} dot />
+                          <StatusBadge label={statusLabel(req)} tone={getStatusTone(statusLabel(req))} dot />
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap text-[var(--color-text-secondary)]">
-                          {formatDateTime(req.requestedAt)}
+                          {formatDateTime(req.created_at ?? "")}
                         </td>
                         <td className="py-3 px-3.5 whitespace-nowrap text-right">
-                          {req.status === "Pending Approval" ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300 font-medium">
-                              <ShieldAlert className="w-3.5 h-3.5" />
-                              Super Admin Review
-                            </span>
-                          ) : req.status === "Approved" ? (
-                            <OpButton
-                              variant="danger"
-                              size="xs"
-                              disabled={!canRequest}
-                              onClick={() => {
-                                closeOverlays();
-                                setRevokeTarget(req);
-                              }}
-                            >
+                          {statusOf(req) === "PENDING_APPROVAL" ? (
+                            <div className="inline-flex flex-col items-end gap-1">
+                              <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300 font-medium">
+                                <ShieldAlert className="w-3.5 h-3.5" />
+                                Super Admin Review
+                              </span>
+                              {decisionButtons(req)}
+                            </div>
+                          ) : statusOf(req) === "APPROVED" ? (
+                            <NotAvailableButton variant="danger" size="xs" reason="no revoke endpoint">
                               Revoke Early
-                            </OpButton>
+                            </NotAvailableButton>
                           ) : (
                             <span className="text-[11px] text-[var(--color-text-muted)]">Closed</span>
                           )}
@@ -445,6 +465,7 @@ export default function OperatorAccessRequestsPage() {
           <div className="space-y-3">
             {paginated.map((req, idx) => {
               const srNo = (safePage - 1) * pageSize + idx + 1;
+              const hours = windowHours(req);
               return (
                 <div
                   key={req.id}
@@ -455,46 +476,40 @@ export default function OperatorAccessRequestsPage() {
                       <span className="rounded bg-[var(--color-surface)] border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--color-text-muted)] tabular-nums">
                         #{srNo}
                       </span>
-                      <StatusBadge label={req.status} tone={getStatusTone(req.status)} dot />
+                      <StatusBadge label={statusLabel(req)} tone={getStatusTone(statusLabel(req))} dot />
                       <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-[11px] font-semibold">
-                        {req.ticketRef}
+                        {ticketOf(req)}
                       </span>
-                      <StatusBadge label={req.scope} tone="info" />
+                      <StatusBadge label={`Scope: ${NOT_AVAILABLE}`} tone="info" />
                       <span className="text-xs text-[var(--color-text-secondary)]">
-                        {req.durationHours}h window
+                        {hours !== null ? `${hours}h window` : "— window"}
                       </span>
                     </div>
 
-                    <p className="text-sm font-semibold text-[var(--color-text-primary)]">
-                      {req.orgName}
-                    </p>
-                    <p className="text-xs text-[var(--color-text-secondary)]">{req.reason}</p>
+                    <p className="text-sm font-semibold text-[var(--color-text-primary)]">{orgOf(req)}</p>
+                    <p className="text-xs text-[var(--color-text-secondary)]">{req.reason || "—"}</p>
                     <p className="text-[11px] text-[var(--color-text-muted)]">
-                      Requested {formatDateTime(req.requestedAt)}
-                      {req.reviewedBy ? ` · Approved by ${req.reviewedBy}` : ""}
-                      {req.expiresAt ? ` · Expires ${formatDateTime(req.expiresAt)}` : ""}
+                      Requested {formatDateTime(req.created_at ?? "")}
+                      {req.requester_email ? ` by ${req.requester_email}` : ""}
+                      {req.approved_by ? ` · Approved by ${req.approved_by}` : ""}
+                      {req.expires_at ? ` · Expires ${formatDateTime(req.expires_at)}` : ""}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    {req.status === "Pending Approval" && (
-                      <span className="text-[11px] text-amber-700 dark:text-amber-300 font-medium flex items-center gap-1">
-                        <ShieldAlert className="w-3.5 h-3.5" />
-                        Waiting for Super Admin
-                      </span>
+                    {statusOf(req) === "PENDING_APPROVAL" && (
+                      <>
+                        <span className="text-[11px] text-amber-700 dark:text-amber-300 font-medium flex items-center gap-1">
+                          <ShieldAlert className="w-3.5 h-3.5" />
+                          Waiting for Super Admin
+                        </span>
+                        {decisionButtons(req)}
+                      </>
                     )}
-                    {req.status === "Approved" && (
-                      <OpButton
-                        variant="danger"
-                        size="xs"
-                        disabled={!canRequest}
-                        onClick={() => {
-                          closeOverlays();
-                          setRevokeTarget(req);
-                        }}
-                      >
+                    {statusOf(req) === "APPROVED" && (
+                      <NotAvailableButton variant="danger" size="xs" reason="no revoke endpoint">
                         Revoke Session Early
-                      </OpButton>
+                      </NotAvailableButton>
                     )}
                   </div>
                 </div>
@@ -522,30 +537,15 @@ export default function OperatorAccessRequestsPage() {
         description="Submit a time-boxed access request routed to Super Admin for authorization."
         maxWidth="lg"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {formError && (
-            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
-              {formError}
-            </div>
-          )}
-
+        <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <OpSelect
-              label="Target Organization"
-              value={orgId}
-              onChange={(e) => setOrgId(e.target.value)}
-              options={orgHealth.map((o) => ({ label: o.orgName, value: o.id }))}
-            />
-            <OpInput
-              label="Support Ticket Reference"
-              value={ticketRef}
-              onChange={(e) => setTicketRef(e.target.value)}
-              placeholder="e.g. SUP-5104"
-            />
+            <OpSelect label="Target Organization" value="" disabled onChange={() => undefined} options={[]} />
+            <OpInput label="Support Ticket Reference" disabled placeholder="e.g. SUP-5104" />
             <OpSelect
               label="Access Scope"
-              value={scope}
-              onChange={(e) => setScope(e.target.value as SupportAccessRequestItem["scope"])}
+              value="Read-Only Diagnostics"
+              disabled
+              onChange={() => undefined}
               options={[
                 { label: "Read-Only Diagnostics", value: "Read-Only Diagnostics" },
                 { label: "Billing & Sync Check", value: "Billing & Sync Check" },
@@ -554,8 +554,9 @@ export default function OperatorAccessRequestsPage() {
             />
             <OpSelect
               label="Requested Duration"
-              value={durationHours}
-              onChange={(e) => setDurationHours(Number(e.target.value))}
+              value={2}
+              disabled
+              onChange={() => undefined}
               options={[
                 { label: "1 hour", value: 1 },
                 { label: "2 hours", value: 2 },
@@ -566,8 +567,7 @@ export default function OperatorAccessRequestsPage() {
 
           <OpTextarea
             label="Reason & Troubleshooting Plan"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
+            disabled
             placeholder="Explain why temporary access is required to resolve the customer's ticket..."
             rows={3}
           />
@@ -576,9 +576,9 @@ export default function OperatorAccessRequestsPage() {
             <OpButton type="button" variant="outline" size="sm" onClick={() => setCreateOpen(false)}>
               Cancel
             </OpButton>
-            <OpButton type="submit" variant="primary" size="sm">
+            <NotAvailableButton variant="primary" size="sm" reason="no access request create endpoint">
               Submit Request
-            </OpButton>
+            </NotAvailableButton>
           </div>
         </form>
       </OpModal>
@@ -589,17 +589,12 @@ export default function OperatorAccessRequestsPage() {
         title="End Temporary Support Access?"
         description={
           revokeTarget
-            ? `End your approved troubleshooting session for ${revokeTarget.orgName} (${revokeTarget.ticketRef}) now?`
+            ? `End your approved troubleshooting session for ${orgOf(revokeTarget)} (${ticketOf(revokeTarget)}) now?`
             : ""
         }
         confirmLabel="Revoke Access"
         variant="danger"
-        onConfirm={() => {
-          if (revokeTarget) {
-            revokeAccessRequest(revokeTarget.id);
-            toast.success(`Access window for ${revokeTarget.orgName} ended.`);
-          }
-        }}
+        onConfirm={() => setRevokeTarget(null)}
       />
     </div>
   );
