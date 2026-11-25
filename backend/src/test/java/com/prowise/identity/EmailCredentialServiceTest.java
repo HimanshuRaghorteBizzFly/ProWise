@@ -44,6 +44,10 @@ class EmailCredentialServiceTest {
     }
 
     private EmailCredentialService service(String smtpUsername) {
+        return service(smtpUsername, "http://localhost:3000");
+    }
+
+    private EmailCredentialService service(String smtpUsername, String frontendUrl) {
         when(mailSenderProvider.getIfAvailable()).thenReturn(mailSender);
         // Real settings resolution over an empty settings table: the SMTP_* environment fallback applies.
         com.prowise.superadmin.emailproviders.EmailProviderRepository providers =
@@ -52,7 +56,7 @@ class EmailCredentialServiceTest {
         com.prowise.notification.smtp.SmtpSettingsProvider settings = new com.prowise.notification.smtp.SmtpSettingsProvider(
                 providers, new com.prowise.notification.smtp.SmtpCredentialCipher(""),
                 "smtp.gmail.com", 587, smtpUsername, "", "noreply@prowise.com", "ProWise Platform", "", "");
-        return new EmailCredentialService(mailSenderProvider, deliveryLogRepository, settings, "http://localhost:3000");
+        return new EmailCredentialService(mailSenderProvider, deliveryLogRepository, settings, frontendUrl);
     }
 
     @Test
@@ -116,6 +120,70 @@ class EmailCredentialServiceTest {
         ArgumentCaptor<EmailDeliveryLogEntity> log = ArgumentCaptor.forClass(EmailDeliveryLogEntity.class);
         verify(deliveryLogRepository).save(log.capture());
         assertEquals("PASSWORD_RESET", log.getValue().getEmailType());
+    }
+
+    @Test
+    @DisplayName("Operator welcome email carries the sign-in email, the temporary password and the live sign-in link")
+    void operatorWelcomeEmail() throws Exception {
+        EmailCredentialService.EmailDeliveryResult result = service("smtp-user", "https://prowise.oxo1.com/")
+                .sendOperatorWelcomeEmail("new.op@ops.test", "New Op", "Tmp7kQ9xRm2PwZ4a");
+
+        assertTrue(result.success());
+        ArgumentCaptor<MimeMessage> sent = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(sent.capture());
+        assertThat(sent.getValue().getSubject()).isEqualTo("Your ProWise operator account");
+        assertThat(text(sent.getValue().getContent()))
+                .contains("new.op@ops.test")
+                .contains("Tmp7kQ9xRm2PwZ4a")
+                .contains("https://prowise.oxo1.com/operator/login")
+                .doesNotContain("prowise.oxo1.com//")
+                .doesNotContain("localhost")
+                .doesNotContain("invite=")
+                .contains("72 hours")
+                .containsIgnoringCase("choose a new password")
+                .doesNotContain("never sends passwords");
+        ArgumentCaptor<EmailDeliveryLogEntity> log = ArgumentCaptor.forClass(EmailDeliveryLogEntity.class);
+        verify(deliveryLogRepository).save(log.capture());
+        assertEquals("OPERATOR_INVITATION", log.getValue().getEmailType());
+        // The delivery log keeps the subject, never the password.
+        assertThat(String.valueOf(log.getValue().getSubject()) + log.getValue().getErrorMessage()).doesNotContain("Tmp7kQ9xRm2PwZ4a");
+    }
+
+    @Test
+    @DisplayName("Operator welcome email adds a local sign-in link only when one is configured")
+    void operatorWelcomeEmailLocalSignInLink() throws Exception {
+        EmailCredentialService withLocal = service("smtp-user", "https://prowise.oxo1.com");
+        withLocal.setLocalSignInUrl("http://localhost:3000/");
+        withLocal.sendOperatorWelcomeEmail("new.op@ops.test", "New Op", "Tmp7kQ9xRm2PwZ4a");
+        ArgumentCaptor<MimeMessage> sent = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(sent.capture());
+        assertThat(text(sent.getValue().getContent()))
+                .contains("https://prowise.oxo1.com/operator/login")
+                .contains("href=\"http://localhost:3000/operator/login\"")
+                .contains("Testing locally?");
+
+        org.mockito.Mockito.reset(mailSender);
+        when(mailSender.createMimeMessage()).thenAnswer(invocation -> new MimeMessage((Session) null));
+        service("smtp-user", "https://prowise.oxo1.com").sendOperatorWelcomeEmail("new.op@ops.test", "New Op", "Tmp7kQ9xRm2PwZ4a");
+        verify(mailSender).send(sent.capture());
+        assertThat(text(sent.getValue().getContent())).doesNotContain("localhost").doesNotContain("Testing locally?");
+    }
+
+    @Test
+    @DisplayName("Every linked email (verification, reset, setup) adds the same link on the local copy when configured")
+    void localLinkOnEveryEmail() throws Exception {
+        EmailCredentialService withLocal = service("smtp-user", "https://prowise.oxo1.com");
+        withLocal.setLocalSignInUrl("http://localhost:3000");
+        withLocal.sendEmailVerificationEmail(UUID.randomUUID(), "owner@ops.test", "Owner", "verify-abc");
+        withLocal.sendPasswordResetEmail(UUID.randomUUID(), "owner@ops.test", "Owner", "reset-xyz");
+        ArgumentCaptor<MimeMessage> sent = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender, org.mockito.Mockito.times(2)).send(sent.capture());
+        assertThat(text(sent.getAllValues().get(0).getContent()))
+                .contains("https://prowise.oxo1.com/verify-email?token=verify-abc")
+                .contains("href=\"http://localhost:3000/verify-email?token=verify-abc\"")
+                .contains("Testing locally?");
+        assertThat(text(sent.getAllValues().get(1).getContent()))
+                .contains("href=\"http://localhost:3000/reset-password?token=reset-xyz\"");
     }
 
     private static String text(Object content) throws Exception {

@@ -118,6 +118,27 @@ public class OperatorAuthController {
                 .body(new OperatorAuthDTOs.MessageResponse("All active sessions revoked across all devices."));
     }
 
+    @PostMapping({"/v1/auth/operator/change-password", "/api/v1/auth/operator/change-password"})
+    @PreAuthorize("hasAuthority('PLATFORM_OPERATOR')")
+    @Operation(summary = "Change the signed-in operator's password; ends every other session and issues a fresh one")
+    public ResponseEntity<OperatorAuthDTOs.OperatorAuthResponse> changePassword(
+            @RequestBody OperatorAuthDTOs.ChangePasswordRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        AuthPrincipal principal = AuthPrincipal.current(httpRequest);
+        OperatorAuthDTOs.OperatorAuthResponse response = operatorAuthService.changePassword(
+                principal,
+                request.currentPassword(),
+                request.newPassword(),
+                extractClientIp(httpRequest),
+                httpRequest.getHeader("User-Agent")
+        );
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, createCookie(REFRESH_COOKIE_NAME, response.refreshToken(), 30L * 24 * 3600).toString())
+                .header(HttpHeaders.SET_COOKIE, createCookie(ACCESS_COOKIE_NAME, response.accessToken(), response.expiresIn()).toString())
+                .body(response);
+    }
+
     @PostMapping({"/v1/auth/operator/forgot-password", "/api/v1/auth/operator/forgot-password"})
     @PreAuthorize("permitAll()")
     @Operation(summary = "Request password reset token for operator account")

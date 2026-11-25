@@ -181,7 +181,7 @@ export function InvitationsListView({ family }: { family: OrgFamily }) {
               <DataTable<InvitationDto>
                 rows={visible}
                 rowHref={(row) => href(`invitations/${row.id}`)}
-                empty={{ icon: Mail, title: "No invitations", description: "Invite a member to send a single-use link by email." }}
+                empty={{ icon: Mail, title: "No invitations", description: "Invite a member: they get a temporary password (or, with an existing account, an accept link) by email." }}
                 columns={[
                   { key: "email", header: "Email", render: (row) => <span className="font-medium">{row.email}</span> },
                   { key: "role", header: "Role", render: (row) => roleDisplayName(row.role_name) },
@@ -218,7 +218,7 @@ export function InviteMemberView({ family }: { family: OrgFamily }) {
       crumbs={crumbsFor(family, href, { label: "Invitations", path: "invitations" }, "Invite member")}
       back={{ href: href("invitations"), label: "Back to invitations" }}
       title="Invite a member"
-      description="The invitee gets a single-use link by email and must sign in with this address to accept. The link is never shown here."
+      description="Someone new gets an email with a temporary password: signing in with it opens their role's dashboard, and they can change it from the account menu. Someone who already has a ProWise account gets a sign-in-and-accept link instead. Neither is ever shown here."
     >
       <LoadGate state={roles} family={family} permission="member.invite" what="Roles">
         {(roleList) => (

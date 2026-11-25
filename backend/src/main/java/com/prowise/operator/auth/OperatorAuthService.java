@@ -82,6 +82,14 @@ public class OperatorAuthService {
     public void setRequestThrottle(com.prowise.identity.RequestThrottle throttle) {
         this.throttle = throttle;
     }
+    /** Writes the operator activity row and the admin audit row inside the caller's transaction (rule 4). */
+    private com.prowise.operator.console.ConsoleAudit consoleAudit;
+
+    @Autowired
+    public void setConsoleAudit(com.prowise.operator.console.ConsoleAudit consoleAudit) {
+        this.consoleAudit = consoleAudit;
+    }
+
     private EmailCredentialService emailCredentialService;
 
     /** Optional so unit tests can build the service without the mail stack; when absent no reset email is sent. */
@@ -152,6 +160,15 @@ public class OperatorAuthService {
         }
 
         if (operator.getPasswordHash() == null || !passwordEncoder.matches(password, operator.getPasswordHash())) {
+            // The emailed temporary password (checked after the same bcrypt work, so no timing hint) proves who they
+            // are but opens no session: the operator must first replace it through accept-invitation.
+            if (isOpenTemporaryPassword(operator, password)) {
+                operatorRepository.clearFailedLogins(operator.getId());
+                recordLoginHistory(operator.getId(), email, "PASSWORD_CHANGE_REQUIRED", ipAddress, userAgent,
+                        "Temporary password used; new password required");
+                throw new ApiException(HttpStatus.FORBIDDEN, "PASSWORD_CHANGE_REQUIRED",
+                        "Choose a new password to finish signing in.");
+            }
             operatorRepository.registerFailedLogin(operator.getId(), MAX_FAILED_ATTEMPTS, LOCK_MINUTES);
             recordLoginHistory(operator.getId(), email, "FAILED_INVALID_CREDENTIALS", ipAddress, userAgent, "Password mismatch");
             throw invalidCredentials();
@@ -169,7 +186,8 @@ public class OperatorAuthService {
         if (!operator.isPasswordSetupCompleted()) {
             recordLoginHistory(operator.getId(), email, "FAILED_SETUP_INCOMPLETE", ipAddress, userAgent, "Invitation not accepted");
             throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_SETUP_INCOMPLETE",
-                    "Accept your invitation email to choose a password before signing in.");
+                    "Sign in with the temporary password from your welcome email to choose your password, or ask your "
+                            + "Super Admin to send a new one.");
         }
 
         // Credentials valid - update operator timestamps
@@ -312,6 +330,49 @@ public class OperatorAuthService {
         sessionRepository.revokeAllByOperatorId(operator.getId(), "PASSWORD_RESET");
     }
 
+    /**
+     * The signed-in operator changes its own password. The current password must match, the new one must pass the
+     * password policy and differ from the current one. The new hash, the revocation of every existing session and
+     * the audit rows commit together (rule 4); the caller gets a fresh session so it stays signed in.
+     */
+    @Transactional
+    public OperatorAuthDTOs.OperatorAuthResponse changePassword(
+            AuthPrincipal principal, String currentPassword, String newPassword, String ipAddress, String userAgent
+    ) {
+        if (principal == null || !principal.isOperator() || principal.operatorId() == null) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.UNAUTHORIZED, "Sign in to change your password.");
+        }
+        enforceRateLimit("op:change-password:" + principal.operatorId());
+        if (currentPassword == null || currentPassword.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "CURRENT_PASSWORD_REQUIRED", "Current password is required.");
+        }
+        requireAcceptablePassword(newPassword);
+
+        PlatformOperatorEntity operator = operatorRepository.findById(principal.operatorId())
+                .filter(op -> "ACTIVE".equalsIgnoreCase(op.getStatus()))
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.UNAUTHORIZED,
+                        "Sign in to change your password."));
+        String currentHash = operator.getPasswordHash();
+        if (currentHash == null || !passwordEncoder.matches(currentPassword, currentHash)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CURRENT_PASSWORD", "The current password is incorrect.");
+        }
+        if (passwordEncoder.matches(newPassword, currentHash)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "PASSWORD_REUSE", "Choose a password different from your current one.");
+        }
+
+        operator.setPasswordHash(passwordEncoder.encode(newPassword));
+        operator.setPasswordSetupCompleted(true);
+        operator.setUpdatedAt(Instant.now());
+        operatorRepository.save(operator);
+
+        // Every existing session ends (other devices and the one making this request).
+        sessionRepository.revokeAllByOperatorId(operator.getId(), "PASSWORD_CHANGED");
+        consoleAudit.record(principal, "SECURITY", "OPERATOR_PASSWORD_CHANGED", "platform_operator", operator.getId(),
+                "Operator " + operator.getEmail() + " changed their password; all other sessions were signed out.",
+                ipAddress);
+        return issueOperatorSession(operator, ipAddress, userAgent);
+    }
+
     /** The platform-wide password rule (PasswordPolicy), checked before any single-use link is consumed. */
     private static void requireAcceptablePassword(String password) {
         List<String> problems = com.prowise.identity.PasswordPolicy.violations(password);
@@ -354,6 +415,12 @@ public class OperatorAuthService {
 
         PlatformOperatorEntity operator = operatorRepository.findById(invite.getOperatorId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Operator account not found."));
+        // A suspended or deactivated operator cannot reactivate itself with a still-open invitation or temporary
+        // password (the claim above rolls back with this exception).
+        String currentStatus = operator.getStatus() == null ? "" : operator.getStatus().toUpperCase(java.util.Locale.ROOT);
+        if (!currentStatus.equals("INVITED") && !currentStatus.equals("ACTIVE")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_CREDENTIALS, "Invalid or expired invitation token.");
+        }
 
         if (name != null && !name.trim().isEmpty()) {
             operator.setName(name.trim());
@@ -546,6 +613,34 @@ public class OperatorAuthService {
         byte[] bytes = new byte[48];
         RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    /**
+     * True when the operator has not chosen a password yet, may still finish setup (INVITED, or ACTIVE by a status
+     * change alone) and {@code candidate} is an open, unexpired emailed temporary password.
+     */
+    private boolean isOpenTemporaryPassword(PlatformOperatorEntity operator, String candidate) {
+        if (operator.isPasswordSetupCompleted() || invitationRepository == null) {
+            return false;
+        }
+        String status = operator.getStatus() == null ? "" : operator.getStatus().toUpperCase(java.util.Locale.ROOT);
+        if (!status.equals("INVITED") && !status.equals("ACTIVE")) {
+            return false;
+        }
+        // Copied from an email it often carries a space or line break; the temporary alphabet has no whitespace, and
+        // accept-invitation trims the same way.
+        String candidateHash = hash(candidate.trim());
+        Instant now = Instant.now();
+        return invitationRepository.findByOperatorIdAndAcceptedAtIsNull(operator.getId()).stream()
+                .anyMatch(invite -> invite.getExpiresAt() != null && invite.getExpiresAt().isAfter(now)
+                        && java.security.MessageDigest.isEqual(
+                                candidateHash.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                String.valueOf(invite.getTokenHash()).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    }
+
+    /** A single-use temporary password for a new operator; it is exchanged for the operator's own password. */
+    public static String temporaryPassword() {
+        return com.prowise.identity.TemporaryPasswords.generate();
     }
 
     public static String hash(String value) {

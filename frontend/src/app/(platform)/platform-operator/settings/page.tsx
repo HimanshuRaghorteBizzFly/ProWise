@@ -13,6 +13,7 @@ import {
 import type { OperatorProfile } from "@/types/operator-console";
 import { useOperatorPermissions } from "../_services/operator-access";
 import { operatorApi } from "../_services/operator-api";
+import { operatorAuthService } from "../_services/operator-auth-service";
 import { formatDateTime } from "../_services/operator-service";
 import {
   ConfirmModal,
@@ -25,6 +26,7 @@ import {
   SurfaceCard,
 } from "../_components/OperatorPrimitives";
 import {
+  FieldErrorText,
   MutationNotice,
   NOT_AVAILABLE,
   NotAvailableButton,
@@ -54,7 +56,6 @@ function getPasswordStrength(password: string): {
 }
 
 const PROFILE_REASON = "operators cannot edit their own profile or preferences on the server yet";
-const PASSWORD_REASON = "there is no change-password endpoint; use the reset link instead";
 const MFA_REASON = "two-factor setup for operators is not built yet";
 const NOTIFY_REASON = "notification preferences are not stored on the server yet";
 
@@ -66,26 +67,58 @@ function titleOf(me: OperatorProfile | null): string {
 }
 
 /**
- * The signed-in operator's own settings. The profile is read from GET /v1/operator/me; every change on this page
- * except "Email me a reset link" (POST /v1/auth/operator/forgot-password to the operator's own address) has no
- * server endpoint yet, so those controls stay visible and disabled.
+ * The signed-in operator's own settings. The profile is read from GET /v1/operator/me. Password changes go to
+ * POST /v1/auth/operator/change-password and "Email me a reset link" to POST /v1/auth/operator/forgot-password (the
+ * operator's own address). The other controls have no server endpoint yet, so they stay visible and disabled.
  */
 export default function OperatorSettingsPage() {
   const { state, reload } = useOperatorResource(() => operatorApi.me(), "me");
   const me = state.status === "ready" ? state.data : null;
-  const { busy, notice, clearNotice, run } = useOperatorMutation(() => undefined);
+  const { busy, notice, fieldErrors, clearNotice, run } = useOperatorMutation(() => void reload());
   const { can } = useOperatorPermissions();
   const canManage = can("settings.manage");
 
-  // Password form (kept for when a change-password endpoint exists; inputs are disabled today)
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [confirmPasswordModal, setConfirmPasswordModal] = useState(false);
   const [confirmMfaModal, setConfirmMfaModal] = useState(false);
 
   const strength = useMemo(() => getPasswordStrength(newPassword), [newPassword]);
   const mfaEnabled = me?.mfa_enabled ?? false;
+
+  /** Client checks only for what the server cannot see (the confirmation); the server applies the password policy. */
+  const reviewPasswordChange = () => {
+    if (!currentPassword || !newPassword) {
+      setPasswordError("Enter your current password and a new password.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("The new password and its confirmation do not match.");
+      return;
+    }
+    setPasswordError(null);
+    setConfirmPasswordModal(true);
+  };
+
+  const changePassword = async () => {
+    setConfirmPasswordModal(false);
+    const ok = await run(
+      "change-password",
+      async () => {
+        const res = await operatorApi.session.changePassword(currentPassword, newPassword);
+        // Every earlier session ended on the server; continue on the fresh one it issued.
+        if (res?.access_token) operatorAuthService.setToken(res.access_token);
+      },
+      "Password updated. Your other sessions were signed out."
+    );
+    if (ok) {
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    }
+  };
 
   const sendResetLink = () => {
     if (!me?.email) return;
@@ -107,7 +140,7 @@ export default function OperatorSettingsPage() {
 
       <DemoDataBanner
         title="Credential Safety"
-        description="Passwords and 2FA secrets are never stored or displayed in plain text. Security updates persist in local operator state until integrated with backend auth."
+        description="Passwords and 2FA secrets are never stored or displayed in plain text. Password changes are saved on the server and sign out your other sessions."
       />
 
       <OperatorResourceStatus
@@ -208,7 +241,14 @@ export default function OperatorSettingsPage() {
         </SurfaceCard>
 
         <SurfaceCard className="p-4 sm:p-6">
-          <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              reviewPasswordChange();
+            }}
+            className="space-y-4"
+            aria-label="Change password"
+          >
             <div className="flex items-center gap-2 pb-3 border-b border-[var(--color-border)]">
               <Lock className="w-4 h-4 text-amber-500" />
               <div>
@@ -221,28 +261,32 @@ export default function OperatorSettingsPage() {
               </div>
             </div>
 
-            <OpInput
-              label="Current Password"
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              placeholder="Enter current password"
-              autoComplete="current-password"
-              disabled
-              title={NOT_AVAILABLE}
-            />
+            <div>
+              <OpInput
+                label="Current Password"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="Enter current password"
+                autoComplete="current-password"
+                disabled={!me || busy !== null}
+              />
+              <FieldErrorText errors={fieldErrors} field="current_password" />
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <OpInput
-                label="New Password"
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Minimum 10 characters"
-                autoComplete="new-password"
-                disabled
-                title={NOT_AVAILABLE}
-              />
+              <div>
+                <OpInput
+                  label="New Password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Minimum 10 characters"
+                  autoComplete="new-password"
+                  disabled={!me || busy !== null}
+                />
+                <FieldErrorText errors={fieldErrors} field="new_password" />
+              </div>
               <OpInput
                 label="Confirm New Password"
                 type="password"
@@ -250,10 +294,15 @@ export default function OperatorSettingsPage() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Re-enter new password"
                 autoComplete="new-password"
-                disabled
-                title={NOT_AVAILABLE}
+                disabled={!me || busy !== null}
               />
             </div>
+
+            {passwordError && (
+              <p role="alert" className="text-[11px] text-rose-600 dark:text-rose-400">
+                {passwordError}
+              </p>
+            )}
 
             <div className="space-y-1">
               <div className="flex items-center justify-between text-[11px]">
@@ -286,10 +335,16 @@ export default function OperatorSettingsPage() {
                 <Mail className="w-3.5 h-3.5" />
                 Email me a reset link
               </OpButton>
-              <NotAvailableButton variant="primary" size="sm" reason={PASSWORD_REASON} wrapperClassName="items-end">
+              <OpButton
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={!me || busy !== null || !currentPassword || !newPassword || !confirmPassword}
+                isLoading={busy === "change-password"}
+              >
                 <KeyRound className="w-3.5 h-3.5" />
                 Update Password
-              </NotAvailableButton>
+              </OpButton>
             </div>
           </form>
         </SurfaceCard>
@@ -417,17 +472,17 @@ export default function OperatorSettingsPage() {
         </SurfaceCard>
       </div>
 
-      {/* Kept for when the endpoints exist; nothing opens these confirmations today. */}
       <ConfirmModal
         isOpen={confirmPasswordModal}
         onClose={() => setConfirmPasswordModal(false)}
         title="Confirm Password Rotation?"
-        description="Your Platform Operator password will be updated and the change logged."
+        description="Your Platform Operator password will be updated and the change logged. Every other signed-in session (other browsers and devices) will be signed out."
         confirmLabel="Update Password"
         variant="primary"
-        onConfirm={() => setConfirmPasswordModal(false)}
+        onConfirm={() => void changePassword()}
       />
 
+      {/* Kept for when the MFA endpoints exist; nothing opens this confirmation today. */}
       <ConfirmModal
         isOpen={confirmMfaModal}
         onClose={() => setConfirmMfaModal(false)}

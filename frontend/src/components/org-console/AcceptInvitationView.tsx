@@ -78,7 +78,11 @@ export function AcceptInvitationView() {
     setView({ kind: "error", message, requestId });
   };
 
-  /** Not signed in: read what the link is for, then offer "create my account" or "sign in and accept". */
+  /**
+   * Not signed in: read what the link is for, then offer "create my account" or "sign in and accept". New addresses
+   * now get a temporary password by email instead of a link; this page still serves links sent before that and the
+   * "sign in and accept" links for people who already have an account.
+   */
   const signedOutPreview = async (found = token ?? readToken()) => {
     if (!found) return setView({ kind: "missing" });
     try {

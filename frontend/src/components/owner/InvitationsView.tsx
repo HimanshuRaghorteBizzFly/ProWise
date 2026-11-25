@@ -64,7 +64,7 @@ export function InvitationsView({ invitations, can, basePath, now }: Invitations
   const header = (
     <PageHeader
       title="Invitations"
-      description="Single-use invitations by email. Resending rotates the invitation link and revoking takes effect immediately once available."
+      description="Invitations by email: a temporary password for someone new, an accept link for an existing account. Resending replaces it (the old one stops working) and revoking takes effect immediately."
       actions={
         canInvite ? (
           basePath ? (

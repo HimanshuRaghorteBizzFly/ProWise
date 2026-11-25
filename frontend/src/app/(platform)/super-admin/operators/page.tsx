@@ -17,7 +17,7 @@ import {
 const CONFIRM_TEXT: Record<OperatorAction, string> = {
   activate: "The operator can sign in again with their existing password.",
   suspend: "The operator is signed out everywhere and cannot sign in until reactivated.",
-  "resend-invite": "A new invitation email is sent; earlier invitation links stop working.",
+  "resend-invite": "A new welcome email with a new temporary password is sent; the earlier temporary password stops working.",
   "revoke-sessions": "Every open session of this operator is signed out.",
 };
 

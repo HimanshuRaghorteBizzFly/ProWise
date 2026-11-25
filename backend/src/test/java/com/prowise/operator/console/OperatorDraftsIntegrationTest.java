@@ -71,7 +71,7 @@ class OperatorDraftsIntegrationTest {
     @Test
     void announcementDraftLifecycleWithVersionsSubmitAndSuperAdminPublish() throws Exception {
         JsonNode created = json(send(messaging, post("/v1/operator/announcement-drafts"), Map.of(
-                "title", "Planned maintenance", "message", "Sunday 02:00 UTC", "type", "maintenance",
+                "title", "Planned maintenance", "message", "Maintenance window on Sunday 02:00 UTC.", "type", "maintenance",
                 "scheduled_for", "2030-01-05T02:00:00Z")).andExpect(status().isCreated()));
         String id = created.path("id").asText();
         assertThat(created.path("status").asText()).isEqualTo("DRAFT");
@@ -86,7 +86,7 @@ class OperatorDraftsIntegrationTest {
         send(messaging, put("/v1/operator/announcement-drafts/" + id), Map.of("title", "T", "message", "M", "expected_version", 7))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("STALE_VERSION"));
         send(messaging, put("/v1/operator/announcement-drafts/" + id),
-                Map.of("title", "Planned maintenance v2", "message", "Sunday 03:00 UTC", "expected_version", 0))
+                Map.of("title", "Planned maintenance v2", "message", "Maintenance window on Sunday 03:00 UTC.", "expected_version", 0))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1))
                 .andExpect(jsonPath("$.title").value("Planned maintenance v2"));
 
@@ -111,7 +111,7 @@ class OperatorDraftsIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CHANGES_REQUESTED"))
                 .andExpect(jsonPath("$.reviewer_note").value("Add the region"));
         send(messaging, put("/v1/operator/announcement-drafts/" + id),
-                Map.of("title", "Planned maintenance EU", "message", "Sunday 03:00 UTC, EU", "expected_version", 3))
+                Map.of("title", "Planned maintenance EU", "message", "Maintenance window on Sunday 03:00 UTC in the EU region.", "expected_version", 3))
                 .andExpect(status().isOk());
         send(messaging, post("/v1/operator/announcement-drafts/" + id + "/submit"), Map.of("expected_version", 4))
                 .andExpect(status().isOk());
@@ -133,7 +133,7 @@ class OperatorDraftsIntegrationTest {
         send(messaging, post("/v1/operator/announcement-drafts"), Map.of("title", " ", "type", "bad type!"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.field_errors.length()").value(3));
-        String id = json(send(messaging, post("/v1/operator/announcement-drafts"), Map.of("title", "A", "message", "B"))
+        String id = json(send(messaging, post("/v1/operator/announcement-drafts"), Map.of("title", "Draft notice", "message", "A short customer notice about the service."))
                 .andExpect(status().isCreated())).path("id").asText();
 
         // Another department operator with the announcement permission may read but not change the author's draft.
@@ -159,11 +159,46 @@ class OperatorDraftsIntegrationTest {
     }
 
     @Test
+    void announcementDraftContentIsValidatedOnCreateAndUpdate() throws Exception {
+        // Too short / not meaningful: headline needs 5+ characters with letters; the message needs 20+ characters and 3+ words.
+        send(messaging, post("/v1/operator/announcement-drafts"), Map.of("title", "1234 !!", "message", "vfb f  rfr"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.field_errors[?(@.field == 'title')]").exists())
+                .andExpect(jsonPath("$.field_errors[?(@.field == 'message')]").exists());
+        send(messaging, post("/v1/operator/announcement-drafts"),
+                Map.of("title", "Database upgrade", "message", "Averyveryverylongsinglewordwithoutspaces"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.field_errors[0].field").value("message"));
+
+        // A proposed publish time in the past is refused.
+        send(messaging, post("/v1/operator/announcement-drafts"), Map.of("title", "Database upgrade",
+                "message", "The database will be upgraded tonight.", "scheduled_for", "2020-01-01T00:00:00Z"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.field_errors[0].field").value("scheduled_for"));
+
+        // Targeted audiences need at least one target.
+        send(messaging, post("/v1/operator/announcement-drafts"), Map.of("title", "Database upgrade",
+                "message", "The database will be upgraded tonight.", "target_audience", "SPECIFIC_ORGS"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.field_errors[0].field").value("target_org_ids"));
+        send(messaging, post("/v1/operator/announcement-drafts"), Map.of("title", "Database upgrade",
+                "message", "The database will be upgraded tonight.", "target_audience", "BY_PLAN", "target_plans", List.of(" ")))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.field_errors[0].field").value("target_plans"));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM announcements WHERE author_type IS NOT NULL", Integer.class)).isZero();
+
+        // A valid draft is stored; an update is held to the same rules and leaves the row unchanged when refused.
+        String id = json(send(messaging, post("/v1/operator/announcement-drafts"), Map.of("title", "Database upgrade",
+                "message", "The database will be upgraded tonight.", "scheduled_for", "2099-01-01T00:00:00Z"))
+                .andExpect(status().isCreated())).path("id").asText();
+        send(messaging, put("/v1/operator/announcement-drafts/" + id), Map.of("title", "Database upgrade",
+                "message", "too short", "expected_version", 0))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.field_errors[0].field").value("message"));
+        assertThat(jdbc.queryForObject("SELECT version FROM announcements WHERE id = ?", Long.class, id)).isZero();
+    }
+
+    @Test
     void concurrentAnnouncementEditsWithTheSameVersionHaveOneWinner() throws Exception {
-        String id = json(send(messaging, post("/v1/operator/announcement-drafts"), Map.of("title", "A", "message", "B"))
+        String id = json(send(messaging, post("/v1/operator/announcement-drafts"), Map.of("title", "Draft notice", "message", "A short customer notice about the service."))
                 .andExpect(status().isCreated())).path("id").asText();
         List<Integer> codes = concurrently(4, n -> send(messaging, put("/v1/operator/announcement-drafts/" + id),
-                Map.of("title", "T" + n, "message", "M", "expected_version", 0)).andReturn().getResponse().getStatus());
+                Map.of("title", "Concurrent edit " + n, "message", "A short customer notice about the service.", "expected_version", 0)).andReturn().getResponse().getStatus());
         assertThat(codes).containsOnly(200, 409);
         assertThat(codes.stream().filter(c -> c == 200).count()).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT version FROM announcements WHERE id = ?", Long.class, id)).isEqualTo(1L);
@@ -171,7 +206,7 @@ class OperatorDraftsIntegrationTest {
 
     @Test
     void operatorCreateReplaysWithTheSameIdempotencyKey() throws Exception {
-        Map<String, Object> body = Map.of("title", "Once", "message", "Only once");
+        Map<String, Object> body = Map.of("title", "Once only notice", "message", "This notice must be created only once.");
         JsonNode first = json(mvc.perform(post("/v1/operator/announcement-drafts").header("Authorization", "Bearer " + messaging)
                 .header("Idempotency-Key", "ann-create-1").contentType("application/json")
                 .content(mapper.writeValueAsString(body))).andExpect(status().isCreated()));
@@ -179,7 +214,7 @@ class OperatorDraftsIntegrationTest {
                 .header("Idempotency-Key", "ann-create-1").contentType("application/json")
                 .content(mapper.writeValueAsString(body))).andExpect(status().isCreated()));
         assertThat(second.path("id").asText()).isEqualTo(first.path("id").asText());
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM announcements WHERE title = 'Once'", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM announcements WHERE title = 'Once only notice'", Integer.class)).isEqualTo(1);
     }
 
     // ---------------------------------------------------------------- email drafts

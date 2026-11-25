@@ -89,7 +89,19 @@ public class AuthService {
      */
     @Transactional
     public void signup(String email, String password, String name, String ip) {
+        signup(email, password, name, null, null, ip);
+    }
+
+    /**
+     * Organization signup: as {@link #signup(String, String, String, String)}, and the account also names the
+     * organization it will own. The workspace is only requested here; it is created when the address is confirmed
+     * ({@link #verifyEmail}), so nothing tenant-scoped exists for an unconfirmed address. A repeated signup for a
+     * pending account never changes the workspace it requested.
+     */
+    @Transactional
+    public void signup(String email, String password, String name, String organizationName, String timezone, String ip) {
         validateCredentials(email, password);
+        RequestedWorkspace workspace = requestedWorkspace(organizationName, timezone);
         String normalizedEmail = normalize(email);
         enforceRateLimit("signup:" + normalizedEmail, MAX_ATTEMPTS_PER_WINDOW);
         enforceRateLimit("signup-ip:" + (ip == null ? "" : ip), signupMaxPerIpPerMinute);
@@ -123,7 +135,66 @@ public class AuthService {
         if (inserted != 1) {
             return; // a concurrent signup for the same address won; same response
         }
+        if (workspace != null) {
+            jdbc.update("INSERT INTO pending_signup_workspaces (user_id, organization_name, timezone) VALUES (?, ?, ?)",
+                    userId, workspace.name(), workspace.timezone());
+        }
         sendVerificationLink(userId, normalizedEmail, displayName, "SIGNUP_REGISTERED", ip);
+    }
+
+    /** Workspace requested on the signup form; {@code null} when the form named none. */
+    private record RequestedWorkspace(String name, String timezone) {}
+
+    static final int WORKSPACE_NAME_MIN = 2;
+    static final int WORKSPACE_NAME_MAX = 120;
+
+    private static RequestedWorkspace requestedWorkspace(String organizationName, String timezone) {
+        boolean named = organizationName != null && !organizationName.isBlank();
+        boolean zoned = timezone != null && !timezone.isBlank();
+        if (!named && !zoned) {
+            return null;
+        }
+        List<com.prowise.common.api.ApiError.FieldError> errors = new java.util.ArrayList<>();
+        String name = named ? organizationName.trim().replaceAll("\\s+", " ") : "";
+        if (!named) {
+            errors.add(new com.prowise.common.api.ApiError.FieldError("organization_name", "is required"));
+        } else if (name.length() < WORKSPACE_NAME_MIN || name.length() > WORKSPACE_NAME_MAX) {
+            errors.add(new com.prowise.common.api.ApiError.FieldError("organization_name",
+                    "must be " + WORKSPACE_NAME_MIN + " to " + WORKSPACE_NAME_MAX + " characters"));
+        } else if (name.codePoints().filter(Character::isLetterOrDigit).count() < WORKSPACE_NAME_MIN) {
+            errors.add(new com.prowise.common.api.ApiError.FieldError("organization_name", "must contain letters or digits"));
+        }
+        String zone = zoned ? timezone.trim() : "";
+        if (!zoned) {
+            errors.add(new com.prowise.common.api.ApiError.FieldError("timezone", "is required"));
+        } else if (!java.time.ZoneId.getAvailableZoneIds().contains(zone)) {
+            errors.add(new com.prowise.common.api.ApiError.FieldError("timezone", "must be a valid IANA timezone"));
+        }
+        if (!errors.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, "The request has invalid fields.", errors);
+        }
+        return new RequestedWorkspace(name, zone);
+    }
+
+    /** Lower-case address for the organization, from its name; a random suffix when that address is taken. */
+    private String freeSlugFor(String organizationName) {
+        String base = organizationName.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("(^-+|-+$)", "");
+        if (base.isEmpty()) base = "workspace";
+        if (base.length() > 60) base = base.substring(0, 60).replaceAll("-+$", "");
+        String slug = base;
+        for (int attempt = 0; slugTaken(slug); attempt++) {
+            if (attempt >= 10) {
+                throw new ApiException(HttpStatus.CONFLICT, "DUPLICATE_SLUG", "Could not reserve an address for the workspace.");
+            }
+            slug = base + "-" + UUID.randomUUID().toString().substring(0, 6);
+        }
+        return slug;
+    }
+
+    private boolean slugTaken(String slug) {
+        Integer n = jdbc.queryForObject("SELECT count(*) FROM organizations WHERE slug = ?", Integer.class, slug);
+        return n != null && n > 0;
     }
 
     /** Activates a self-registered account from its emailed link. Single use; the account must still be pending. */
@@ -137,6 +208,19 @@ public class AuthService {
             throw invalidLink(); // rolls back the token consumption with the rest of the transaction
         }
         recordAuditLog("EMAIL_VERIFIED", consumed.userId(), null, consumed.userId(), "{\"via\":\"signup_link\"}", null);
+
+        // Organization signup: the requested workspace is created now, with this account as its Organization Owner.
+        // OrganizationService writes the organization, owner membership, audit row and OrganizationCreated event; all
+        // of it commits (or rolls back) together with the activation above.
+        List<Map<String, Object>> requested = jdbc.queryForList(
+                "SELECT organization_name, timezone FROM pending_signup_workspaces WHERE user_id = ? FOR UPDATE", consumed.userId());
+        if (!requested.isEmpty()) {
+            String orgName = (String) requested.get(0).get("organization_name");
+            organizationService.createForRegistration(consumed.userId(), new OrganizationService.CreateOrganizationRequest(
+                    orgName, freeSlugFor(orgName), (String) requested.get(0).get("timezone"),
+                    Map.of("workDays", List.of(1, 2, 3, 4, 5), "dailyHours", 8, "holidays", List.of())));
+            jdbc.update("DELETE FROM pending_signup_workspaces WHERE user_id = ?", consumed.userId());
+        }
     }
 
     private void sendVerificationLink(UUID userId, String email, String name, String auditAction, String ip) {
@@ -172,6 +256,19 @@ public class AuthService {
      * unknown addresses, DISABLED answered directly, the lock checked before the password, five wrong passwords in a
      * row lock the account, and a pending account revealed only after the right password. Returns the users row.
      */
+    /** Optional so unit tests can build the service without the organization module. */
+    private org.springframework.beans.factory.ObjectProvider<com.prowise.org.InvitationService> invitations;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setInvitationService(org.springframework.beans.factory.ObjectProvider<com.prowise.org.InvitationService> invitations) {
+        this.invitations = invitations;
+    }
+
+    private java.util.Optional<UUID> createdFromTemporaryPassword(String email, String password) {
+        com.prowise.org.InvitationService service = invitations == null ? null : invitations.getIfAvailable();
+        return service == null ? java.util.Optional.empty() : service.createAccountFromTemporaryPassword(email, password);
+    }
+
     private Map<String, Object> authenticate(String email, String password, String ip, String userAgent) {
         if (email == null || email.isBlank() || password == null || password.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_FAILED, "Email and password are required.");
@@ -186,6 +283,20 @@ public class AuthService {
                         + "FROM users WHERE lower(email) = lower(?)",
                 normalizedEmail);
 
+        if (rows.isEmpty()) {
+            // Someone invited to an organization signs in for the first time with the emailed temporary password:
+            // that creates the account and the membership (InvitationService), then sign-in continues normally.
+            java.util.Optional<UUID> created = createdFromTemporaryPassword(normalizedEmail, password);
+            if (created.isPresent()) {
+                password = password.trim();
+                rows = new java.util.ArrayList<>(jdbc.queryForList(
+                        "SELECT id, email, password_hash, status, name, role, department, must_change_password, "
+                                + "(locked_until IS NOT NULL AND locked_until > now()) AS locked, "
+                                + "true AS temporary_password_sign_in "
+                                + "FROM users WHERE id = ?",
+                        created.get()));
+            }
+        }
         if (rows.isEmpty()) {
             passwordEncoder.matches(password, DUMMY_HASH); // same work as a real check: no timing hint
             recordLoginAttempt(null, normalizedEmail, ip, userAgent, "FAILED", "User not found");
@@ -250,6 +361,7 @@ public class AuthService {
         String accountRole = user.get("role") == null ? "" : ((String) user.get("role")).trim().toUpperCase(java.util.Locale.ROOT);
         String department = (String) user.get("department");
         boolean mustChangePassword = Boolean.TRUE.equals(user.get("must_change_password"));
+        boolean temporaryPasswordSignIn = Boolean.TRUE.equals(user.get("temporary_password_sign_in"));
 
         UUID organizationId = null;
         String role;
@@ -302,7 +414,7 @@ public class AuthService {
         UserSummary userSummary = new UserSummary(userId, normalizedEmail, name, role, department, organizationId,
                 lookupOrgName(organizationId), mustChangePassword);
         return new AuthResponse(tokens.accessToken(), tokens.refreshToken(), accessTokenMinutes * 60, mustChangePassword,
-                targetDashboardUrl, userSummary, requiresSelection, choices);
+                targetDashboardUrl, userSummary, requiresSelection, choices, temporaryPasswordSignIn);
     }
 
     /** Counts a wrong password; the fifth in a row locks the account and starts the count again. */
@@ -844,7 +956,9 @@ public class AuthService {
             String targetDashboardUrl,
             UserSummary user,
             boolean requiresOrganizationSelection,
-            List<OrganizationChoice> organizations
+            List<OrganizationChoice> organizations,
+            /** True only on the sign-in that created the account from an emailed temporary password. */
+            boolean signedInWithTemporaryPassword
     ) {}
     public record MembershipResponse(UUID id, UUID orgId, String roleTemplate, String status,
             String name, String slug, String timezone, String workCalendar) {}

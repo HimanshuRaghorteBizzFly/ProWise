@@ -4,7 +4,6 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
-  ArrowRight,
   Layers,
   Menu,
   Moon,
@@ -130,15 +129,6 @@ export default function LandingPage() {
               </Button>
             </Link>
 
-            <MagneticWrapper strength={0.18} className="hidden md:inline-flex">
-              <Link href={appDashboardUrl}>
-                <Button size="sm" className="shadow-sm shadow-blue-500/20">
-                  <span>Get Started</span>
-                  <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-                </Button>
-              </Link>
-            </MagneticWrapper>
-
             {/* Mobile Hamburger Toggle */}
             <button
               type="button"
@@ -167,7 +157,7 @@ export default function LandingPage() {
                 </a>
               ))}
             </nav>
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[var(--color-border)]">
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[var(--color-border)]">
               <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
                 <Button variant="ghost" size="sm" className="w-full">
                   Login
@@ -176,11 +166,6 @@ export default function LandingPage() {
               <Link href="/signup" onClick={() => setMobileMenuOpen(false)}>
                 <Button variant="secondary" size="sm" className="w-full">
                   Signup
-                </Button>
-              </Link>
-              <Link href={appDashboardUrl} onClick={() => setMobileMenuOpen(false)}>
-                <Button size="sm" className="w-full">
-                  Start
                 </Button>
               </Link>
             </div>
@@ -234,18 +219,6 @@ export default function LandingPage() {
                 transition={{ duration: 0.5, delay: 0.24, ease: [0.22, 1, 0.36, 1] }}
                 className="flex flex-wrap items-center justify-center lg:justify-start gap-3 pt-1"
               >
-                <MagneticWrapper strength={0.22}>
-                  <Link href={appDashboardUrl}>
-                    <Button
-                      size="lg"
-                      className="shadow-lg shadow-blue-500/25 px-6"
-                    >
-                      <span>Get Started</span>
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </Button>
-                  </Link>
-                </MagneticWrapper>
-
                 <MagneticWrapper strength={0.16}>
                   <Link href="/signup">
                     <Button variant="secondary" size="lg" className="px-5">

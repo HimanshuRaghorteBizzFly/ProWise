@@ -39,9 +39,11 @@ public class AuthController {
 
     @PostMapping("/auth/signup")
     @PreAuthorize("permitAll()")
-    @Operation(summary = "Register an account; a single-use link emailed to the address activates it (no session is issued)")
+    @Operation(summary = "Register an account (optionally with the organization it will own); a single-use link emailed "
+            + "to the address activates it and creates that organization (no session is issued)")
     public ResponseEntity<MessageResponse> signup(HttpServletRequest httpRequest, @RequestBody SignupRequest request) {
-        authService.signup(request.email(), request.password(), request.name(), extractClientIp(httpRequest));
+        authService.signup(request.email(), request.password(), request.name(), request.organizationName(),
+                request.timezone(), extractClientIp(httpRequest));
         // Same answer whether or not the address was already registered.
         return ResponseEntity.accepted().body(new MessageResponse(SIGNUP_ACCEPTED));
     }
@@ -214,7 +216,11 @@ public class AuthController {
 
     /** {@code organizationId} is optional: it signs straight into one of the caller's organizations. */
     public record Credentials(String email, String password, UUID organizationId) {}
-    public record SignupRequest(String email, String password, String name) {}
+    /**
+     * {@code organizationName} and {@code timezone} (IANA) are optional together: when given, confirming the emailed
+     * link also creates that organization with the new account as its Organization Owner.
+     */
+    public record SignupRequest(String email, String password, String name, String organizationName, String timezone) {}
     public record TokenRequest(String token) {}
     public record MessageResponse(String message) {}
     public record RefreshRequest(String refreshToken) {}

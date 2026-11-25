@@ -130,7 +130,7 @@ public class InvitationService {
             throw new ApiException(HttpStatus.CONFLICT, "ALREADY_MEMBER", "This person is already a member of the workspace.");
         }
         UUID id = UUID.randomUUID();
-        String token = newToken();
+        String token = secretFor(email);
         try {
             jdbc.update("""
                     INSERT INTO invitations (id, org_id, email, template_role_id, team_id, token_hash, expires_at, invited_by)
@@ -156,7 +156,7 @@ public class InvitationService {
         permissions.require(authentication, organizationId, PermissionKey.MEMBER_INVITE.value());
         AuthPrincipal actor = permissions.principal(authentication);
         Map<String, Object> row = lockForChange(organizationId, invitationId, request);
-        String token = newToken();
+        String token = secretFor(find(organizationId, invitationId).email());
         // Rotation: the old hash is replaced, so the previous link stops working immediately.
         ExpectedVersion.requireUpdated(jdbc.update("""
                 UPDATE invitations
@@ -302,6 +302,52 @@ public class InvitationService {
         return join(row, userId, "Activated account from invitation");
     }
 
+    /**
+     * First sign-in with an emailed temporary password (an address that had no account when it was invited): the
+     * open, unexpired invitation for {@code email} whose secret is {@code temporaryPassword} creates the ACTIVE
+     * account with that password, joins the organization in the invited role (membership, grant, team, history,
+     * audit and outbox, as {@link #activate}) and closes the invitation, all in the caller's transaction. Returns the
+     * new account id, or empty when nothing matches (the caller answers a plain wrong password). The invitation row
+     * is locked, so of concurrent first sign-ins exactly one creates the account.
+     */
+    @Transactional
+    public java.util.Optional<UUID> createAccountFromTemporaryPassword(String email, String temporaryPassword) {
+        if (email == null || temporaryPassword == null || temporaryPassword.isBlank() || temporaryPassword.length() > 200) {
+            return java.util.Optional.empty();
+        }
+        String normalized = email.trim().toLowerCase(Locale.ROOT);
+        String secret = temporaryPassword.trim();
+        List<Map<String, Object>> rows = jdbc.queryForList(INVITATION_ROW + " FOR UPDATE OF i", hash(secret));
+        if (rows.isEmpty()) return java.util.Optional.empty();
+        Map<String, Object> row = rows.get(0);
+        boolean usable = "PENDING".equals(row.get("status")) && !Boolean.TRUE.equals(row.get("expired"))
+                && "ACTIVE".equals(row.get("org_state")) && normalized.equalsIgnoreCase((String) row.get("email"));
+        if (!usable) return java.util.Optional.empty();
+        UUID userId = UUID.randomUUID();
+        int inserted = jdbc.update("""
+                INSERT INTO users (id, email, password_hash, name, role, status, must_change_password)
+                VALUES (?, ?, ?, ?, 'VIEWER', 'ACTIVE', false)
+                ON CONFLICT (lower(email)) DO NOTHING
+                """, userId, normalized, passwordEncoder.encode(secret), normalized.split("@")[0]);
+        if (inserted != 1) return java.util.Optional.empty(); // an account appeared meanwhile: it signs in normally
+        join(row, userId, "Signed in with the invitation's temporary password");
+        return java.util.Optional.of(userId);
+    }
+
+    /**
+     * The invitation secret: an address with no account gets a temporary password (shown in the email, used to sign
+     * in); an address that already has an account gets a link token (sign in with their own password, then accept),
+     * so their existing password is never replaced. Either way only its SHA-256 hash is stored.
+     */
+    private String secretFor(String email) {
+        return accountExists(email) ? newToken() : com.prowise.identity.TemporaryPasswords.generate();
+    }
+
+    private boolean accountExists(String email) {
+        Integer accounts = jdbc.queryForObject("SELECT count(*) FROM users WHERE lower(email) = lower(?)", Integer.class, email);
+        return accounts != null && accounts > 0;
+    }
+
     private Map<String, Object> usableInvitation(TokenRequest request, boolean lock) {
         if (request == null || request.token() == null || request.token().isBlank() || request.token().length() > 200) {
             throw invalid();
@@ -405,19 +451,30 @@ public class InvitationService {
      */
     private void sendAfterCommit(UUID organizationId, String email, String roleName, String token, Instant expiresAt) {
         String orgName = jdbc.queryForObject("SELECT name FROM organizations WHERE id = ?", String.class, organizationId);
-        Integer accounts = jdbc.queryForObject("SELECT count(*) FROM users WHERE lower(email) = lower(?)", Integer.class, email);
-        boolean accountExists = accounts != null && accounts > 0;
+        // Matches secretFor: an existing account got a link token, a new address a temporary password.
+        boolean accountExists = accountExists(email);
         String link = frontendUrl + "/invitations/accept#token=" + token;
+        String loginUrl = frontendUrl + "/login";
         Runnable send = () -> {
             try {
                 com.prowise.identity.EmailCredentialService service = credentialEmails.getIfAvailable();
                 if (service != null && service.isConfigured()) {
-                    service.sendOrganizationInvitationEmail(email, orgName, roleLabel(roleName), link, expiresAt, accountExists);
+                    if (accountExists) {
+                        service.sendOrganizationInvitationEmail(email, orgName, roleLabel(roleName), link, expiresAt, true);
+                    } else {
+                        service.sendOrganizationTemporaryPasswordEmail(email, orgName, roleLabel(roleName), token, expiresAt);
+                    }
+                } else if (accountExists) {
+                    emailSender.send(new EmailMessage(email, "You're invited to join " + orgName + " on Prowise",
+                            "You have been invited to join " + orgName + " as " + roleLabel(roleName) + ".\n\n"
+                                    + "Sign in, then open this single-use link to accept:\n"
+                                    + link + "\n\nIt expires on " + expiresAt + " (UTC). If you did not expect it, ignore this email."));
                 } else {
                     emailSender.send(new EmailMessage(email, "You're invited to join " + orgName + " on Prowise",
                             "You have been invited to join " + orgName + " as " + roleLabel(roleName) + ".\n\n"
-                                    + "Open this single-use link to " + (accountExists ? "accept" : "create your account") + ":\n"
-                                    + link + "\n\nIt expires on " + expiresAt + " (UTC). If you did not expect it, ignore this email."));
+                                    + "Sign in at " + loginUrl + " with:\nEmail: " + email + "\nTemporary password: " + token
+                                    + "\n\nYou will go straight to your dashboard; change the password any time from Settings.\n"
+                                    + "Use it by " + expiresAt + " (UTC). If you did not expect it, ignore this email."));
                 }
             } catch (RuntimeException exception) {
                 log.warn("Invitation email could not be sent ({})", exception.getClass().getSimpleName());

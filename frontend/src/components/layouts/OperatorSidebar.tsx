@@ -12,7 +12,6 @@ import {
   CreditCard,
   DatabaseBackup,
   FileWarning,
-  GitBranch,
   History,
   KeyRound,
   LayoutDashboard,
@@ -20,13 +19,9 @@ import {
   Mail,
   MailPlus,
   Megaphone,
-  Plug,
-  RefreshCw,
-  RotateCcw,
   Server,
   Settings,
   ShieldCheck,
-  Webhook,
   Wrench,
 } from "lucide-react";
 
@@ -45,17 +40,6 @@ const OPERATOR_SECTIONS = [
       { title: "Incident Management", href: "/platform-operator/incidents", icon: AlertTriangle },
       { title: "Support Tickets", href: "/platform-operator/support-tickets", icon: LifeBuoy },
       { title: "Support Access Requests", href: "/platform-operator/access-requests", icon: KeyRound },
-    ],
-  },
-  {
-    title: "Integration Operations",
-    items: [
-      { title: "Integration Health", href: "/platform-operator/integration-health", icon: Plug },
-      { title: "GitHub App Monitoring", href: "/platform-operator/github-monitoring", icon: GitBranch },
-      { title: "Webhook Delivery Logs", href: "/platform-operator/webhook-logs", icon: Webhook },
-      { title: "Failed Events & Retries", href: "/platform-operator/failed-events", icon: RotateCcw },
-      { title: "Sync Jobs & Queues", href: "/platform-operator/sync-jobs", icon: RefreshCw },
-      { title: "API Error Monitoring", href: "/platform-operator/api-errors", icon: Activity },
     ],
   },
   {

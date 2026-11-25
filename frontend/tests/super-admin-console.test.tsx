@@ -430,11 +430,16 @@ describe("Super Admin live routes", () => {
   it("lists wired modules and keeps the unwired ones hidden", () => {
     for (const live of [
       "/super-admin/organizations", "/super-admin/audit", "/super-admin/operators", "/super-admin/security-keys/",
-      "/super-admin/payments", "/super-admin/support", "/super-admin/webhooks", "/super-admin/reports",
+      "/super-admin/payments", "/super-admin/support", "/super-admin/reports",
     ]) {
       expect(isLiveSuperAdminRoute(live)).toBe(true);
     }
-    for (const hidden of ["/super-admin/configuration/maintenance", "/super-admin/not-a-module"]) {
+    for (const hidden of [
+      "/super-admin/configuration/maintenance", "/super-admin/not-a-module",
+      // The Integrations & API section was removed from the Super Admin panel.
+      "/super-admin/integrations", "/super-admin/github-integrations", "/super-admin/webhooks",
+      "/super-admin/api-monitoring", "/super-admin/integration-settings",
+    ]) {
       expect(isLiveSuperAdminRoute(hidden)).toBe(false);
     }
   });

@@ -71,6 +71,7 @@ public class EmailCredentialService {
     private final EmailDeliveryLogRepository deliveryLogRepository;
     private final SmtpSettingsProvider settingsProvider;
     private final String frontendUrl;
+    private String localSignInUrl = "";
 
     public EmailCredentialService(
             ObjectProvider<JavaMailSender> mailSenderProvider,
@@ -81,7 +82,8 @@ public class EmailCredentialService {
         this.mailSenderProvider = mailSenderProvider;
         this.deliveryLogRepository = deliveryLogRepository;
         this.settingsProvider = settingsProvider;
-        this.frontendUrl = frontendUrl;
+        // "https://app.example.com/" and "https://app.example.com" build the same links.
+        this.frontendUrl = frontendUrl == null ? "" : frontendUrl.trim().replaceAll("/+$", "");
     }
 
     /** True when an SMTP host and account are configured (saved in the panel or in SMTP_* variables). */
@@ -117,15 +119,33 @@ public class EmailCredentialService {
                         + "your password stays the same."));
     }
 
-    /** Platform operator invitation link (valid 72 hours, single use). Operators have no row in {@code users}. */
-    public EmailDeliveryResult sendOperatorInvitationEmail(String recipient, String operatorName, String invitationToken) {
-        String acceptUrl = frontendUrl + "/operator/login?invite=" + invitationToken;
-        return send(null, recipient, "Your ProWise operator invitation", TYPE_OPERATOR_INVITATION, new Template(
-                "You are invited to operate ProWise",
+    /**
+     * New platform operator account: the sign-in email, a single-use temporary password (valid 72 hours) and the
+     * sign-in link. The temporary password opens no session: the first sign-in asks for a new password. Only its
+     * hash is stored, and the delivery log keeps the subject, never the body. Operators have no row in {@code users}.
+     */
+    public EmailDeliveryResult sendOperatorWelcomeEmail(String recipient, String operatorName, String temporaryPassword) {
+        String loginUrl = frontendUrl + "/operator/login";
+        return send(null, recipient, "Your ProWise operator account", TYPE_OPERATOR_INVITATION, new Template(
+                "Your ProWise operator account is ready",
                 List.of("Hello " + nameOr(operatorName) + ",",
-                        "You have been invited to the ProWise platform operations console. Choose your own password to accept."),
-                "Accept invitation", acceptUrl,
-                "This link works once and expires in 72 hours."));
+                        "A Super Admin has added you to the ProWise platform operations console. Sign in with:",
+                        "Email: " + recipient,
+                        "Temporary password: " + temporaryPassword,
+                        "When you sign in you will be asked to choose a new password. You can change it again any time "
+                                + "from Settings."),
+                "Sign in to ProWise", loginUrl,
+                "The temporary password works once and expires in 72 hours. If it has expired, ask your Super Admin to "
+                        + "send a new one. If you did not expect this email, ignore it."));
+    }
+
+    /**
+     * Optional local development copy (e.g. {@code http://localhost:3000}): every linked email also shows its link
+     * on this address under the button. Empty by default, so production emails carry only the live link.
+     */
+    @Value("${prowise.mail.local-sign-in-url:}")
+    public void setLocalSignInUrl(String localSignInUrl) {
+        this.localSignInUrl = localSignInUrl == null ? "" : localSignInUrl.trim().replaceAll("/+$", "");
     }
 
     /** Email verification after public signup (valid 72 hours, single use). The account stays pending until used. */
@@ -169,18 +189,65 @@ public class EmailCredentialService {
                         "This link works once and expires on " + expires + ". If you did not expect this invitation, ignore this email."));
     }
 
+    /**
+     * Organization invitation for someone with no ProWise account: the sign-in email, a single-use temporary
+     * password (valid until the invitation expires) and the sign-in link. The first sign-in with it creates the
+     * account, joins the organization in the invited role and opens that role's dashboard; the password can then be
+     * changed from Settings. Only its hash is stored, and the delivery log keeps the subject, never the body.
+     */
+    public EmailDeliveryResult sendOrganizationTemporaryPasswordEmail(String recipient, String organizationName,
+            String roleLabel, String temporaryPassword, Instant expiresAt) {
+        String expires = java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm 'UTC'", java.util.Locale.ENGLISH)
+                .withZone(java.time.ZoneOffset.UTC).format(expiresAt);
+        return send(null, recipient, "You're invited to join " + organizationName + " on ProWise", TYPE_ORGANIZATION_INVITATION,
+                new Template("Join " + organizationName,
+                        List.of("Hello,",
+                                "You have been invited to join " + organizationName + " on ProWise as " + roleLabel + ". Sign in with:",
+                                "Email: " + recipient,
+                                "Temporary password: " + temporaryPassword,
+                                "You will go straight to your dashboard. Change this password any time from Settings."),
+                        "Sign in to ProWise", frontendUrl + "/login",
+                        "The temporary password must be used by " + expires + ". If you did not expect this invitation, "
+                                + "ignore this email."));
+    }
+
     /* ------------------------------------------------------------------ rendering and delivery */
 
     /** One transactional email: heading, paragraphs, one call to action and a note. All text is escaped on render. */
-    record Template(String heading, List<String> paragraphs, String actionLabel, String actionUrl, String note) {}
+    record Template(String heading, List<String> paragraphs, String actionLabel, String actionUrl, String note,
+            String secondaryLabel, String secondaryUrl) {
+        Template(String heading, List<String> paragraphs, String actionLabel, String actionUrl, String note) {
+            this(heading, paragraphs, actionLabel, actionUrl, note, null, null);
+        }
+
+        boolean hasSecondaryLink() {
+            return secondaryUrl != null && !secondaryUrl.isBlank();
+        }
+    }
 
     private EmailDeliveryResult send(UUID userId, String recipient, String subject, String emailType, Template template) {
-        return sendHtmlEmail(userId, recipient, subject, renderHtml(template), renderText(template), emailType);
+        Template withLocal = withLocalLink(template);
+        return sendHtmlEmail(userId, recipient, subject, renderHtml(withLocal), renderText(withLocal), emailType);
+    }
+
+    /**
+     * When a local copy is configured ({@code LOCAL_SIGNIN_URL}), every email whose button points at the live site
+     * also shows the same link on the local copy, e.g. {@code http://localhost:3000/verify-email?token=...}.
+     */
+    private Template withLocalLink(Template t) {
+        if (localSignInUrl.isEmpty() || t.hasSecondaryLink() || t.actionUrl() == null
+                || frontendUrl.isEmpty() || !t.actionUrl().startsWith(frontendUrl + "/")
+                || localSignInUrl.equals(frontendUrl)) {
+            return t;
+        }
+        String localUrl = localSignInUrl + t.actionUrl().substring(frontendUrl.length());
+        return new Template(t.heading(), t.paragraphs(), t.actionLabel(), t.actionUrl(), t.note(),
+                "Testing locally? Use this link:", localUrl);
     }
 
     /**
      * Table layout with inline styles (email clients drop {@code <style>} blocks and flexbox), a visible fallback
-     * link under the button, and a footer that says links are the only thing ever sent: never a password.
+     * link under the button, and a footer reminding that ProWise never asks for a password by reply.
      */
     static String renderHtml(Template t) {
         StringBuilder paragraphs = new StringBuilder();
@@ -211,10 +278,10 @@ public class EmailCredentialService {
                           </table>
                           <p style="margin:0 0 6px;font-size:13px;color:#64748b;">If the button does not work, copy this link into your browser:</p>
                           <p style="margin:0 0 20px;font-size:13px;word-break:break-all;"><a href="%3$s" style="color:#2563eb;">%3$s</a></p>
-                          <p style="margin:0;font-size:13px;line-height:1.6;color:#64748b;">%5$s</p>
+                          %6$s<p style="margin:0;font-size:13px;line-height:1.6;color:#64748b;">%5$s</p>
                         </td></tr>
                         <tr><td style="padding:18px 32px;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#94a3b8;">
-                          ProWise never sends passwords by email and will never ask you for one. This is an automated message; replies are not read.
+                          ProWise will never ask you to reply with your password. This is an automated message; replies are not read.
                         </td></tr>
                       </table>
                     </td></tr>
@@ -222,15 +289,29 @@ public class EmailCredentialService {
                 </body>
                 </html>
                 """.formatted(HtmlUtils.htmlEscape(t.heading()), paragraphs, url, HtmlUtils.htmlEscape(t.actionLabel()),
-                HtmlUtils.htmlEscape(t.note()));
+                HtmlUtils.htmlEscape(t.note()), secondaryLinkHtml(t));
+    }
+
+    private static String secondaryLinkHtml(Template t) {
+        if (!t.hasSecondaryLink()) {
+            return "";
+        }
+        String url = HtmlUtils.htmlEscape(t.secondaryUrl());
+        return "<p style=\"margin:0 0 20px;font-size:13px;color:#64748b;word-break:break-all;\">"
+                + HtmlUtils.htmlEscape(t.secondaryLabel()) + " <a href=\"" + url + "\" style=\"color:#2563eb;\">" + url
+                + "</a></p>";
     }
 
     /** Plain-text alternative for clients that do not show HTML (and for spam filters). */
     static String renderText(Template t) {
         StringBuilder text = new StringBuilder(t.heading()).append("\n\n");
         for (String p : t.paragraphs()) text.append(p).append("\n\n");
-        text.append(t.actionLabel()).append(":\n").append(t.actionUrl()).append("\n\n").append(t.note())
-                .append("\n\n--\nProWise never sends passwords by email and will never ask you for one.\n");
+        text.append(t.actionLabel()).append(":\n").append(t.actionUrl()).append("\n\n");
+        if (t.hasSecondaryLink()) {
+            text.append(t.secondaryLabel()).append("\n").append(t.secondaryUrl()).append("\n\n");
+        }
+        text.append(t.note())
+                .append("\n\n--\nProWise will never ask you to reply with your password.\n");
         return text.toString();
     }
 

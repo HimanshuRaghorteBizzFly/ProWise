@@ -4,20 +4,17 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Activity,
   AlertTriangle,
   BarChart3,
   Building2,
   CreditCard,
   FileText,
-  GitBranch,
   KeyRound,
   Layers,
   LayoutDashboard,
   LifeBuoy,
   Mail,
   Megaphone,
-  Plug,
   Receipt,
   Send,
   Settings,
@@ -28,7 +25,6 @@ import {
   Sparkles,
   UserCog,
   Users,
-  Webhook,
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -50,16 +46,6 @@ const SUPER_ADMIN_SECTIONS = [
       { title: "Subscriptions", href: "/super-admin/subscriptions", icon: CreditCard },
       { title: "Billing & Payments", href: "/super-admin/payments", icon: Receipt },
       { title: "Invoices", href: "/super-admin/invoices", icon: FileText },
-    ],
-  },
-  {
-    title: "Integrations & API",
-    items: [
-      { title: "Integration Overview", href: "/super-admin/integrations", icon: Plug },
-      { title: "GitHub Integration", href: "/super-admin/github-integrations", icon: GitBranch },
-      { title: "Webhooks & Events", href: "/super-admin/webhooks", icon: Webhook },
-      { title: "API Monitoring", href: "/super-admin/api-monitoring", icon: Activity },
-      { title: "Integration Settings", href: "/super-admin/integration-settings", icon: Wrench },
     ],
   },
   {

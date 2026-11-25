@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Activity,
   AlertTriangle,
   BarChart3,
   Bell,
@@ -14,7 +13,6 @@ import {
   ChevronRight,
   CreditCard,
   FileText,
-  GitBranch,
   KeyRound,
   Layers,
   LayoutDashboard,
@@ -27,7 +25,6 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
-  Plug,
   Receipt,
   RefreshCw,
   Search,
@@ -42,7 +39,6 @@ import {
   UserCheck,
   UserCog,
   Users,
-  Webhook,
   Wrench,
   X,
 } from "lucide-react";
@@ -88,11 +84,6 @@ const ROUTE_TITLES: Record<string, { section: string; label: string }> = {
   "/super-admin/subscriptions": { section: "Billing & Revenue", label: "Subscriptions" },
   "/super-admin/payments": { section: "Billing & Revenue", label: "Billing & Payments" },
   "/super-admin/invoices": { section: "Billing & Revenue", label: "Invoices" },
-  "/super-admin/integrations": { section: "Integrations & API", label: "Integration Overview" },
-  "/super-admin/github-integrations": { section: "Integrations & API", label: "GitHub Integration" },
-  "/super-admin/webhooks": { section: "Integrations & API", label: "Webhooks & Events" },
-  "/super-admin/api-monitoring": { section: "Integrations & API", label: "API Monitoring" },
-  "/super-admin/integration-settings": { section: "Integrations & API", label: "Integration Settings" },
   "/super-admin/security": { section: "Security & Governance", label: "Security Center" },
   "/super-admin/security-keys": { section: "Security & Governance", label: "Platform Keys & JWT" },
   "/super-admin/access-approvals": { section: "Security & Governance", label: "Support Access Approvals" },
@@ -167,7 +158,6 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
   const accessApprovals = useSuperAdminStore((s) => s.accessApprovals);
   const incidents = useSuperAdminStore((s) => s.incidents);
   const supportTickets = useSuperAdminStore((s) => s.supportTickets);
-  const webhookEvents = useSuperAdminStore((s) => s.webhookEvents);
   const brandingPrefs = useSuperAdminStore((s) => s.brandingPrefs);
   const [accountProfile, setAccountProfile] = useState<{ name: string; email: string }>({ name: "", email: "" });
   useEffect(() => {
@@ -233,7 +223,6 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
 
   const overdueInvoicesCount = invoices.filter((i) => i.status === "OVERDUE").length;
   const failedPaymentsCount = payments.filter((p) => p.status === "FAILED").length;
-  const failedWebhooksCount = webhookEvents.filter((w) => w.status === "Failed").length;
   const pendingApprovalsCount = accessApprovals.filter((a) => a.status === "PENDING").length;
   const openIncidentsCount = incidents.filter((i) => i.status !== "Resolved").length;
   const escalatedSupportCount = supportTickets.filter((t) => t.status === "Escalated").length;
@@ -308,43 +297,6 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
             icon: FileText,
             requiredAny: ["invoices.manage", "payments.view"],
             badgeCount: overdueInvoicesCount > 0 ? overdueInvoicesCount : undefined,
-          },
-        ],
-      },
-      {
-        id: "integrations",
-        title: "Integrations & API",
-        items: [
-          {
-            title: "Integration Overview",
-            href: "/super-admin/integrations",
-            icon: Plug,
-            requiredAny: ["integrations.manage", "audit.view"],
-          },
-          {
-            title: "GitHub Integration",
-            href: "/super-admin/github-integrations",
-            icon: GitBranch,
-            requiredAny: ["integrations.manage", "orgs.view"],
-          },
-          {
-            title: "Webhooks & Events",
-            href: "/super-admin/webhooks",
-            icon: Webhook,
-            requiredAny: ["integrations.manage", "audit.view"],
-            badgeCount: failedWebhooksCount > 0 ? failedWebhooksCount : undefined,
-          },
-          {
-            title: "API Monitoring",
-            href: "/super-admin/api-monitoring",
-            icon: Activity,
-            requiredAny: ["integrations.manage", "audit.view"],
-          },
-          {
-            title: "Integration Settings",
-            href: "/super-admin/integration-settings",
-            icon: Wrench,
-            requiredAny: ["integrations.manage"],
           },
         ],
       },
@@ -471,7 +423,6 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
     [
       failedPaymentsCount,
       overdueInvoicesCount,
-      failedWebhooksCount,
       pendingApprovalsCount,
       openIncidentsCount,
       publishedAnnouncementsCount,

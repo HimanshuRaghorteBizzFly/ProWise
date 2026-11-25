@@ -18,6 +18,11 @@ import {
 } from "lucide-react";
 import { useDebounced } from "@/components/super-admin/admin-resource";
 import { instantToLocalInput, localInputToInstant } from "@/components/super-admin/operations/shared";
+import {
+  ANNOUNCEMENT_MESSAGE_MIN,
+  ANNOUNCEMENT_MESSAGE_MIN_WORDS,
+  validateAnnouncementDraft,
+} from "../_services/announcement-draft-validation";
 import type { OperatorAnnouncementDraft, OperatorAnnouncementDraftInput } from "@/types/operator-console";
 import { operatorApi } from "../_services/operator-api";
 import { useOperatorPermissions } from "../_services/operator-access";
@@ -158,6 +163,7 @@ export default function OperatorAnnouncementDraftsPage() {
   const [proposedScheduleAt, setProposedScheduleAt] = useState("");
   const [message, setMessage] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
 
   const [previewTarget, setPreviewTarget] = useState<OperatorAnnouncementDraft | null>(null);
   const [submitTarget, setSubmitTarget] = useState<OperatorAnnouncementDraft | null>(null);
@@ -227,6 +233,7 @@ export default function OperatorAnnouncementDraftsPage() {
     setProposedScheduleAt("");
     setMessage("");
     setFormError(null);
+    setClientErrors({});
     setModalOpen(true);
   };
 
@@ -244,13 +251,26 @@ export default function OperatorAnnouncementDraftsPage() {
     setProposedScheduleAt(instantToLocalInput(item.scheduled_for));
     setMessage(item.message);
     setFormError(null);
+    setClientErrors({});
     setModalOpen(true);
   };
 
+  /** Errors shown under each field: the client checks first, then the server's field_errors for the same keys. */
+  const errorFor = (field: string) => clientErrors[field] ?? fieldErrors[field];
+  const clearFieldError = (field: string) =>
+    setClientErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (title.trim().length < 5 || message.trim().length < 10) {
-      setFormError("Please enter a clear headline and customer announcement message.");
+    const errors = validateAnnouncementDraft({ title, message, audience, targets, proposedScheduleAt });
+    setClientErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setFormError("Please fix the highlighted fields before saving.");
       return;
     }
     setFormError(null);
@@ -796,16 +816,24 @@ export default function OperatorAnnouncementDraftsPage() {
           <OpInput
             label="Announcement Headline"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              clearFieldError("title");
+            }}
             placeholder="e.g. Scheduled Database Index Upgrade"
-            error={fieldErrors.title}
+            maxLength={255}
+            error={errorFor("title")}
           />
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <OpSelect
               label="Target Audience"
               value={audience}
-              onChange={(e) => setAudience(e.target.value)}
+              onChange={(e) => {
+                setAudience(e.target.value);
+                clearFieldError("target_plans");
+                clearFieldError("target_org_ids");
+              }}
               options={[
                 { label: "All Organizations", value: "ALL_ORGS" },
                 { label: "Enterprise Plans", value: "BY_PLAN" },
@@ -826,8 +854,12 @@ export default function OperatorAnnouncementDraftsPage() {
               label="Proposed Publish Time"
               type="datetime-local"
               value={proposedScheduleAt}
-              onChange={(e) => setProposedScheduleAt(e.target.value)}
-              error={fieldErrors.scheduled_for}
+              min={instantToLocalInput(new Date().toISOString())}
+              onChange={(e) => {
+                setProposedScheduleAt(e.target.value);
+                clearFieldError("scheduled_for");
+              }}
+              error={errorFor("scheduled_for")}
             />
           </div>
 
@@ -835,19 +867,28 @@ export default function OperatorAnnouncementDraftsPage() {
             <OpInput
               label={audience === "BY_PLAN" ? "Target Plans (comma separated plan ids or codes)" : "Target Organization IDs (comma separated)"}
               value={targets}
-              onChange={(e) => setTargets(e.target.value)}
-              error={fieldErrors[audience === "BY_PLAN" ? "target_plans" : "target_org_ids"]}
+              onChange={(e) => {
+                setTargets(e.target.value);
+                clearFieldError(audience === "BY_PLAN" ? "target_plans" : "target_org_ids");
+              }}
+              error={errorFor(audience === "BY_PLAN" ? "target_plans" : "target_org_ids")}
             />
           )}
 
           <OpTextarea
             label="Customer Announcement Message"
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={(e) => {
+              setMessage(e.target.value);
+              clearFieldError("message");
+            }}
             placeholder="Write a reassuring, non-technical message explaining what customers should expect..."
             rows={4}
-            error={fieldErrors.message}
+            error={errorFor("message")}
           />
+          <p className="-mt-2 text-right text-[11px] text-[var(--color-text-muted)]">
+            {message.trim().length} characters · at least {ANNOUNCEMENT_MESSAGE_MIN} characters and {ANNOUNCEMENT_MESSAGE_MIN_WORDS} words
+          </p>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
             <OpButton type="button" variant="outline" size="sm" onClick={() => setModalOpen(false)}>

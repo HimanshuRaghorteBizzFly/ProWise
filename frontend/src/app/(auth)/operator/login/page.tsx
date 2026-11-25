@@ -1,45 +1,25 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/auth-store";
 import { usePlatformOperatorStore } from "@/app/(platform)/platform-operator/_store/usePlatformOperatorStore";
-import { operatorAuthService } from "@/app/(platform)/platform-operator/_services/operator-auth-service";
 import {
-  ShieldAlert,
-  Eye,
-  EyeOff,
-  KeyRound,
-  CheckCircle2,
-  Lock,
-  Mail,
-  Server,
-  Layers,
-  ArrowRight,
-  UserCheck,
-} from "lucide-react";
-
-const DEPARTMENTS = [
-  { name: "Platform Operations", color: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20" },
-  { name: "Site Reliability", color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" },
-  { name: "Lifecycle Messaging", color: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20" },
-  { name: "Customer Communications", color: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20" },
-  { name: "Finance & Tax", color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20" },
-  { name: "Revenue Operations", color: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20" },
-  { name: "Trust & Compliance", color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20" },
-];
+  OPERATOR_FIRST_LOGIN_KEY,
+  operatorAuthService,
+} from "@/app/(platform)/platform-operator/_services/operator-auth-service";
+import { ShieldAlert, Eye, EyeOff, Lock, Mail, ArrowRight } from "lucide-react";
 
 export default function OperatorLoginPage() {
   const router = useRouter();
   const { setCurrentRole, login: authLogin } = useAuthStore();
   const setOperatorProfile = usePlatformOperatorStore((s) => s.setOperatorProfile);
 
-  const [mode, setMode] = useState<"login" | "forgot" | "invite" | "reset">("login");
+  // "first-login": the emailed temporary password was accepted and must be replaced before the first session.
+  const [mode, setMode] = useState<"login" | "forgot" | "invite" | "reset" | "first-login">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -72,6 +52,24 @@ export default function OperatorLoginPage() {
         setResetToken(reset);
         setMode("reset");
       }
+      // Handed over by the main /login page after it accepted the emailed temporary password (read once).
+      const handoff = sessionStorage.getItem(OPERATOR_FIRST_LOGIN_KEY);
+      sessionStorage.removeItem(OPERATOR_FIRST_LOGIN_KEY);
+      if (handoff) {
+        try {
+          const { email: handoffEmail, temporaryPassword } = JSON.parse(handoff) as {
+            email?: string;
+            temporaryPassword?: string;
+          };
+          if (handoffEmail && temporaryPassword) {
+            setEmail(handoffEmail);
+            setPassword(temporaryPassword);
+            setMode("first-login");
+          }
+        } catch {
+          // Ignore a malformed hand-off: the normal sign-in form is shown.
+        }
+      }
     }
   }, []);
 
@@ -84,28 +82,77 @@ export default function OperatorLoginPage() {
 
     setIsLoading(true);
     try {
-      const res = await operatorAuthService.login(email, password, rememberEmail);
-
-      if (rememberEmail) {
-        localStorage.setItem("prowise_operator_saved_email", email);
-      } else {
-        localStorage.removeItem("prowise_operator_saved_email");
-      }
-
-      // Keep the operator identity returned by the API for the shell header.
-      setOperatorProfile(res.operator);
-
-      // Update global auth store
-      setCurrentRole("PLATFORM_OPERATOR");
-      authLogin(res.operator.email, "PLATFORM_OPERATOR");
-
-      toast.success(`Welcome back, ${res.operator.name}!`, {
-        description: `Department: ${res.operator.departmentName} (${res.authorizedModules.length} authorized modules)`,
-      });
-
-      router.push("/platform-operator/dashboard");
+      await signInAndOpenConsole(email, password);
     } catch (err: any) {
+      if (err?.code === "PASSWORD_CHANGE_REQUIRED") {
+        // The temporary password from the welcome email is right; the server opens no session until it is replaced.
+        setNewPassword("");
+        setConfirmPassword("");
+        setMode("first-login");
+        return;
+      }
       toast.error(err.message || "Failed to authenticate operator credentials.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const signInAndOpenConsole = async (signInEmail: string, signInPassword: string) => {
+    const res = await operatorAuthService.login(signInEmail, signInPassword, rememberEmail);
+
+    if (rememberEmail) {
+      localStorage.setItem("prowise_operator_saved_email", signInEmail);
+    } else {
+      localStorage.removeItem("prowise_operator_saved_email");
+    }
+
+    // Keep the operator identity returned by the API for the shell header.
+    setOperatorProfile(res.operator);
+
+    // Update global auth store
+    setCurrentRole("PLATFORM_OPERATOR");
+    authLogin(res.operator.email, "PLATFORM_OPERATOR");
+
+    toast.success(`Welcome, ${res.operator.name}!`, {
+      description: `Department: ${res.operator.departmentName} (${res.authorizedModules.length} authorized modules)`,
+    });
+
+    router.push("/platform-operator/dashboard");
+  };
+
+  /** Exchanges the single-use temporary password for the operator's own password, then signs in with it. */
+  const handleFirstLoginPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 12) {
+      toast.error("Password must be at least 12 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+    if (newPassword === password) {
+      toast.error("Choose a password different from the temporary one.");
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await operatorAuthService.acceptInvitation(password, newPassword);
+    } catch (err: any) {
+      // Policy failures keep the temporary password usable; an expired or used one needs a new email.
+      toast.error(err?.message || "Your temporary password has expired. Ask your Super Admin to send a new one.");
+      setIsLoading(false);
+      return;
+    }
+    try {
+      await signInAndOpenConsole(email, newPassword);
+      setPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      toast.error(err?.message || "Your password was set. Sign in with it.");
+      setPassword("");
+      setMode("login");
     } finally {
       setIsLoading(false);
     }
@@ -183,41 +230,24 @@ export default function OperatorLoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-4 relative overflow-hidden">
-      {/* Dynamic Background Glow */}
-      <div className="absolute top-1/4 -left-32 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
-
-      <div className="w-full max-w-lg z-10">
-        {/* Header Branding */}
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-4">
+      <div className="w-full max-w-md">
+        {/* Header */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white shadow-xl shadow-blue-500/20 mb-3 border border-blue-400/30">
-            <ShieldAlert className="h-7 w-7" />
+          <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-blue-600 text-white mb-3">
+            <ShieldAlert className="h-6 w-6" />
           </div>
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <span className="text-xs font-semibold uppercase tracking-wider text-blue-400 bg-blue-950/80 border border-blue-800/50 px-2.5 py-0.5 rounded-full">
-              Platform Engineering
-            </span>
-            <span className="text-xs text-slate-400 flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              SSO & RBAC Online
-            </span>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">
-            Platform Operator Portal
-          </h1>
-          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-            Authorized operations telemetry, incident mitigation, and department-based service controls.
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Operator Sign In</h1>
+          <p className="text-sm text-slate-400 mt-1">Sign in to the ProWise operations console.</p>
         </div>
 
         {/* Login / Auth Card */}
-        <Card className="p-6 bg-slate-900/90 border border-slate-800 shadow-2xl backdrop-blur-md rounded-2xl">
+        <Card className="p-6 bg-slate-900 border border-slate-800 rounded-2xl">
           {mode === "login" && (
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
-                  <Mail className="h-3.5 w-3.5 text-blue-400" /> Corporate Operator Email
+                  <Mail className="h-3.5 w-3.5 text-blue-400" /> Email
                 </label>
                 <input
                   type="email"
@@ -276,10 +306,10 @@ export default function OperatorLoginPage() {
 
               <Button
                 type="submit"
-                className="w-full h-10 font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2"
+                className="w-full h-10 font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
                 isLoading={isLoading}
               >
-                Sign In as Platform Operator <ArrowRight className="h-4 w-4" />
+                Sign In <ArrowRight className="h-4 w-4" />
               </Button>
             </form>
           )}
@@ -390,6 +420,69 @@ export default function OperatorLoginPage() {
             </form>
           )}
 
+          {mode === "first-login" && (
+            <form onSubmit={handleFirstLoginPassword} className="space-y-4">
+              <div className="text-left mb-2">
+                <h3 className="text-sm font-semibold text-white">Choose Your New Password</h3>
+                <p className="text-xs text-slate-400">
+                  You signed in with the temporary password from your welcome email. Choose your own password to
+                  continue; the temporary one stops working. You can change it again later from Settings.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">New Password (min 12 chars)</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="At least 12 characters"
+                  autoComplete="new-password"
+                  required
+                  minLength={12}
+                  className="w-full h-10 px-3 py-2 text-sm bg-slate-950 border border-slate-700/80 rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-300">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repeat the new password"
+                  autoComplete="new-password"
+                  required
+                  minLength={12}
+                  className="w-full h-10 px-3 py-2 text-sm bg-slate-950 border border-slate-700/80 rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700"
+                  onClick={() => {
+                    setPassword("");
+                    setNewPassword("");
+                    setConfirmPassword("");
+                    setMode("login");
+                  }}
+                >
+                  Back to Sign In
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white"
+                  isLoading={isLoading}
+                >
+                  Save & Sign In
+                </Button>
+              </div>
+            </form>
+          )}
+
           {mode === "reset" && (
             <form onSubmit={handleResetPassword} className="space-y-4">
               <div className="text-left mb-2">
@@ -445,55 +538,11 @@ export default function OperatorLoginPage() {
             </form>
           )}
 
-          {/* Invitation toggle */}
-          {mode === "login" && (
-            <div className="mt-4 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-              <span>Have an invite token?</span>
-              <button
-                type="button"
-                onClick={() => setMode("invite")}
-                className="text-indigo-400 hover:text-indigo-300 font-medium hover:underline flex items-center gap-1"
-              >
-                <KeyRound className="h-3 w-3" /> Accept Invitation
-              </button>
-            </div>
-          )}
         </Card>
 
-        {/* 7 Operator Departments Quick-Reference */}
-        <div className="mt-6">
-          <div className="text-center mb-2.5">
-            <span className="text-[11px] font-medium tracking-wide uppercase text-slate-400">
-              Department-Based RBAC Modules Supported
-            </span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-            {DEPARTMENTS.map((dept) => (
-              <div
-                key={dept.name}
-                className={`text-[11px] font-medium px-2 py-1.5 rounded-lg border text-center truncate ${dept.color}`}
-              >
-                {dept.name}
-              </div>
-            ))}
-            <div className="text-[11px] font-medium px-2 py-1.5 rounded-lg border border-slate-800 bg-slate-900/60 text-slate-400 text-center flex items-center justify-center gap-1">
-              <CheckCircle2 className="h-3 w-3 text-emerald-400" /> Audit Logged
-            </div>
-          </div>
-        </div>
-
-        {/* Footer info & Super Admin link */}
-        <div className="text-center mt-6 text-xs text-slate-500 space-y-1">
-          <p>
-            Super Administrator?{" "}
-            <Link href="/super-admin/dashboard" className="text-blue-400 hover:underline font-medium">
-              Go to Super Admin Console
-            </Link>
-          </p>
-          <p className="text-[11px] text-slate-600">
-            ProWise Platform Engineering · Multi-Tenant SOC 2 Type II Certified
-          </p>
-        </div>
+        <p className="text-center mt-5 text-xs text-slate-500">
+          New operator? Sign in with the email and temporary password from your welcome email.
+        </p>
       </div>
     </div>
   );

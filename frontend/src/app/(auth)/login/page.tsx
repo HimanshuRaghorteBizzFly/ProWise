@@ -6,7 +6,11 @@ import { useRouter } from "next/navigation";
 import { apiClient, ApiError } from "@/lib/api";
 import { useAuthStore } from "@/store/auth-store";
 import { usePlatformOperatorStore } from "@/app/(platform)/platform-operator/_store/usePlatformOperatorStore";
-import { operatorAuthService } from "@/app/(platform)/platform-operator/_services/operator-auth-service";
+import {
+  OPERATOR_FIRST_LOGIN_KEY,
+  OperatorApiError,
+  operatorAuthService,
+} from "@/app/(platform)/platform-operator/_services/operator-auth-service";
 import { applyLoginResponse } from "@/lib/auth-session";
 import { attemptLogin, loginErrorMessage } from "@/lib/login-flow";
 import { Button } from "@/components/ui/button";
@@ -58,9 +62,16 @@ export default function LoginPage() {
 
         // A platform operator signs in through the operator endpoint with the same form.
         if (backendError.status === 401 && backendError.code === "INVALID_CREDENTIALS") {
-          const operatorDestination = await tryOperatorLogin(cleanEmail, targetPass);
-          if (operatorDestination) {
-            window.location.assign(operatorDestination);
+          const operatorResult = await tryOperatorLogin(cleanEmail, targetPass);
+          if (operatorResult.destination) {
+            window.location.assign(operatorResult.destination);
+            return;
+          }
+          if (operatorResult.message) {
+            // The account is an operator and the password was right, but sign-in cannot finish (locked, inactive...).
+            setLoginError(operatorResult.message);
+            toast.error(operatorResult.message);
+            setIsLoading(false);
             return;
           }
         }
@@ -88,6 +99,10 @@ export default function LoginPage() {
           ? "Signed in. Choose the organization to open."
           : `Signed in as ${roleText}.`,
       );
+      if (response.signed_in_with_temporary_password) {
+        // Survives the page change below: the dashboard shows it once (see TemporaryPasswordReminder).
+        sessionStorage.setItem("prowise_temporary_password_reminder", "1");
+      }
       window.location.assign(destination);
     } catch (err) {
       const message = err instanceof ApiError ? loginErrorMessage(err) : err instanceof Error ? err.message : "Unable to complete sign in.";
@@ -97,17 +112,37 @@ export default function LoginPage() {
     }
   };
 
-  /** Platform Operator sign-in through the real operator endpoint; null when the account is not an operator. */
-  const tryOperatorLogin = async (operatorEmail: string, operatorPassword: string): Promise<string | null> => {
+  /**
+   * Platform Operator sign-in through the real operator endpoint. Returns where to go, an operator-specific message
+   * (locked, inactive...), or neither when the account is simply not an operator / the password is wrong.
+   */
+  const tryOperatorLogin = async (
+    operatorEmail: string,
+    operatorPassword: string,
+  ): Promise<{ destination?: string; message?: string }> => {
     try {
       const res = await operatorAuthService.login(operatorEmail, operatorPassword, false);
       usePlatformOperatorStore.getState().setOperatorProfile(res.operator);
       useAuthStore.getState().setCurrentRole("PLATFORM_OPERATOR");
       useAuthStore.getState().login(res.operator.email, "PLATFORM_OPERATOR");
       toast.success(`Welcome back, ${res.operator.name}.`);
-      return "/platform-operator/dashboard";
-    } catch {
-      return null;
+      return { destination: "/platform-operator/dashboard" };
+    } catch (err) {
+      const code = err instanceof OperatorApiError ? err.code : undefined;
+      if (code === "PASSWORD_CHANGE_REQUIRED") {
+        // The emailed temporary password was right; the operator page asks for a new one. Handed over in this
+        // tab's sessionStorage (never in the URL) and removed as soon as that page reads it.
+        sessionStorage.setItem(
+          OPERATOR_FIRST_LOGIN_KEY,
+          JSON.stringify({ email: operatorEmail, temporaryPassword: operatorPassword }),
+        );
+        toast.info("Choose your own password to finish signing in.");
+        return { destination: "/operator/login?first-login=1" };
+      }
+      if (err instanceof OperatorApiError && code && code !== "INVALID_CREDENTIALS" && !code.startsWith("HTTP_")) {
+        return { message: err.message };
+      }
+      return {};
     }
   };
 

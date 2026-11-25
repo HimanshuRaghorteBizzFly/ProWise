@@ -30,7 +30,6 @@ import {
   DatabaseBackup,
   FileCheck2,
   FileWarning,
-  GitBranch,
   History,
   KeyRound,
   LayoutDashboard,
@@ -41,9 +40,6 @@ import {
   Megaphone,
   Menu,
   Moon,
-  Plug,
-  RefreshCw,
-  RotateCcw,
   Search,
   Server,
   Settings,
@@ -51,7 +47,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sun,
-  Webhook,
   Wrench,
   X,
 } from "lucide-react";
@@ -90,34 +85,6 @@ const ROUTE_TITLES: Record<string, { section: string; label: string }> = {
   "/platform-operator/access-requests": {
     section: "Incidents & Support",
     label: "Support Access Requests",
-  },
-  "/platform-operator/integration-health": {
-    section: "Integration Operations",
-    label: "Integration Health",
-  },
-  "/platform-operator/github-monitoring": {
-    section: "Integration Operations",
-    label: "GitHub App Monitoring",
-  },
-  "/platform-operator/webhook-logs": {
-    section: "Integration Operations",
-    label: "Webhook Delivery Logs",
-  },
-  "/platform-operator/webhooks": {
-    section: "Integration Operations",
-    label: "Webhook Delivery Logs",
-  },
-  "/platform-operator/failed-events": {
-    section: "Integration Operations",
-    label: "Failed Events & Retries",
-  },
-  "/platform-operator/sync-jobs": {
-    section: "Integration Operations",
-    label: "Sync Jobs & Queues",
-  },
-  "/platform-operator/api-errors": {
-    section: "Integration Operations",
-    label: "API Error Monitoring",
   },
   "/platform-operator/email-delivery": {
     section: "Communication Operations",
@@ -309,51 +276,6 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
             href: "/platform-operator/access-requests",
             icon: KeyRound,
             badgeCount: badges["access-requests"],
-          },
-        ],
-      },
-      {
-        id: "integrations",
-        title: "Integration Operations",
-        items: [
-          {
-            id: "integration-health",
-            label: "Integration Health",
-            href: "/platform-operator/integration-health",
-            icon: Plug,
-          },
-          {
-            id: "github-monitoring",
-            label: "GitHub App Monitoring",
-            href: "/platform-operator/github-monitoring",
-            icon: GitBranch,
-          },
-          {
-            id: "webhook-logs",
-            label: "Webhook Delivery Logs",
-            href: "/platform-operator/webhook-logs",
-            matchPaths: ["/platform-operator/webhook-logs", "/platform-operator/webhooks"],
-            icon: Webhook,
-          },
-          {
-            id: "failed-events",
-            label: "Failed Events & Retries",
-            href: "/platform-operator/failed-events",
-            icon: RotateCcw,
-            badgeCount: badges["failed-events"],
-          },
-          {
-            id: "sync-jobs",
-            label: "Sync Jobs & Queues",
-            href: "/platform-operator/sync-jobs",
-            icon: RefreshCw,
-            badgeCount: badges["sync-jobs"],
-          },
-          {
-            id: "api-errors",
-            label: "API Error Monitoring",
-            href: "/platform-operator/api-errors",
-            icon: Activity,
           },
         ],
       },

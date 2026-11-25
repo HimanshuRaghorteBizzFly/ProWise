@@ -19,6 +19,11 @@ public class OperatorAuthDTOs {
             String email
     ) {}
 
+    public record ChangePasswordRequest(
+            String currentPassword,
+            String newPassword
+    ) {}
+
     public record ResetPasswordRequest(
             String token,
             String newPassword

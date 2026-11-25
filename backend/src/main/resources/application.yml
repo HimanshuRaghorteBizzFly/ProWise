@@ -83,6 +83,8 @@ prowise:
     # AES-256-GCM key for SMTP passwords saved from the admin panel (32+ characters). Server-side only.
     credential-encryption-key: ${SMTP_CREDENTIAL_ENCRYPTION_KEY:}
     frontend-url: ${FRONTEND_URL:http://localhost:3000}
+    # Optional local copy: every email link is also shown on this address ("Testing locally?"). Empty in production.
+    local-sign-in-url: ${LOCAL_SIGNIN_URL:}
   worker:
     outbox-delay-ms: ${OUTBOX_POLL_DELAY_MS:5000}
   bootstrap:

@@ -81,6 +81,8 @@ export interface AuthLoginResponse {
   must_change_password: boolean;
   target_dashboard_url: string;
   user: AuthUserSummary;
+  /** True only on the sign-in that created the account from an invitation's emailed temporary password. */
+  signed_in_with_temporary_password?: boolean;
   /** True when the person belongs to several organizations and must choose one (see organizations). */
   requires_organization_selection?: boolean;
   organizations?: OrganizationChoice[];
@@ -323,7 +325,11 @@ export function createApiClient(options: ApiClientOptions = {}) {
      * Public signup (approved decision D9). The account stays pending and no session is issued: the API emails a
      * single-use link, the owner opens it (verifyEmail), then signs in. The answer is the same for known addresses.
      */
-    signup: (body: { email: string; password: string; name?: string }) =>
+    /**
+     * Registers an account. With `organization_name` + `timezone` (IANA) it is an organization signup: confirming the
+     * emailed link also creates that organization with this account as its Organization Owner.
+     */
+    signup: (body: { email: string; password: string; name?: string; organization_name?: string; timezone?: string }) =>
       json<{ message: string }>("/v1/auth/signup", { method: "POST", body }),
     /** Activates a self-registered account from the token in its emailed link. Single use. */
     verifyEmail: (token: string) => request("/v1/auth/verify-email", { method: "POST", body: { token } }),
