@@ -26,6 +26,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [signupError, setSignupError] = useState<string | null>(null);
 
   const isPasswordLongEnough = password.length >= 12;
 
@@ -37,6 +38,7 @@ export default function SignupPage() {
     }
 
     setIsLoading(true);
+    setSignupError(null);
     try {
       const created = await apiClient.signup({ email: email.trim(), password, name: name.trim() });
       const session = await establishSession();
@@ -80,6 +82,12 @@ export default function SignupPage() {
         {/* Signup Card */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xl shadow-slate-200/40 dark:shadow-black/50 p-6 sm:p-7 backdrop-blur-md">
           <form onSubmit={handleSignup} className="space-y-4">
+            {signupError && (
+              <p role="alert" data-testid="signup-error"
+                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
+                {signupError}
+              </p>
+            )}
             {/* User Details Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">

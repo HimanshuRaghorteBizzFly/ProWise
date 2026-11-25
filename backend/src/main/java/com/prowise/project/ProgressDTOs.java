@@ -23,7 +23,12 @@ public final class ProgressDTOs {
             String blockers,
             @JsonAlias("projectedFinish") LocalDate projectedFinish,
             String evidence,
-            @JsonAlias("downwardReason") String downwardReason) {}
+            @JsonAlias("downwardReason") String downwardReason,
+            /** Structured evidence: commit links or SHAs, links, uploaded screenshots (FILE = file id). */
+            @JsonAlias("evidenceItems") List<EvidenceItem> evidenceItems) {}
+
+    /** One piece of evidence: COMMIT (SHA or commit URL), PULL_REQUEST, LINK, FILE (uploaded file id) or NOTE. */
+    public record EvidenceItem(String type, String ref, String label) {}
 
     /** Team Lead decision on a pending entry: APPROVE or REJECT (a rejection needs a reason). */
     public record DecisionRequest(String decision, String reason, Long expectedVersion) {}
@@ -59,7 +64,8 @@ public final class ProgressDTOs {
             PersonRef decidedBy,
             Instant decidedAt,
             String decisionReason,
-            long version) {}
+            long version,
+            List<EvidenceItem> evidenceItems) {}
 
     /** The approved figure; percent null and label "Not reported" when nothing is approved yet. */
     public record Figure(BigDecimal percent, String label, String method, Instant reportedAt, Instant approvedAt,
@@ -78,7 +84,9 @@ public final class ProgressDTOs {
             String approverNote,
             boolean canSubmit,
             boolean canDecide,
-            List<CheckIn> history) {}
+            List<CheckIn> history,
+            /** People chosen at creation to approve this project (PROJECT-scoped task.review). */
+            List<PersonRef> approvers) {}
 
     public record PendingReview(String projectId, String projectKey, String projectName, Figure current,
             CheckIn checkin) {}

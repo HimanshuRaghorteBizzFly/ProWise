@@ -73,20 +73,11 @@ export function applyLoginResponse(response: AuthLoginResponse): string {
 
   const role = toSystemRole(user.role) ?? "VIEWER";
   auth.login(user.email, role);
-  if (role === "SUPER_ADMIN") {
-    return "/super-admin/dashboard";
-  }
-  if (role === "PLATFORM_OPERATOR") {
-    return "/platform-operator/dashboard";
-  }
   if (response.requires_organization_selection) return "/select-org";
   return response.target_dashboard_url || "/select-org";
 }
 
-/**
- * Ends the client-side session after the server refused it (failed me() or refresh): drops the persisted
- * isAuthenticated flag and the remembered organization choices. The HttpOnly cookies are the server's to clear.
- */
+/** Clears the in-memory identity and any stored session hints (used on sign-out and expired sessions). */
 export function clearAuthSession(): void {
   useAuthStore.getState().logout();
   try {

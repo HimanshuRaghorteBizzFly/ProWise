@@ -83,6 +83,11 @@ class ProgressSnapshotIntegrationTest {
         projectId = tree(mockMvc.perform(auth(post("/v1/organizations/{o}/projects", orgId), ownerToken)
                         .contentType("application/json").content(json(project)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
+        // Owner rule 2026-11-25: the QA reviewer approves because they were chosen for this project.
+        jdbc.update("""
+                INSERT INTO grants (id, org_id, membership_id, template_role_id, scope, scope_id, granted_by)
+                VALUES (?, ?, ?, '10000000-0000-0000-0000-000000000009', 'PROJECT', ?, ?)
+                """, UUID.randomUUID(), orgId, qaMembership, UUID.fromString(projectId), owner.id());
     }
 
     @AfterEach
@@ -137,11 +142,12 @@ class ProgressSnapshotIntegrationTest {
         String a = readyTask("A");
         String b = readyTask("B");
         String c = readyTask("C");
-        String v1 = approveScope(null, add(a, 20), add(b, 30), add(c, 50));
+        // Owner rule 2026-11-25 (points total at most 100): the fixture runs 40/80 = 50% -> 40/100 = 40% -> 10/100.
+        String v1 = approveScope(null, add(a, 10), add(b, 30), add(c, 40));
         accept(a);
         accept(b);
         String d = readyTask("D");
-        String v2 = approveScope(v1, add(d, 25));
+        String v2 = approveScope(v1, add(d, 20));
 
         JsonNode view = tree(mockMvc.perform(auth(get("/v1/projects/{p}/structured-progress", projectId), ownerToken))
                 .andExpect(jsonPath("$.percent").value(40))
@@ -156,12 +162,14 @@ class ProgressSnapshotIntegrationTest {
         assertThat(forty.path("baseline_id").asText()).isEqualTo(v2);
         assertThat(forty.path("cause").asText()).isEqualTo("SCOPE_APPROVED");
 
-        // Fixture 3: reopening the 30 leaf -> 20/125 = 16%.
+        // Fixture 3: reopening the 30 leaf -> 10/100 = 10%.
         reopen(b, "Accessibility issues");
         mockMvc.perform(auth(get("/v1/projects/{p}/structured-progress", projectId), ownerToken))
-                .andExpect(jsonPath("$.percent").value(16))
-                .andExpect(jsonPath("$.numerator").value(20))
-                .andExpect(jsonPath("$.denominator").value(125));
+                .andExpect(jsonPath("$.percent").value(10))
+                .andExpect(jsonPath("$.numerator").value(10))
+                .andExpect(jsonPath("$.denominator").value(100))
+                .andExpect(jsonPath("$.reported").value(true))
+                .andExpect(jsonPath("$.method_label").value("approved points, 10 of 100"));
         // Snapshots are never rewritten.
         assertThat(sqlFails("UPDATE progress_snapshots SET display_value = 99")).isTrue();
         assertThat(sqlFails("DELETE FROM progress_snapshots")).isTrue();

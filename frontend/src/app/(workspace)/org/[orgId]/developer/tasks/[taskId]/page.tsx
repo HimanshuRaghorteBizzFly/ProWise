@@ -28,6 +28,10 @@ import {
   useWorkflowActions,
 } from "@/components/developer/useDeveloperData";
 import type { EvidenceItemDto, WorkItemDto } from "@/types/work";
+import type { FileViewDto } from "@/types/flow";
+import { AuthImage, EvidenceList } from "@/components/flow/FlowUI";
+import { ScreenshotUploader, TaskActivity, TaskCommits } from "@/components/flow/TaskPanels";
+import { useItemFiles } from "@/components/flow/useFlowApi";
 
 /**
  * One Structured work item for the developer: Assignment → Development (start) → Evidence → Review → Changes /
@@ -74,12 +78,26 @@ function TaskDetail({ item, base }: { item: WorkItemDto; base: string }) {
       description={item.description ?? undefined}
       actions={
         isAssignee && item.state === "TODO" && item.plan_status !== "RETIRED" ? (
-          <AdminButton size="sm" onClick={start} isLoading={actions.start.isPending}>
+          <AdminButton size="sm" onClick={start} isLoading={actions.start.isPending} disabled={(item.blocked_by ?? []).length > 0}
+            title={(item.blocked_by ?? []).length > 0 ? "A prerequisite is not completed yet" : undefined}>
             <Play className="w-3.5 h-3.5 mr-1" /> Start work
           </AdminButton>
         ) : undefined
       }
     >
+      {item.changes_requested_reason && (
+        <div role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
+          <p className="font-semibold">Changes requested by the reviewer</p>
+          <p className="mt-1 whitespace-pre-wrap">{item.changes_requested_reason}</p>
+          <p className="mt-1 text-[11px] opacity-80">The task is back in progress. Your next submission starts a new review round.</p>
+        </div>
+      )}
+      {(item.blocked_by ?? []).length > 0 && item.state === "TODO" && (
+        <div role="status" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-elevated)] p-3 text-xs">
+          <p className="font-semibold">Waiting on {(item.blocked_by ?? []).map((b) => b.key).join(", ")}</p>
+          <p className="mt-0.5 text-[var(--color-text-muted)]">This task can start once its prerequisite is completed.</p>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <WorkStateBadge state={item.state} blocked={item.blocked} />
         <StatusBadge label={item.type} tone="neutral" />
@@ -91,10 +109,10 @@ function TaskDetail({ item, base }: { item: WorkItemDto; base: string }) {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <StatPill label="Points" value={item.weight === null ? "Not set" : `${item.weight}${item.weight_unit && item.weight_unit !== "POINTS" ? ` ${item.weight_unit.toLowerCase()}` : ""}`} />
+        <StatPill label="Phase" value={item.phase?.title ?? "—"} />
         <StatPill label="Due" value={item.due_on ? dateText(item.due_on) : "No date"} tone={isOverdue(item.due_on, item.state) ? "danger" : "neutral"} />
-        <StatPill label="Weight" value={item.weight === null ? "Not set" : `${item.weight}${item.weight_unit ? ` ${item.weight_unit.toLowerCase()}` : ""}`} />
-        <StatPill label="Revision" value={item.revision} />
-        <StatPill label="Review" value={item.review_required ? "Required" : "Checks only"} />
+        <StatPill label="Review round" value={item.revision} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -112,6 +130,12 @@ function TaskDetail({ item, base }: { item: WorkItemDto; base: string }) {
           {isAssignee && (item.state === "IN_PROGRESS" || item.state === "IN_REVIEW") && <SubmitPanel item={item} />}
 
           <ReviewHistoryPanel itemId={item.id} />
+          <Panel title="Commits" description="Linked from GitHub by the task key in the message, branch or pull request title" icon={GitBranch} iconTone="violet">
+            <TaskCommits itemId={item.id} itemKey={item.key} />
+          </Panel>
+          <Panel title="Activity" description="Every change, who made it and why (append-only)" icon={History} iconTone="blue">
+            <TaskActivity itemId={item.id} />
+          </Panel>
         </div>
 
         <div className="space-y-5">
@@ -135,12 +159,13 @@ function TaskDetail({ item, base }: { item: WorkItemDto; base: string }) {
 
 /* ------------------------------------------------------------------ submit evidence */
 
-const EVIDENCE_TYPES = ["PULL_REQUEST", "COMMIT", "LINK", "FILE", "NOTE"] as const;
+const EVIDENCE_TYPES = ["COMMIT", "PULL_REQUEST", "LINK", "NOTE"] as const;
 
 function SubmitPanel({ item }: { item: WorkItemDto }) {
   const { submit } = useWorkflowActions(item);
   const [note, setNote] = useState("");
-  const [evidence, setEvidence] = useState<EvidenceItemDto[]>([{ type: "PULL_REQUEST", ref: "", label: "" }]);
+  const [evidence, setEvidence] = useState<EvidenceItemDto[]>([{ type: "COMMIT", ref: "", label: "" }]);
+  const [shots, setShots] = useState<FileViewDto[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const update = (i: number, patch: Partial<EvidenceItemDto>) =>
@@ -148,8 +173,12 @@ function SubmitPanel({ item }: { item: WorkItemDto }) {
 
   const send = (e: React.FormEvent) => {
     e.preventDefault();
-    const rows = evidence.filter((r) => r.ref.trim() || (r.label ?? "").trim());
-    if (rows.length === 0) return setError("Add at least one piece of evidence (pull request, commit, link, file or note).");
+    const rows = [
+      ...evidence.filter((r) => r.ref.trim() || (r.label ?? "").trim()),
+      ...shots.map((s) => ({ type: "FILE", ref: s.id, label: s.name })),
+    ];
+    if (!note.trim()) return setError("Add a note for the reviewer.");
+    if (rows.length === 0) return setError("Add at least one piece of evidence: a commit link or SHA, a pull request, a link or a screenshot.");
     if (rows.some((r) => !r.ref.trim())) return setError("Each evidence item needs a link or reference.");
     if (rows.some((r) => r.ref.trim().length > 500)) return setError("A reference is at most 500 characters.");
     if (note.length > 2000) return setError("The note is at most 2000 characters.");
@@ -164,7 +193,8 @@ function SubmitPanel({ item }: { item: WorkItemDto }) {
         onSuccess: (saved) => {
           toast.success(saved.state === "DONE" ? "Submitted: all checks passed, the work is done." : "Submitted for review.");
           setNote("");
-          setEvidence([{ type: "PULL_REQUEST", ref: "", label: "" }]);
+          setEvidence([{ type: "COMMIT", ref: "", label: "" }]);
+          setShots([]);
         },
         onError: (err) => setError(changeError(err)),
       },
@@ -172,6 +202,7 @@ function SubmitPanel({ item }: { item: WorkItemDto }) {
   };
 
   return (
+    <div id="submit" className="scroll-mt-20">
     <Panel
       title={item.state === "IN_REVIEW" ? "Submit a new revision" : "Submit for review"}
       description={item.state === "IN_REVIEW"
@@ -197,19 +228,39 @@ function SubmitPanel({ item }: { item: WorkItemDto }) {
             </AdminButton>
           </div>
         ))}
-        {evidence.length < 20 && (
-          <AdminButton type="button" variant="outline" size="xs" onClick={() => setEvidence((rows) => [...rows, { type: "LINK", ref: "", label: "" }])}>
-            <Plus className="w-3 h-3 mr-1" /> Add evidence
-          </AdminButton>
+        <div className="flex flex-wrap items-center gap-2">
+          {evidence.length + shots.length < 20 && (
+            <AdminButton type="button" variant="outline" size="xs" onClick={() => setEvidence((rows) => [...rows, { type: "COMMIT", ref: "", label: "" }])}>
+              <Plus className="w-3 h-3 mr-1" /> Add commit or link
+            </AdminButton>
+          )}
+          <ScreenshotUploader target={{ workItemId: item.id }} disabled={evidence.length + shots.length >= 20}
+            onUploaded={(file) => setShots((rows) => [...rows, file])} />
+        </div>
+        {shots.length > 0 && (
+          <ul className="flex flex-wrap gap-2" aria-label="Screenshots to submit">
+            {shots.map((s) => (
+              <li key={s.id} className="space-y-1">
+                <AuthImage fileId={s.id} alt={s.name} className="h-20 w-28 rounded-md border border-[var(--color-border)] object-cover" />
+                <button type="button" className="text-[10px] text-rose-600 hover:underline" onClick={() => setShots((rows) => rows.filter((r) => r.id !== s.id))}>
+                  Remove {s.name}
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
+        <p className="text-[11px] text-[var(--color-text-muted)]">
+          Commits with {item.key} in the message, branch or pull request title are also fetched from the connected repository when you submit.
+        </p>
         <AdminTextarea label="Note for the reviewer" rows={3} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} />
         {error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
         <AdminButton type="submit" isLoading={submit.isPending} disabled={!item.criteria}>
-          <Send className="w-3.5 h-3.5 mr-1" /> Submit
+          <Send className="w-3.5 h-3.5 mr-1" /> Submit for review
         </AdminButton>
         {!item.criteria && <p className="text-[11px] text-[var(--color-text-muted)]">Waiting for acceptance criteria.</p>}
       </form>
     </Panel>
+    </div>
   );
 }
 
@@ -217,6 +268,7 @@ function SubmitPanel({ item }: { item: WorkItemDto }) {
 
 function ReviewHistoryPanel({ itemId }: { itemId: string }) {
   const history = useReviewHistory(itemId);
+  const files = useItemFiles(itemId);
   return (
     <Panel title="Review history" description="Submissions, decisions, checks and reopen events" icon={History} iconTone="amber">
       <SectionGate state={history} what="review history">
@@ -259,19 +311,9 @@ function ReviewHistoryPanel({ itemId }: { itemId: string }) {
                     </div>
                     {s.note && <p className="text-xs mt-1 whitespace-pre-wrap">{s.note}</p>}
                     {(s.evidence ?? []).length > 0 && (
-                      <ul className="mt-1.5 space-y-0.5">
-                        {(s.evidence ?? []).map((ev, i) => (
-                          <li key={i} className="text-xs flex items-center gap-1.5 min-w-0">
-                            <Link2 className="w-3 h-3 shrink-0 text-[var(--color-text-muted)]" />
-                            <span className="text-[10px] uppercase text-[var(--color-text-muted)]">{ev.type}</span>
-                            {/^https?:\/\//.test(ev.ref) ? (
-                              <a href={ev.ref} target="_blank" rel="noreferrer noopener" className="text-blue-600 dark:text-blue-400 hover:underline truncate">{ev.label || ev.ref}</a>
-                            ) : (
-                              <span className="truncate">{ev.label ? `${ev.label}: ` : ""}{ev.ref}</span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
+                      <div className="mt-1.5">
+                        <EvidenceList items={s.evidence ?? []} files={files.kind === "ready" ? files.data : []} />
+                      </div>
                     )}
                     <p className="text-[10px] text-[var(--color-text-muted)] mt-1">{s.submitted_by_email ?? "Developer"} · {dateTimeText(s.submitted_at)} · criteria v{s.criteria_version}</p>
                   </li>

@@ -45,6 +45,9 @@ import com.prowise.project.ProgressDTOs.PendingReview;
 import com.prowise.project.ProgressDTOs.PersonRef;
 import com.prowise.project.ProgressDTOs.ProgressSummary;
 import com.prowise.project.ProjectService.ProjectResponse;
+import com.prowise.work.ProjectApprovers;
+import com.prowise.work.ReviewNotifications;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Task 2.2: Individual progress check-ins with Team Lead approval.
@@ -75,10 +78,15 @@ public class ProgressService {
     private final ChangeRecorder changes;
     private final GitHubActivityRepository gitHubActivity;
     private final ProjectRepositoryLinkRepository repoLinks;
+    private final ProjectApprovers approvers;
+    private final ReviewNotifications notifications;
+    private final FileService files;
+    private final ObjectMapper objectMapper;
 
     public ProgressService(JdbcTemplate jdbc, ProjectService projects, PermissionService permissions,
             SecurityEvidenceService evidence, ChangeRecorder changes, GitHubActivityRepository gitHubActivity,
-            ProjectRepositoryLinkRepository repoLinks) {
+            ProjectRepositoryLinkRepository repoLinks, ProjectApprovers approvers, ReviewNotifications notifications,
+            FileService files, ObjectMapper objectMapper) {
         this.jdbc = jdbc;
         this.projects = projects;
         this.permissions = permissions;
@@ -86,6 +94,60 @@ public class ProgressService {
         this.changes = changes;
         this.gitHubActivity = gitHubActivity;
         this.repoLinks = repoLinks;
+        this.approvers = approvers;
+        this.notifications = notifications;
+        this.files = files;
+        this.objectMapper = objectMapper;
+    }
+
+    /** Evidence items allowed on a Solo submission (same vocabulary as Team task submissions). */
+    private static final Set<String> EVIDENCE_TYPES = Set.of("LINK", "COMMIT", "PULL_REQUEST", "FILE", "NOTE");
+
+    private String evidenceJson(UUID orgId, String projectId, List<ProgressDTOs.EvidenceItem> items) {
+        List<Map<String, String>> clean = new ArrayList<>();
+        if (items != null) {
+            if (items.size() > 20) throw validation("evidence_items", "at most 20 items");
+            for (ProgressDTOs.EvidenceItem item : items) {
+                String type = item.type() == null ? "LINK" : item.type().trim().toUpperCase(Locale.ROOT);
+                if (!EVIDENCE_TYPES.contains(type)) throw validation("evidence_items", "type must be one of " + EVIDENCE_TYPES);
+                String ref = required("evidence_items", item.ref(), 500);
+                if ("FILE".equals(type)) files.requireEvidenceFile(orgId, ref, projectId, null);
+                Map<String, String> entry = new LinkedHashMap<>();
+                entry.put("type", type);
+                entry.put("ref", ref);
+                String label = optional("evidence_items", item.label(), 200);
+                if (label != null) entry.put("label", label);
+                clean.add(entry);
+            }
+        }
+        try {
+            return objectMapper.writeValueAsString(clean);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static final ObjectMapper READER = new ObjectMapper();
+
+    /** Stored evidence items (legacy rows hold no array: empty list). */
+    private static List<ProgressDTOs.EvidenceItem> parseEvidence(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = READER.readTree(json);
+            if (!node.isArray()) return List.of();
+            List<ProgressDTOs.EvidenceItem> items = new ArrayList<>();
+            for (com.fasterxml.jackson.databind.JsonNode item : node) {
+                items.add(new ProgressDTOs.EvidenceItem(item.path("type").asText(null), item.path("ref").asText(null),
+                        item.path("label").asText(null)));
+            }
+            return items;
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            return List.of();
+        }
+    }
+
+    private boolean isApprover(Authentication authentication, UUID orgId, String projectId) {
+        return approvers.isApprover(authentication, orgId, projectId);
     }
 
     /* ================================================================== submit */
@@ -124,6 +186,7 @@ public class ProgressService {
         String nextSteps = required("next_steps", request.nextSteps(), 4000);
         String blockers = optional("blockers", request.blockers(), 4000);
         String evidenceText = optional("evidence", request.evidence(), 2000);
+        String evidenceItems = evidenceJson(orgId, project.id(), request.evidenceItems());
         String downwardReason = optional("downward_reason", request.downwardReason(), 1000);
         String key = idempotencyKey == null || idempotencyKey.isBlank() ? null : idempotencyKey.trim();
 
@@ -146,7 +209,7 @@ public class ProgressService {
         List<Entry> entries = entries(rows);
         if (IndividualProgress.pendingEntry(entries).isPresent()) {
             throw conflict("CHECKIN_PENDING_DECISION",
-                    "Your previous check-in is waiting for the Team Lead's decision. Submit again after it is decided.");
+                    "Your previous submission is waiting for the reviewer's decision. Submit again after it is decided.");
         }
         if (IndividualProgress.reasonMissing(percent, downwardReason, entries)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "DOWNWARD_REASON_REQUIRED",
@@ -162,14 +225,17 @@ public class ProgressService {
         jdbc.update("""
                 INSERT INTO project_progress_checkins (id, org_id, project_id, author_id, author_name, percent, accomplished,
                     next_steps, blockers, projected_finish, projected_finish_on, evidence_summary, downward_reason, status,
-                    method, revision_seq, revision_of, idempotency_key, captured_at, created_at, version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, now(), now(), 0)
+                    method, revision_seq, revision_of, idempotency_key, captured_at, created_at, version, evidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, now(), now(), 0, ?::jsonb)
                 """, id, orgId, project.id(), userId.toString(), permissions.principal(authentication).email(), percent,
                 accomplished, nextSteps, blockers, startOfDay(finish, project.timezone()),
                 finish == null ? null : Date.valueOf(finish), evidenceText, downwardReason, IndividualProgress.METHOD,
-                revision, revisionOf, key);
+                revision, revisionOf, key, evidenceItems);
 
         CheckIn created = one(orgId, id);
+        notifications.reviewRequested(orgId, approvers.approverUserIds(orgId, project.id()), userId, "checkin-" + id,
+                "Review requested: " + project.key(), "\"" + project.name() + "\" reported " + percent.stripTrailingZeros()
+                        .toPlainString() + "% complete. Approve or request changes.");
         Figure current = figure(entries);
         changes.record(
                 new ChangeRecorder.AuditEntry(orgId, userId, "checkin.submitted", "CHECKIN", UUID.fromString(id),
@@ -213,13 +279,17 @@ public class ProgressService {
             throw new ApiException(HttpStatus.FORBIDDEN, "SELF_APPROVAL_NOT_ALLOWED",
                     "You cannot approve or reject your own check-in.");
         }
-        UUID lead = teamLead(orgId, project.teamId());
-        if (lead == null || !lead.equals(membershipId)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "NOT_PROJECT_TEAM_LEAD",
-                    "Only the lead of this project's team can approve or reject its check-ins.");
-        }
-        if (!permissions.canOnProject(authentication, orgId, project.id(), PermissionKey.PROJECT_PROGRESS_VERIFY.value())) {
-            throw PermissionService.forbidden();
+        // Owner rule 2026-11-25: the approvers chosen for this project decide (PROJECT-scoped task.review). The task 2.2
+        // path stays valid too: the lead of the project's team with project.progress.verify.
+        if (!isApprover(authentication, orgId, project.id())) {
+            UUID lead = teamLead(orgId, project.teamId());
+            if (lead == null || !lead.equals(membershipId)) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "NOT_PROJECT_TEAM_LEAD",
+                        "Only this project's approvers (or the lead of its team) can approve or request changes.");
+            }
+            if (!permissions.canOnProject(authentication, orgId, project.id(), PermissionKey.PROJECT_PROGRESS_VERIFY.value())) {
+                throw PermissionService.forbidden();
+            }
         }
         if (!IndividualProgress.decidable(entry)) {
             throw conflict("CHECKIN_ALREADY_DECIDED",
@@ -261,10 +331,32 @@ public class ProgressService {
                 new ChangeRecorder.DomainEvent(orgId, "PROJECT", aggregateId(project.id()), project.version(),
                         status.equals("APPROVED") ? "CheckInApproved" : "CheckInRejected",
                         eventPayload(project.id(), decided)));
+        UUID author = uuid(row.authorId());
+        if (author != null) {
+            notifications.decided(orgId, author, status.equals("APPROVED"),
+                    status.equals("APPROVED") ? project.key() + ": " + row.percent().stripTrailingZeros().toPlainString() + "% approved"
+                            : project.key() + ": changes requested",
+                    status.equals("APPROVED") ? "Your submission was approved; it is now the project's progress."
+                            : "Your submission needs changes: " + reason,
+                    "/org/" + orgId + "/developer/projects/" + project.id() + "/individual");
+        }
         return decided;
     }
 
     /* ================================================================== reads */
+
+    /** One submission with its project and the current approved figure (the Solo review page). Unreadable = 404. */
+    @Transactional(readOnly = true)
+    public PendingReview one(Authentication authentication, String checkinId) {
+        UUID orgId = permissions.requireTokenOrganization(authentication);
+        List<String> projectIds = jdbc.queryForList(
+                "SELECT project_id FROM project_progress_checkins WHERE id = ? AND org_id = ?", String.class,
+                checkinId == null ? "" : checkinId, orgId);
+        if (projectIds.isEmpty()) throw notFound(authentication, checkinId);
+        ProjectResponse project = projects.get(orgId, projectIds.get(0), authentication);
+        return new PendingReview(project.id(), project.key(), project.name(), figure(entries(rows(orgId, project.id()))),
+                one(orgId, checkinId));
+    }
 
     @Transactional(readOnly = true)
     public List<CheckIn> history(Authentication authentication, String projectId) {
@@ -290,14 +382,18 @@ public class ProgressService {
                 && !CLOSED_LIFECYCLES.contains(project.lifecycle());
         boolean canSubmit = open && pending.isEmpty() && isAccountable(project, membershipId)
                 && permissions.canOnProject(authentication, orgId, project.id(), PermissionKey.PROJECT_PROGRESS_REPORT.value());
-        boolean canDecide = pending.isPresent() && !project.archived() && membershipId.equals(lead)
-                && !userId.toString().equals(pending.get().authorId())
+        boolean leadMayDecide = membershipId.equals(lead)
                 && permissions.canOnProject(authentication, orgId, project.id(), PermissionKey.PROJECT_PROGRESS_VERIFY.value());
+        boolean canDecide = pending.isPresent() && !project.archived()
+                && !userId.toString().equals(pending.get().authorId())
+                && (leadMayDecide || isApprover(authentication, orgId, project.id()));
+        List<PersonRef> chosen = approvers.list(orgId, project.id()).stream()
+                .map(a -> new PersonRef(a.userId(), a.email())).toList();
 
         return new ProgressSummary(project.id(), project.key(), project.name(), project.mode(), project.lifecycle(),
                 project.archived(), figure(entries), pending.map(Row::toCheckIn).orElse(null), approver,
-                approver == null ? NO_LEAD_NOTE : null, canSubmit, canDecide,
-                rows.stream().map(Row::toCheckIn).toList());
+                approver == null && chosen.isEmpty() ? NO_LEAD_NOTE : null, canSubmit, canDecide,
+                rows.stream().map(Row::toCheckIn).toList(), chosen);
     }
 
     /** The caller's approval queue: pending entries of projects whose team they lead, never their own. */
@@ -305,17 +401,23 @@ public class ProgressService {
     public List<PendingReview> pendingQueue(Authentication authentication, UUID orgId) {
         UUID membershipId = permissions.requireMembership(authentication, orgId);
         UUID userId = permissions.principal(authentication).userId();
+        // Projects whose team the caller leads, and projects where the caller is a chosen approver.
         List<Row> pending = jdbc.query(ROW_SELECT + """
                  JOIN projects p ON p.id = c.project_id AND p.org_id = c.org_id
-                 JOIN teams t ON t.id = p.team_id AND t.org_id = p.org_id
-                 WHERE c.org_id = ? AND c.status = 'PENDING' AND t.lead_membership_id = ? AND c.author_id <> ?
-                   AND p.archived = false
+                 LEFT JOIN teams t ON t.id = p.team_id AND t.org_id = p.org_id
+                 WHERE c.org_id = ? AND c.status = 'PENDING' AND c.author_id <> ? AND p.archived = false
+                   AND (t.lead_membership_id = ? OR EXISTS (
+                        SELECT 1 FROM grants g WHERE g.org_id = c.org_id AND g.membership_id = ? AND g.scope = 'PROJECT'
+                          AND CAST(g.scope_id AS text) = c.project_id AND g.template_role_id = ?))
                  ORDER BY c.created_at, c.id
-                """, (rs, n) -> row(rs), orgId, membershipId, userId.toString());
+                """, (rs, n) -> row(rs), orgId, userId.toString(), membershipId, membershipId,
+                com.prowise.authz.RoleService.PROJECT_APPROVER_TEMPLATE_ID);
 
         List<PendingReview> queue = new ArrayList<>();
         for (Row row : pending) {
-            if (!permissions.canOnProject(authentication, orgId, row.projectId(), PermissionKey.PROJECT_PROGRESS_VERIFY.value())) {
+            boolean approver = isApprover(authentication, orgId, row.projectId());
+            if (!approver && !permissions.canOnProject(authentication, orgId, row.projectId(),
+                    PermissionKey.PROJECT_PROGRESS_VERIFY.value())) {
                 continue;
             }
             Map<String, Object> p = jdbc.queryForMap("SELECT key, name FROM projects WHERE id = ? AND org_id = ?",
@@ -362,7 +464,7 @@ public class ProgressService {
             SELECT c.id, c.project_id, c.revision_seq, c.revision_of, c.percent, c.accomplished, c.next_steps, c.blockers,
                    c.projected_finish_on, c.evidence_summary, c.downward_reason, c.status, c.method, c.author_id,
                    au.email AS author_email, COALESCE(c.captured_at, c.created_at) AS submitted_at, c.verified_by,
-                   du.email AS decider_email, c.reviewed_at, c.review_comment, c.version
+                   du.email AS decider_email, c.reviewed_at, c.review_comment, c.version, c.evidence::text AS evidence_items
             FROM project_progress_checkins c
             LEFT JOIN users au ON CAST(au.id AS text) = c.author_id
             LEFT JOIN users du ON CAST(du.id AS text) = c.verified_by
@@ -372,7 +474,7 @@ public class ProgressService {
             String accomplished, String nextSteps, String blockers, LocalDate projectedFinish, String evidence,
             String downwardReason, String status, String method, String authorId, String authorEmail,
             Instant submittedAt, String deciderId, String deciderEmail, Instant decidedAt, String decisionReason,
-            long version) {
+            long version, List<ProgressDTOs.EvidenceItem> evidenceItems) {
 
         Entry toEntry() {
             return new Entry(id, revisionSeq, percent, Status.valueOf(status), authorId, submittedAt, decidedAt);
@@ -383,7 +485,7 @@ public class ProgressService {
                     projectedFinish, evidence, downwardReason, status, method, IndividualProgress.LABEL,
                     new PersonRef(uuid(authorId), authorEmail), submittedAt,
                     deciderId == null ? null : new PersonRef(uuid(deciderId), deciderEmail), decidedAt, decisionReason,
-                    version);
+                    version, evidenceItems);
         }
     }
 
@@ -396,7 +498,8 @@ public class ProgressService {
                 rs.getString("evidence_summary"), rs.getString("downward_reason"), rs.getString("status"),
                 rs.getString("method"), rs.getString("author_id"), rs.getString("author_email"),
                 rs.getTimestamp("submitted_at").toInstant(), rs.getString("verified_by"), rs.getString("decider_email"),
-                decided == null ? null : decided.toInstant(), rs.getString("review_comment"), rs.getLong("version"));
+                decided == null ? null : decided.toInstant(), rs.getString("review_comment"), rs.getLong("version"),
+                parseEvidence(rs.getString("evidence_items")));
     }
 
     /** All entries of one project, newest revision first. */

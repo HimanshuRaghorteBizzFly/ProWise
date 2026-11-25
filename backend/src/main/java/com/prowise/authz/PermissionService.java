@@ -101,6 +101,33 @@ public class PermissionService {
         return count != null && count > 0;
     }
 
+    /**
+     * True only through a PROJECT-scoped grant for exactly this project (an organization-wide grant does not count).
+     * Used where the owner rule is "chosen per project", e.g. who approves a project's work.
+     */
+    public boolean hasProjectGrant(Authentication authentication, UUID organizationId, String projectRef, String permissionKey) {
+        AuthPrincipal principal = principalOrNull(authentication);
+        if (principal == null || principal.isOperator() || projectRef == null) return false;
+        if (!PermissionKey.isValid(permissionKey) || organizationId == null) return false;
+        if (!organizationId.equals(principal.organizationId())) return false;
+        return userHasProjectGrant(organizationId, principal.userId(), projectRef, permissionKey);
+    }
+
+    /** Same rule for any user (queues and notifications), without a request. */
+    public boolean userHasProjectGrant(UUID organizationId, UUID userId, String projectRef, String permissionKey) {
+        Integer count = jdbc.queryForObject("""
+                SELECT count(*)
+                FROM grants g
+                JOIN memberships m ON m.id = g.membership_id AND m.org_id = g.org_id
+                JOIN role_permissions rp ON rp.role_id = COALESCE(g.template_role_id, g.org_role_id)
+                JOIN roles r ON r.id = rp.role_id AND r.is_active
+                WHERE g.org_id = ? AND m.user_id = ? AND m.status = 'ACTIVE' AND rp.permission_key = ?
+                  AND (g.expires_at IS NULL OR g.expires_at > now())
+                  AND g.scope = 'PROJECT' AND CAST(g.scope_id AS text) = ?
+                """, Integer.class, organizationId, userId, permissionKey, projectRef);
+        return count != null && count > 0;
+    }
+
     public void require(Authentication authentication, UUID organizationId, String permissionKey) {
         if (!can(authentication, organizationId, permissionKey)) {
             throw forbidden();

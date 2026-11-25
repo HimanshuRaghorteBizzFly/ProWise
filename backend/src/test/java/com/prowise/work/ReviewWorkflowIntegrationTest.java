@@ -97,7 +97,50 @@ class ReviewWorkflowIntegrationTest {
         projectId = tree(mockMvc.perform(auth(post("/v1/organizations/{o}/projects", orgId), ownerToken)
                         .contentType("application/json").content(json(project)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
+        // Owner rule 2026-11-25: approvers are chosen per project (PROJECT-scoped grant), not by the QA template alone.
+        approver(qaMembership);
+        approver(qa2Membership);
         task = plannedTask("Payment form", 20);
+    }
+
+    private void approver(UUID membership) {
+        jdbc.update("""
+                INSERT INTO grants (id, org_id, membership_id, template_role_id, scope, scope_id, granted_by)
+                VALUES (?, ?, ?, '10000000-0000-0000-0000-000000000009', 'PROJECT', ?, ?)
+                """, UUID.randomUUID(), orgId, membership, UUID.fromString(projectId), dev.id());
+    }
+
+    @Test
+    void anOrganizationWideReviewerWhoWasNotChosenForTheProjectCannotApprove() throws Exception {
+        // A third QA holds task.review through the organization template but is not one of this project's approvers.
+        Person qa3 = person("qa3");
+        UUID qa3Membership = member(qa3.id(), "QA_REVIEWER", QA_REVIEWER);
+        jdbc.update("INSERT INTO project_members (project_id, org_id, membership_id, added_by) VALUES (?, ?, ?, ?)",
+                projectId, orgId, qa3Membership, dev.id());
+        String qa3Token = switchTo(qa3.token(), orgId);
+        String open = plannedTaskWithoutReviewer("Refund form", 10);
+        start(devToken, open);
+        submit(devToken, open, "pr-9").andExpect(status().isOk());
+
+        review(qa3Token, open, 1, "APPROVED", null).andExpect(status().isForbidden());
+        assertThat(state(open)).isEqualTo("IN_REVIEW");
+        // Any chosen approver decides when the task names no reviewer.
+        review(qa2Token, open, 1, "APPROVED", null).andExpect(status().isOk()).andExpect(jsonPath("$.state").value("DONE"));
+        assertThat(jdbc.queryForObject("SELECT evidence_ref FROM work_item_reviews WHERE work_item_id = ?", String.class, open))
+                .startsWith("submission:");
+        assertThat(count("SELECT count(*) FROM developer_notifications WHERE user_id = ? AND category = 'REVIEW_APPROVED'",
+                dev.id().toString())).isEqualTo(1);
+    }
+
+    @Test
+    void aDeveloperWhoIsAlsoAnApproverCannotApproveTheirOwnTask() throws Exception {
+        approver(devMembership);
+        String own = plannedTaskWithoutReviewer("Own work", 10);
+        start(devToken, own);
+        submit(devToken, own, "pr-own").andExpect(status().isOk());
+        review(devToken, own, 1, "APPROVED", null).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("SELF_REVIEW_NOT_ALLOWED"));
+        assertThat(state(own)).isEqualTo("IN_REVIEW");
     }
 
     @AfterEach
@@ -373,6 +416,13 @@ class ReviewWorkflowIntegrationTest {
     private ResultActions reopen(String token, String item, String reason) throws Exception {
         return mockMvc.perform(auth(post("/v1/work-items/{id}/reopen", item), token).contentType("application/json")
                 .content(json(Map.of("reason", reason, "expected_version", version(item)))));
+    }
+
+    /** A task in the approved scope, assigned to the developer, with no designated reviewer (any project approver). */
+    private String plannedTaskWithoutReviewer(String title, int weight) throws Exception {
+        String id = plannedTask(title, weight);
+        jdbc.update("UPDATE work_items SET reviewer_id = NULL WHERE id = ?", id);
+        return id;
     }
 
     /** A task in the approved scope, assigned to the developer with the QA reviewer. */

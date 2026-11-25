@@ -1,6 +1,10 @@
-import { ModuleUnavailable } from "@/components/feedback/ModuleUnavailable";
+"use client";
 
-/** No backend API serves this module yet, so the route shows a notice instead. */
-export default function Page({ params }: { params: { orgId: string } }) {
-  return <ModuleUnavailable module="Blockers" homeHref={`/org/${encodeURIComponent(params.orgId)}/manager`} homeLabel="Back to dashboard" />;
+import React from "react";
+import { useParams } from "next/navigation";
+import { BlockersView } from "@/components/flow/ManagerViews";
+
+export default function Page() {
+  const params = useParams();
+  return <BlockersView orgId={(params?.orgId as string) || ""} />;
 }

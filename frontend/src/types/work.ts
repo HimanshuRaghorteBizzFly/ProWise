@@ -44,6 +44,14 @@ export interface WorkItemDto {
   version: number;
   created_at: string;
   updated_at: string;
+  /** The phase (milestone) the task sits in. */
+  phase?: { id: string; key: string; title: string } | null;
+  /** Unfinished prerequisites: the task cannot start while any is listed. */
+  blocked_by?: { id: string; key: string; title: string; state: string }[];
+  /** Open blockers raised on the task (separate from its state). */
+  open_blockers?: number;
+  /** Reason of the latest "changes requested" while the task is back In progress. */
+  changes_requested_reason?: string | null;
 }
 
 export interface EvidenceItemDto {
@@ -195,6 +203,10 @@ export interface StructuredProgressDto {
   baseline: { id: string; version_no: number; unit: string; approved_at: string } | null;
   leaves: LeafRowDto[];
   snapshots: ProgressSnapshotDto[];
+  /** False while nothing is approved ("Not reported"). */
+  reported?: boolean;
+  /** e.g. "approved points, 30 of 100". */
+  method_label?: string | null;
 }
 
 export interface ScopeVersionSummaryDto {

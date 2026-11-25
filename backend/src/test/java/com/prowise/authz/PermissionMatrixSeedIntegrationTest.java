@@ -39,7 +39,8 @@ class PermissionMatrixSeedIntegrationTest {
             "Developer", "DEVELOPER",
             "QA / Reviewer", "QA_REVIEWER",
             "Viewer / Stakeholder", "VIEWER",
-            "Platform Operator", "PLATFORM_OPERATOR");
+            "Platform Operator", "PLATFORM_OPERATOR",
+            "Project Approver (project-scoped)", "PROJECT_APPROVER");
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -47,7 +48,7 @@ class PermissionMatrixSeedIntegrationTest {
     @Test
     void seededTemplatesEqualThePermissionMatrix() throws Exception {
         Map<String, Set<String>> expected = matrix();
-        assertThat(expected).hasSize(8);
+        assertThat(expected).hasSize(9);
         for (Map.Entry<String, Set<String>> role : expected.entrySet()) {
             Set<String> seeded = new TreeSet<>(jdbc.queryForList("""
                     SELECT rp.permission_key FROM role_permissions rp JOIN roles r ON r.id = rp.role_id

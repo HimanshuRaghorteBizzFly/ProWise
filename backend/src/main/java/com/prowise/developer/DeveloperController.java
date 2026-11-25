@@ -145,7 +145,7 @@ public class DeveloperController {
         // Task 2.2: one write path. The project's figure changes only when the Team Lead approves.
         return ResponseEntity.status(HttpStatus.CREATED).body(progressService.submit(auth, req.projectId(),
                 new com.prowise.project.ProgressDTOs.CheckInRequest(req.percent(), req.accomplished(), req.nextSteps(),
-                        req.blockers(), null, null, null), idempotencyKey));
+                        req.blockers(), null, null, null, null), idempotencyKey));
     }
 
     @GetMapping({"/v1/developer/projects/{projectId}/check-ins", "/api/v1/developer/projects/{projectId}/check-ins"})

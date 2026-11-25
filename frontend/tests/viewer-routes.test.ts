@@ -37,7 +37,7 @@ describe("Viewer Panel Routing & UI/UX Integrity", () => {
 
   it("lists only Viewer modules backed by a live API in the sidebar", () => {
     const titles = getNavigationConfig("VIEWER", "org-acme").flatMap((s) => s.items).map((i) => i.title);
-    expect(titles).toEqual(["Dashboard", "Projects", "Progress"]);
+    expect(titles).toEqual(["Dashboard", "Projects", "Progress", "Approvals"]); // Approvals: live review queue for chosen approvers
     for (const hidden of ["Tasks & Work", "Reports", "Calendar", "Team Directory", "Files & Evidence", "Activity", "Notifications", "Settings"]) {
       expect(titles).not.toContain(hidden);
     }

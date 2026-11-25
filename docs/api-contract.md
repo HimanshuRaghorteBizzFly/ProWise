@@ -62,3 +62,20 @@ Set: ProjectCreated, ProjectModeChanged, CheckInSubmitted, WorkItemCompleted, Sc
 
 ## GitHub ingestion rules
 Minimal read permissions, explicit repo selection. Bind installation callback state to initiating org + admin. Identify developers only by explicit member mapping (never login/email alone). Dedupe `X-GitHub-Delivery`; same key + conflicting content -> quarantine. Bounded retry/backoff -> failed queue -> operator recovery. Keep event time, received time, upstream id, state version; older events never overwrite newer confirmed state. GitHub does NOT auto-redeliver: provide authorized redelivery or periodic reconciliation; mark history gaps. Revocation stops new sync, manual work continues. Parse exact task keys like `CRM-101`. Show separate last code update / task update / deployment / sync. No code event changes accepted-work credit.
+
+## Project delivery flow (2026-11-25)
+| Method + path | Behavior |
+|---|---|
+| GET `/organizations/{org}/project-setup/options` | `project.create`. Active members except Owner/Admin with name, role, open tasks and active projects; org time zone and today; upload limits. |
+| POST `/organizations/{org}/project-setup` | `project.create`, Idempotency-Key. One transaction: project, documents (staged ids), phases (no points) and tasks (title, phase, whole points 1..100, optional dependency, optional assignee among the developers; total at most 100, 422 POINTS_OVER_LIMIT), team lead / developers / QA, approvers, scope version 1 (POINTS), audit + outbox. Start today or later; end on or after start. Owner/Admin = 422 ROLE_NOT_ASSIGNABLE; foreign member = 404. |
+| GET/PUT `/projects/{id}/approvers` | Read: project readable. Replace: `project.edit` + expected_version (project). Stored as PROJECT-scoped PROJECT_APPROVER grants. |
+| POST `/work-items/{id}/reviews` | Now: the caller must hold a PROJECT-scoped task.review grant on the task's project (a chosen approver) and is neither the assignee (403 SELF_REVIEW_NOT_ALLOWED) nor the submitter. A designated per-task reviewer narrows it further. The decision records the evidence reviewed (`submission:<id>; commits:<sha,...>`). |
+| GET `/me/review-queue` | Team tasks In review and Solo submissions pending, only in projects where the caller approves, never own work. |
+| GET `/work-items/{id}/activity` | Append-only audit history of the task. |
+| GET `/checkins/{id}` | One Solo submission with its project and approved figure (404 if unreadable). Submissions now accept `evidence_items` [{type, ref, label}]; decisions by a chosen approver (or the team lead, 2.2). |
+| GET `/organizations/{org}/progress-overview` | Readable projects: approved percent or "Not reported", method label, Solo pending % separately, state counts, open blockers. |
+| POST `/organizations/{org}/files` (multipart) | kind PROJECT_DOCUMENT (staged with `project.create`, or `project.edit` on project_id) or SCREENSHOT (task assignee via work_item_id, or the Solo developer via project_id). 422 FILE_REJECTED on type/size/signature. |
+| GET `/projects/{id}/files`, `/work-items/{id}/files`, `/files/{id}/content`; DELETE `/files/{id}` | Readable project only (staged: uploader only); 404 otherwise. Delete = staged uploads only. |
+| GET/PUT/DELETE `/projects/{id}/github`; POST `/projects/{id}/github/webhook-secret` | `repo.connect` to change (403 REPO_CONNECT_REQUIRED: "ask an admin"). PUT {repository, token}: verified against GitHub, token stored encrypted, never returned; the webhook secret is returned once. Rotate/disconnect take expected_version. |
+| GET `/work-items/{id}/commits`, POST `.../commits/refresh`; GET/POST `/projects/{id}/commits[/refresh]` | Commits and PRs linked by task key (Solo: project key). Fetched automatically after a submission. Evidence only. |
+| POST `/integrations/github/webhooks/{connectionId}` | Public, HMAC-SHA256 of the raw body with the connection secret (401 otherwise), repository must match (422), X-GitHub-Delivery stored once (replay = 200 duplicate). push and pull_request link by key. |

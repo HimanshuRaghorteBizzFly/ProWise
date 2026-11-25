@@ -1,4 +1,5 @@
 import {
+  Activity,
   FolderGit2,
   LayoutDashboard,
   Mail,
@@ -53,6 +54,7 @@ export function buildOrgNav(family: OrgNavFamily, orgId: string): OrgNavGroup[] 
       title: "Delivery",
       items: [
         { label: "Projects portfolio", href: `${base}/projects`, icon: FolderGit2, requiredAny: ["project.read"] },
+        { label: "Progress", href: `${base}/progress`, icon: Activity, requiredAny: ["project.read"] },
       ],
     },
   ];

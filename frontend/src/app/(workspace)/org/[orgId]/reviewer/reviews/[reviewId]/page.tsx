@@ -1,6 +1,14 @@
-import { ModuleUnavailable } from "@/components/feedback/ModuleUnavailable";
+"use client";
 
-/** No backend API serves this module yet, so the route shows a notice instead. */
-export default function Page({ params }: { params: { orgId: string } }) {
-  return <ModuleUnavailable module="Review detail" homeHref={`/org/${encodeURIComponent(params.orgId)}/reviewer`} homeLabel="Back to dashboard" />;
+import React from "react";
+import { useParams } from "next/navigation";
+
+import { ReviewDetailView } from "@/components/flow/ReviewViews";
+
+/** Review page: task (or Solo submission), points, note, commits, images, history; approve or request changes. */
+export default function Page() {
+  const params = useParams();
+  const orgId = (params?.orgId as string) || "";
+  const reviewId = (params?.reviewId as string) || "";
+  return <ReviewDetailView orgId={orgId} panel="reviewer" reviewRef={reviewId} />;
 }

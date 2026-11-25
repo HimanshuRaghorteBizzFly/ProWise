@@ -59,6 +59,7 @@ import com.prowise.domain.IndividualProgress;
 public class ProjectService {
 
     static final String NOT_REPORTED = "Not reported";
+    public static final String NOT_REPORTED_LABEL = NOT_REPORTED;
     private static final Pattern KEY = Pattern.compile("^[A-Z][A-Z0-9]{1,9}$");
     private static final Set<String> MODES = Set.of("INDIVIDUAL", "STRUCTURED");
     private static final Set<String> PRIORITIES = Set.of("LOW", "MEDIUM", "HIGH", "CRITICAL");
@@ -88,6 +89,16 @@ public class ProjectService {
 
     @Transactional
     public ProjectResponse create(UUID organizationId, Authentication authentication, CreateProjectRequest request) {
+        return create(organizationId, authentication, request, true);
+    }
+
+    /**
+     * {@code requireAccountable = false} is used only by the guided project setup, where every role is optional
+     * (owner decision 2026-11-25): a Solo project may be created before its developer is chosen.
+     */
+    @Transactional
+    public ProjectResponse create(UUID organizationId, Authentication authentication, CreateProjectRequest request,
+            boolean requireAccountable) {
         permissions.require(authentication, organizationId, PermissionKey.PROJECT_CREATE.value());
         AuthPrincipal actor = permissions.principal(authentication);
         if (request == null) throw validation("name", "is required");
@@ -104,7 +115,7 @@ public class ProjectService {
                 : activeMember(organizationId, request.projectManagerMembershipId(), "project_manager_membership_id");
         Member accountable = request.accountableMembershipId() == null ? null
                 : activeMember(organizationId, request.accountableMembershipId(), "accountable_membership_id");
-        if ("INDIVIDUAL".equals(mode) && accountable == null) {
+        if (requireAccountable && "INDIVIDUAL".equals(mode) && accountable == null) {
             throw validation("accountable_membership_id", "an Individual project needs one accountable developer");
         }
         List<Member> members = members(organizationId, request.memberMembershipIds(), pm, accountable);
@@ -197,6 +208,61 @@ public class ProjectService {
                 page.get(page.size() - 1).id()).encode() : null;
         return new CursorPage<>(items, next, more);
     }
+
+    /**
+     * One page of the projects the caller can read (same rule as {@link #list}), light rows for progress pages:
+     * no per-row permission or member queries. Sort: name, progress (approved figure, unreported last), target,
+     * updated. Archived projects are left out.
+     */
+    public ProgressPage listForProgress(UUID organizationId, Authentication authentication, ProgressPageQuery query) {
+        Access access = access(organizationId, authentication);
+        StringBuilder sql = new StringBuilder("""
+                SELECT p.id, p.key, p.name, p.mode, p.lifecycle, p.active_baseline_id, p.target_on, p.updated_at,
+                       p.last_progress_percent
+                FROM projects p WHERE p.org_id = ? AND p.archived = FALSE""");
+        List<Object> args = new ArrayList<>();
+        args.add(organizationId);
+        appendReadable(sql, args, access);
+        if (query.q() != null && !query.q().isBlank()) {
+            String like = "%" + query.q().trim().toLowerCase(Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%")
+                    .replace("_", "\\_") + "%";
+            sql.append(" AND (lower(p.name) LIKE ? OR lower(p.key) LIKE ?)");
+            args.add(like);
+            args.add(like);
+        }
+        if (query.mode() != null && !query.mode().isBlank()) {
+            sql.append(" AND p.mode = ?");
+            args.add(oneOf("mode", query.mode(), MODES, null));
+        }
+        if (query.status() != null && !query.status().isBlank()) {
+            sql.append(" AND p.lifecycle = ?");
+            args.add(query.status().trim().toUpperCase(Locale.ROOT));
+        }
+        sql.append(switch (query.sort() == null ? "name" : query.sort().trim().toLowerCase(Locale.ROOT)) {
+            case "progress" -> " ORDER BY p.last_progress_percent DESC NULLS LAST, lower(p.name), p.id";
+            case "target" -> " ORDER BY p.target_on NULLS LAST, lower(p.name), p.id";
+            case "updated" -> " ORDER BY p.updated_at DESC, p.id";
+            case "name" -> " ORDER BY lower(p.name), p.id";
+            default -> throw validation("sort", "must be name, progress, target or updated");
+        });
+        int limit = Math.max(1, Math.min(MAX_LIMIT, query.limit()));
+        sql.append(" LIMIT ? OFFSET ?");
+        args.add(limit + 1);
+        args.add(Math.max(0, query.offset()));
+        List<ProgressProject> rows = jdbc.query(sql.toString(), (rs, n) -> new ProgressProject(rs.getString("id"),
+                rs.getString("key"), rs.getString("name"), rs.getString("mode"), rs.getString("lifecycle"),
+                rs.getObject("active_baseline_id", UUID.class), localDate(rs, "target_on"), instant(rs, "updated_at"),
+                rs.getBigDecimal("last_progress_percent")), args.toArray());
+        boolean more = rows.size() > limit;
+        return new ProgressPage(more ? rows.subList(0, limit) : rows, more);
+    }
+
+    public record ProgressPageQuery(String q, String mode, String status, String sort, int offset, int limit) {}
+
+    public record ProgressProject(String id, String key, String name, String mode, String lifecycle, UUID activeBaselineId,
+            LocalDate targetOn, Instant updatedAt, BigDecimal approvedPercent) {}
+
+    public record ProgressPage(List<ProgressProject> items, boolean hasMore) {}
 
     public ProjectResponse get(UUID organizationId, String projectId, Authentication authentication) {
         return find(organizationId, projectId, authentication);
@@ -463,7 +529,9 @@ public class ProjectService {
                     || permissions.canOnProject(authentication, organizationId, r.id(), PermissionKey.PROJECT_EDIT.value()));
             Progress progress = r.percent() == null
                     ? new Progress(null, NOT_REPORTED, null)
-                    : new Progress(r.percent(), "INDIVIDUAL".equals(r.mode()) ? IndividualProgress.LABEL : "Calculated", r.reportedAt());
+                    // Structured: approved points of the active scope (the figure is null until something is approved).
+                    : new Progress(r.percent(), "INDIVIDUAL".equals(r.mode()) ? IndividualProgress.LABEL : "Approved points",
+                            r.reportedAt());
             return new ProjectResponse(r.id(), r.key(), r.name(), r.description(), r.mode(), r.lifecycle(), r.archived(),
                     r.priority(), r.projectManager(), r.accountable(), members.getOrDefault(r.id(), List.of()), r.teamId(),
                     r.teamName(), r.startOn(), r.targetOn(), r.timezone(), r.activeBaselineId(), r.taskCount(), progress,

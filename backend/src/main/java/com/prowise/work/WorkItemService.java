@@ -653,13 +653,31 @@ public class WorkItemService {
                         person(rs.getString("primary_assignee_id"), rs.getString("primary_email")),
                         person(rs.getString("reviewer_id"), rs.getString("reviewer_email")), List.of(),
                         0, rs.getInt("children"), rs.getString("dependency_flag"), rs.getString("retired_reason"), rs.getLong("version"),
-                        instant(rs, "created_at"), instant(rs, "updated_at")), id, orgId);
+                        instant(rs, "created_at"), instant(rs, "updated_at"), null, List.of(), 0, null), id, orgId);
         List<PersonSummary> collaborators = jdbc.query("""
                 SELECT c.user_id, u.email FROM work_item_collaborators c JOIN users u ON u.id = c.user_id
                 WHERE c.work_item_id = ? AND c.org_id = ? ORDER BY c.added_at, c.user_id
                 """, (rs, n) -> new PersonSummary(rs.getObject("user_id", UUID.class).toString(), rs.getString("email")),
                 id, orgId);
-        return base.with(collaborators, depthOf(id));
+        PhaseRef phase = base.parentId() == null ? null : jdbc.query("""
+                SELECT id, key, title FROM work_items WHERE id = ? AND org_id = ? AND type = 'MILESTONE'
+                """, (rs, n) -> new PhaseRef(rs.getString("id"), rs.getString("key"), rs.getString("title")),
+                base.parentId(), orgId).stream().findFirst().orElse(null);
+        List<BlockingItem> blockedBy = jdbc.query("""
+                SELECT p.id, p.key, p.title, p.state FROM work_item_dependencies d
+                JOIN work_items p ON p.id = d.predecessor_id
+                WHERE d.org_id = ? AND d.successor_id = ? AND p.state NOT IN ('DONE', 'CANCELLED') AND p.plan_status <> 'RETIRED'
+                ORDER BY p.key
+                """, (rs, n) -> new BlockingItem(rs.getString("id"), rs.getString("key"), rs.getString("title"),
+                        rs.getString("state")), orgId, id);
+        Integer blockers = jdbc.queryForObject(
+                "SELECT count(*) FROM task_blockers WHERE org_id = ? AND task_id = ? AND NOT resolved", Integer.class, orgId, id);
+        String changesReason = !"IN_PROGRESS".equals(base.state()) ? null : jdbc.query("""
+                SELECT r.reason FROM work_item_reviews r WHERE r.org_id = ? AND r.work_item_id = ? AND r.decision = 'CHANGES_REQUESTED'
+                  AND r.work_item_revision = ? - 1
+                ORDER BY r.decided_at DESC LIMIT 1
+                """, (rs, n) -> rs.getString(1), orgId, id, base.revision()).stream().findFirst().orElse(null);
+        return base.with(collaborators, depthOf(id), phase, blockedBy, blockers == null ? 0 : blockers, changesReason);
     }
 
     private static PersonSummary person(String userId, String email) {
@@ -800,13 +818,26 @@ public class WorkItemService {
             int criteriaVersion, BigDecimal weight, String weightUnit, LocalDate dueOn, int revision,
             Integer submittedRevision, Integer acceptedRevision, boolean reviewRequired, PersonSummary primaryAssignee, PersonSummary reviewer,
             List<PersonSummary> collaborators, int depth, int childCount, String dependencyFlag, String retiredReason, long version,
-            Instant createdAt, Instant updatedAt) {
+            Instant createdAt, Instant updatedAt,
+            /** The phase (milestone) the task sits in, when its parent is one. */
+            PhaseRef phase,
+            /** Unfinished prerequisites: while any is listed the task cannot start (409 BLOCKED_BY_DEPENDENCY). */
+            List<BlockingItem> blockedBy,
+            /** Open blockers raised on this task (separate from its state). */
+            int openBlockers,
+            /** The reason of the latest "changes requested" decision while the task is back In progress. */
+            String changesRequestedReason) {
 
-        WorkItemResponse with(List<PersonSummary> people, int itemDepth) {
+        WorkItemResponse with(List<PersonSummary> people, int itemDepth, PhaseRef itemPhase, List<BlockingItem> blocking,
+                int blockers, String changes) {
             return new WorkItemResponse(id, projectId, parentId, type, key, title, description, state, planStatus, blocked,
                     criticality, criteria, criteriaVersion, weight, weightUnit, dueOn, revision, submittedRevision,
                     acceptedRevision, reviewRequired, primaryAssignee, reviewer, people, itemDepth, childCount, dependencyFlag, retiredReason, version, createdAt,
-                    updatedAt);
+                    updatedAt, itemPhase, blocking, blockers, changes);
         }
     }
+
+    public record PhaseRef(String id, String key, String title) {}
+
+    public record BlockingItem(String id, String key, String title, String state) {}
 }

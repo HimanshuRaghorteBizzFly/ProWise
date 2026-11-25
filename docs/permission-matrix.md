@@ -14,6 +14,7 @@ resource state.
 | QA / Reviewer | DENY | DENY | DENY | DENY | DENY | DENY | CONDITIONAL (assigned submissions) | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | CONDITIONAL (assigned submissions) | DENY | DENY | DENY | DENY |
 | Viewer / Stakeholder | DENY | DENY | DENY | DENY | DENY | DENY | CONDITIONAL (permitted summaries) | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
 | Platform Operator | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| Project Approver (project-scoped) | DENY | DENY | DENY | DENY | DENY | DENY | CONDITIONAL (only the project it was granted on) | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | CONDITIONAL (only the project it was granted on, never own work) | DENY | DENY | DENY | DENY |
 
 `project.progress.verify` (task 2.2, owner decision) lets the lead of a project's team approve or reject
 Individual check-ins; it never applies to their own entries and grants nothing on other teams' projects.
@@ -21,3 +22,12 @@ Individual check-ins; it never applies to their own entries and grants nothing o
 permissions are deferred because their keys are not defined in the source
 permissions document. Platform support access is handled by the time-limited
 support grant in task 5.6, not by tenant permissions in this matrix.
+
+**Project Approver (owner decision 2026-11-25).** Approvers are chosen per project when it is created (or later
+with `project.edit`): Team Lead, Project Manager, QA or any other member, but never an Organization Owner or
+Organization Admin. The choice is stored as a PROJECT-scoped grant of the narrow `PROJECT_APPROVER` template
+(`project.read` + `task.review`) on that project only; the database refuses an ORG-scope grant of it, and it is
+never listed or assignable in role management. Approving a Team task or a Solo submission requires that project
+grant: an organization-wide `task.review` (for example the QA / Reviewer template) does not make anyone an approver
+of a project they were not chosen for. Nobody approves their own work (assignee or submitter), and the approver must
+be an active member of the organization. The existing role templates were not widened.

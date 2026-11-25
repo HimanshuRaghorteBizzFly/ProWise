@@ -22,9 +22,11 @@ public class WorkflowController {
     private static final String MEMBER = "@permissionService.tokenOrgMember(authentication)";
 
     private final WorkflowService service;
+    private final com.prowise.integration.github.GitHubService github;
 
-    public WorkflowController(WorkflowService service) {
+    public WorkflowController(WorkflowService service, com.prowise.integration.github.GitHubService github) {
         this.service = service;
+        this.github = github;
     }
 
     @PostMapping("/v1/work-items/{workItemId}/start")
@@ -40,7 +42,15 @@ public class WorkflowController {
     @Operation(summary = "The primary assignee submits the current revision with evidence (In Review, or Done without required review)")
     public WorkItemService.WorkItemResponse submit(@PathVariable String workItemId,
             @RequestBody WorkflowService.SubmissionRequest request, Authentication authentication) {
-        return service.submit(authentication, workItemId, request);
+        WorkItemService.WorkItemResponse submitted = service.submit(authentication, workItemId, request);
+        // After the submission committed: link the task's commits from the connected repository (evidence only).
+        // A GitHub problem never fails the submission; it is stored on the connection for admins.
+        try {
+            github.syncTask(authentication, workItemId);
+        } catch (RuntimeException ignored) {
+            // e.g. no APP_ENCRYPTION_KEY on this server: the reviewer still sees the pasted commit links.
+        }
+        return submitted;
     }
 
     @PostMapping("/v1/work-items/{workItemId}/reviews")

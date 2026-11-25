@@ -25,6 +25,7 @@ import com.prowise.common.api.ApiError;
 import com.prowise.common.api.ApiException;
 import com.prowise.common.change.ChangeRecorder;
 import com.prowise.common.persistence.ExpectedVersion;
+import com.prowise.project.FileService;
 
 /**
  * Task 3.3: workflow, review and rework (FR-022, D04, docs/domain-rules.md "Task workflow" and "Review rules").
@@ -49,14 +50,21 @@ public class WorkflowService {
     private final ChangeRecorder changes;
     private final ObjectMapper objectMapper;
     private final List<WorkItemStateListener> listeners;
+    private final ProjectApprovers approvers;
+    private final ReviewNotifications notifications;
+    private final FileService files;
 
     public WorkflowService(JdbcTemplate jdbc, WorkItemService workItems, ChangeRecorder changes, ObjectMapper objectMapper,
-            List<WorkItemStateListener> listeners) {
+            List<WorkItemStateListener> listeners, ProjectApprovers approvers, ReviewNotifications notifications,
+            FileService files) {
         this.jdbc = jdbc;
         this.workItems = workItems;
         this.changes = changes;
         this.objectMapper = objectMapper;
         this.listeners = listeners;
+        this.approvers = approvers;
+        this.notifications = notifications;
+        this.files = files;
     }
 
     /* ================================================================== start */
@@ -93,6 +101,11 @@ public class WorkflowService {
                     "This work has no acceptance criteria yet. Ask your project manager to add them.");
         }
         String evidence = evidence(request.evidence());
+        for (EvidenceItem file : request.evidence() == null ? List.<EvidenceItem>of() : request.evidence()) {
+            if ("FILE".equalsIgnoreCase(String.valueOf(file.type()).trim())) {
+                files.requireEvidenceFile(caller.orgId(), file.ref().trim(), item.projectId(), item.id());
+            }
+        }
         String note = text(request.note(), 2000);
 
         int revision = policy.currentRevision();
@@ -119,6 +132,12 @@ public class WorkflowService {
                     """, revision, revision, item.id());
             record(caller, item, "work_item.submitted", null, item.state(), "IN_REVIEW", "ReviewRequested",
                     Map.of("revision", revision, "reviewer_id", String.valueOf(item.reviewerId())));
+            List<UUID> recipients = item.reviewerId() != null
+                    ? List.of(UUID.fromString(item.reviewerId()))
+                    : approvers.approverUserIds(caller.orgId(), item.projectId());
+            notifications.reviewRequested(caller.orgId(), recipients, caller.userId(), item.id(),
+                    "Review requested: " + item.key(), "\"" + item.title() + "\" was submitted for review (revision "
+                            + revision + ").");
             return workItems.response(caller.orgId(), item.id());
         }
 
@@ -147,7 +166,12 @@ public class WorkflowService {
     public WorkItemService.WorkItemResponse review(Authentication authentication, String workItemId, ReviewRequest request) {
         WorkItemService.Caller caller = workItems.caller(authentication);
         WorkItemService.Item visible = workItems.visible(caller, workItemId);
-        if (!workItems.can(caller, visible.projectId(), PermissionKey.TASK_REVIEW)) throw PermissionService.forbidden();
+        // Owner rule (2026-11-25): approvers are chosen per project. task.review must come from a PROJECT-scoped
+        // grant on exactly this project; an organization-wide task.review does not make anyone an approver here.
+        if (!approvers.isApprover(authentication, caller.orgId(), visible.projectId())) throw PermissionService.forbidden();
+        if (caller.userId().toString().equals(visible.primaryAssigneeId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "SELF_REVIEW_NOT_ALLOWED", "You cannot approve your own task.");
+        }
         String decision = request.decision() == null ? "" : request.decision().trim().toUpperCase(Locale.ROOT);
         if (!decision.equals("APPROVED") && !decision.equals("CHANGES_REQUESTED")) {
             throw WorkItemService.validation("decision", "must be APPROVED or CHANGES_REQUESTED");
@@ -160,8 +184,10 @@ public class WorkflowService {
 
         WorkItemService.Item item = lock(caller, visible.id());
         Policy policy = policy(item.id());
-        // Reassigned reviewer, decided/replaced revision, or racing decision: nothing changes.
-        if (!caller.userId().toString().equals(item.reviewerId()) || !"IN_REVIEW".equals(item.state())
+        // A task with a designated reviewer is decided by that approver only (reassigned meanwhile = stale); otherwise
+        // any approver of the project decides. Decided/replaced revision or a racing decision: nothing changes.
+        boolean designatedElsewhere = item.reviewerId() != null && !caller.userId().toString().equals(item.reviewerId());
+        if (designatedElsewhere || !"IN_REVIEW".equals(item.state())
                 || policy.submittedRevision() == null || policy.submittedRevision() != policy.currentRevision()
                 || request.submittedRevision() != policy.currentRevision()) {
             throw staleReview();
@@ -178,10 +204,15 @@ public class WorkflowService {
         }
         UUID submissionId = (UUID) submission.get("id");
         int revision = policy.currentRevision();
+        // The evidence reviewed: the exact submission (its note, links and files) and the commits linked at this time.
+        String reviewed = request.evidenceRef() != null && !request.evidenceRef().isBlank()
+                ? request.evidenceRef() : reviewedEvidence(submissionId, item.id());
+        UUID submitter = (UUID) submission.get("submitted_by");
+        String taskLink = "/org/" + caller.orgId() + "/developer/tasks/" + item.id();
 
         if (decision.equals("APPROVED")) {
             requireChecks(item.id());
-            insertReview(caller, item.id(), submissionId, decision, reason, request.evidenceRef(), revision);
+            insertReview(caller, item.id(), submissionId, decision, reason, reviewed, revision);
             jdbc.update("UPDATE work_item_submissions SET status = 'APPROVED' WHERE id = ?", submissionId);
             jdbc.update("""
                     UPDATE work_items SET state = 'DONE', accepted_revision = ?, accepted_at = now(),
@@ -191,8 +222,10 @@ public class WorkflowService {
             record(caller, item, "work_item.accepted", null, "IN_REVIEW", "DONE", "WorkItemCompleted",
                     Map.of("revision", revision, "review", "approved"));
             notifyCredit(caller, item.id(), "WORK_ACCEPTED");
+            notifications.decided(caller.orgId(), submitter, true, item.key() + " approved",
+                    "\"" + item.title() + "\" was approved and its points now count.", taskLink);
         } else {
-            insertReview(caller, item.id(), submissionId, decision, reason, request.evidenceRef(), revision);
+            insertReview(caller, item.id(), submissionId, decision, reason, reviewed, revision);
             jdbc.update("UPDATE work_item_submissions SET status = 'CHANGES_REQUESTED' WHERE id = ?", submissionId);
             jdbc.update("""
                     UPDATE work_items SET state = 'IN_PROGRESS', current_revision = current_revision + 1,
@@ -201,8 +234,20 @@ public class WorkflowService {
                     """, item.id());
             record(caller, item, "work_item.changes_requested", reason, "IN_REVIEW", "IN_PROGRESS", "ChangesRequested",
                     Map.of("revision", revision));
+            notifications.decided(caller.orgId(), submitter, false, item.key() + ": changes requested",
+                    "\"" + item.title() + "\" is back in progress: " + reason, taskLink);
         }
         return workItems.response(caller.orgId(), item.id());
+    }
+
+    /** "submission:<id>; commits:<sha,...>" (at most 500 characters), recorded with the decision. */
+    private String reviewedEvidence(UUID submissionId, String itemId) {
+        List<String> shas = jdbc.queryForList("""
+                SELECT left(sha, 12) FROM github_activity
+                WHERE work_item_id = ? AND sha IS NOT NULL ORDER BY occurred_at DESC NULLS LAST LIMIT 20
+                """, String.class, itemId);
+        String value = "submission:" + submissionId + (shas.isEmpty() ? "" : "; commits:" + String.join(",", shas));
+        return value.length() <= 500 ? value : value.substring(0, 500);
     }
 
     private void insertReview(WorkItemService.Caller caller, String itemId, UUID submissionId, String decision, String reason,
@@ -222,8 +267,8 @@ public class WorkflowService {
         WorkItemService.Caller caller = workItems.caller(authentication);
         WorkItemService.Item visible = workItems.visible(caller, workItemId);
         boolean planner = workItems.can(caller, visible.projectId(), PermissionKey.TASK_ASSIGN);
-        boolean reviewer = caller.userId().toString().equals(visible.reviewerId())
-                && workItems.can(caller, visible.projectId(), PermissionKey.TASK_REVIEW);
+        boolean reviewer = approvers.isApprover(authentication, caller.orgId(), visible.projectId())
+                && (visible.reviewerId() == null || caller.userId().toString().equals(visible.reviewerId()));
         if (!planner && !reviewer) throw PermissionService.forbidden();
         String reason = text(request.reason(), 2000);
         if (reason == null) throw WorkItemService.validation("reason", "explain why the work is reopened");
@@ -297,8 +342,8 @@ public class WorkflowService {
         WorkItemService.Item visible = workItems.visible(caller, workItemId);
         boolean planner = workItems.can(caller, visible.projectId(), PermissionKey.TASK_CREATE)
                 || workItems.can(caller, visible.projectId(), PermissionKey.TASK_ASSIGN);
-        boolean reviewer = caller.userId().toString().equals(visible.reviewerId())
-                && workItems.can(caller, visible.projectId(), PermissionKey.TASK_REVIEW);
+        boolean reviewer = approvers.isApprover(authentication, caller.orgId(), visible.projectId())
+                && (visible.reviewerId() == null || caller.userId().toString().equals(visible.reviewerId()));
         boolean assignee = caller.userId().toString().equals(visible.primaryAssigneeId());
         if ((!planner && !reviewer) || assignee) throw PermissionService.forbidden(); // never your own checks
         WorkItemService.Item item = lock(caller, visible.id());

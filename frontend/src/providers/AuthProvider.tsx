@@ -1,13 +1,11 @@
 "use client";
 
 import React, { createContext, useContext, useEffect } from "react";
-import { useAuthStore } from "@/store/auth-store";
 import type { SystemRole, User } from "@/types";
-import { SESSION_EXPIRED_EVENT } from "@/lib/api";
-import { classifyFailure, previewEnabled, readPermissionEnv } from "@/lib/permissions";
+import { clearAuthSession } from "@/lib/auth-session";
 import { establishSession } from "@/lib/session";
 import { clearWorkspaceCaches } from "@/lib/workspace-switch";
-import { useWorkspaceStore } from "@/store/workspace-store";
+import { useAuthStore } from "@/store/auth-store";
 
 interface AuthContextValue {
   user: User;
@@ -32,63 +30,29 @@ function sendToSignIn() {
   const { pathname, search } = window.location;
   if (!isProtectedPath(pathname)) return;
   clearWorkspaceCaches();
-  useAuthStore.getState().logout();
   window.location.assign(signInPathFor(pathname + search));
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { currentUser, currentRole, currentOrg, isAuthenticated, hydrate, logout } = useAuthStore();
-  const setOrganizations = useWorkspaceStore((state) => state.setOrganizations);
+  const currentUser = useAuthStore((state) => state.currentUser);
+  const currentRole = useAuthStore((state) => state.currentRole);
+  const currentOrg = useAuthStore((state) => state.currentOrg);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   useEffect(() => {
+    // Do not race the login form with an unsolicited /me request on sign-in pages.
+    if (["/login", "/signup", "/forgot-password", "/reset-password"].includes(window.location.pathname)) return;
     let active = true;
-    apiClient.me().then((me) => {
+    establishSession().catch(() => {
       if (!active) return;
-      const store = useAuthStore.getState();
-      const preview = previewEnabled() && store.isRolePreview;
-
-      if (classifyFailure(error, readPermissionEnv()) !== "fixture") {
-        if (preview) {
-          store.setSessionStatus("authenticated");
-          return;
-        }
-        store.logout();
-        sendToSignIn();
-        return;
-      }
-
-      if (preview) {
-        store.setSessionStatus("authenticated");
-        return;
-      }
-
-      // The fixture identity is only used when mock mode is enabled and no real session is available.
-      const defaultOrg = {
-        id: "org-acme",
-        slug: "acme-health",
-        name: "Acme Health Technologies",
-        ownerId: "usr-owner",
-        timezone: "America/New_York",
-        workCalendar: { workDays: [1, 2, 3, 4, 5], dailyHours: 8, holidays: [] },
-        createdAt: "2026-02-15T09:00:00Z",
-        plan: "ENTERPRISE" as const,
-        status: "ACTIVE" as const,
-      };
-      const defaultUser: User = {
-        id: "usr-viewer",
-        email: "jordan.lee@acmehealth.com",
-        name: "Jordan Lee (Viewer)",
-        timezone: "America/New_York",
-        createdAt: "2026-02-25T16:00:00Z",
-      };
-      hydrate(defaultUser, [defaultOrg], "VIEWER");
-      setOrganizations([defaultOrg]);
+      clearAuthSession();
+      sendToSignIn();
     });
 
     return () => {
       active = false;
     };
-  }, [hydrate, logout, setOrganizations]);
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -98,28 +62,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   );
 }
-
-function toSystemRole(role: string | undefined): SystemRole {
-  const roles: SystemRole[] = [
-    "SUPER_ADMIN", "PLATFORM_OPERATOR", "ORGANIZATION_OWNER", "ORGANIZATION_ADMIN",
-    "PROJECT_MANAGER", "TEAM_LEAD", "DEVELOPER", "QA_REVIEWER", "VIEWER",
-  ];
-  return role && roles.includes(role as SystemRole) ? role as SystemRole : "VIEWER";
-}
-
-function parseCalendar(value: string) {
-  try {
-    const calendar = JSON.parse(value) as { workDays?: number[]; dailyHours?: number; holidays?: string[] };
-    return {
-      workDays: calendar.workDays || [],
-      dailyHours: calendar.dailyHours || 0,
-      holidays: calendar.holidays || [],
-    };
-  } catch {
-    return { workDays: [], dailyHours: 0, holidays: [] };
-  }
-}
-
 
 export const useAuthContext = () => {
   const ctx = useContext(AuthContext);

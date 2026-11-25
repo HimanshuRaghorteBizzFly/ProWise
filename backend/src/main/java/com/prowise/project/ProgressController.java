@@ -66,9 +66,16 @@ public class ProgressController {
         return progress.summary(authentication, projectId);
     }
 
+    @GetMapping("/v1/checkins/{checkinId}")
+    @PreAuthorize(MEMBER)
+    @Operation(summary = "One Solo submission with its project and the approved figure (404 when the project is not readable)")
+    public PendingReview checkin(@PathVariable String checkinId, Authentication authentication) {
+        return progress.one(authentication, checkinId);
+    }
+
     @PostMapping({"/v1/checkins/{checkinId}/decision", "/api/v1/checkins/{checkinId}/decision"})
     @PreAuthorize(MEMBER)
-    @Operation(summary = "Approve or reject a pending check-in (lead of the project's team, project.progress.verify, not own)")
+    @Operation(summary = "Approve or request changes on a pending Solo submission (a chosen approver, or the team lead; never own)")
     public CheckIn decide(@PathVariable String checkinId, @RequestBody DecisionRequest request,
             Authentication authentication) {
         return progress.decide(authentication, checkinId, request);

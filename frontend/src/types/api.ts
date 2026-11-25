@@ -32,7 +32,6 @@ export interface MeResponse {
   organization_name?: string | null;
   must_change_password?: boolean;
   target_dashboard_url?: string;
-  landing?: LandingKind | null;
   platform_account?: boolean;
   memberships: Array<{
     id: string;
@@ -473,6 +472,14 @@ export interface CheckInDto {
   decided_at: string | null;
   decision_reason: string | null;
   version: number;
+  /** Structured evidence: commit SHAs or links, links, uploaded screenshots (FILE = file id). */
+  evidence_items?: CheckInEvidenceItemDto[];
+}
+
+export interface CheckInEvidenceItemDto {
+  type: "LINK" | "COMMIT" | "PULL_REQUEST" | "FILE" | "NOTE" | string;
+  ref: string;
+  label?: string | null;
 }
 
 /** The approved figure; percent null and label "Not reported" until an entry is approved. */
@@ -499,6 +506,8 @@ export interface ProgressSummaryDto {
   can_submit: boolean;
   can_decide: boolean;
   history: CheckInDto[];
+  /** People chosen at creation to approve this project. */
+  approvers?: CheckInPersonDto[];
 }
 
 export interface PendingReviewDto {
@@ -517,6 +526,7 @@ export interface CheckInRequestDto {
   projected_finish?: string;
   evidence?: string;
   downward_reason?: string;
+  evidence_items?: CheckInEvidenceItemDto[];
 }
 
 export interface CheckInDecisionDto {

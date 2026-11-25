@@ -1,4 +1,15 @@
 import {
+  Activity,
+  BarChart3,
+  CalendarClock,
+  ListTodo,
+  OctagonAlert,
+  Scale,
+  ShieldAlert,
+  TrendingUp,
+  UserPlus,
+  Users,
+  ShieldCheck,
   FolderKanban,
   FolderPlus,
   LayoutDashboard,
@@ -40,17 +51,41 @@ export const DELIVERY_ROLES: Record<DeliveryRole, DeliveryRoleConfig> = {
     label: "Manager",
     tagline: "Project Delivery",
     segment: "manager",
+    // The Project Manager navigation as it was before the merge (your branch), plus Reviews: submitted work comes
+    // to the project's PM to accept or reject. Pages without a backend API yet show a "not available" notice.
     sections: [
       {
         title: "Overview",
         items: [
           { title: "Dashboard", path: "", icon: LayoutDashboard },
           { title: "Portfolio", path: "projects", icon: FolderKanban },
+          { title: "Health & Risks", path: "risks", icon: ShieldAlert },
+          { title: "Progress", path: "progress", icon: TrendingUp },
         ],
       },
       {
-        title: "Plan",
-        items: [{ title: "Create Project", path: "create-project", icon: FolderPlus }],
+        title: "Delivery",
+        items: [
+          { title: "Reviews", path: "reviews", icon: ShieldCheck },
+          { title: "Deadlines", path: "deadlines", icon: CalendarClock },
+          { title: "All Work", path: "work-items", icon: ListTodo },
+          { title: "Blockers", path: "blockers", icon: OctagonAlert },
+          { title: "Scope Changes", path: "scope", icon: Scale },
+        ],
+      },
+      {
+        title: "People",
+        items: [
+          { title: "Team Workload", path: "workload", icon: Users },
+          { title: "Assign Work", path: "team-assignments", icon: UserPlus },
+        ],
+      },
+      {
+        title: "Plan & Report",
+        items: [
+          { title: "Create Project", path: "create-project", icon: FolderPlus },
+          { title: "Reports", path: "reports", icon: BarChart3 },
+        ],
       },
     ],
   },
@@ -65,6 +100,8 @@ export const DELIVERY_ROLES: Record<DeliveryRole, DeliveryRoleConfig> = {
         title: "Overview",
         items: [
           { title: "Dashboard", path: "", icon: LayoutDashboard },
+          { title: "Reviews", path: "reviews", icon: ShieldCheck },
+          { title: "Progress", path: "progress", icon: Activity },
           { title: "Check-ins", path: "check-ins", icon: MessageSquareText },
         ],
       },
@@ -79,7 +116,11 @@ export const DELIVERY_ROLES: Record<DeliveryRole, DeliveryRoleConfig> = {
     sections: [
       {
         title: "Overview",
-        items: [{ title: "Dashboard", path: "", icon: LayoutDashboard }],
+        items: [
+          { title: "Dashboard", path: "", icon: LayoutDashboard },
+          { title: "Review queue", path: "review-queue", icon: ShieldCheck },
+          { title: "Progress", path: "progress", icon: Activity },
+        ],
       },
     ],
   },

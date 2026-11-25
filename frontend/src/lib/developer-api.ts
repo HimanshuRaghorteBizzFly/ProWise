@@ -75,22 +75,6 @@ export interface DeveloperSprint {
   tasks: DeveloperWorkItem[];
 }
 
-export interface DeveloperGitHubEvent {
-  id: string;
-  repositoryName?: string;
-  repository?: string;
-  repo?: string;
-  eventType?: string;
-  type?: string;
-  actor?: string;
-  title?: string;
-  payloadSummary?: string;
-  message?: string;
-  url?: string;
-  createdAt?: string;
-  occurredAt?: string;
-}
-
 export interface DeveloperBug {
   id: string;
   projectId: string;
@@ -216,24 +200,18 @@ export interface DeveloperPreferences {
   timezone: string;
 }
 
-/** Browser path "/api/v1/..." -> client path "/v1/..." (the client adds the "/api" base). */
-function clientPath(url: string): string {
-  return url.startsWith("/api/") ? url.slice("/api".length) : url;
-}
-
-/**
- * Safe JSON call through the session-aware client: Bearer token from memory, one refresh on 401, then the retry.
- * Returns null instead of throwing (these panels fall back to empty states).
- */
-async function fetchJson<T>(url: string, options: { method?: string; body?: string } = {}): Promise<T | null> {
-  try {
-    return await apiClient.call<T>(clientPath(url), {
-      method: options.method,
-      body: options.body === undefined ? undefined : JSON.parse(options.body),
-    });
-  } catch {
-    return null;
-  }
+export interface DeveloperGitHubEvent {
+  id: string;
+  repository?: string;
+  repositoryName?: string;
+  eventType?: string;
+  actor?: string;
+  title?: string;
+  url?: string;
+  workItemId?: string;
+  occurredAt?: string;
+  createdAt?: string;
+  [key: string]: unknown;
 }
 
 /*
@@ -379,15 +357,9 @@ export const developerApi = {
     call<void>(`/v1/developer/notifications/${enc(notificationId)}/read`, { method: "PATCH" }),
   markAllNotificationsRead: () => call<void>("/v1/developer/notifications/read-all", { method: "POST" }),
 
-  async getReportsSummary(orgId?: string): Promise<DeveloperReportsSummary | null> {
-    const query = orgId ? `?orgId=${encodeURIComponent(orgId)}` : "";
-    return fetchJson<DeveloperReportsSummary>(`/api/v1/developer/reports/summary${query}`);
-  },
+  getReportsSummary: (_orgId?: string) => call<DeveloperReportsSummary>("/v1/developer/reports/summary"),
 
-  async getPreferences(): Promise<DeveloperPreferences | null> {
-    return fetchJson<DeveloperPreferences>(`/api/v1/developer/preferences`);
-  },
-
+  getPreferences: () => call<DeveloperPreferences>("/v1/developer/preferences"),
   updatePreferences: (payload: {
     emailNotifications: boolean;
     slackNotifications: boolean;

@@ -1,6 +1,11 @@
-import { ModuleUnavailable } from "@/components/feedback/ModuleUnavailable";
+"use client";
 
-/** No backend API serves this module yet, so the route shows a notice instead. */
-export default function Page({ params }: { params: { orgId: string } }) {
-  return <ModuleUnavailable module="Progress history" homeHref={`/org/${encodeURIComponent(params.orgId)}/manager`} homeLabel="Back to dashboard" />;
+import React from "react";
+import { useParams } from "next/navigation";
+import { PmProgressListView } from "@/components/flow/PmProgressViews";
+
+/** Progress of every project the PM can see: one card each (paginated, search, filter, sort). */
+export default function Page() {
+  const params = useParams();
+  return <PmProgressListView orgId={(params?.orgId as string) || ""} />;
 }

@@ -17,8 +17,9 @@ import io.jsonwebtoken.security.Keys;
 @Service
 public class JwtService {
 
-    /** Every access token names this API as its audience and "access" as its type; parsing requires both. */
     public static final String AUDIENCE = "prowise-api";
+    private static final String DEFAULT_ISSUER = "prowise";
+
     private final SecretKey key;
     private final Duration accessTokenLifetime;
     private final String issuer;
@@ -44,20 +45,24 @@ public class JwtService {
         this.issuer = issuer.trim();
     }
 
-    /** Default issuer; for unit tests that build the service directly. */
+    /** Default issuer for callers and tests that construct the service directly. */
     public JwtService(String signingKey, long accessTokenMinutes) {
-        this(signingKey, accessTokenMinutes, "prowise");
+        this(signingKey, accessTokenMinutes, DEFAULT_ISSUER);
     }
 
     public String issueAccessToken(AuthPrincipal principal) {
-        Instant now = Instant.now();
+        return issueAccessToken(principal, Instant.now());
+    }
+
+    /** Issued at {@code now} (tests use a past instant to get an already expired token). */
+    String issueAccessToken(AuthPrincipal principal, Instant now) {
         var builder = Jwts.builder()
                 .issuer(issuer)
                 .audience().add(AUDIENCE).and()
-                .claim("typ", "access")
                 .subject(principal.userId().toString())
                 .claim("sid", principal.sessionId().toString())
                 .claim("email", principal.email())
+                .claim("typ", "access")
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTokenLifetime)));
         if (principal.role() != null) {
@@ -82,7 +87,11 @@ public class JwtService {
     }
 
     public AuthPrincipal parse(String token) {
-        Claims claims = Jwts.parser().verifyWith(key).requireIssuer(issuer).requireAudience(AUDIENCE).require("typ", "access").build().parseSignedClaims(token).getPayload();
+        Claims claims = Jwts.parser().verifyWith(key).requireIssuer(issuer).requireAudience(AUDIENCE)
+                .build().parseSignedClaims(token).getPayload();
+        if (!"access".equals(claims.get("typ", String.class))) {
+            throw new IllegalArgumentException("JWT must be an access token.");
+        }
         String type = claims.get("type", String.class);
         if ("OPERATOR".equalsIgnoreCase(type)) {
             String opid = claims.get("opid", String.class);

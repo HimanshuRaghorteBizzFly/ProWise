@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 
 import { usePermissions } from "@/hooks/usePermissions";
+import { useAuthStore } from "@/store/auth-store";
 import { isStaleVersion, type ApiError } from "@/lib/api";
 import type {
   CreateProjectDto,
@@ -64,6 +65,7 @@ import {
   usePortfolio,
   useReloadProjects,
 } from "./useProjectApi";
+import { ApproversPanel, DocumentsPanel, GitHubPanel, ProjectTasksPanel, StructuredProgressPanel } from "@/components/flow/ProjectFlowPanels";
 
 /**
  * Task 2.1 project screens on the real API for the Owner, Admin and Project Manager route families.
@@ -384,9 +386,16 @@ function CreateForm({ options, saving, error, onSubmit, onInvalid }: {
   onSubmit: (body: CreateProjectDto) => void;
   onInvalid: (message: string) => void;
 }) {
+  // A Project Manager creating a project is its PM by default (still changeable): developers' submissions come to the
+  // project's PM to accept or reject.
+  const currentRole = useAuthStore((s) => s.currentRole);
+  const myEmail = useAuthStore((s) => s.currentUser?.email ?? "");
+  const selfMembership = currentRole === "PROJECT_MANAGER"
+    ? options.members.find((m) => m.email.toLowerCase() === myEmail.toLowerCase())?.membership_id ?? ""
+    : "";
   const [form, setForm] = useState<FormState>({
     name: "", key: "", keyTouched: false, description: "", mode: "INDIVIDUAL", status: "PLANNED", priority: "MEDIUM",
-    pm: "", accountable: "", members: [], team: "", startOn: "", targetOn: "", timezone: options.default_timezone,
+    pm: selfMembership, accountable: "", members: [], team: "", startOn: "", targetOn: "", timezone: options.default_timezone,
   });
   const set = <K extends keyof FormState>(field: K, value: FormState[K]) => setForm((current) => ({ ...current, [field]: value }));
   const zones = useMemo(() => timeZones(form.timezone), [form.timezone]);
@@ -545,7 +554,7 @@ function PeopleFields(props: {
  * Project workspace shell
  * ==================================================================== */
 
-type WorkspaceTab = "overview" | "updates" | "repositories" | "activity" | "settings";
+type WorkspaceTab = "overview" | "updates" | "tasks" | "progress" | "repositories" | "documents" | "approvers" | "activity" | "settings";
 
 export function ProjectWorkspaceView({ base, projectId }: { base: ProjectBase; projectId: string }) {
   const { orgId, href } = useBaseHref(base);
@@ -567,12 +576,19 @@ export function ProjectWorkspaceView({ base, projectId }: { base: ProjectBase; p
             ? [
               { value: "overview", label: "Overview" },
               { value: "updates", label: "Updates" },
-              { value: "repositories", label: "Repositories" },
+              { value: "repositories", label: "Repository" },
+              { value: "documents", label: "Documents" },
+              { value: "approvers", label: "Approvers" },
               { value: "activity", label: "Activity" },
               { value: "settings", label: "Settings" },
             ]
             : [
               { value: "overview", label: "Overview" },
+              { value: "tasks", label: "Tasks" },
+              { value: "progress", label: "Progress" },
+              { value: "repositories", label: "Repository" },
+              { value: "documents", label: "Documents" },
+              { value: "approvers", label: "Approvers" },
               { value: "activity", label: "Activity" },
               { value: "settings", label: "Settings" },
             ];
@@ -585,19 +601,14 @@ export function ProjectWorkspaceView({ base, projectId }: { base: ProjectBase; p
                 {row.archived && <StatusBadge label="Archived · read-only" tone="neutral" />}
               </div>
               <SegmentTabs<WorkspaceTab> value={tab} onChange={setTab} options={tabs} />
-              {row.mode === "STRUCTURED" && (
-                <p className="text-[11px] text-[var(--color-text-muted)]">
-                  Breakdown, Scope, Reviews and Dependencies tabs arrive with tasks 3.1 to 3.4 (Later).
-                </p>
-              )}
               {tab === "overview" && <OverviewTab project={row} />}
+              {tab === "overview" && row.mode === "STRUCTURED" && <StructuredProgressPanel projectId={row.id} />}
               {tab === "updates" && <UpdatesTab projectId={row.id} />}
-              {tab === "repositories" && (
-                <Panel title="Repositories" icon={GitBranch}>
-                  <EmptyStateView icon={GitBranch} title="No repositories linked"
-                    description="Linking GitHub repositories arrives with task 4.1 (Later). Code activity never sets progress." />
-                </Panel>
-              )}
+              {tab === "tasks" && <ProjectTasksPanel projectId={row.id} />}
+              {tab === "progress" && <StructuredProgressPanel projectId={row.id} />}
+              {tab === "repositories" && <GitHubPanel projectId={row.id} />}
+              {tab === "documents" && <DocumentsPanel projectId={row.id} canEdit={row.can_edit} />}
+              {tab === "approvers" && <ApproversPanel projectId={row.id} />}
               {tab === "activity" && <ActivityTab orgId={orgId} project={row} />}
               {tab === "settings" && (
                 <Panel title="Settings" icon={Settings}>

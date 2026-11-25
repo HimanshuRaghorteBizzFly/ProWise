@@ -35,6 +35,9 @@ import {
   useSubmitCheckIn,
 } from "@/components/progress/useCheckInApi";
 import { usePortfolio } from "@/components/projects/useProjectApi";
+import { AuthImage } from "@/components/flow/FlowUI";
+import { ScreenshotUploader } from "@/components/flow/TaskPanels";
+import type { FileViewDto } from "@/types/flow";
 
 /**
  * Task 2.2 screens. Every check-in starts pending; the project's figure is the last approved entry and the pending
@@ -89,11 +92,14 @@ export function ApprovedFigure({ current }: { current: ProgressFigureDto }) {
   );
 }
 
-export function PendingEntry({ pending, approverEmail, approverNote }: {
+export function PendingEntry({ pending, approverEmail, approverNote, approvers }: {
   pending: CheckInDto | null;
   approverEmail?: string | null;
   approverNote?: string | null;
+  /** People chosen to approve this project (owner rule 2026-11-25). */
+  approvers?: { email: string | null }[];
 }) {
+  const chosen = (approvers ?? []).map((a) => a.email).filter(Boolean);
   if (!pending) {
     return <p className="text-[11px] text-[var(--color-text-muted)]" data-testid="pending-entry">No check-in is waiting for approval.</p>;
   }
@@ -104,11 +110,14 @@ export function PendingEntry({ pending, approverEmail, approverNote }: {
         <StatusBadge label={STATUS.PENDING.label} tone="warning" dot />
       </div>
       <p className="text-lg font-semibold tabular-nums">{percentText(pending.percent)} proposed</p>
+      <StatusBadge label="Reported, not yet approved" tone="warning" />
       <p className="text-[11px] text-[var(--color-text-secondary)]">
         {pending.label} by {pending.author.email ?? "the accountable developer"} · {formatDateTime(pending.submitted_at)}
       </p>
       <p className="text-[11px] text-[var(--color-text-muted)]">
-        {approverEmail ? `Team Lead ${approverEmail} decides. It does not change the current figure until approved.` : approverNote}
+        {chosen.length > 0
+          ? `Approver${chosen.length === 1 ? "" : "s"} ${chosen.join(", ")} decide${chosen.length === 1 ? "s" : ""}. It does not change the current figure until approved.`
+          : approverEmail ? `Team Lead ${approverEmail} decides. It does not change the current figure until approved.` : approverNote}
       </p>
     </div>
   );
@@ -121,7 +130,7 @@ export function ProgressSummaryContent({ summary, submitHref }: { summary: Progr
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <SurfaceCard className="p-4"><ApprovedFigure current={summary.current} /></SurfaceCard>
         <SurfaceCard className="p-4">
-          <PendingEntry pending={summary.pending} approverEmail={summary.approver?.email} approverNote={summary.approver_note} />
+          <PendingEntry pending={summary.pending} approverEmail={summary.approver?.email} approverNote={summary.approver_note} approvers={summary.approvers} />
         </SurfaceCard>
       </div>
       {summary.can_submit && submitHref && (
@@ -259,6 +268,8 @@ export function CheckInForm({ projectId, summary, backHref }: { projectId: strin
   const [serverError, setServerError] = useState<string | null>(null);
   // One key per form: a retry after a network error cannot create a second entry.
   const [idempotencyKey] = useState(newClientId);
+  const [items, setItems] = useState<{ type: string; ref: string }[]>([{ type: "COMMIT", ref: "" }]);
+  const [shots, setShots] = useState<FileViewDto[]>([]);
   const approved = summary.current.percent;
   const percent = Number(values.percent);
   const downward = approved !== null && values.percent.trim() !== "" && !Number.isNaN(percent) && percent < approved;
@@ -276,7 +287,7 @@ export function CheckInForm({ projectId, summary, backHref }: { projectId: strin
                 ? "This project is archived and read-only."
                 : "Only the project's accountable developer reports its progress."}
         </p>
-        <PendingEntry pending={summary.pending} approverEmail={summary.approver?.email} approverNote={summary.approver_note} />
+        <PendingEntry pending={summary.pending} approverEmail={summary.approver?.email} approverNote={summary.approver_note} approvers={summary.approvers} />
         <ButtonLink variant="outline" href={backHref}>Back to progress</ButtonLink>
       </SurfaceCard>
     );
@@ -301,6 +312,10 @@ export function CheckInForm({ projectId, summary, backHref }: { projectId: strin
         projected_finish: values.projectedFinish || undefined,
         evidence: values.evidence.trim() || undefined,
         downward_reason: downward ? values.downwardReason.trim() : undefined,
+        evidence_items: [
+          ...items.filter((i) => i.ref.trim()).map((i) => ({ type: i.type, ref: i.ref.trim() })),
+          ...shots.map((s) => ({ type: "FILE", ref: s.id, label: s.name })),
+        ],
       },
     }, {
       onSuccess: () => {
@@ -350,6 +365,46 @@ export function CheckInForm({ projectId, summary, backHref }: { projectId: strin
               <AdminTextarea label={`Why is this lower than the approved ${percentText(approved)}?`} rows={2}
                 value={values.downwardReason} onChange={set("downwardReason")} error={errors.downwardReason} maxLength={1000} required />
             </div>
+          )}
+        </div>
+      </Panel>
+      <Panel title="Evidence for the reviewer" icon={ClipboardCheck}
+        description="Commit links or SHAs, pull requests, links and screenshots (PNG, JPG or WebP, 5 MB). Evidence never sets the percentage.">
+        <div className="space-y-2">
+          {items.map((item, i) => (
+            <div key={i} className="grid grid-cols-1 sm:grid-cols-[150px_1fr_auto] gap-2 items-end">
+              <select aria-label={`Evidence ${i + 1} type`} value={item.type}
+                className="h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-bg)] px-2 text-sm"
+                onChange={(e) => setItems((rows) => rows.map((r, idx) => (idx === i ? { ...r, type: e.target.value } : r)))}>
+                <option value="COMMIT">Commit</option>
+                <option value="PULL_REQUEST">Pull request</option>
+                <option value="LINK">Link</option>
+              </select>
+              <AdminInput aria-label={`Evidence ${i + 1} link or SHA`} placeholder="https://github.com/… or a commit SHA" value={item.ref}
+                maxLength={500} onChange={(e) => setItems((rows) => rows.map((r, idx) => (idx === i ? { ...r, ref: e.target.value } : r)))} />
+              <AdminButton type="button" variant="ghost" size="sm" disabled={items.length === 1} aria-label={`Remove evidence ${i + 1}`}
+                onClick={() => setItems((rows) => rows.filter((_, idx) => idx !== i))}>Remove</AdminButton>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-2">
+            {items.length + shots.length < 20 && (
+              <AdminButton type="button" size="xs" variant="outline" onClick={() => setItems((rows) => [...rows, { type: "COMMIT", ref: "" }])}>
+                Add commit or link
+              </AdminButton>
+            )}
+            <ScreenshotUploader target={{ projectId }} disabled={items.length + shots.length >= 20}
+              onUploaded={(file) => setShots((rows) => [...rows, file])} />
+          </div>
+          {shots.length > 0 && (
+            <ul className="flex flex-wrap gap-2" aria-label="Screenshots to submit">
+              {shots.map((s) => (
+                <li key={s.id} className="space-y-1">
+                  <AuthImage fileId={s.id} alt={s.name} className="h-20 w-28 rounded-md border border-[var(--color-border)] object-cover" />
+                  <button type="button" className="text-[10px] text-rose-600 hover:underline"
+                    onClick={() => setShots((rows) => rows.filter((r) => r.id !== s.id))}>Remove {s.name}</button>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </Panel>

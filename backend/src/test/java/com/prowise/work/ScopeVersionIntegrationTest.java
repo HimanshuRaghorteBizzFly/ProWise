@@ -99,7 +99,8 @@ class ScopeVersionIntegrationTest {
         String a = readyTask("A");
         String b = readyTask("B");
         String c = readyTask("C");
-        JsonNode v1 = approve(draft(null, "POINTS", "Initial plan", add(a, 20), add(b, 30), add(c, 50)), 0)
+        // Owner rule 2026-11-25: task points total at most 100, so the AS-08 example runs 80 -> 100 (was 100 -> 125).
+        JsonNode v1 = approve(draft(null, "POINTS", "Initial plan", add(a, 10), add(b, 30), add(c, 40)), 0)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.version_no").value(1))
@@ -109,22 +110,22 @@ class ScopeVersionIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT active_baseline_id::text FROM projects WHERE id = ?", String.class, projectId))
                 .isEqualTo(v1Id);
         assertThat(jdbc.queryForObject("SELECT plan_status FROM work_items WHERE id = ?", String.class, a)).isEqualTo("ACTIVE");
-        assertThat(jdbc.queryForObject("SELECT weight FROM work_items WHERE id = ?", Integer.class, c)).isEqualTo(50);
+        assertThat(jdbc.queryForObject("SELECT weight FROM work_items WHERE id = ?", Integer.class, c)).isEqualTo(40);
 
-        // 50 of 100 accepted, then +25 is proposed: the preview explains the effect before approval.
+        // 40 of 80 accepted, then +20 is proposed: the preview explains the effect before approval.
         jdbc.update("UPDATE work_items SET state = 'DONE' WHERE id IN (?, ?)", a, b);
         String d = readyTask("D");
-        String v2 = draft(v1Id, "POINTS", "Customer asked for exports", add(d, 25));
+        String v2 = draft(v1Id, "POINTS", "Customer asked for exports", add(d, 20));
         mockMvc.perform(auth(get("/v1/scope-versions/{id}", v2), ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DRAFT"))
                 .andExpect(jsonPath("$.diff.added[0].work_item_id").value(d))
-                .andExpect(jsonPath("$.effect.before.numerator").value(50))
-                .andExpect(jsonPath("$.effect.before.denominator").value(100))
+                .andExpect(jsonPath("$.effect.before.numerator").value(40))
+                .andExpect(jsonPath("$.effect.before.denominator").value(80))
                 .andExpect(jsonPath("$.effect.before.percent").value(50))
-                .andExpect(jsonPath("$.effect.after.denominator").value(125))
+                .andExpect(jsonPath("$.effect.after.denominator").value(100))
                 .andExpect(jsonPath("$.effect.after.percent").value(40))
-                .andExpect(jsonPath("$.effect.summary").value("50/100 = 50% becomes 50/125 = 40%"));
+                .andExpect(jsonPath("$.effect.summary").value("40/80 = 50% becomes 40/100 = 40%"));
 
         approve(v2, 0).andExpect(status().isOk()).andExpect(jsonPath("$.version_no").value(2))
                 .andExpect(jsonPath("$.base_version_id").value(v1Id));
@@ -138,6 +139,18 @@ class ScopeVersionIntegrationTest {
         assertThat(count("SELECT count(*) FROM audit_log WHERE action = 'scope.approved' AND reason = ?",
                 "Customer asked for exports")).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM outbox_event WHERE event_type = 'ScopeChanged'")).isEqualTo(2);
+    }
+
+    @Test
+    void taskPointsMayTotalLessThanOneHundredButNeverMore() throws Exception {
+        String a = readyTask("A");
+        String b = readyTask("B");
+        String v1 = approved(draft(null, "POINTS", "Plan", add(a, 60)));
+        draftRequest(v1, "POINTS", "Too much", add(b, 41)).andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("POINTS_OVER_LIMIT"))
+                .andExpect(jsonPath("$.field_errors[0].field").value("points"));
+        assertThat(count("SELECT count(*) FROM scope_versions WHERE project_id = ?", projectId)).isEqualTo(1);
+        draftRequest(v1, "POINTS", "Exactly 100", add(b, 40)).andExpect(status().isCreated());
     }
 
     @Test

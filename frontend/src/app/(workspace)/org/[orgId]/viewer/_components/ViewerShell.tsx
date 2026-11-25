@@ -37,6 +37,7 @@ export function viewerNavigation(orgId: string): NavItem[] {
     { title: "Dashboard", href: `/org/${orgId}/viewer/dashboard`, icon: LayoutDashboard },
     { title: "Projects Portfolio", href: `/org/${orgId}/viewer/projects`, icon: FolderGit2 },
     { title: "Progress Summaries", href: `/org/${orgId}/viewer/progress`, icon: Activity },
+    { title: "Approvals", href: `/org/${orgId}/viewer/approvals`, icon: Lock },
   ];
 }
 

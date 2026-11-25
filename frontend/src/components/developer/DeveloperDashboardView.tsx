@@ -474,7 +474,7 @@ const EVENT_TONE: Record<string, StatusTone> = {
 };
 
 export function gitEventTime(e: DeveloperGitHubEvent, now: Date): string {
-  const raw = e.occurredAt ?? e.createdAt ?? (e as Record<string, unknown>).timestamp;
+  const raw = e.occurredAt ?? e.createdAt ?? (e as unknown as Record<string, unknown>).timestamp;
   const abs = instantText(raw);
   const rel = relativeText(raw, now);
   return rel ? `${abs} (${rel})` : abs;
@@ -496,7 +496,7 @@ function GitHubActivity({ base, dashboard, now }: { base: string; dashboard: Loa
               {events.map((e) => {
                 const type = (e.eventType ?? "EVENT").toUpperCase();
                 const repo = (e.repositoryName ?? e.repository ?? "-") as string;
-                const linked = (e as Record<string, unknown>).linkedTaskKey as string | undefined;
+                const linked = (e as unknown as Record<string, unknown>).linkedTaskKey as string | undefined;
                 return (
                   <li key={e.id} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 py-2.5 min-w-0">
                     <span className="shrink-0"><StatusBadge label={type} tone={EVENT_TONE[type] ?? "neutral"} /></span>

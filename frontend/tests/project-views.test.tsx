@@ -140,15 +140,14 @@ describe("Project workspace", () => {
       client.setQueryData(["project", "org-1", "p-1"], solo()));
     expect(markup).toContain("31 Mar 2027");
     expect(markup).toContain("Not reported");
-    for (const tab of ["Overview", "Updates", "Repositories", "Activity", "Settings"]) expect(markup).toContain(tab);
+    for (const tab of ["Overview", "Updates", "Repository", "Documents", "Approvers", "Activity", "Settings"]) expect(markup).toContain(tab);
     expect(markup).not.toContain("/projects/p-1/edit"); // no edit right, no edit action
   });
 
-  it("offers Edit only when the project is editable, and marks Structured tabs as later", () => {
+  it("offers Edit only when the project is editable, and shows the Team project tabs", () => {
     const markup = render(<ProjectWorkspaceView base="manager" projectId="p-1" />, (client) =>
       client.setQueryData(["project", "org-1", "p-1"], solo({ mode: "STRUCTURED", can_edit: true })));
     expect(markup).toContain("/org/org-1/manager/projects/p-1/edit");
-    expect(markup).toContain("arrive with tasks 3.1 to 3.4");
-    expect(markup).not.toContain(">Repositories<");
+    for (const tab of ["Tasks", "Progress", "Repository", "Documents", "Approvers"]) expect(markup).toContain(tab);
   });
 });

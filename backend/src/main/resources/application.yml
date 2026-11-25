@@ -20,6 +20,11 @@ spring:
   jackson:
     property-naming-strategy: SNAKE_CASE
     time-zone: UTC
+  # Uploads: project documents up to 20 MB, screenshots up to 5 MB (checked again per kind in FileService).
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 21MB
   lifecycle:
     timeout-per-shutdown-phase: 20s
   task:
@@ -108,3 +113,16 @@ prowise:
     refresh-cookie-path: ${AUTH_REFRESH_COOKIE_PATH:/api/v1/auth}
     # The iss claim every access token carries and every request must present.
     jwt-issuer: ${JWT_ISSUER:prowise}
+  security:
+    # AES-256-GCM key (32+ characters) for integration secrets: GitHub tokens and webhook secrets. Server-side only.
+    # Without it everything else works; connecting a repository answers 503 ENCRYPTION_KEY_MISSING.
+    app-encryption-key: ${APP_ENCRYPTION_KEY:}
+  storage:
+    # Local disk root for project documents and screenshots (behind FileStorage; replaceable by S3 later).
+    root: ${FILE_STORAGE_ROOT:./data/uploads}
+  github:
+    api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+    # Public base URL GitHub can reach, e.g. https://api.example.com. The webhook URL shown to admins is
+    # <base>/v1/integrations/github/webhooks/<connection id>. Empty: the URL is shown relative.
+    webhook-base-url: ${GITHUB_WEBHOOK_BASE_URL:}
+    request-timeout-ms: ${GITHUB_REQUEST_TIMEOUT_MS:8000}

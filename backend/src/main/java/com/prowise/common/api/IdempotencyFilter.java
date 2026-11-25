@@ -57,6 +57,8 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     private static final Set<String> MUTATIONS = Set.of("POST", "PUT", "PATCH", "DELETE");
     private static final List<String> EXCLUDED_PREFIXES = List.of("/v1/auth/", "/api/v1/auth/", "/v1/me/organizations/");
     private static final int MAX_BODY_BYTES = 1_048_576;
+    private static final java.util.regex.Pattern GITHUB_SECRET_ROUTES =
+            java.util.regex.Pattern.compile("^(/api)?/v1/projects/[^/]+/github(/webhook-secret)?$");
     private static final UUID NO_ORG = new UUID(0L, 0L);
 
     private final ObjectProvider<JdbcTemplate> jdbcProvider;
@@ -70,9 +72,17 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
+        String contentType = request.getContentType();
         return !MUTATIONS.contains(request.getMethod())
                 || request.getHeader(HEADER) == null
-                || EXCLUDED_PREFIXES.stream().anyMatch(path::startsWith);
+                || EXCLUDED_PREFIXES.stream().anyMatch(path::startsWith)
+                // Uploads (up to 20 MB) are not replayed from a stored body: a repeated upload is just a new staged
+                // file. The GitHub webhook dedupes on its signed delivery id instead.
+                || (contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/"))
+                || path.startsWith("/v1/integrations/github/webhooks/")
+                // Connecting a repository or rotating its webhook secret answers with the secret once; the stored
+                // replay body would keep it in plain text. A repeated connect is refused anyway (409 already connected).
+                || GITHUB_SECRET_ROUTES.matcher(path).matches();
     }
 
     @Override

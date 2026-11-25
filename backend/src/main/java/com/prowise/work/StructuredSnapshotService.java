@@ -71,9 +71,18 @@ public class StructuredSnapshotService implements WorkItemStateListener {
                 """, UUID.randomUUID(), orgId, projectId, result.numerator(), result.denominator(), result.exactPercent(),
                 result.displayPercent(), result.measurable() ? null : "NOT_MEASURABLE", baseline, result.acceptedLeaves(),
                 result.totalLeaves(), cause, actorId);
-        // The project card shows the latest calculated figure (null = Not measurable).
+        // The project card shows the latest calculated figure: null = "Not reported" (nothing approved yet) or
+        // "Not measurable" (no approved scope). Reported and calculated figures are never blended.
+        boolean reported = result.measurable() && result.numerator().signum() > 0;
         jdbc.update("UPDATE projects SET last_progress_percent = ?, last_reported_at = now() WHERE id = ? AND org_id = ?",
-                result.displayPercent() == null ? null : BigDecimal.valueOf(result.displayPercent()), projectId, orgId);
+                reported ? BigDecimal.valueOf(result.displayPercent()) : null, projectId, orgId);
+    }
+
+    /** "approved points, 30 of 100" (the method label shown next to every Structured figure). */
+    static String methodLabel(StructuredProgress.Result result, String unit) {
+        String word = unit == null || "POINTS".equals(unit) ? "points" : "EFFORT".equals(unit) ? "hours" : "items";
+        return "approved " + word + ", " + result.numerator().stripTrailingZeros().toPlainString() + " of "
+                + result.denominator().stripTrailingZeros().toPlainString();
     }
 
     /** Current figure with its explanation, the active baseline and the full snapshot history. */
@@ -106,9 +115,12 @@ public class StructuredSnapshotService implements WorkItemStateListener {
                         rs.getObject("baseline_id", UUID.class), (Integer) rs.getObject("version_no"),
                         rs.getInt("accepted_leaves"), rs.getInt("total_leaves"), rs.getString("cause"),
                         rs.getBoolean("transition_marker")), caller.orgId(), project.id());
+        boolean reported = result.measurable() && result.numerator().signum() > 0;
+        String label = !result.measurable() ? result.label() : reported ? result.label() : ProjectService.NOT_REPORTED_LABEL;
         return new StructuredProgressView(project.id(), project.mode(), StructuredProgress.METHOD, result.numerator(),
-                result.denominator(), result.displayPercent(), result.label(), explanation, result.acceptedLeaves(),
-                result.totalLeaves(), active, leaves, snapshots);
+                result.denominator(), result.displayPercent(), label, explanation, result.acceptedLeaves(),
+                result.totalLeaves(), active, leaves, snapshots, reported,
+                result.measurable() ? methodLabel(result, unit) : null);
     }
 
     /* ================================================================== API records */
@@ -121,5 +133,9 @@ public class StructuredSnapshotService implements WorkItemStateListener {
 
     public record StructuredProgressView(String projectId, String mode, String method, BigDecimal numerator,
             BigDecimal denominator, Integer percent, String label, String explanation, int acceptedLeaves, int totalLeaves,
-            Baseline baseline, List<AcceptedWork.LeafRow> leaves, List<Snapshot> snapshots) {}
+            Baseline baseline, List<AcceptedWork.LeafRow> leaves, List<Snapshot> snapshots,
+            /** False while nothing is approved: the screen shows "Not reported" instead of 0%. */
+            boolean reported,
+            /** e.g. "approved points, 30 of 100"; null when there is no approved scope. */
+            String methodLabel) {}
 }

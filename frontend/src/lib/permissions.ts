@@ -92,6 +92,26 @@ export function isBackendUnreachable(status: number): boolean {
 
 export type FailureKind = "unauthenticated" | "forbidden" | "not-found" | "error";
 
+export interface PermissionEnv {
+  nodeEnv: string | undefined;
+  useMocks: string | undefined;
+}
+
+/** Read only non-secret feature flags used by permission and preview UI. */
+export function readPermissionEnv(): PermissionEnv {
+  return { nodeEnv: process.env.NODE_ENV, useMocks: process.env.NEXT_PUBLIC_USE_MOCKS };
+}
+
+/** Demo fixtures are allowed only outside production with NEXT_PUBLIC_USE_MOCKS=true. */
+export function mocksAllowed(env: PermissionEnv = readPermissionEnv()): boolean {
+  return env.nodeEnv !== "production" && env.useMocks === "true";
+}
+
+/** Dev preview tools (demo logins, role preview): same rule as demo fixtures. */
+export function previewEnabled(env: PermissionEnv = readPermissionEnv()): boolean {
+  return mocksAllowed(env);
+}
+
 /**
  * One rule for permissions and page data. There is no sample-data fallback: an unreachable backend is an error
  * like any other, shown as an error state with retry.

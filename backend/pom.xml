@@ -152,6 +152,9 @@
                         <JWT_SIGNING_KEY>${test.jwt.signing.key}</JWT_SIGNING_KEY>
                         <!-- Test-only key so SMTP admin tests can store an encrypted password without a dedicated context. -->
                         <SMTP_CREDENTIAL_ENCRYPTION_KEY>test-only-smtp-credential-encryption-key-0123456789</SMTP_CREDENTIAL_ENCRYPTION_KEY>
+                        <!-- Test-only key for GitHub token / webhook secret encryption, and a throwaway upload folder. -->
+                        <APP_ENCRYPTION_KEY>test-only-app-encryption-key-0123456789abcdef</APP_ENCRYPTION_KEY>
+                        <FILE_STORAGE_ROOT>target/test-uploads</FILE_STORAGE_ROOT>
                         <!-- Tests never read backend/.env: no real SMTP, no bootstrap email, no local secrets. -->
                         <PROWISE_ENV_FILE>target/tests-do-not-load-dotenv.properties</PROWISE_ENV_FILE>
                         <!-- Shared test contexts sign in many times from 127.0.0.1; AuthHardeningIntegrationTest sets its own low limit. -->

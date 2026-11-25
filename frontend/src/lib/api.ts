@@ -1,6 +1,7 @@
 import type { ApiErrorResponse, HealthResponse } from "@/types/api";
 import type * as Dto from "@/types/api";
 import type * as W from "@/types/work";
+import type * as F from "@/types/flow";
 import type * as Admin from "@/types/admin";
 import { clearAuthSession } from "@/lib/auth-session";
 
@@ -26,6 +27,8 @@ interface RequestOptions {
   retryOnUnauthorized?: boolean;
   /** Reuse a key to make a user-level retry of the same change safe; otherwise one is generated per call. */
   idempotencyKey?: string;
+  /** Multipart upload (the browser sets the boundary); mutually exclusive with body. */
+  form?: FormData;
 }
 
 /** Random id for X-Request-Id and Idempotency-Key (UUID when available, safe characters only). */
@@ -257,7 +260,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
         method,
         headers,
         credentials: "include",
-        body: requestOptions.body === undefined ? undefined : JSON.stringify(requestOptions.body),
+        body: requestOptions.form ?? (requestOptions.body === undefined ? undefined : JSON.stringify(requestOptions.body)),
       });
     } catch (error) {
       throw new ApiError(
@@ -342,7 +345,11 @@ export function createApiClient(options: ApiClientOptions = {}) {
         setAccessToken(tokens.access_token);
         return tokens;
       }),
-    login: (body: { email: string; password: string }) =>
+    /** Confirms a signup email with the single-use link token (no session needed). */
+    verifyEmail: (token: string) =>
+      request("/v1/auth/verify-email", { method: "POST", body: { token }, retryOnUnauthorized: false }).then(() => undefined),
+    /** organization_id is optional: it signs straight into one of the caller's organizations. */
+    login: (body: { email: string; password: string; organization_id?: string }) =>
       // /v1 path: the base URL is "/api" and only /api/v1/* is proxied ("/api/auth/login" became /api/api/... = 404).
       json<AuthLoginResponse>("/v1/auth/login", { method: "POST", body }).then((res) => {
         setAccessToken(res.access_token);
@@ -512,6 +519,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
     /** Pass the same idempotencyKey when retrying one submission: the server returns the first result. */
     submitCheckIn: (projectId: string, body: Dto.CheckInRequestDto, idempotencyKey?: string) =>
       json<Dto.CheckInDto>(`/v1/projects/${encodeURIComponent(projectId)}/checkins`, { method: "POST", body, idempotencyKey }),
+    /** One Solo submission with its project and the approved figure (review page). */
+    checkIn: (checkinId: string) => json<Dto.PendingReviewDto>(`/v1/checkins/${encodeURIComponent(checkinId)}`),
     decideCheckIn: (checkinId: string, body: Dto.CheckInDecisionDto) =>
       json<Dto.CheckInDto>(`/v1/checkins/${encodeURIComponent(checkinId)}/decision`, { method: "POST", body }),
     pendingReviews: (orgId: string) => json<Dto.PendingReviewDto[]>(`/v1/organizations/${encodeURIComponent(orgId)}/reviews/pending`),
@@ -596,6 +605,75 @@ export function createApiClient(options: ApiClientOptions = {}) {
         json<W.StructuredProgressDto>(`/v1/projects/${encodeURIComponent(projectId)}/structured-progress`),
       scopeVersions: (projectId: string) =>
         json<W.ScopeVersionSummaryDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/scope-versions`),
+      /** An approver's decision on the submitted revision (reason required for changes). */
+      review: (id: string, body: { submitted_revision: number; decision: "APPROVED" | "CHANGES_REQUESTED"; reason?: string }) =>
+        json<W.WorkItemDto>(`/v1/work-items/${encodeURIComponent(id)}/reviews`, { method: "POST", body }),
+    },
+    /* ---- Project delivery flow: setup wizard, approvers, review queue, files, GitHub, progress overview ---- */
+    flow: {
+      setupOptions: (orgId: string) =>
+        json<F.SetupOptionsDto>(`/v1/organizations/${encodeURIComponent(orgId)}/project-setup/options`),
+      createProject: (orgId: string, body: F.SetupRequestDto, idempotencyKey?: string) =>
+        json<F.SetupResultDto>(`/v1/organizations/${encodeURIComponent(orgId)}/project-setup`, {
+          method: "POST",
+          body,
+          idempotencyKey,
+        }),
+      approvers: (projectId: string) => json<F.ApproversViewDto>(`/v1/projects/${encodeURIComponent(projectId)}/approvers`),
+      replaceApprovers: (projectId: string, body: { approver_membership_ids: string[]; expected_version: number }) =>
+        json<F.ApproversViewDto>(`/v1/projects/${encodeURIComponent(projectId)}/approvers`, { method: "PUT", body }),
+      reviewQueue: () => json<F.QueueItemDto[]>("/v1/me/review-queue"),
+      activity: (workItemId: string) =>
+        json<F.ActivityEntryDto[]>(`/v1/work-items/${encodeURIComponent(workItemId)}/activity`),
+      /** One page of per-project progress (search, mode, status, sort; cursor paging). */
+      progressProjects: (orgId: string, params: { q?: string; mode?: string; status?: string; sort?: F.ProgressSort;
+        cursor?: string | null; limit?: number } = {}) => {
+        const query = new URLSearchParams();
+        Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") query.set(k, String(v)); });
+        const qs = query.toString();
+        return json<F.ProgressPageDto>(`/v1/organizations/${encodeURIComponent(orgId)}/progress/projects${qs ? `?${qs}` : ""}`);
+      },
+      progressOverview: (orgId: string) =>
+        json<F.ProgressRowDto[]>(`/v1/organizations/${encodeURIComponent(orgId)}/progress-overview`),
+      /** kind PROJECT_DOCUMENT (staged without a project while creating one) or SCREENSHOT (task or Solo project). */
+      uploadFile: (orgId: string, file: File, kind: "PROJECT_DOCUMENT" | "SCREENSHOT",
+        target: { projectId?: string; workItemId?: string } = {}) => {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("kind", kind);
+        if (target.projectId) form.append("project_id", target.projectId);
+        if (target.workItemId) form.append("work_item_id", target.workItemId);
+        return json<F.FileViewDto>(`/v1/organizations/${encodeURIComponent(orgId)}/files`, { method: "POST", form });
+      },
+      discardFile: (fileId: string) =>
+        request(`/v1/files/${encodeURIComponent(fileId)}`, { method: "DELETE" }).then(() => undefined),
+      projectFiles: (projectId: string) => json<F.FileViewDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/files`),
+      workItemFiles: (workItemId: string) =>
+        json<F.FileViewDto[]>(`/v1/work-items/${encodeURIComponent(workItemId)}/files`),
+      /** Authenticated download (the token never goes into a URL). */
+      fileBlob: (fileId: string) =>
+        request(`/v1/files/${encodeURIComponent(fileId)}/content`).then((response) => response.blob()),
+      github: (projectId: string) => json<F.GitHubConnectionDto>(`/v1/projects/${encodeURIComponent(projectId)}/github`),
+      connectGitHub: (projectId: string, body: { repository: string; token: string }) =>
+        json<F.GitHubConnectionDto>(`/v1/projects/${encodeURIComponent(projectId)}/github`, { method: "PUT", body }),
+      rotateWebhookSecret: (projectId: string, expectedVersion: number) =>
+        json<F.GitHubConnectionDto>(`/v1/projects/${encodeURIComponent(projectId)}/github/webhook-secret`, {
+          method: "POST",
+          body: { expected_version: expectedVersion },
+        }),
+      disconnectGitHub: (projectId: string, expectedVersion: number) =>
+        request(`/v1/projects/${encodeURIComponent(projectId)}/github`, {
+          method: "DELETE",
+          body: { expected_version: expectedVersion },
+        }).then(() => undefined),
+      taskCommits: (workItemId: string) =>
+        json<F.GitHubActivityDto[]>(`/v1/work-items/${encodeURIComponent(workItemId)}/commits`),
+      refreshTaskCommits: (workItemId: string) =>
+        json<F.SyncResultDto>(`/v1/work-items/${encodeURIComponent(workItemId)}/commits/refresh`, { method: "POST" }),
+      projectCommits: (projectId: string) =>
+        json<F.GitHubActivityDto[]>(`/v1/projects/${encodeURIComponent(projectId)}/commits`),
+      refreshProjectCommits: (projectId: string) =>
+        json<F.SyncResultDto>(`/v1/projects/${encodeURIComponent(projectId)}/commits/refresh`, { method: "POST" }),
     },
     /** Selects the active workspace; the old token is revoked server-side and replaced here. */
     switchOrganization: (orgId: string) =>

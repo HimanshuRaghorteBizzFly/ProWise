@@ -202,6 +202,9 @@ public class ScopeService {
             recorded.add(entry);
         }
         requireNoNestedLeaves(caller.orgId(), leaves.keySet());
+        if ("POINTS".equals(unit)) {
+            requireWithinPointLimit(leaves.values().stream().map(LeafDraft::weight).reduce(BigDecimal.ZERO, BigDecimal::add));
+        }
 
         UUID id = UUID.randomUUID();
         jdbc.update("""
@@ -411,6 +414,17 @@ public class ScopeService {
                     throw invalidChange("A parent and its own sub-item cannot both be measured leaves.");
                 }
             }
+        }
+    }
+
+    /** Owner rule (2026-11-25): a project's task points total at most 100 (they may total less). */
+    static final BigDecimal MAX_PROJECT_POINTS = BigDecimal.valueOf(100);
+
+    static void requireWithinPointLimit(BigDecimal total) {
+        if (total.compareTo(MAX_PROJECT_POINTS) > 0) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "POINTS_OVER_LIMIT",
+                    "Task points total " + total.stripTrailingZeros().toPlainString() + ". The total may not be above 100.",
+                    List.of(new ApiError.FieldError("points", "total is above 100")));
         }
     }
 

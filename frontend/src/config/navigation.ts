@@ -145,9 +145,9 @@ export function getNavigationConfig(
           items: [
             { title: "Dashboard", href: `/org/${orgId}/developer/dashboard`, icon: LayoutDashboard },
             { title: "My Projects", href: `/org/${orgId}/developer/projects`, icon: FolderKanban },
-            { title: "My Tasks", href: `/org/${orgId}/developer/tasks`, icon: CheckSquare },
+            { title: "My Work", href: `/org/${orgId}/developer/tasks`, icon: CheckSquare },
+            { title: "Approvals", href: `/org/${orgId}/developer/approvals`, icon: Layers },
             { title: "Progress Tracker", href: `/org/${orgId}/developer/progress`, icon: Activity },
-            { title: "My Work", href: `/org/${orgId}/developer/my-work`, icon: Layers },
           ],
         },
         {
@@ -191,6 +191,7 @@ export function getNavigationConfig(
             { title: "Dashboard", href: `/org/${orgId}/viewer/dashboard`, icon: LayoutDashboard },
             { title: "Projects", href: `/org/${orgId}/viewer/projects`, icon: FolderKanban },
             { title: "Progress", href: `/org/${orgId}/viewer/progress`, icon: Activity },
+            { title: "Approvals", href: `/org/${orgId}/viewer/approvals`, icon: Layers },
           ],
         },
         // Tasks, reports, calendar, team, files, activity, notifications and settings have no Viewer API yet: hidden.
